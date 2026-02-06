@@ -1,0 +1,6 @@
+{% for item in items %}
+<div class="todo-item">
+    <input type="checkbox" {% if item.completed %}checked{% endif %}>
+    <span>{{ item.title }}</span>
+</div>
+{% endfor %}

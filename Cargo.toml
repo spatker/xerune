@@ -1,0 +1,9 @@
+[package]
+name = "rmtui"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+askama = "0.14.0"
+fontdue = "0.9.3"
+taffy = "0.9.2"
