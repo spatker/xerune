@@ -6,8 +6,13 @@ use html5ever::tendril::TendrilSink;
 use markup5ever_rcdom as rcdom;
 use rcdom::{Handle, NodeData, RcDom};
 use fontdue::Font;
-use tiny_skia::{Pixmap, Transform, PixmapPaint, Color, Paint, Rect};
+use tiny_skia::{Pixmap, Transform, PixmapPaint, Color, Paint};
 use std::collections::HashMap;
+use std::num::NonZeroU32;
+use std::rc::Rc;
+use winit::event::{Event, WindowEvent, ElementState, MouseButton};
+use winit::event_loop::{ControlFlow, EventLoop};
+use winit::window::WindowBuilder;
 
 #[derive(Template)]
 #[template(path = "todo_list.html")]
@@ -15,6 +20,7 @@ struct TodoList<'a> {
     items: Vec<TodoItem<'a>>,
 }
 
+#[derive(Clone)]
 struct TodoItem<'a> {
     title: &'a str,
     completed: bool,
@@ -25,15 +31,18 @@ enum RenderData {
     Text(String),
 }
 
+type Interaction = String;
+
 fn walk(
     taffy: &mut TaffyTree,
     handle: &Handle,
     fonts: &[Font],
     render_data: &mut HashMap<NodeId, RenderData>,
+    interactions: &mut HashMap<NodeId, Interaction>,
 ) -> Option<NodeId> {
     let mut children = Vec::new();
     for child in handle.children.borrow().iter() {
-        if let Some(id) = walk(taffy, child, fonts, render_data) {
+        if let Some(id) = walk(taffy, child, fonts, render_data, interactions) {
             children.push(id);
         }
     }
@@ -59,9 +68,16 @@ fn walk(
             Some(id)
         },
 
-        NodeData::Element { .. } => {
+        NodeData::Element { ref attrs, .. } => {
             let id = taffy.new_with_children(style, &children).ok()?;
             render_data.insert(id, RenderData::Container);
+
+            for attr in attrs.borrow().iter() {
+                if attr.name.local.as_ref() == "data-on-click" {
+                    interactions.insert(id, attr.value.to_string());
+                }
+            }
+
             Some(id)
         },
 
@@ -190,8 +206,68 @@ fn render_recursive(
     }
 }
 
+fn hit_test(
+    taffy: &TaffyTree,
+    root: NodeId,
+    x: f32,
+    y: f32,
+    abs_x: f32,
+    abs_y: f32,
+) -> Option<NodeId> {
+    let layout = taffy.layout(root).ok()?;
+    let left = abs_x + layout.location.x;
+    let top = abs_y + layout.location.y;
+    let width = layout.size.width;
+    let height = layout.size.height;
+
+    if x >= left && x <= left + width && y >= top && y <= top + height {
+        if let Ok(children) = taffy.children(root) {
+             for child in children.iter().rev() {
+                 if let Some(hit) = hit_test(taffy, *child, x, y, left, top) {
+                     return Some(hit);
+                 }
+             }
+        }
+        return Some(root);
+    }
+    None
+}
+
+fn build_layout(
+    todo_list: &TodoList,
+    fonts: &[Font],
+) -> (TaffyTree, HashMap<NodeId, RenderData>, HashMap<NodeId, Interaction>, NodeId) {
+    let html = todo_list.render().unwrap();
+    let dom = parse_document(RcDom::default(), Default::default())
+        .from_utf8()
+        .read_from(&mut html.as_bytes())
+        .unwrap();
+
+    let mut taffy = TaffyTree::new();
+    let mut render_data = HashMap::new();
+    let mut interactions = HashMap::new();
+    
+    let root = walk(&mut taffy, &dom.document, fonts, &mut render_data, &mut interactions).unwrap();
+    
+    (taffy, render_data, interactions, root)
+}
+
 fn main() {
-    let todo_list = TodoList {
+    let event_loop = EventLoop::new().unwrap();
+    let window = Rc::new(WindowBuilder::new()
+        .with_title("RMTUI")
+        .with_inner_size(winit::dpi::LogicalSize::new(800.0, 600.0))
+        .build(&event_loop)
+        .unwrap());
+
+    let context = softbuffer::Context::new(&window).unwrap();
+    let mut surface = softbuffer::Surface::new(&context, &window).unwrap();
+
+    let font_data = include_bytes!("../resources/fonts/Roboto-Regular.ttf") as &[u8];
+    let roboto_regular = Font::from_bytes(font_data, fontdue::FontSettings::default()).unwrap();
+    let fonts = vec![roboto_regular];
+
+    let mut todo_list = TodoList {
         items: vec![
             TodoItem {
                 title: "Buy milk",
@@ -203,31 +279,98 @@ fn main() {
             },
         ],
     };
-    let html = todo_list.render().unwrap();
-    println!("{}", html); // Debug print
-    
-    let dom = parse_document(RcDom::default(), Default::default())
-        .from_utf8()
-        .read_from(&mut html.as_bytes())
-        .unwrap();
 
-    let font_data = include_bytes!("../resources/fonts/Roboto-Regular.ttf") as &[u8];
-    let roboto_regular = Font::from_bytes(font_data, fontdue::FontSettings::default()).unwrap();
-    let fonts = &[roboto_regular];
-
-    let mut taffy = TaffyTree::new();
-    let mut render_data = HashMap::new();
+    let (mut taffy, mut render_data, mut interactions, mut root) = build_layout(&todo_list, &fonts);
     
-    let root = walk(&mut taffy, &dom.document, fonts, &mut render_data).unwrap();
-    
+    // Initial compute
     taffy.compute_layout(root, Size::MAX_CONTENT).unwrap();
-    
-    // Create a pixmap for rendering (e.g., 800x600)
-    let mut pixmap = Pixmap::new(800, 600).unwrap();
-    pixmap.fill(Color::WHITE);
 
-    render_recursive(&taffy, root, &render_data, &mut pixmap, 0.0, 0.0, fonts);
+    let mut cursor_pos = None;
 
-    pixmap.save_png("image.png").unwrap();
-    println!("Rendered image.png");
+    event_loop.run(|event, target| {
+        target.set_control_flow(ControlFlow::Wait);
+
+        match event {
+            Event::WindowEvent { window_id, event: WindowEvent::RedrawRequested } if window_id == window.id() => {
+                let (width, height) = {
+                    let size = window.inner_size();
+                    (size.width, size.height)
+                };
+                
+                 if width == 0 || height == 0 { return; }
+
+                surface.resize(
+                    NonZeroU32::new(width).unwrap(),
+                    NonZeroU32::new(height).unwrap(),
+                ).unwrap();
+
+                let mut buffer = surface.buffer_mut().unwrap();
+                
+                // Re-compute layout with window size constraint
+                taffy.compute_layout(root, Size {
+                    width: length(width as f32),
+                    height: length(height as f32),
+                }).unwrap();
+
+                let mut pixmap = Pixmap::new(width, height).unwrap();
+                pixmap.fill(Color::WHITE);
+
+                render_recursive(&taffy, root, &render_data, &mut pixmap, 0.0, 0.0, &fonts);
+
+                let data = pixmap.data();
+                for (i, chunk) in data.chunks_exact(4).enumerate() {
+                    let r = chunk[0] as u32;
+                    let g = chunk[1] as u32;
+                    let b = chunk[2] as u32;
+                    buffer[i] = (r << 16) | (g << 8) | b;
+                }
+                
+                buffer.present().unwrap();
+            },
+            Event::WindowEvent { window_id, event: WindowEvent::CloseRequested } if window_id == window.id() => {
+                 target.exit();
+            },
+            Event::WindowEvent { window_id, event: WindowEvent::CursorMoved { position, .. } } if window_id == window.id() => {
+                cursor_pos = Some((position.x, position.y));
+            },
+            Event::WindowEvent { window_id, event: WindowEvent::MouseInput { state: ElementState::Pressed, button: MouseButton::Left, .. } } if window_id == window.id() => {
+                if let Some((cx, cy)) = cursor_pos {
+                    println!("Mouse clicked at ({}, {})", cx, cy);
+                    if let Some(clicked_node) = hit_test(&taffy, root, cx as f32, cy as f32, 0.0, 0.0) {
+                         let mut current = Some(clicked_node);
+                         let mut action = None;
+                         
+                         while let Some(node) = current {
+                             if let Some(act) = interactions.get(&node) {
+                                 action = Some(act.clone());
+                                 break;
+                             }
+                             current = taffy.parent(node);
+                         }
+                         println!("current: {:?}", current);
+
+                         if let Some(act) = action {
+                             if let Some(index_str) = act.strip_prefix("toggle:") {
+                                 if let Ok(index) = index_str.parse::<usize>() {
+                                    if index < todo_list.items.len() {
+                                        todo_list.items[index].completed = !todo_list.items[index].completed;
+                                        
+                                        // Rebuild layout
+                                        let build_result = build_layout(&todo_list, &fonts);
+                                        taffy = build_result.0;
+                                        render_data = build_result.1;
+                                        interactions = build_result.2;
+                                        root = build_result.3;
+                                        
+                                        window.request_redraw();
+                                    }
+                                 }
+                             }
+                         }
+                    }
+                }
+            },
+            _ => {}
+        }
+    }).unwrap();
 }
