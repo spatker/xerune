@@ -3,6 +3,11 @@ name = "rmtui"
 version = "0.1.0"
 edition = "2024"
 
+[lib]
+name = "rmtui"
+path = "src/lib.rs"
+
+
 
 [dependencies]
 askama = "0.14.0"
