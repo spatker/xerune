@@ -1,6 +1,6 @@
 {% for item in items %}
 <div class="todo-item" data-on-click="toggle:{{ loop.index0 }}">
     <input type="checkbox" {% if item.completed %}checked{% endif %}>
-    <span>{{ item.title }}</span>
+    <span class="{% if item.completed %}completed{% endif %}">{{ item.title }}</span>
 </div>
 {% endfor %}

@@ -1,12 +1,13 @@
 use askama::Template;
 use taffy::prelude::*;
-use taffy::Rect as TaffyRect;
+
+
 use html5ever::parse_document;
 use html5ever::tendril::TendrilSink;
 use markup5ever_rcdom as rcdom;
 use rcdom::{Handle, NodeData, RcDom};
 use fontdue::Font;
-use tiny_skia::{Pixmap, Transform, PixmapPaint, Color, Paint};
+use tiny_skia::{Pixmap, Transform, PixmapPaint, Color};
 use std::collections::HashMap;
 use std::num::NonZeroU32;
 use std::rc::Rc;
@@ -26,9 +27,23 @@ struct TodoItem<'a> {
     completed: bool,
 }
 
+#[derive(Clone, Copy, Debug)]
+struct TextStyle {
+    color: Color,
+    // strikethrough: bool, // Future support
+}
+
+impl Default for TextStyle {
+    fn default() -> Self {
+        Self {
+            color: Color::BLACK,
+        }
+    }
+}
+
 enum RenderData {
     Container,
-    Text(String),
+    Text(String, TextStyle),
 }
 
 type Interaction = String;
@@ -39,10 +54,25 @@ fn walk(
     fonts: &[Font],
     render_data: &mut HashMap<NodeId, RenderData>,
     interactions: &mut HashMap<NodeId, Interaction>,
+    parent_style: TextStyle,
 ) -> Option<NodeId> {
+    let mut current_style = parent_style;
+    
+    // Check for class updates before processing children
+    if let NodeData::Element { ref attrs, .. } = handle.data {
+        for attr in attrs.borrow().iter() {
+            if attr.name.local.as_ref() == "class" {
+                let classes: Vec<&str> = attr.value.split_whitespace().collect();
+                if classes.contains(&"completed") {
+                    current_style.color = Color::from_rgba8(180, 180, 180, 255);
+                }
+            }
+        }
+    }
+
     let mut children = Vec::new();
     for child in handle.children.borrow().iter() {
-        if let Some(id) = walk(taffy, child, fonts, render_data, interactions) {
+        if let Some(id) = walk(taffy, child, fonts, render_data, interactions, current_style) {
             children.push(id);
         }
     }
@@ -98,7 +128,7 @@ fn walk(
                 let mut min_x = f32::MAX;
                 let mut min_y = f32::MAX;
                 let mut max_x = f32::MIN;
-                let mut max_y = f32::MIN;
+                let max_y = f32::MIN;
 
                 for glyph in layout.glyphs() {
                     let gx = glyph.x;
@@ -109,7 +139,7 @@ fn walk(
                     if gx < min_x { min_x = gx; }
                     if gy < min_y { min_y = gy; }
                     if gx + gw > max_x { max_x = gx + gw; }
-                    if gy + gh > max_y { max_y = gy + gh; }
+                    if gy + gh > max_y { max_x = gx + gw; }
                 }
 
                 let width = if max_x > min_x { max_x - min_x } else { 20.0 }; // Default width if empty?
@@ -124,7 +154,7 @@ fn walk(
                 };
 
                 let id = taffy.new_leaf(style).ok()?;
-                render_data.insert(id, RenderData::Text(trimmed.to_string()));
+                render_data.insert(id, RenderData::Text(trimmed.to_string(), current_style));
                 Some(id)
             }
         }
@@ -146,11 +176,12 @@ fn render_recursive(
     let x = offset_x + layout.location.x;
     let y = offset_y + layout.location.y;
 
-    if let Some(RenderData::Text(content)) = render_data.get(&root) {
-        // TODO: Use the style for the color
-        let mut paint = Paint::default();
-        paint.set_color_rgba8(220, 140, 75, 180);
-        paint.anti_alias = false;
+    if let Some(RenderData::Text(content, style)) = render_data.get(&root) {
+        // Use style color
+        // let mut paint = Paint::default();
+        // paint.set_color_rgba8(220, 140, 75, 180);
+        // paint.set_color(style.color);
+        // paint.anti_alias = false;
 
         // pixmap.fill_rect(
         //     Rect::from_xywh(x as f32, y as f32, layout.size.width as f32, layout.size.height as f32).unwrap(),
@@ -165,6 +196,11 @@ fn render_recursive(
         });
         text_layout.append(fonts, &fontdue::layout::TextStyle::new(content, 20.0, 0));
 
+        let color_u8_r = (style.color.red() * 255.0) as u8;
+        let color_u8_g = (style.color.green() * 255.0) as u8;
+        let color_u8_b = (style.color.blue() * 255.0) as u8;
+        let color_u8_a = (style.color.alpha() * 255.0) as u8;
+
         for glyph in text_layout.glyphs() {
             let (metrics, bitmap) = fonts[glyph.font_index].rasterize_indexed(glyph.key.glyph_index, glyph.key.px);
             
@@ -176,13 +212,25 @@ fn render_recursive(
             let data = glyph_pixmap.data_mut();
             
             for (i, alpha) in bitmap.iter().enumerate() {
-                // Black text: R=0, G=0, B=0
-                // Premultiplied Alpha: A=alpha, R=0*A, G=0*A, B=0*A
-                // Since R,G,B are 0, premultiplication is trivial (0).
-                data[i*4 + 0] = 0;
-                data[i*4 + 1] = 0;
-                data[i*4 + 2] = 0;
-                data[i*4 + 3] = *alpha;
+                // Apply color and alpha blending
+                // Simple alpha blending: assume background is white or use standard compositing?
+                // Actually tiny-skia's draw_pixmap handles blending if we just provide pixel data.
+                // But here we are creating a pixmap FOR the glyph.
+                // So we should just set the RGBA values.
+                
+                // Let's use the alpha from the rasterizer as the opacity for our color.
+                let a = (*alpha as f32 / 255.0) * (color_u8_a as f32 / 255.0);
+                
+                // Premultiplied alpha
+                let r = (color_u8_r as f32 * a) as u8;
+                let g = (color_u8_g as f32 * a) as u8;
+                let b = (color_u8_b as f32 * a) as u8;
+                let a_byte = (a * 255.0) as u8;
+
+                data[i*4 + 0] = r;
+                data[i*4 + 1] = g;
+                data[i*4 + 2] = b;
+                data[i*4 + 3] = a_byte;
             }
 
             let gx = x + glyph.x;
@@ -247,7 +295,7 @@ fn build_layout(
     let mut render_data = HashMap::new();
     let mut interactions = HashMap::new();
     
-    let root = walk(&mut taffy, &dom.document, fonts, &mut render_data, &mut interactions).unwrap();
+    let root = walk(&mut taffy, &dom.document, fonts, &mut render_data, &mut interactions, TextStyle::default()).unwrap();
     
     (taffy, render_data, interactions, root)
 }
