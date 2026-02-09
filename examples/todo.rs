@@ -13,7 +13,7 @@ use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::WindowBuilder;
 
 // Import from the library
-use rmtui::{dom_to_taffy, render_recursive, hit_test, RenderData, Interaction, TextStyle};
+use rmtui::{dom_to_taffy, render_recursive, hit_test, RenderData, Interaction, TextStyle, TinySkiaMeasurer};
 
 #[derive(Template)]
 #[template(path = "todo_list.html")]
@@ -41,7 +41,8 @@ fn build_layout(
     let mut render_data = HashMap::new();
     let mut interactions = HashMap::new();
     
-    let root = dom_to_taffy(&mut taffy, &dom.document, fonts, &mut render_data, &mut interactions, TextStyle::default()).unwrap();
+    let measurer = TinySkiaMeasurer { fonts };
+    let root = dom_to_taffy(&mut taffy, &dom.document, &measurer, &mut render_data, &mut interactions, TextStyle::default()).unwrap();
     
     (taffy, render_data, interactions, root)
 }
