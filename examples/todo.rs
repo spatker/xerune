@@ -5,7 +5,6 @@ use html5ever::tendril::TendrilSink;
 use markup5ever_rcdom::RcDom;
 use fontdue::Font;
 use tiny_skia::{Pixmap, Color};
-use std::collections::HashMap;
 use std::num::NonZeroU32;
 use std::rc::Rc;
 use winit::event::{Event, WindowEvent, ElementState, MouseButton};
@@ -13,7 +12,7 @@ use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::WindowBuilder;
 
 // Import from the library
-use rmtui::{dom_to_taffy, render_recursive, hit_test, RenderData, Interaction, TextStyle, TinySkiaMeasurer};
+use rmtui::{Ui, TinySkiaMeasurer, TinySkiaRenderer, TextStyle};
 
 #[derive(Template)]
 #[template(path = "todo_list.html")]
@@ -27,24 +26,18 @@ struct TodoItem<'a> {
     completed: bool,
 }
 
-fn build_layout(
+fn build_ui(
     todo_list: &TodoList,
     fonts: &[Font],
-) -> (TaffyTree, HashMap<NodeId, RenderData>, HashMap<NodeId, Interaction>, NodeId) {
+) -> Ui {
     let html = todo_list.render().unwrap();
     let dom = parse_document(RcDom::default(), Default::default())
         .from_utf8()
         .read_from(&mut html.as_bytes())
         .unwrap();
 
-    let mut taffy = TaffyTree::new();
-    let mut render_data = HashMap::new();
-    let mut interactions = HashMap::new();
-    
     let measurer = TinySkiaMeasurer { fonts };
-    let root = dom_to_taffy(&mut taffy, &dom.document, &measurer, &mut render_data, &mut interactions, TextStyle::default()).unwrap();
-    
-    (taffy, render_data, interactions, root)
+    Ui::new(&dom.document, &measurer, TextStyle::default()).unwrap()
 }
 
 fn main() {
@@ -75,10 +68,10 @@ fn main() {
         ],
     };
 
-    let (mut taffy, mut render_data, mut interactions, mut root) = build_layout(&todo_list, &fonts);
+    let mut ui = build_ui(&todo_list, &fonts);
     
     // Initial compute
-    taffy.compute_layout(root, Size::MAX_CONTENT).unwrap();
+    ui.compute_layout(Size::MAX_CONTENT).unwrap();
 
     let mut cursor_pos = None;
 
@@ -102,7 +95,7 @@ fn main() {
                 let mut buffer = surface.buffer_mut().unwrap();
                 
                 // Re-compute layout with window size constraint
-                taffy.compute_layout(root, Size {
+                ui.compute_layout(Size {
                     width: length(width as f32),
                     height: length(height as f32),
                 }).unwrap();
@@ -110,7 +103,8 @@ fn main() {
                 let mut pixmap = Pixmap::new(width, height).unwrap();
                 pixmap.fill(Color::WHITE);
 
-                render_recursive(&taffy, root, &render_data, &mut pixmap, 0.0, 0.0, &fonts);
+                let mut renderer = TinySkiaRenderer { pixmap: &mut pixmap, fonts: &fonts };
+                ui.render(&mut renderer);
 
                 let data = pixmap.data();
                 for (i, chunk) in data.chunks_exact(4).enumerate() {
@@ -130,34 +124,17 @@ fn main() {
             },
             Event::WindowEvent { window_id, event: WindowEvent::MouseInput { state: ElementState::Pressed, button: MouseButton::Left, .. } } if window_id == window.id() => {
                 if let Some((cx, cy)) = cursor_pos {
-                    if let Some(clicked_node) = hit_test(&taffy, root, cx as f32, cy as f32, 0.0, 0.0) {
-                         let mut current = Some(clicked_node);
-                         let mut action = None;
-                         
-                         while let Some(node) = current {
-                             if let Some(act) = interactions.get(&node) {
-                                 action = Some(act.clone());
-                                 break;
-                             }
-                             current = taffy.parent(node);
-                         }
-
-                         if let Some(act) = action {
-                             if let Some(index_str) = act.strip_prefix("toggle:") {
-                                 if let Ok(index) = index_str.parse::<usize>() {
-                                    if index < todo_list.items.len() {
-                                        todo_list.items[index].completed = !todo_list.items[index].completed;
-                                        
-                                        // Rebuild layout
-                                        let build_result = build_layout(&todo_list, &fonts);
-                                        taffy = build_result.0;
-                                        render_data = build_result.1;
-                                        interactions = build_result.2;
-                                        root = build_result.3;
-                                        
-                                        window.request_redraw();
-                                    }
-                                 }
+                    if let Some(act) = ui.hit_test(cx as f32, cy as f32) {
+                         if let Some(index_str) = act.strip_prefix("toggle:") {
+                             if let Ok(index) = index_str.parse::<usize>() {
+                                if index < todo_list.items.len() {
+                                    todo_list.items[index].completed = !todo_list.items[index].completed;
+                                    
+                                    // Rebuild layout
+                                    ui = build_ui(&todo_list, &fonts);
+                                    
+                                    window.request_redraw();
+                                }
                              }
                          }
                     }

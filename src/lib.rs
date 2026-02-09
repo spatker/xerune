@@ -1,4 +1,5 @@
 use taffy::prelude::*;
+use taffy::TaffyError;
 use markup5ever_rcdom::{Handle, NodeData};
 use fontdue::Font;
 use tiny_skia::{Pixmap, Transform, PixmapPaint};
@@ -138,8 +139,72 @@ impl<'a> TextMeasurer for TinySkiaRenderer<'a> {
     }
 }
 
-/// Parses the DOM tree and builds a Taffy layout tree.
-pub fn dom_to_taffy(
+pub struct Ui {
+    taffy: TaffyTree,
+    render_data: HashMap<NodeId, RenderData>,
+    interactions: HashMap<NodeId, Interaction>,
+    root: NodeId,
+}
+
+impl Ui {
+    pub fn new(
+        dom: &Handle, 
+        measurer: &impl TextMeasurer,
+        default_style: TextStyle,
+    ) -> Result<Self, TaffyError> {
+        let mut taffy = TaffyTree::new();
+        let mut render_data = HashMap::new();
+        let mut interactions = HashMap::new();
+
+        let root = dom_to_taffy(
+            &mut taffy, 
+            dom, 
+            measurer, 
+            &mut render_data, 
+            &mut interactions, 
+            default_style
+        ).ok_or(TaffyError::ChildIndexOutOfBounds { parent: NodeId::new(0), child_index: 0, child_count: 0 })?; // TODO: Better error
+
+        Ok(Self {
+            taffy,
+            render_data,
+            interactions,
+            root,
+        })
+    }
+
+    pub fn compute_layout(&mut self, available_space: Size<AvailableSpace>) -> Result<(), TaffyError> {
+        self.taffy.compute_layout(self.root, available_space)
+    }
+
+    pub fn render(&self, renderer: &mut impl Renderer) {
+        let commands = layout_to_draw_commands(
+            &self.taffy, 
+            self.root, 
+            &self.render_data, 
+            0.0, 
+            0.0
+        );
+        renderer.render(&commands);
+    }
+
+    pub fn hit_test(&self, x: f32, y: f32) -> Option<Interaction> {
+         if let Some(clicked_node) = hit_test_recursive(&self.taffy, self.root, x, y, 0.0, 0.0) {
+             let mut current = Some(clicked_node);
+             while let Some(node) = current {
+                 if let Some(act) = self.interactions.get(&node) {
+                     return Some(act.clone());
+                 }
+                 current = self.taffy.parent(node);
+             }
+         }
+         None
+    }
+}
+
+// Private helpers
+
+fn dom_to_taffy(
     taffy: &mut TaffyTree,
     handle: &Handle,
     text_measurer: &impl TextMeasurer,
@@ -217,7 +282,7 @@ pub fn dom_to_taffy(
     }
 }
 
-pub fn layout_to_draw_commands(
+fn layout_to_draw_commands(
     taffy: &TaffyTree,
     root: NodeId,
     render_data: &HashMap<NodeId, RenderData>,
@@ -326,21 +391,7 @@ impl<'a> Renderer for TinySkiaRenderer<'a> {
     }
 }
 
-pub fn render_recursive(
-    taffy: &TaffyTree,
-    root: NodeId,
-    render_data: &HashMap<NodeId, RenderData>,
-    pixmap: &mut Pixmap,
-    offset_x: f32,
-    offset_y: f32,
-    fonts: &[Font],
-) {
-    let mut renderer = TinySkiaRenderer { pixmap, fonts };
-    let commands = layout_to_draw_commands(taffy, root, render_data, offset_x, offset_y);
-    renderer.render(&commands);
-}
-
-pub fn hit_test(
+fn hit_test_recursive(
     taffy: &TaffyTree,
     root: NodeId,
     x: f32,
@@ -357,7 +408,7 @@ pub fn hit_test(
     if x >= left && x <= left + width && y >= top && y <= top + height {
         if let Ok(children) = taffy.children(root) {
              for child in children.iter().rev() {
-                 if let Some(hit) = hit_test(taffy, *child, x, y, left, top) {
+                 if let Some(hit) = hit_test_recursive(taffy, *child, x, y, left, top) {
                      return Some(hit);
                  }
              }
