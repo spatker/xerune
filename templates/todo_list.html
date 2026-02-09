@@ -1,6 +1,7 @@
 {% for item in items %}
-<div class="todo-item" data-on-click="toggle:{{ loop.index0 }}">
+<div style="flex-direction: row; margin: 5px; padding: 5px;" data-on-click="toggle:{{ loop.index0 }}">
     <input type="checkbox" {% if item.completed %}checked{% endif %}>
-    <span class="{% if item.completed %}completed{% endif %}">{{ item.title }}</span>
+    <span style="margin: 0px 0px 0px 10px; font-size: 18px; {% if item.completed %}color: #b4b4b4;{% endif %}">{{
+        item.title }}</span>
 </div>
 {% endfor %}

@@ -46,7 +46,9 @@ fn main() {
 
     let font_data = include_bytes!("../resources/fonts/Roboto-Regular.ttf") as &[u8];
     let roboto_regular = Font::from_bytes(font_data, fontdue::FontSettings::default()).unwrap();
-    let fonts = vec![roboto_regular];
+    let font_data_bold = include_bytes!("../resources/fonts/Roboto-Bold.ttf") as &[u8];
+    let roboto_bold = Font::from_bytes(font_data_bold, fontdue::FontSettings::default()).unwrap();
+    let fonts = vec![roboto_regular, roboto_bold];
 
     let mut todo_list = TodoList {
         items: vec![

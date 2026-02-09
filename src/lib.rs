@@ -1,3 +1,6 @@
+mod css;
+mod defaults;
+
 use taffy::prelude::*;
 use taffy::TaffyError;
 use markup5ever_rcdom::{Handle, NodeData, RcDom};
@@ -51,7 +54,8 @@ pub enum DrawCommand {
         x: f32, 
         y: f32, 
         color: Color, 
-        font_size: f32 
+        font_size: f32,
+        weight: u16,
     },
     DrawImage {
         src: String,
@@ -65,7 +69,7 @@ pub enum DrawCommand {
 }
 
 pub trait TextMeasurer {
-    fn measure_text(&self, text: &str, font_size: f32) -> (f32, f32);
+    fn measure_text(&self, text: &str, font_size: f32, weight: u16) -> (f32, f32);
 }
 
 pub trait Renderer: TextMeasurer {
@@ -76,6 +80,8 @@ pub trait Renderer: TextMeasurer {
 pub struct TextStyle {
     pub color: Color,
     pub font_size: f32,
+    pub weight: u16, // 0 = Regular, 1 = Bold
+    pub background_color: Option<Color>,
 }
 
 impl Default for TextStyle {
@@ -83,12 +89,14 @@ impl Default for TextStyle {
         Self {
             color: Color::BLACK,
             font_size: 16.0,
+            weight: 0,
+            background_color: None,
         }
     }
 }
 
 pub enum RenderData {
-    Container,
+    Container(TextStyle),
     Text(String, TextStyle),
     Image(String),
     Checkbox(bool, TextStyle),
@@ -177,85 +185,45 @@ fn dom_to_taffy(
     interactions: &mut HashMap<NodeId, Interaction>,
     parent_style: TextStyle,
 ) -> Option<NodeId> {
-    let mut current_style = parent_style;
-    let mut style = Style::default();
-
+    
     // Default to handling as a container
-    let mut is_image = false;
     let mut image_src = String::new();
-    let mut is_checkbox = false;
     let mut checkbox_checked = false;
+    let mut is_image = false;
+    let mut is_checkbox = false;
+    
+    let mut current_style = parent_style;
+    // Reset background color for children unless explicitly set, 
+    // actually CSS inherits some things but not background color usually.
+    // For simplicity let's say background color is NOT inherited.
+    current_style.background_color = None;
+
+    let mut style = Style::default();
 
     if let NodeData::Element { ref name, ref attrs, .. } = handle.data {
         let tag = name.local.as_ref();
         
-        // Html tag styles
-        match tag {
-            "h1" => { 
-                current_style.font_size = 32.0; 
-                style.flex_direction = FlexDirection::Column;
-                style.margin = taffy::geometry::Rect { 
-                    left: length(0.0), right: length(0.0), 
-                    top: length(20.0), bottom: length(20.0) 
-                };
-            },
-            "h2" => { 
-                current_style.font_size = 24.0;
-                style.flex_direction = FlexDirection::Column;
-                style.margin = taffy::geometry::Rect { 
-                    left: length(0.0), right: length(0.0), 
-                    top: length(15.0), bottom: length(15.0) 
-                };
-            },
-            "p" => {
-                 style.flex_direction = FlexDirection::Column;
-                 style.margin = taffy::geometry::Rect { 
-                    left: length(0.0), right: length(0.0), 
-                    top: length(10.0), bottom: length(10.0) 
-                };
-            },
-            "ul" => {
-                style.flex_direction = FlexDirection::Column;
-                style.padding = taffy::geometry::Rect {
-                    left: length(20.0), right: length(0.0),
-                    top: length(0.0), bottom: length(0.0)
-                };
-            },
-            "li" => {
-                style.flex_direction = FlexDirection::Column;
-                style.margin = taffy::geometry::Rect {
-                    left: length(0.0), right: length(0.0),
-                    top: length(2.0), bottom: length(2.0)
-                };
-            },
-            "div" | "body" => {
-                style.flex_direction = FlexDirection::Column;
-            },
-            "img" => {
-                is_image = true;
-                style.size = Size { width: length(100.0), height: length(100.0) };
-            },
-            "checkbox" => {
-                is_checkbox = true;
-                style.size = Size { width: length(20.0), height: length(20.0) };
-                style.margin = taffy::geometry::Rect { left: length(5.0), right: length(5.0), top: length(0.0), bottom: length(0.0) };
-            },
-            "input" => {
-                 // Check type in attrs loop
-            },
-            _ => {}
-        }
+        // Get defaults
+        let defaults = defaults::get_default_style(tag, &parent_style);
+        style = defaults.style;
+        current_style = defaults.text_style;
+        // Background color is not inherited by default from parent_style in our simple model,
+        // but get_default_style copies parent_style. Let's ensure background is None if not set.
+        // Actually get_default_style copies everything including color/font/weight.
+        // We probably want to reset background manually if defaults copied it (it didn't, parent passed in has it).
+        // Wait, parent_style MIGHT have background. We should clear it.
+        current_style.background_color = None;
+
+        is_image = defaults.is_image;
+        is_checkbox = defaults.is_checkbox;
 
         for attr in attrs.borrow().iter() {
             let name = attr.name.local.as_ref();
             let value = &attr.value;
             
             match name {
-                "class" => {
-                    let classes: Vec<&str> = value.split_whitespace().collect();
-                    if classes.contains(&"completed") {
-                        current_style.color = Color::from_rgba8(180, 180, 180, 255);
-                    }
+                "style" => {
+                    css::parse_inline_style(value, &mut current_style, &mut style);
                 },
                 "src" => image_src = value.to_string(),
                 "type" if value.as_ref() == "checkbox" => {
@@ -294,7 +262,7 @@ fn dom_to_taffy(
     match handle.data {
         NodeData::Document => {
             let id = taffy.new_with_children(style, &children).ok()?;
-            render_data.insert(id, RenderData::Container);
+            render_data.insert(id, RenderData::Container(current_style));
             Some(id)
         },
 
@@ -306,7 +274,7 @@ fn dom_to_taffy(
             } else if is_checkbox {
                 render_data.insert(id, RenderData::Checkbox(checkbox_checked, current_style));
             } else {
-                render_data.insert(id, RenderData::Container);
+                render_data.insert(id, RenderData::Container(current_style));
             }
 
             for attr in attrs.borrow().iter() {
@@ -324,7 +292,7 @@ fn dom_to_taffy(
             if trimmed.is_empty() {
                 None
             } else {
-                let (width, height) = text_measurer.measure_text(trimmed, current_style.font_size);
+                let (width, height) = text_measurer.measure_text(trimmed, current_style.font_size, current_style.weight);
 
                 let text_style = Style {
                     size: Size {
@@ -334,8 +302,6 @@ fn dom_to_taffy(
                     ..Style::default()
                 };
 
-                // Inherit parent flex props? No, text is leaf.
-                
                 let id = taffy.new_leaf(text_style).ok()?;
                 render_data.insert(id, RenderData::Text(trimmed.to_string(), current_style));
                 Some(id)
@@ -377,13 +343,28 @@ fn traverse_layout(
     let height = layout.size.height;
 
     match render_data.get(&root) {
+        Some(RenderData::Container(style)) => {
+            if let Some(bg) = style.background_color {
+                commands.push(DrawCommand::DrawRect {
+                    rect: Rect { x, y, width, height },
+                    color: bg,
+                });
+            }
+        },
         Some(RenderData::Text(content, style)) => {
+            if let Some(bg) = style.background_color {
+                commands.push(DrawCommand::DrawRect {
+                    rect: Rect { x, y, width, height },
+                    color: bg,
+                });
+            }
             commands.push(DrawCommand::DrawText {
                 text: content.clone(),
                 x,
                 y,
                 color: style.color,
                 font_size: style.font_size,
+                weight: style.weight,
             });
         },
         Some(RenderData::Image(src)) => {

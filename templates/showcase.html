@@ -1,26 +1,43 @@
-<div class="container">
-    <h1>RMTUI Showcase</h1>
-    <p>This is a demonstration of the basic HTML tags supported by RMTUI.</p>
+<h1>RMTUI Showcase</h1>
 
-    <h2>Typography</h2>
-    <p>We support <strong>paragraphs</strong> with automatic margins.</p>
-
-    <h2>Lists</h2>
-    <ul>
-        <li>First item</li>
-        <li>Second item</li>
-        <li>Third item</li>
-    </ul>
-
-    <h2>Interactive Elements</h2>
-    <div>
-        <checkbox checked /> Checked Checkbox
+<div style="flex-direction: row; margin: 10px;">
+    <div style="background-color: #ffcccc; padding: 20px; margin: 10px;">
+        <strong>Red Box</strong>
+        <p>This box has a background color and padding.</p>
     </div>
-    <div>
-        <checkbox /> Unchecked Checkbox
+    <div style="background-color: #ccffcc; padding: 20px; margin: 10px; width: 200px;">
+        <strong>Green Box</strong>
+        <p style="color: green; font-weight: bold;">Green text with bold style.</p>
     </div>
-
-    <h2>Images</h2>
-    <p>Below is an image loaded from the filesystem:</p>
-    <img src="image.png" width="200" height="200" />
+    <div style="background-color: #ccccff; padding: 20px; margin: 10px; width: 200px;">
+        <strong>Blue Box</strong>
+        <p style="font-size: 20px;">Larger text.</p>
+    </div>
 </div>
+
+<h2>Feature List</h2>
+<ul style="padding: 20px; background-color: #f0f0f0;">
+    <li>Normal List Item</li>
+    <li style="color: #888888;">Grayed out List Item</li>
+    <li><strong>Bold List Item (using strong tag)</strong></li>
+    <li style="font-weight: bold;">Bold List Item (using style="font-weight: bold")</li>
+</ul>
+
+<h2>Interactive Elements</h2>
+<div style="flex-direction: row; padding: 10px;">
+    <div style="flex-direction: row; margin: 0px 20px 0px 0px;">
+        <input type="checkbox">
+        <span style="margin: 0px 0px 0px 10px;">Unchecked</span>
+    </div>
+    <div style="flex-direction: row;">
+        <input type="checkbox" checked>
+        <span style="margin: 0px 0px 0px 10px;">Checked</span>
+    </div>
+</div>
+
+<div style="margin: 20px; background-color: #333333; padding: 10px;">
+    <h2 style="color: white; margin: 0px;">Dark Mode Preview</h2>
+    <p style="color: #dddddd;">This demonstrates a dark background with light text using inline styles.</p>
+</div>
+
+<img src="image.png" width="200" height="200" />

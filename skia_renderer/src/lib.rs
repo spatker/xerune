@@ -7,16 +7,19 @@ pub struct TinySkiaMeasurer<'a> {
 }
 
 impl<'a> TextMeasurer for TinySkiaMeasurer<'a> {
-    fn measure_text(&self, text: &str, font_size: f32) -> (f32, f32) {
+    fn measure_text(&self, text: &str, font_size: f32, weight: u16) -> (f32, f32) {
         if text.trim().is_empty() {
             return (0.0, 0.0);
         }
+
+        // Simple font selection: 0 = Regular, >0 = Bold (if available)
+        let font_index = if weight > 0 && self.fonts.len() > 1 { 1 } else { 0 };
 
         let mut layout = fontdue::layout::Layout::new(fontdue::layout::CoordinateSystem::PositiveYDown);
         layout.reset(&fontdue::layout::LayoutSettings {
             ..fontdue::layout::LayoutSettings::default()
         });
-        layout.append(self.fonts, &fontdue::layout::TextStyle::new(text, font_size, 0));
+        layout.append(&self.fonts[..], &fontdue::layout::TextStyle::new(text, font_size, font_index));
 
         let mut min_x = f32::MAX;
         let mut min_y = f32::MAX;
@@ -47,9 +50,9 @@ pub struct TinySkiaRenderer<'a> {
 }
 
 impl<'a> TextMeasurer for TinySkiaRenderer<'a> {
-    fn measure_text(&self, text: &str, font_size: f32) -> (f32, f32) {
+    fn measure_text(&self, text: &str, font_size: f32, weight: u16) -> (f32, f32) {
         let measurer = TinySkiaMeasurer { fonts: self.fonts };
-        measurer.measure_text(text, font_size)
+        measurer.measure_text(text, font_size, weight)
     }
 }
 
@@ -57,12 +60,14 @@ impl<'a> Renderer for TinySkiaRenderer<'a> {
     fn render(&mut self, commands: &[DrawCommand]) {
         for command in commands {
             match command {
-                DrawCommand::DrawText { text, x, y, color, font_size } => {
+                DrawCommand::DrawText { text, x, y, color, font_size, weight } => {
+                    let font_index = if *weight > 0 && self.fonts.len() > 1 { 1 } else { 0 };
+
                     let mut text_layout = fontdue::layout::Layout::new(fontdue::layout::CoordinateSystem::PositiveYDown);
                     text_layout.reset(&fontdue::layout::LayoutSettings {
                         ..fontdue::layout::LayoutSettings::default()
                     });
-                    text_layout.append(self.fonts, &fontdue::layout::TextStyle::new(text, *font_size, 0));
+                    text_layout.append(self.fonts, &fontdue::layout::TextStyle::new(text, *font_size, font_index));
 
                     let color_r = color.r;
                     let color_g = color.g;
