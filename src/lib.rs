@@ -1,12 +1,13 @@
 use taffy::prelude::*;
 use taffy::TaffyError;
-use markup5ever_rcdom::{Handle, NodeData};
+use markup5ever_rcdom::{Handle, NodeData, RcDom};
+use html5ever::parse_document;
+use html5ever::tendril::TendrilSink;
 use fontdue::Font;
 use tiny_skia::{Pixmap, Transform, PixmapPaint};
 use std::collections::HashMap;
 
 pub type Interaction = String;
-
 #[derive(Clone, Copy, Debug)]
 pub struct Color {
     pub r: u8, 
@@ -148,7 +149,7 @@ pub struct Ui {
 
 impl Ui {
     pub fn new(
-        dom: &Handle, 
+        html: &str, 
         measurer: &impl TextMeasurer,
         default_style: TextStyle,
     ) -> Result<Self, TaffyError> {
@@ -156,9 +157,14 @@ impl Ui {
         let mut render_data = HashMap::new();
         let mut interactions = HashMap::new();
 
+        let dom = parse_document(RcDom::default(), Default::default())
+            .from_utf8()
+            .read_from(&mut html.as_bytes())
+            .unwrap();
+
         let root = dom_to_taffy(
             &mut taffy, 
-            dom, 
+            &dom.document, 
             measurer, 
             &mut render_data, 
             &mut interactions, 
@@ -172,6 +178,7 @@ impl Ui {
             root,
         })
     }
+// ...
 
     pub fn compute_layout(&mut self, available_space: Size<AvailableSpace>) -> Result<(), TaffyError> {
         self.taffy.compute_layout(self.root, available_space)

@@ -1,8 +1,5 @@
 use askama::Template;
 use taffy::prelude::*;
-use html5ever::parse_document;
-use html5ever::tendril::TendrilSink;
-use markup5ever_rcdom::RcDom;
 use fontdue::Font;
 use tiny_skia::{Pixmap, Color};
 use std::num::NonZeroU32;
@@ -31,13 +28,8 @@ fn build_ui(
     fonts: &[Font],
 ) -> Ui {
     let html = todo_list.render().unwrap();
-    let dom = parse_document(RcDom::default(), Default::default())
-        .from_utf8()
-        .read_from(&mut html.as_bytes())
-        .unwrap();
-
     let measurer = TinySkiaMeasurer { fonts };
-    Ui::new(&dom.document, &measurer, TextStyle::default()).unwrap()
+    Ui::new(&html, &measurer, TextStyle::default()).unwrap()
 }
 
 fn main() {
