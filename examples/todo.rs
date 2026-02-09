@@ -9,7 +9,8 @@ use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::WindowBuilder;
 
 // Import from the library
-use rmtui::{Ui, TinySkiaMeasurer, TinySkiaRenderer, TextStyle};
+use rmtui::{Ui, TextStyle};
+use skia_renderer::{TinySkiaRenderer, TinySkiaMeasurer};
 
 #[derive(Template)]
 #[template(path = "todo_list.html")]

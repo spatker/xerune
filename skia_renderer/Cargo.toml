@@ -1,0 +1,9 @@
+[package]
+name = "skia_renderer"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+rmtui = { path = "../" }
+fontdue = "0.9.3"
+tiny-skia = "0.12.0"

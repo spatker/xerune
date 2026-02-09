@@ -3,8 +3,7 @@ use taffy::TaffyError;
 use markup5ever_rcdom::{Handle, NodeData, RcDom};
 use html5ever::parse_document;
 use html5ever::tendril::TendrilSink;
-use fontdue::Font;
-use tiny_skia::{Pixmap, Transform, PixmapPaint};
+
 use std::collections::HashMap;
 
 pub type Interaction = String;
@@ -22,13 +21,6 @@ impl Color {
     
     pub fn new(r: u8, g: u8, b: u8, a: u8) -> Self {
         Self { r, g, b, a }
-    }
-
-    pub fn from_id(id: u8) -> Self {
-        let r = (id * 100) % 255;
-        let g = (id * 50) % 255;
-        let b = (id * 200) % 255;
-        Self { r, g, b, a: 255 }
     }
 
      pub fn from_rgba8(r: u8, g: u8, b: u8, a: u8) -> Self {
@@ -61,6 +53,15 @@ pub enum DrawCommand {
         color: Color, 
         font_size: f32 
     },
+    DrawImage {
+        src: String,
+        rect: Rect,
+    },
+    DrawCheckbox {
+        rect: Rect,
+        checked: bool,
+        color: Color,
+    },
 }
 
 pub trait TextMeasurer {
@@ -74,12 +75,14 @@ pub trait Renderer: TextMeasurer {
 #[derive(Clone, Copy, Debug)]
 pub struct TextStyle {
     pub color: Color,
+    pub font_size: f32,
 }
 
 impl Default for TextStyle {
     fn default() -> Self {
         Self {
             color: Color::BLACK,
+            font_size: 16.0,
         }
     }
 }
@@ -87,60 +90,15 @@ impl Default for TextStyle {
 pub enum RenderData {
     Container,
     Text(String, TextStyle),
+    Image(String),
+    Checkbox(bool, TextStyle),
 }
 
-pub struct TinySkiaMeasurer<'a> {
-    pub fonts: &'a [Font],
-}
 
-impl<'a> TextMeasurer for TinySkiaMeasurer<'a> {
-    fn measure_text(&self, text: &str, font_size: f32) -> (f32, f32) {
-        if text.trim().is_empty() {
-            return (0.0, 0.0);
-        }
 
-        let mut layout = fontdue::layout::Layout::new(fontdue::layout::CoordinateSystem::PositiveYDown);
-        layout.reset(&fontdue::layout::LayoutSettings {
-            ..fontdue::layout::LayoutSettings::default()
-        });
-        layout.append(self.fonts, &fontdue::layout::TextStyle::new(text, font_size, 0));
-
-        let mut min_x = f32::MAX;
-        let mut min_y = f32::MAX;
-        let mut max_x = f32::MIN;
-        let mut max_y = f32::MIN;
-
-        for glyph in layout.glyphs() {
-            let gx = glyph.x;
-            let gy = glyph.y;
-            let gw = glyph.width as f32;
-            let gh = glyph.height as f32;
-
-            if gx < min_x { min_x = gx; }
-            if gy < min_y { min_y = gy; }
-            if gx + gw > max_x { max_x = gx + gw; }
-            if gy + gh > max_y { max_y = gy + gh; }
-        }
-
-        let width = if max_x > min_x { max_x - min_x } else { 20.0 };
-        let height = if max_y > min_y { max_y - min_y } else { 20.0 };
-        (width, height)
-    }
-}
-
-pub struct TinySkiaRenderer<'a> {
-    pub pixmap: &'a mut Pixmap,
-    pub fonts: &'a [Font],
-}
-
-impl<'a> TextMeasurer for TinySkiaRenderer<'a> {
-    fn measure_text(&self, text: &str, font_size: f32) -> (f32, f32) {
-        let measurer = TinySkiaMeasurer { fonts: self.fonts };
-        measurer.measure_text(text, font_size)
-    }
-}
 
 pub struct Ui {
+
     taffy: TaffyTree,
     render_data: HashMap<NodeId, RenderData>,
     interactions: HashMap<NodeId, Interaction>,
@@ -220,29 +178,119 @@ fn dom_to_taffy(
     parent_style: TextStyle,
 ) -> Option<NodeId> {
     let mut current_style = parent_style;
-    
-    // Check for class updates before processing children
-    if let NodeData::Element { ref attrs, .. } = handle.data {
+    let mut style = Style::default();
+
+    // Default to handling as a container
+    let mut is_image = false;
+    let mut image_src = String::new();
+    let mut is_checkbox = false;
+    let mut checkbox_checked = false;
+
+    if let NodeData::Element { ref name, ref attrs, .. } = handle.data {
+        let tag = name.local.as_ref();
+        
+        // Html tag styles
+        match tag {
+            "h1" => { 
+                current_style.font_size = 32.0; 
+                style.flex_direction = FlexDirection::Column;
+                style.margin = taffy::geometry::Rect { 
+                    left: length(0.0), right: length(0.0), 
+                    top: length(20.0), bottom: length(20.0) 
+                };
+            },
+            "h2" => { 
+                current_style.font_size = 24.0;
+                style.flex_direction = FlexDirection::Column;
+                style.margin = taffy::geometry::Rect { 
+                    left: length(0.0), right: length(0.0), 
+                    top: length(15.0), bottom: length(15.0) 
+                };
+            },
+            "p" => {
+                 style.flex_direction = FlexDirection::Column;
+                 style.margin = taffy::geometry::Rect { 
+                    left: length(0.0), right: length(0.0), 
+                    top: length(10.0), bottom: length(10.0) 
+                };
+            },
+            "ul" => {
+                style.flex_direction = FlexDirection::Column;
+                style.padding = taffy::geometry::Rect {
+                    left: length(20.0), right: length(0.0),
+                    top: length(0.0), bottom: length(0.0)
+                };
+            },
+            "li" => {
+                style.flex_direction = FlexDirection::Column;
+                style.margin = taffy::geometry::Rect {
+                    left: length(0.0), right: length(0.0),
+                    top: length(2.0), bottom: length(2.0)
+                };
+            },
+            "div" | "body" => {
+                style.flex_direction = FlexDirection::Column;
+            },
+            "img" => {
+                is_image = true;
+                style.size = Size { width: length(100.0), height: length(100.0) };
+            },
+            "checkbox" => {
+                is_checkbox = true;
+                style.size = Size { width: length(20.0), height: length(20.0) };
+                style.margin = taffy::geometry::Rect { left: length(5.0), right: length(5.0), top: length(0.0), bottom: length(0.0) };
+            },
+            "input" => {
+                 // Check type in attrs loop
+            },
+            _ => {}
+        }
+
         for attr in attrs.borrow().iter() {
-            if attr.name.local.as_ref() == "class" {
-                let classes: Vec<&str> = attr.value.split_whitespace().collect();
-                if classes.contains(&"completed") {
-                    current_style.color = Color::from_rgba8(180, 180, 180, 255);
-                }
+            let name = attr.name.local.as_ref();
+            let value = &attr.value;
+            
+            match name {
+                "class" => {
+                    let classes: Vec<&str> = value.split_whitespace().collect();
+                    if classes.contains(&"completed") {
+                        current_style.color = Color::from_rgba8(180, 180, 180, 255);
+                    }
+                },
+                "src" => image_src = value.to_string(),
+                "type" if value.as_ref() == "checkbox" => {
+                    if tag == "input" {
+                        is_checkbox = true;
+                        style.size = Size { width: length(20.0), height: length(20.0) };
+                        style.margin = taffy::geometry::Rect { left: length(5.0), right: length(5.0), top: length(0.0), bottom: length(0.0) };
+                    }
+                },
+                "checked" => checkbox_checked = true,
+                "width" => {
+                     if let Ok(w) = value.parse::<f32>() {
+                         style.size.width = length(w);
+                     }
+                 },
+                 "height" => {
+                     if let Ok(h) = value.parse::<f32>() {
+                         style.size.height = length(h);
+                     }
+                 },
+                 _ => {}
             }
         }
     }
 
     let mut children = Vec::new();
-    for child in handle.children.borrow().iter() {
-        if let Some(id) = dom_to_taffy(taffy, child, text_measurer, render_data, interactions, current_style) {
-            children.push(id);
+    // Only process children if not a leaf-like element
+    if !is_image && !is_checkbox {
+        for child in handle.children.borrow().iter() {
+             if let Some(id) = dom_to_taffy(taffy, child, text_measurer, render_data, interactions, current_style) {
+                 children.push(id);
+             }
         }
     }
-
-    // TODO parse style from attributes
-    let style = Style::default();
-
+    
     match handle.data {
         NodeData::Document => {
             let id = taffy.new_with_children(style, &children).ok()?;
@@ -252,7 +300,14 @@ fn dom_to_taffy(
 
         NodeData::Element { ref attrs, .. } => {
             let id = taffy.new_with_children(style, &children).ok()?;
-            render_data.insert(id, RenderData::Container);
+            
+            if is_image {
+                render_data.insert(id, RenderData::Image(image_src));
+            } else if is_checkbox {
+                render_data.insert(id, RenderData::Checkbox(checkbox_checked, current_style));
+            } else {
+                render_data.insert(id, RenderData::Container);
+            }
 
             for attr in attrs.borrow().iter() {
                 if attr.name.local.as_ref() == "data-on-click" {
@@ -269,9 +324,9 @@ fn dom_to_taffy(
             if trimmed.is_empty() {
                 None
             } else {
-                let (width, height) = text_measurer.measure_text(trimmed, 20.0);
+                let (width, height) = text_measurer.measure_text(trimmed, current_style.font_size);
 
-                let style = Style {
+                let text_style = Style {
                     size: Size {
                         width: length(width),
                         height: length(height),
@@ -279,7 +334,9 @@ fn dom_to_taffy(
                     ..Style::default()
                 };
 
-                let id = taffy.new_leaf(style).ok()?;
+                // Inherit parent flex props? No, text is leaf.
+                
+                let id = taffy.new_leaf(text_style).ok()?;
                 render_data.insert(id, RenderData::Text(trimmed.to_string(), current_style));
                 Some(id)
             }
@@ -316,15 +373,33 @@ fn traverse_layout(
     
     let x = offset_x + layout.location.x;
     let y = offset_y + layout.location.y;
+    let width = layout.size.width;
+    let height = layout.size.height;
 
-    if let Some(RenderData::Text(content, style)) = render_data.get(&root) {
-        commands.push(DrawCommand::DrawText {
-            text: content.clone(),
-            x,
-            y,
-            color: style.color,
-            font_size: 20.0,
-        });
+    match render_data.get(&root) {
+        Some(RenderData::Text(content, style)) => {
+            commands.push(DrawCommand::DrawText {
+                text: content.clone(),
+                x,
+                y,
+                color: style.color,
+                font_size: style.font_size,
+            });
+        },
+        Some(RenderData::Image(src)) => {
+            commands.push(DrawCommand::DrawImage {
+                src: src.clone(),
+                rect: Rect { x, y, width, height },
+            });
+        },
+        Some(RenderData::Checkbox(checked, style)) => {
+            commands.push(DrawCommand::DrawCheckbox {
+                rect: Rect { x, y, width, height },
+                checked: *checked,
+                color: style.color,
+            });
+        },
+        _ => {}
     }
 
     if let Ok(children) = taffy.children(root) {
@@ -334,69 +409,7 @@ fn traverse_layout(
     }
 }
 
-impl<'a> Renderer for TinySkiaRenderer<'a> {
-    fn render(&mut self, commands: &[DrawCommand]) {
-        for command in commands {
-            match command {
-                DrawCommand::DrawText { text, x, y, color, font_size } => {
-                    let mut text_layout = fontdue::layout::Layout::new(fontdue::layout::CoordinateSystem::PositiveYDown);
-                    text_layout.reset(&fontdue::layout::LayoutSettings {
-                        ..fontdue::layout::LayoutSettings::default()
-                    });
-                    text_layout.append(self.fonts, &fontdue::layout::TextStyle::new(text, *font_size, 0));
 
-                    let color_r = color.r;
-                    let color_g = color.g;
-                    let color_b = color.b;
-                    let color_a = color.a;
-
-                    for glyph in text_layout.glyphs() {
-                        let (metrics, bitmap) = self.fonts[glyph.font_index].rasterize_indexed(glyph.key.glyph_index, glyph.key.px);
-                        
-                        if metrics.width == 0 || metrics.height == 0 {
-                            continue;
-                        }
-
-                        if let Some(mut glyph_pixmap) = Pixmap::new(metrics.width as u32, metrics.height as u32) {
-                            let data = glyph_pixmap.data_mut();
-                            
-                            for (i, alpha) in bitmap.iter().enumerate() {
-                                let a = (*alpha as f32 / 255.0) * (color_a as f32 / 255.0);
-                                
-                                // Premultiplied alpha
-                                let r = (color_r as f32 * a) as u8;
-                                let g = (color_g as f32 * a) as u8;
-                                let b = (color_b as f32 * a) as u8;
-                                let a_byte = (a * 255.0) as u8;
-
-                                data[i*4 + 0] = r;
-                                data[i*4 + 1] = g;
-                                data[i*4 + 2] = b;
-                                data[i*4 + 3] = a_byte;
-                            }
-
-                            let gx = x + glyph.x;
-                            let gy = y + glyph.y;
-
-                            self.pixmap.draw_pixmap(
-                                gx as i32,
-                                gy as i32,
-                                glyph_pixmap.as_ref(),
-                                &PixmapPaint::default(),
-                                Transform::identity(),
-                                None,
-                            );
-                        }
-                    }
-                }
-                DrawCommand::DrawRect { rect: _, color: _ } => {
-                     // TODO: Implement DrawRect if needed, but wasn't in original code
-                }
-                _ => {}
-            }
-        }
-    }
-}
 
 fn hit_test_recursive(
     taffy: &TaffyTree,
