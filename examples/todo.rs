@@ -64,18 +64,15 @@ fn main() {
     // Leak fonts to satisfy static lifetime for winit event loop
     let fonts: &'static [Font] = Box::leak(Box::new(fonts));
 
-    let todo_list = TodoList {
-        items: vec![
-            TodoItem {
-                title: "Refactor to library",
-                completed: false,
-            },
-            TodoItem {
-                title: "Initial PoC",
-                completed: true,
-            },
-        ],
-    };
+    let mut items = Vec::new();
+    for i in 1..=20 {
+        items.push(TodoItem {
+            title: Box::leak(format!("Todo Item {}", i).into_boxed_str()),
+            completed: i % 3 == 0,
+        });
+    }
+
+    let todo_list = TodoList { items };
 
     let measurer = TinySkiaMeasurer { fonts };
     let mut runtime = Runtime::new(todo_list, measurer);
@@ -110,7 +107,7 @@ fn main() {
                 let mut pixmap = Pixmap::new(width, height).unwrap();
                 pixmap.fill(Color::WHITE);
 
-                let mut renderer = TinySkiaRenderer { pixmap: &mut pixmap, fonts };
+                let mut renderer = TinySkiaRenderer::new(&mut pixmap, fonts);
                 runtime.render(&mut renderer);
 
                 let data = pixmap.data();
@@ -132,6 +129,18 @@ fn main() {
             Event::WindowEvent { window_id, event: WindowEvent::MouseInput { state: ElementState::Pressed, button: MouseButton::Left, .. } } if window_id == leaked_window.id() => {
                 if let Some((cx, cy)) = cursor_pos {
                     if runtime.handle_event(InputEvent::Click { x: cx as f32, y: cy as f32 }) {
+                        leaked_window.request_redraw();
+                    }
+                }
+            },
+            Event::WindowEvent { window_id, event: WindowEvent::MouseWheel { delta, .. } } if window_id == leaked_window.id() => {
+                let (dx, dy) = match delta {
+                    winit::event::MouseScrollDelta::LineDelta(x, y) => (x * 30.0, y * 30.0),
+                    winit::event::MouseScrollDelta::PixelDelta(p) => (p.x as f32, p.y as f32),
+                };
+                
+                if let Some((cx, cy)) = cursor_pos {
+                    if runtime.handle_event(InputEvent::Scroll { x: cx as f32, y: cy as f32, delta_x: dx, delta_y: dy }) {
                         leaked_window.request_redraw();
                     }
                 }

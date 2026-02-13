@@ -71,7 +71,7 @@ fn main() {
                 let mut pixmap = Pixmap::new(width, height).unwrap();
                 pixmap.fill(Color::WHITE);
 
-                let mut renderer = TinySkiaRenderer { pixmap: &mut pixmap, fonts: &fonts };
+                let mut renderer = TinySkiaRenderer::new(&mut pixmap, &fonts);
                 ui.render(&mut renderer);
 
                 let data = pixmap.data();

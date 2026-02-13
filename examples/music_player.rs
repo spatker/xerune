@@ -227,7 +227,7 @@ fn main() {
                 let mut pixmap = Pixmap::new(width, height).unwrap();
                 pixmap.fill(Color::from_rgba8(18, 18, 18, 255)); // Dark background
 
-                let mut renderer = TinySkiaRenderer { pixmap: &mut pixmap, fonts: fonts_ref };
+                let mut renderer = TinySkiaRenderer::new(&mut pixmap, fonts_ref);
                 runtime.render(&mut renderer);
 
                 let data = pixmap.data();
@@ -252,6 +252,17 @@ fn main() {
                      if runtime.handle_event(InputEvent::Click { x, y }) {
                          window_clone.request_redraw();
                      }
+                }
+            },
+            Event::WindowEvent { window_id, event: WindowEvent::MouseWheel { delta, .. } } if window_id == window_clone.id() => {
+                let (dx, dy) = match delta {
+                    winit::event::MouseScrollDelta::LineDelta(x, y) => (x * 30.0, y * 30.0),
+                    winit::event::MouseScrollDelta::PixelDelta(p) => (p.x as f32, p.y as f32),
+                };
+                
+                let (cx, cy) = cursor_position;
+                if runtime.handle_event(InputEvent::Scroll { x: cx, y: cy, delta_x: dx, delta_y: dy }) {
+                    window_clone.request_redraw();
                 }
             },
              _ => {}

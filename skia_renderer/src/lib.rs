@@ -1,6 +1,6 @@
 use xerune::{DrawCommand, TextMeasurer, Renderer};
 use fontdue::Font;
-use tiny_skia::{Pixmap, Transform, PixmapPaint};
+use tiny_skia::{Pixmap, Transform, PixmapPaint, Mask, PathBuilder, FillRule};
 
 pub struct TinySkiaMeasurer<'a> {
     pub fonts: &'a [Font],
@@ -47,6 +47,53 @@ impl<'a> TextMeasurer for TinySkiaMeasurer<'a> {
 pub struct TinySkiaRenderer<'a> {
     pub pixmap: &'a mut Pixmap,
     pub fonts: &'a [Font],
+    pub clip_stack: Vec<tiny_skia::Rect>,
+    pub current_mask: Option<Mask>,
+}
+
+impl<'a> TinySkiaRenderer<'a> {
+    pub fn new(pixmap: &'a mut Pixmap, fonts: &'a [Font]) -> Self {
+        Self {
+            pixmap,
+            fonts,
+            clip_stack: Vec::new(),
+            current_mask: None,
+        }
+    }
+
+    fn update_clip_mask(&mut self) {
+        if self.clip_stack.is_empty() {
+            self.current_mask = None;
+            return;
+        }
+
+        // Calculate intersection
+        let mut intersect = self.clip_stack[0];
+        for r in self.clip_stack.iter().skip(1) {
+            if let Some(i) = intersect.intersect(r) {
+                intersect = i;
+            } else {
+                // Empty intersection -> empty mask (draw nothing)
+                // We'll use a 1x1 mask at negative coordinates or similar logic 
+                // Or explicit empty state. 
+                // For now, let's just make a 0x0 rect if possible or handle it.
+                // tiny_skia::Rect cannot be empty/invalid usually.
+                // If intersect returns None, they don't overlap.
+                // We should probably create a full opaque mask of 0s.
+                if let Some(mask) = Mask::new(self.pixmap.width(), self.pixmap.height()) {
+                     self.current_mask = Some(mask); // Default is transparent (masked out)
+                }
+                return;
+            }
+        }
+
+        // Create mask
+        if let Some(mut mask) = Mask::new(self.pixmap.width(), self.pixmap.height()) {
+             let path = PathBuilder::from_rect(intersect);
+             mask.fill_path(&path, FillRule::Winding, true, Transform::identity()); // true = anti-alias
+             self.current_mask = Some(mask);
+        }
+    }
 }
 
 impl<'a> TextMeasurer for TinySkiaRenderer<'a> {
@@ -60,6 +107,16 @@ impl<'a> Renderer for TinySkiaRenderer<'a> {
     fn render(&mut self, commands: &[DrawCommand]) {
         for command in commands {
             match command {
+                DrawCommand::Clip { rect } => {
+                    if let Some(r) = tiny_skia::Rect::from_xywh(rect.x, rect.y, rect.width, rect.height) {
+                        self.clip_stack.push(r);
+                        self.update_clip_mask();
+                    }
+                }
+                DrawCommand::PopClip => {
+                    self.clip_stack.pop();
+                    self.update_clip_mask();
+                }
                 DrawCommand::DrawText { text, x, y, color, font_size, weight } => {
                     let font_index = if *weight > 0 && self.fonts.len() > 1 { 1 } else { 0 };
 
@@ -103,14 +160,14 @@ impl<'a> Renderer for TinySkiaRenderer<'a> {
                             let gx = x + glyph.x;
                             let gy = y + glyph.y;
 
-                            self.pixmap.draw_pixmap(
-                                gx as i32,
-                                gy as i32,
-                                glyph_pixmap.as_ref(),
-                                &PixmapPaint::default(),
-                                Transform::identity(),
-                                None,
-                            );
+                                self.pixmap.draw_pixmap(
+                                    gx as i32,
+                                    gy as i32,
+                                    glyph_pixmap.as_ref(),
+                                    &PixmapPaint::default(),
+                                    Transform::identity(),
+                                    self.current_mask.as_ref(),
+                                );
                         }
                     }
                 }
@@ -163,10 +220,10 @@ impl<'a> Renderer for TinySkiaRenderer<'a> {
                         if gradient.is_some() || color.is_some() {
                              if *border_radius > 0.0 {
                                 if let Some(path) = rounded_rect_path(r, *border_radius) {
-                                    self.pixmap.fill_path(&path, &paint, tiny_skia::FillRule::Winding, Transform::identity(), None);
+                                    self.pixmap.fill_path(&path, &paint, tiny_skia::FillRule::Winding, Transform::identity(), self.current_mask.as_ref());
                                 }
                             } else {
-                                 self.pixmap.fill_rect(r, &paint, Transform::identity(), None);
+                                 self.pixmap.fill_rect(r, &paint, Transform::identity(), self.current_mask.as_ref());
                             }
                         }
 
@@ -182,12 +239,12 @@ impl<'a> Renderer for TinySkiaRenderer<'a> {
                                  
                                  if *border_radius > 0.0 {
                                      if let Some(path) = rounded_rect_path(r, *border_radius) {
-                                         self.pixmap.stroke_path(&path, &stroke_paint, &stroke, Transform::identity(), None);
+                                         self.pixmap.stroke_path(&path, &stroke_paint, &stroke, Transform::identity(), self.current_mask.as_ref());
                                      }
                                  } else {
                                     // Path from rect
                                      let path = tiny_skia::PathBuilder::from_rect(r);
-                                     self.pixmap.stroke_path(&path, &stroke_paint, &stroke, Transform::identity(), None);
+                                     self.pixmap.stroke_path(&path, &stroke_paint, &stroke, Transform::identity(), self.current_mask.as_ref());
                                  }
                              }
                         }
@@ -231,7 +288,7 @@ impl<'a> Renderer for TinySkiaRenderer<'a> {
                                                transform // Transform applied to pattern
                                            );
                                            paint.shader = shader;
-                                           self.pixmap.fill_path(&path, &paint, tiny_skia::FillRule::Winding, Transform::identity(), None);
+                                           self.pixmap.fill_path(&path, &paint, tiny_skia::FillRule::Winding, Transform::identity(), self.current_mask.as_ref());
                                      }
                                  }
                              } else {
@@ -240,7 +297,7 @@ impl<'a> Renderer for TinySkiaRenderer<'a> {
                                      png_pixmap.as_ref(),
                                      &PixmapPaint::default(),
                                      transform,
-                                     None
+                                     self.current_mask.as_ref()
                                  );
                              }
                              true
@@ -252,7 +309,7 @@ impl<'a> Renderer for TinySkiaRenderer<'a> {
                         let mut paint = tiny_skia::Paint::default();
                         paint.set_color_rgba8(200, 200, 200, 255);
                         if let Some(r) = tiny_skia::Rect::from_xywh(rect.x, rect.y, rect.width, rect.height) {
-                           self.pixmap.fill_rect(r, &paint, Transform::identity(), None);
+                           self.pixmap.fill_rect(r, &paint, Transform::identity(), self.current_mask.as_ref());
                         }
                     }
                 }
@@ -291,7 +348,7 @@ impl<'a> Renderer for TinySkiaRenderer<'a> {
                          if *checked {
                              let inset = 4.0;
                              if let Some(inner) = tiny_skia::Rect::from_xywh(rect.x + inset, rect.y + inset, rect.width - inset*2.0, rect.height - inset*2.0) {
-                                  self.pixmap.fill_rect(inner, &paint, Transform::identity(), None);
+                                  self.pixmap.fill_rect(inner, &paint, Transform::identity(), self.current_mask.as_ref());
                              }
                          }
                      }
@@ -312,9 +369,9 @@ impl<'a> Renderer for TinySkiaRenderer<'a> {
                         
                         // Rounded track
                         if let Some(path) = rounded_rect_path(track_rect, track_height / 2.0) {
-                            self.pixmap.fill_path(&path, &bg_paint, tiny_skia::FillRule::Winding, Transform::identity(), None);
+                            self.pixmap.fill_path(&path, &bg_paint, tiny_skia::FillRule::Winding, Transform::identity(), self.current_mask.as_ref());
                         } else {
-                            self.pixmap.fill_rect(track_rect, &bg_paint, Transform::identity(), None);
+                            self.pixmap.fill_rect(track_rect, &bg_paint, Transform::identity(), self.current_mask.as_ref());
                         }
                         
                         // Active track
@@ -323,9 +380,9 @@ impl<'a> Renderer for TinySkiaRenderer<'a> {
                                 // Clamp width to at least track_height/2 for circle cap 
                                 // Or just draw rounded rect
                                 if let Some(path) = rounded_rect_path(active_rect, track_height / 2.0) {
-                                     self.pixmap.fill_path(&path, &paint, tiny_skia::FillRule::Winding, Transform::identity(), None);
+                                     self.pixmap.fill_path(&path, &paint, tiny_skia::FillRule::Winding, Transform::identity(), self.current_mask.as_ref());
                                 } else {
-                                     self.pixmap.fill_rect(active_rect, &paint, Transform::identity(), None);
+                                     self.pixmap.fill_rect(active_rect, &paint, Transform::identity(), self.current_mask.as_ref());
                                 }
                             }
                         }
@@ -347,13 +404,13 @@ impl<'a> Renderer for TinySkiaRenderer<'a> {
                     stroke_paint.set_color_rgba8(0, 0, 0, 50); // Slight shadow contour
                     stroke_paint.anti_alias = true;
 
-                    let path = tiny_skia::PathBuilder::from_circle(thumb_x, thumb_y, thumb_radius);
-                     if let Some(p) = path {
-                        self.pixmap.fill_path(&p, &thumb_paint, tiny_skia::FillRule::Winding, Transform::identity(), None);
-                        self.pixmap.stroke_path(&p, &stroke_paint, &stroke, Transform::identity(), None);
-                     }
+                     let path = tiny_skia::PathBuilder::from_circle(thumb_x, thumb_y, thumb_radius);
+                      if let Some(p) = path {
+                        self.pixmap.fill_path(&p, &thumb_paint, tiny_skia::FillRule::Winding, Transform::identity(), self.current_mask.as_ref());
+                        self.pixmap.stroke_path(&p, &stroke_paint, &stroke, Transform::identity(), self.current_mask.as_ref());
+                      }
                 }
-                _ => {}
+
             }
         }
     }

@@ -10,6 +10,14 @@ use html5ever::tendril::TendrilSink;
 use std::collections::HashMap;
 
 pub type Interaction = String;
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Overflow {
+    Visible,
+    Hidden,
+    Scroll,
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct Color {
     pub r: u8, 
@@ -105,6 +113,7 @@ pub struct TextStyle {
     pub border_width: f32,
     pub border_color: Option<Color>,
     pub background_gradient: Option<LinearGradient>,
+    pub overflow: Overflow,
 }
 
 impl Default for TextStyle {
@@ -116,8 +125,10 @@ impl Default for TextStyle {
             background_color: None,
             border_radius: 0.0,
             border_width: 0.0,
+
             border_color: None,
             background_gradient: None,
+            overflow: Overflow::Visible,
         }
     }
 }
@@ -141,6 +152,7 @@ pub trait Model {
 pub enum InputEvent {
     Click { x: f32, y: f32 },
     Hover { x: f32, y: f32 },
+    Scroll { x: f32, y: f32, delta_x: f32, delta_y: f32 },
     Tick,
 }
 
@@ -149,6 +161,8 @@ pub struct Runtime<M, R> {
     measurer: R,
     ui: Ui,
     default_style: TextStyle,
+    scroll_offsets: HashMap<NodeId, (f32, f32)>, // Persist scroll offsets
+    cached_size: Size<AvailableSpace>,
 }
 
 impl<M: Model, R: TextMeasurer> Runtime<M, R> {
@@ -161,7 +175,13 @@ impl<M: Model, R: TextMeasurer> Runtime<M, R> {
              measurer,
              ui,
              default_style,
+             scroll_offsets: HashMap::new(),
+             cached_size: Size::MAX_CONTENT,
          }
+    }
+
+    fn restore_scroll(&mut self) {
+        self.ui.scroll_offsets = self.scroll_offsets.clone();
     }
 
     pub fn handle_event(&mut self, event: InputEvent) -> bool {
@@ -172,6 +192,8 @@ impl<M: Model, R: TextMeasurer> Runtime<M, R> {
                     let html = self.model.view();
                     // Recreate UI to reflect changes
                     self.ui = Ui::new(&html, &self.measurer, self.default_style.clone()).unwrap();
+                    let _ = self.ui.compute_layout(self.cached_size);
+                    self.restore_scroll();
                     return true;
                 }
             }
@@ -179,7 +201,16 @@ impl<M: Model, R: TextMeasurer> Runtime<M, R> {
                 self.model.update("tick");
                 let html = self.model.view();
                 self.ui = Ui::new(&html, &self.measurer, self.default_style.clone()).unwrap();
+                let _ = self.ui.compute_layout(self.cached_size);
+                self.restore_scroll();
                 return true;
+            }
+
+            InputEvent::Scroll { x, y, delta_x, delta_y } => {
+                if self.ui.handle_scroll(x, y, delta_x, delta_y) {
+                    self.scroll_offsets = self.ui.scroll_offsets.clone();
+                    return true;
+                }
             }
              _ => {}
         }
@@ -198,7 +229,13 @@ impl<M: Model, R: TextMeasurer> Runtime<M, R> {
     }
 
     pub fn compute_layout(&mut self, size: Size<AvailableSpace>) {
+        self.cached_size = size;
         let _ = self.ui.compute_layout(size);
+    }
+    
+    pub fn scroll_into_view(&mut self, interaction_id: &str) {
+        self.ui.scroll_into_view(interaction_id);
+        self.scroll_offsets = self.ui.scroll_offsets.clone();
     }
 }
 
@@ -207,6 +244,7 @@ pub struct Ui {
     taffy: TaffyTree,
     render_data: HashMap<NodeId, RenderData>,
     interactions: HashMap<NodeId, Interaction>,
+    scroll_offsets: HashMap<NodeId, (f32, f32)>,
     root: NodeId,
 }
 
@@ -238,8 +276,117 @@ impl Ui {
             taffy,
             render_data,
             interactions,
+            scroll_offsets: HashMap::new(),
             root,
         })
+    }
+
+    pub fn handle_scroll(&mut self, x: f32, y: f32, delta_x: f32, delta_y: f32) -> bool {
+        // Find node under x,y
+         if let Some(mut node) = hit_test_recursive(&self.taffy, self.root, &self.scroll_offsets, &self.render_data, x, y, 0.0, 0.0) {
+            // Walk up looking for scrollable
+            loop {
+                if let Some(RenderData::Container(style)) = self.render_data.get(&node) {
+                    if style.overflow == Overflow::Scroll {
+                         let (mut sx, mut sy) = self.scroll_offsets.get(&node).copied().unwrap_or((0.0, 0.0));
+                         sx -= delta_x;
+                         sy -= delta_y;
+                         
+                         // Clamping Logic
+                         if let Ok(layout) = self.taffy.layout(node) {
+                             let container_width = layout.size.width;
+                             let container_height = layout.size.height;
+                             
+                             let mut content_width = 0.0f32;
+                             let mut content_height = 0.0f32;
+                             
+                             if let Ok(children) = self.taffy.children(node) {
+                                 for child in children {
+                                     if let Ok(child_layout) = self.taffy.layout(child) {
+                                         let right = child_layout.location.x + child_layout.size.width;
+                                         let bottom = child_layout.location.y + child_layout.size.height;
+                                         if right > content_width { content_width = right; }
+                                         if bottom > content_height { content_height = bottom; }
+                                     }
+                                 }
+                             }
+                             
+                             let max_sx = (content_width - container_width).max(0.0);
+                             let max_sy = (content_height - container_height).max(0.0);
+                             
+                             sx = sx.clamp(0.0, max_sx);
+                             sy = sy.clamp(0.0, max_sy);
+                         }
+
+                         self.scroll_offsets.insert(node, (sx, sy));
+                         return true;
+                    }
+                }
+                
+                if let Some(parent) = self.taffy.parent(node) {
+                    node = parent;
+                } else {
+                    break;
+                }
+            }
+        }
+        false
+    }
+
+    pub fn scroll_into_view(&mut self, interaction_id: &str) {
+        // Find node key by interaction string
+        let node_opt = self.interactions.iter().find(|(_, v)| *v == interaction_id).map(|(k, _)| *k);
+        if let Some(node) = node_opt {
+             // Simplest impl: ensure specific node is visible in its scrollable parent.
+             // Walk up to find scrollable parent.
+             let mut current = node;
+             while let Some(parent) = self.taffy.parent(current) {
+                 if let Some(RenderData::Container(style)) = self.render_data.get(&parent) {
+                     if style.overflow == Overflow::Scroll {
+                         // Calculate new offset
+                         // Need layout of 'node' relative to 'parent'
+                         // Layouts are absolute? No, relative to parent location.
+                         // We need recursive position.
+                         // Actually Taffy layout.location is relative to parent.
+                         
+                         // Logic:
+                         // Node top relative to parent content box.
+                         // Parent scroll offset.
+                         // Parent size.
+                         
+                         // We must access layouts.
+                         if let Ok(parent_layout) = self.taffy.layout(parent) {
+                             if let Ok(node_layout) = self.taffy.layout(node) {
+                                  // This simple relative check only works for direct children.
+                                  // For nested, we need to accumulate.
+                                  // Let's assume direct children or simple nesting for now.
+                                  // Or just generic "scroll to top".
+                                  
+                                  // Update offset to 0 (top) for testing
+                                  // self.scroll_offsets.insert(parent, (0.0, 0.0));
+                                  
+                                  // Better: make it visible.
+                                  let (ck, cy) = self.scroll_offsets.get(&parent).copied().unwrap_or((0.0, 0.0));
+                                  // Node relative y in parent content:
+                                  let node_y = node_layout.location.y; 
+                                  // If node_y < cy, cy = node_y (scroll up)
+                                  // If node_y + h > cy + parent_h, cy = node_y + h - parent_h (scroll down)
+                                  
+                                  let mut new_y = cy;
+                                  if node_y < cy {
+                                      new_y = node_y;
+                                  } else if node_y + node_layout.size.height > cy + parent_layout.size.height {
+                                      new_y = node_y + node_layout.size.height - parent_layout.size.height;
+                                  }
+                                  self.scroll_offsets.insert(parent, (ck, new_y));
+                                  return;
+                             }
+                         }
+                     }
+                 }
+                 current = parent;
+             }
+        }
     }
 // ...
 
@@ -252,6 +399,7 @@ impl Ui {
             &self.taffy, 
             self.root, 
             &self.render_data, 
+            &self.scroll_offsets,
             0.0, 
             0.0
         );
@@ -259,7 +407,7 @@ impl Ui {
     }
 
     pub fn hit_test(&self, x: f32, y: f32) -> Option<Interaction> {
-         if let Some(clicked_node) = hit_test_recursive(&self.taffy, self.root, x, y, 0.0, 0.0) {
+         if let Some(clicked_node) = hit_test_recursive(&self.taffy, self.root, &self.scroll_offsets, &self.render_data, x, y, 0.0, 0.0) {
              let mut current = Some(clicked_node);
              while let Some(node) = current {
                  if let Some(act) = self.interactions.get(&node) {
@@ -271,6 +419,11 @@ impl Ui {
          None
     }
 }
+
+// Private helpers
+
+
+
 
 // Private helpers
 
@@ -303,7 +456,13 @@ fn dom_to_taffy(
     current_style.background_gradient = None;
     current_style.border_width = 0.0;
     current_style.border_radius = 0.0;
+    // Reset properties
+    current_style.background_color = None;
+    current_style.background_gradient = None;
+    current_style.border_width = 0.0;
+    current_style.border_radius = 0.0;
     current_style.border_color = None;
+    current_style.overflow = Overflow::Visible;
 
     let mut style = Style::default();
 
@@ -439,15 +598,17 @@ fn dom_to_taffy(
     }
 }
 
+
 fn layout_to_draw_commands(
     taffy: &TaffyTree,
     root: NodeId,
     render_data: &HashMap<NodeId, RenderData>,
+    scroll_offsets: &HashMap<NodeId, (f32, f32)>,
     offset_x: f32,
     offset_y: f32,
 ) -> Vec<DrawCommand> {
     let mut commands = Vec::new();
-    traverse_layout(taffy, root, render_data, offset_x, offset_y, &mut commands);
+    traverse_layout(taffy, root, render_data, scroll_offsets, offset_x, offset_y, &mut commands);
     commands
 }
 
@@ -455,6 +616,7 @@ fn traverse_layout(
     taffy: &TaffyTree,
     root: NodeId,
     render_data: &HashMap<NodeId, RenderData>,
+    scroll_offsets: &HashMap<NodeId, (f32, f32)>,
     offset_x: f32,
     offset_y: f32,
     commands: &mut Vec<DrawCommand>,
@@ -469,8 +631,13 @@ fn traverse_layout(
     let width = layout.size.width;
     let height = layout.size.height;
 
+
+
+    let mut overflow = Overflow::Visible;
+
     match render_data.get(&root) {
         Some(RenderData::Container(style)) => {
+            overflow = style.overflow;
             if style.background_color.is_some() || style.background_gradient.is_some() || style.border_width > 0.0 {
                  commands.push(DrawCommand::DrawRect {
                     rect: Rect { x, y, width, height },
@@ -539,10 +706,35 @@ fn traverse_layout(
         _ => {}
     }
 
+    if overflow != Overflow::Visible {
+        commands.push(DrawCommand::Clip { rect: Rect { x, y, width, height } });
+    }
+
+    let mut child_offset_x = x;
+    let mut child_offset_y = y;
+
+    if overflow == Overflow::Scroll {
+        if let Some((sx, sy)) = scroll_offsets.get(&root) {
+             child_offset_x -= sx;
+             child_offset_y -= sy;
+        }
+    }
+
     if let Ok(children) = taffy.children(root) {
         for child in children {
-            traverse_layout(taffy, child, render_data, x, y, commands);
+            // We pass 0.0 for offset because x, y calculated above includes offset_x/y
+            // Wait, recursive call expects cumulative offset?
+            // "offset_x + layout.location.x".
+            // So we should pass 'child_offset_x' as the new 'offset_x' BASE?
+            // "x" is absolute position of current node.
+            // Child position = x + child_layout.x
+            // So passing 'x' (or adjusted x) is correct.
+            traverse_layout(taffy, child, render_data, scroll_offsets, child_offset_x, child_offset_y, commands);
         }
+    }
+
+    if overflow != Overflow::Visible {
+        commands.push(DrawCommand::PopClip);
     }
 }
 
@@ -551,6 +743,8 @@ fn traverse_layout(
 fn hit_test_recursive(
     taffy: &TaffyTree,
     root: NodeId,
+    scroll_offsets: &HashMap<NodeId, (f32, f32)>,
+    render_data: &HashMap<NodeId, RenderData>,
     x: f32,
     y: f32,
     abs_x: f32,
@@ -563,9 +757,21 @@ fn hit_test_recursive(
     let height = layout.size.height;
 
     if x >= left && x <= left + width && y >= top && y <= top + height {
+        let mut child_abs_x = left;
+        let mut child_abs_y = top;
+
+        if let Some(RenderData::Container(style)) = render_data.get(&root) {
+            if style.overflow == Overflow::Scroll {
+                if let Some((sx, sy)) = scroll_offsets.get(&root) {
+                    child_abs_x -= sx;
+                    child_abs_y -= sy;
+                }
+            }
+        }
+
         if let Ok(children) = taffy.children(root) {
              for child in children.iter().rev() {
-                 if let Some(hit) = hit_test_recursive(taffy, *child, x, y, left, top) {
+                 if let Some(hit) = hit_test_recursive(taffy, *child, scroll_offsets, render_data, x, y, child_abs_x, child_abs_y) {
                      return Some(hit);
                  }
              }
@@ -573,4 +779,102 @@ fn hit_test_recursive(
         return Some(root);
     }
     None
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use taffy::prelude::TaffyMaxContent;
+
+    struct MockModel;
+    impl Model for MockModel {
+        fn view(&self) -> String {
+            // Use simple structure to ensure deterministic NodeIds
+            r#"
+            <div style="height: 100px; overflow: scroll;">
+                <div style="height: 200px; flex-shrink: 0;" data-on-click="test_interaction">Content</div>
+            </div>
+            "#.to_string()
+        }
+        fn update(&mut self, _msg: &str) {}
+    }
+
+    struct MockMeasurer;
+    impl TextMeasurer for MockMeasurer {
+        fn measure_text(&self, _text: &str, _font_size: f32, _weight: u16) -> (f32, f32) {
+            (10.0, 10.0)
+        }
+    }
+
+    #[test]
+    fn test_scroll_persistence() {
+        let model = MockModel;
+        let measurer = MockMeasurer;
+        let mut runtime = Runtime::new(model, measurer);
+        
+        // Initial layout
+        runtime.compute_layout(taffy::geometry::Size::MAX_CONTENT);
+
+        // Scroll
+        let handled = runtime.handle_event(InputEvent::Scroll { 
+            x: 10.0, y: 10.0, 
+            delta_x: 0.0, delta_y: -10.0 // Scroll down 10px
+        });
+        
+        assert!(handled, "Scroll event should be handled");
+        
+        // Verify offset
+        let offsets = &runtime.scroll_offsets;
+        let offset = offsets.values().next().expect("Should have scroll offset");
+        assert_eq!(offset.1, 10.0, "Offset should be 10.0 after first scroll");
+        
+        // Trigger UI Recreation via Tick
+        runtime.handle_event(InputEvent::Tick); 
+        
+        // Verify persistence
+        let offsets_after = &runtime.scroll_offsets;
+        let offset_after = offsets_after.values().next().expect("Should have scroll offset after tick");
+        assert_eq!(offset_after.1, 10.0, "Offset should persist after Tick/Ui Recreation");
+        
+        // Scroll more
+        runtime.handle_event(InputEvent::Scroll { 
+            x: 10.0, y: 10.0, 
+            delta_x: 0.0, delta_y: -10.0 
+        });
+        
+        let offsets_final = &runtime.scroll_offsets;
+        let offset_final = offsets_final.values().next().expect("Should have scroll offset");
+        assert_eq!(offset_final.1, 20.0, "Offset should accumulate (10+10=20)");
+
+        // Test Clamping (Content height 200, Container 100 -> Max scroll 100)
+        // Try scrolling to 200
+         runtime.handle_event(InputEvent::Scroll { 
+            x: 10.0, y: 10.0, 
+            delta_x: 0.0, delta_y: -500.0 // Big scroll down
+        });
+        
+        // Should clamp to 100.0
+        let offsets_clamped = &runtime.scroll_offsets;
+        let offset_clamped = offsets_clamped.values().next().expect("Should have scroll offset");
+        assert_eq!(offset_clamped.1, 100.0, "Offset should be clamped to max scroll (100.0)");
+
+        // Test Hit Testing with Scroll
+        // Content is at (0, 0) relative to container.
+        // Container scroll is (0, 100).
+        // Click at (10, 10) in window (container coords).
+        // Should map to (10, 10 + 100) = (10, 110) in content.
+        // Content height 200 via children.
+        // So hitting child.
+        
+        // MockModel has data-on-click="test_interaction" on the child.
+        // Hit test at (10, 10). Scroll is (0, 100).
+        // Abs x=10, y=10.
+        // Child abs pos = 0 - 0 = 0 (x), 0 - 100 = -100 (y).
+        // Child rect = (0, -100, width?, 200).
+        // y=10 is inside [-100, 100].
+        // So it should hit.
+        
+        let hit = runtime.ui.hit_test(10.0, 10.0);
+        assert!(hit.is_some(), "Should hit child content after scrolling");
+        assert_eq!(hit.unwrap(), "test_interaction".to_string());
+    }
 }

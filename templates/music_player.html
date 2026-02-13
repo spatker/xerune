@@ -66,11 +66,11 @@
     <div style="flex-direction: column; height: 480px; padding: 20px;">
         <p style="font-size: 32px; font-weight: 700; margin: 10px 0 20px 10px; color: #1ed760;">My Library</p>
 
-        <div style="flex-direction: column; overflow: hidden;">
+        <div style="flex-direction: column; flex-grow: 1; overflow: scroll; min-height: 0;">
             <!-- In a real app we'd have scrolling, here we fit what we can -->
             {% for track in tracks %}
             <div data-on-click="select_track:{{ track.id }}"
-                style="flex-direction: row; align-items: center; padding: 15px; margin: 5px 10px; background-color: rgba(255,255,255,0.05); border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
+                style="flex-direction: row; align-items: center; padding: 15px; margin: 5px 10px; background-color: rgba(255,255,255,0.05); border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); flex-shrink: 0;">
                 <img src="{{ track.cover_url }}"
                     style="width: 50px; height: 50px; margin-right: 15px; border-radius: 4px;" />
                 <div style="flex-direction: column; justify-content: center; flex-grow: 1;">

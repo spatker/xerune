@@ -169,6 +169,11 @@ pub fn parse_inline_style(style_str: &str, current_style: &mut TextStyle, taffy_
                     taffy_style.size.height = length(h);
                 }
             }
+            "min-height" => {
+                if let Some(h) = parse_px(val) {
+                    taffy_style.min_size.height = length(h);
+                }
+            }
              "flex-direction" => {
                 match val {
                     "row" => taffy_style.flex_direction = FlexDirection::Row,
@@ -203,6 +208,20 @@ pub fn parse_inline_style(style_str: &str, current_style: &mut TextStyle, taffy_
                  if let Ok(f) = val.parse::<f32>() {
                      taffy_style.flex_grow = f;
                  }
+            }
+            "flex-shrink" => {
+                 if let Ok(f) = val.parse::<f32>() {
+                     taffy_style.flex_shrink = f;
+                 }
+            }
+            "overflow" => {
+                match val {
+                    "hidden" => current_style.overflow = crate::Overflow::Hidden,
+                    "scroll" => current_style.overflow = crate::Overflow::Scroll,
+                    "auto" => current_style.overflow = crate::Overflow::Scroll, // Treat auto as scroll for now
+                    "visible" => current_style.overflow = crate::Overflow::Visible,
+                    _ => {}
+                }
             }
             _ => {}
         }
