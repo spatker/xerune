@@ -20,7 +20,7 @@ fn main() {
     let event_loop = EventLoop::new().unwrap();
     let window = Rc::new(WindowBuilder::new()
         .with_title("RMTUI Showcase")
-        .with_inner_size(winit::dpi::LogicalSize::new(800.0, 800.0))
+        .with_inner_size(winit::dpi::LogicalSize::new(800.0, 600.0))
         .build(&event_loop)
         .unwrap());
 

@@ -1,43 +1,99 @@
-<h1>RMTUI Showcase</h1>
+<div
+    style="width: 800px; height: 600px; background: linear-gradient(160deg, #0f2027 0%, #203a43 50%, #2c5364 100%); color: white; padding: 40px; font-family: 'Roboto', sans-serif;">
 
-<div style="flex-direction: row; margin: 10px;">
-    <div style="background-color: #ffcccc; padding: 20px; margin: 10px;">
-        <strong>Red Box</strong>
-        <p>This box has a background color and padding.</p>
+    <!-- Header -->
+    <div style="flex-direction: row; justify-content: space-between; align-items: center; margin-bottom: 40px;">
+        <h1 style="font-size: 36px; margin: 0; font-weight: bold; color: #ffffff;">RMTUI Dashboard</h1>
+        <div
+            style="padding: 5px 15px; background-color: rgba(255,255,255,0.1); border-radius: 20px; border: 1px solid rgba(255,255,255,0.2);">
+            <p style="margin: 0; font-size: 14px; font-weight: bold;">v0.2.0</p>
+        </div>
     </div>
-    <div style="background-color: #ccffcc; padding: 20px; margin: 10px; width: 200px;">
-        <strong>Green Box</strong>
-        <p style="color: green; font-weight: bold;">Green text with bold style.</p>
+
+    <!-- Grid Row 1: Status Cards -->
+    <div style="flex-direction: row; margin-bottom: 20px;">
+        <!-- System Status -->
+        <div
+            style="flex-grow: 1; padding: 25px; background-color: rgba(255,255,255,0.05); border-radius: 16px; border: 1px solid rgba(255,255,255,0.1); margin-right: 20px;">
+            <h2 style="font-size: 16px; color: #aaaaaa; margin: 0 0 15px 0;">SYSTEM STATUS</h2>
+            <div style="flex-direction: row; align-items: center;">
+                <div style="padding: 6px; background-color: rgba(0,255,0,0.2); border-radius: 50%; margin-right: 12px;">
+                    <div style="width: 10px; height: 10px; border-radius: 5px; background-color: #00ff00;"></div>
+                </div>
+                <span style="font-size: 24px; font-weight: bold;">All Systems Operational</span>
+            </div>
+        </div>
+
+        <!-- Active Users -->
+        <div
+            style="flex-grow: 1; padding: 25px; background-color: rgba(255,255,255,0.05); border-radius: 16px; border: 1px solid rgba(255,255,255,0.1);">
+            <h2 style="font-size: 16px; color: #aaaaaa; margin: 0 0 15px 0;">ACTIVE USERS</h2>
+            <div style="flex-direction: row; align-items: flex-end;">
+                <span style="font-size: 48px; font-weight: bold; margin: 0; line-height: 1;">1,234</span>
+                <span style="font-size: 16px; color: #ea5455; margin-left: 10px; margin-bottom: 8px;">+12%</span>
+            </div>
+        </div>
     </div>
-    <div style="background-color: #ccccff; padding: 20px; margin: 10px; width: 200px;">
-        <strong>Blue Box</strong>
-        <p style="font-size: 20px;">Larger text.</p>
+
+    <!-- Grid Row 2: Main Content & Controls -->
+    <div style="flex-direction: row; flex-grow: 1;">
+
+        <!-- List Panel -->
+        <div
+            style="flex-grow: 2; padding: 25px; background-color: rgba(255,255,255,0.05); border-radius: 16px; border: 1px solid rgba(255,255,255,0.1); margin-right: 20px;">
+            <h2 style="font-size: 18px; margin: 0 0 20px 0;">Recent Activity</h2>
+
+            <div style="flex-direction: column;">
+                <div style="flex-direction: row; align-items: center; padding: 12px 0; margin-bottom: 8px;">
+                    <div
+                        style="width: 40px; height: 40px; border-radius: 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); margin-right: 15px;">
+                    </div>
+                    <div style="flex-direction: column;">
+                        <span style="font-weight: bold; font-size: 16px;">Project Alpha Deployment</span>
+                        <span style="font-size: 14px; color: #888;">Deployed to production server</span>
+                    </div>
+                </div>
+
+                <div style="flex-direction: row; align-items: center; padding: 12px 0;">
+                    <div
+                        style="width: 40px; height: 40px; border-radius: 20px; background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 99%, #fecfef 100%); margin-right: 15px;">
+                    </div>
+                    <div style="flex-direction: column;">
+                        <span style="font-weight: bold; font-size: 16px;">Database Backup</span>
+                        <span style="font-size: 14px; color: #888;">Completed successfully</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Control Panel -->
+        <div
+            style="flex-grow: 1; padding: 25px; background-color: rgba(255,255,255,0.05); border-radius: 16px; border: 1px solid rgba(255,255,255,0.1);">
+            <h2 style="font-size: 18px; margin: 0 0 20px 0;">Quick Controls</h2>
+
+            <div style="flex-direction: column; align-items: stretch;">
+                <div
+                    style="padding: 15px; background: linear-gradient(90deg, #ff8a00, #e52e71); border-radius: 10px; margin-bottom: 15px; align-items: center;">
+                    <span style="font-weight: bold;">Launch Instance</span>
+                </div>
+
+                <div
+                    style="padding: 15px; background-color: rgba(255,255,255,0.05); border-radius: 10px; border: 1px solid rgba(255,255,255,0.2); margin-bottom: 25px; align-items: center;">
+                    <span style="font-weight: bold;">Server Settings</span>
+                </div>
+
+                <h3 style="font-size: 14px; color: #aaa; margin: 0 0 10px 0;">CONFIGURATIONS</h3>
+                <div style="flex-direction: row; align-items: center; margin-bottom: 15px;">
+                    <input type="checkbox" checked style="margin-right: 12px;">
+                    <span style="font-size: 14px;">Auto-Scaling</span>
+                </div>
+                <div style="flex-direction: row; align-items: center;">
+                    <input type="checkbox" style="margin-right: 12px;">
+                    <span style="font-size: 14px;">Maintenance Mode</span>
+                </div>
+            </div>
+        </div>
+
     </div>
+
 </div>
-
-<h2>Feature List</h2>
-<ul style="padding: 20px; background-color: #f0f0f0;">
-    <li>Normal List Item</li>
-    <li style="color: #888888;">Grayed out List Item</li>
-    <li><strong>Bold List Item (using strong tag)</strong></li>
-    <li style="font-weight: bold;">Bold List Item (using style="font-weight: bold")</li>
-</ul>
-
-<h2>Interactive Elements</h2>
-<div style="flex-direction: row; padding: 10px;">
-    <div style="flex-direction: row; margin: 0px 20px 0px 0px;">
-        <input type="checkbox">
-        <span style="margin: 0px 0px 0px 10px;">Unchecked</span>
-    </div>
-    <div style="flex-direction: row;">
-        <input type="checkbox" checked>
-        <span style="margin: 0px 0px 0px 10px;">Checked</span>
-    </div>
-</div>
-
-<div style="margin: 20px; background-color: #333333; padding: 10px;">
-    <h2 style="color: white; margin: 0px;">Dark Mode Preview</h2>
-    <p style="color: #dddddd;">This demonstrates a dark background with light text using inline styles.</p>
-</div>
-
-<img src="image.png" width="200" height="200" />
