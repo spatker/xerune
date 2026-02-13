@@ -2,12 +2,12 @@
 members = ["skia_renderer"]
 
 [package]
-name = "rmtui"
+name = "xerune"
 version = "0.1.0"
 edition = "2024"
 
 [lib]
-name = "rmtui"
+name = "xerune"
 path = "src/lib.rs"
 
 [dependencies]

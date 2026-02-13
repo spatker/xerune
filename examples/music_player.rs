@@ -14,7 +14,7 @@ use std::fs;
 use std::time::{Duration, Instant};
 
 // Import from the library and renderer
-use rmtui::{Model, InputEvent, Runtime};
+use xerune::{Model, InputEvent, Runtime};
 use skia_renderer::{TinySkiaRenderer, TinySkiaMeasurer};
 
 #[derive(Debug, Deserialize, Clone)]

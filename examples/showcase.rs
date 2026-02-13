@@ -9,7 +9,7 @@ use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::WindowBuilder;
 
 // Import from the library and renderer
-use rmtui::{Ui, TextStyle};
+use xerune::{Ui, TextStyle};
 use skia_renderer::{TinySkiaRenderer, TinySkiaMeasurer};
 
 #[derive(Template)]

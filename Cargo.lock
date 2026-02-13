@@ -1253,25 +1253,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rmtui"
-version = "0.1.0"
-dependencies = [
- "askama",
- "csscolorparser",
- "fontdue",
- "html5ever",
- "markup5ever",
- "markup5ever_rcdom",
- "serde",
- "serde_json",
- "skia_renderer",
- "softbuffer",
- "taffy",
- "tiny-skia 0.12.0",
- "winit",
-]
-
-[[package]]
 name = "rustc-hash"
 version = "2.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1409,8 +1390,8 @@ name = "skia_renderer"
 version = "0.1.0"
 dependencies = [
  "fontdue",
- "rmtui",
  "tiny-skia 0.12.0",
+ "xerune",
 ]
 
 [[package]]
@@ -2278,6 +2259,25 @@ name = "xcursor"
 version = "0.3.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bec9e4a500ca8864c5b47b8b482a73d62e4237670e5b5f1d6b9e3cae50f28f2b"
+
+[[package]]
+name = "xerune"
+version = "0.1.0"
+dependencies = [
+ "askama",
+ "csscolorparser",
+ "fontdue",
+ "html5ever",
+ "markup5ever",
+ "markup5ever_rcdom",
+ "serde",
+ "serde_json",
+ "skia_renderer",
+ "softbuffer",
+ "taffy",
+ "tiny-skia 0.12.0",
+ "winit",
+]
 
 [[package]]
 name = "xkbcommon-dl"
