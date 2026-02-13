@@ -1,14 +1,11 @@
 use askama::Template;
 use fontdue::Font;
-use tiny_skia::{Pixmap, Color};
-use std::num::NonZeroU32;
-use std::rc::Rc;
-use winit::event::{Event, WindowEvent};
-use winit::event_loop::{ControlFlow, EventLoop};
-use winit::window::WindowBuilder;
 use std::time::Instant;
-use xerune::{Model, InputEvent, Runtime};
-use skia_renderer::{TinySkiaRenderer, TinySkiaMeasurer};
+use xerune::{Model, Runtime};
+use skia_renderer::TinySkiaMeasurer;
+
+#[path = "support/mod.rs"]
+mod support;
 
 // Simple LCG for random numbers to avoid 'rand' dependency
 struct Rng {
@@ -132,17 +129,7 @@ impl Model for AnimationModel {
     }
 }
 
-fn main() {
-    let event_loop = EventLoop::new().unwrap();
-    let window = Rc::new(WindowBuilder::new()
-        .with_title("RMTUI Animation Benchmark")
-        .with_inner_size(winit::dpi::LogicalSize::new(800.0, 600.0))
-        .build(&event_loop)
-        .unwrap());
-
-    let context = softbuffer::Context::new(&window).unwrap();
-    let mut surface = softbuffer::Surface::new(&context, &window).unwrap();
-
+fn main() -> anyhow::Result<()> {
     // Load fonts
     let font_data = include_bytes!("../resources/fonts/Roboto-Regular.ttf") as &[u8];
     let roboto_regular = Font::from_bytes(font_data, fontdue::FontSettings::default()).unwrap();
@@ -155,65 +142,15 @@ fn main() {
     
     // Create 100 items for benchmark
     let model = AnimationModel::new(100);
-    let mut runtime = Runtime::new(model, measurer);
+    let runtime = Runtime::new(model, measurer);
     
-    runtime.set_size(800.0, 600.0);
-
-    let window_clone = window.clone();
-    let mut last_render_time: Option<f32> = None;
-
-    event_loop.run(move |event, target| {
-         // Force high refresh rate by not waiting too long, but let's effectively poll for max speed test
-         target.set_control_flow(ControlFlow::Poll);
-
-        match event {
-            Event::AboutToWait => {
-                 // Update logic
-                if runtime.handle_event(InputEvent::Tick { render_time_ms: last_render_time }) {
-                    window_clone.request_redraw();
-                }
-            },
-            Event::WindowEvent { window_id, event: WindowEvent::RedrawRequested } if window_id == window_clone.id() => {
-                let size = window_clone.inner_size();
-                let width = size.width;
-                let height = size.height;
-                
-                 if width == 0 || height == 0 { return; }
-
-                surface.resize(
-                    NonZeroU32::new(width).unwrap(),
-                    NonZeroU32::new(height).unwrap(),
-                ).unwrap();
-
-                let mut buffer = surface.buffer_mut().unwrap();
-                
-                 runtime.set_size(width as f32, height as f32);
-
-                let mut pixmap = Pixmap::new(width, height).unwrap();
-                pixmap.fill(Color::from_rgba8(34, 34, 34, 255)); 
-
-                let mut renderer = TinySkiaRenderer::new(&mut pixmap, fonts_ref);
-                let start_render = Instant::now();
-                runtime.render(&mut renderer);
-                last_render_time = Some(start_render.elapsed().as_secs_f32() * 1000.0);
-
-                let data = pixmap.data();
-                for (i, chunk) in data.chunks_exact(4).enumerate() {
-                    let r = chunk[0] as u32;
-                    let g = chunk[1] as u32;
-                    let b = chunk[2] as u32;
-                    buffer[i] = (r << 16) | (g << 8) | b;
-                }
-                
-                buffer.present().unwrap();
-            },
-            Event::WindowEvent { window_id, event: WindowEvent::CloseRequested } if window_id == window_clone.id() => {
-                 target.exit();
-            },
-            Event::WindowEvent { window_id, event: WindowEvent::CursorMoved { .. } } if window_id == window_clone.id() => {
-               // cursor_position = (position.x as f32, position.y as f32);
-            },
-            _ => {}
-        }
-    }).unwrap();
+    #[cfg(not(all(target_os = "linux", feature = "linuxfb", feature = "evdev")))]
+    {
+        support::winit_backend::run_app("RMTUI Animation Benchmark", 800, 600, runtime, fonts_ref, Some(std::time::Duration::ZERO))
+    }
+    
+    #[cfg(all(target_os = "linux", feature = "linuxfb", feature = "evdev"))]
+    {
+        support::linux_backend::run_app("RMTUI Animation Benchmark", 800, 600, runtime, fonts_ref, Some(std::time::Duration::ZERO))
+    }
 }

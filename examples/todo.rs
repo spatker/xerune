@@ -1,16 +1,10 @@
 use askama::Template;
-use taffy::prelude::*;
 use fontdue::Font;
-use tiny_skia::{Pixmap, Color};
-use std::num::NonZeroU32;
-use std::rc::Rc;
-use winit::event::{Event, WindowEvent, ElementState, MouseButton};
-use winit::event_loop::{ControlFlow, EventLoop};
-use winit::window::WindowBuilder;
+use xerune::{Runtime, Model};
+use skia_renderer::TinySkiaMeasurer;
 
-// Import from the library
-use xerune::{Runtime, Model, InputEvent};
-use skia_renderer::{TinySkiaRenderer, TinySkiaMeasurer};
+#[path = "support/mod.rs"]
+mod support;
 
 #[derive(Template)]
 #[template(path = "todo_list.html")]
@@ -40,29 +34,14 @@ impl<'a> Model for TodoList<'a> {
     }
 }
 
-fn main() {
-    let event_loop = EventLoop::new().unwrap();
-    let window = Rc::new(WindowBuilder::new()
-        .with_title("RMTUI Todo Example")
-        .with_inner_size(winit::dpi::LogicalSize::new(800.0, 600.0))
-        .build(&event_loop)
-        .unwrap());
-
-    // Leak window to satisfy static lifetime for softbuffer surface in the event loop
-    let leaked_window: &'static Rc<winit::window::Window> = Box::leak(Box::new(window.clone()));
-    
-    let context = softbuffer::Context::new(leaked_window).unwrap();
-    let leaked_context = Box::leak(Box::new(context));
-    
-    let mut surface = softbuffer::Surface::new(leaked_context, leaked_window).unwrap();
-
+fn main() -> anyhow::Result<()> {
     let font_data = include_bytes!("../resources/fonts/Roboto-Regular.ttf") as &[u8];
     let roboto_regular = Font::from_bytes(font_data, fontdue::FontSettings::default()).unwrap();
     let font_data_bold = include_bytes!("../resources/fonts/Roboto-Bold.ttf") as &[u8];
     let roboto_bold = Font::from_bytes(font_data_bold, fontdue::FontSettings::default()).unwrap();
     let fonts = vec![roboto_regular, roboto_bold];
     // Leak fonts to satisfy static lifetime for winit event loop
-    let fonts: &'static [Font] = Box::leak(Box::new(fonts));
+    let fonts_ref: &'static [Font] = Box::leak(Box::new(fonts));
 
     let mut items = Vec::new();
     for i in 1..=20 {
@@ -74,79 +53,17 @@ fn main() {
 
     let todo_list = TodoList { items };
 
-    let measurer = TinySkiaMeasurer { fonts };
-    let mut runtime = Runtime::new(todo_list, measurer);
+    let measurer = TinySkiaMeasurer { fonts: fonts_ref };
+    let runtime = Runtime::new(todo_list, measurer);
     
-    // Initial compute
-    runtime.compute_layout(Size::MAX_CONTENT);
+    #[cfg(not(all(target_os = "linux", feature = "linuxfb", feature = "evdev")))]
+    {
+        support::winit_backend::run_app("RMTUI Todo Example", 800, 600, runtime, fonts_ref, None)
+    }
 
-    let mut cursor_pos = None;
-
-    event_loop.run(move |event, target| {
-        target.set_control_flow(ControlFlow::Wait);
-
-        match event {
-            Event::WindowEvent { window_id, event: WindowEvent::RedrawRequested } if window_id == leaked_window.id() => {
-                let (width, height) = {
-                    let size = leaked_window.inner_size();
-                    (size.width, size.height)
-                };
-                
-                 if width == 0 || height == 0 { return; }
-
-                surface.resize(
-                    NonZeroU32::new(width).unwrap(),
-                    NonZeroU32::new(height).unwrap(),
-                ).unwrap();
-
-                let mut buffer = surface.buffer_mut().unwrap();
-                
-                // Re-compute layout with window size constraint
-                runtime.set_size(width as f32, height as f32);
-
-                let mut pixmap = Pixmap::new(width, height).unwrap();
-                pixmap.fill(Color::WHITE);
-
-                let mut renderer = TinySkiaRenderer::new(&mut pixmap, fonts);
-                runtime.render(&mut renderer);
-
-                let data = pixmap.data();
-                for (i, chunk) in data.chunks_exact(4).enumerate() {
-                    let r = chunk[0] as u32;
-                    let g = chunk[1] as u32;
-                    let b = chunk[2] as u32;
-                    buffer[i] = (r << 16) | (g << 8) | b;
-                }
-                
-                buffer.present().unwrap();
-            },
-            Event::WindowEvent { window_id, event: WindowEvent::CloseRequested } if window_id == leaked_window.id() => {
-                 target.exit();
-            },
-            Event::WindowEvent { window_id, event: WindowEvent::CursorMoved { position, .. } } if window_id == leaked_window.id() => {
-                cursor_pos = Some((position.x, position.y));
-            },
-            Event::WindowEvent { window_id, event: WindowEvent::MouseInput { state: ElementState::Pressed, button: MouseButton::Left, .. } } if window_id == leaked_window.id() => {
-                if let Some((cx, cy)) = cursor_pos {
-                    if runtime.handle_event(InputEvent::Click { x: cx as f32, y: cy as f32 }) {
-                        leaked_window.request_redraw();
-                    }
-                }
-            },
-            Event::WindowEvent { window_id, event: WindowEvent::MouseWheel { delta, .. } } if window_id == leaked_window.id() => {
-                let (dx, dy) = match delta {
-                    winit::event::MouseScrollDelta::LineDelta(x, y) => (x * 30.0, y * 30.0),
-                    winit::event::MouseScrollDelta::PixelDelta(p) => (p.x as f32, p.y as f32),
-                };
-                
-                if let Some((cx, cy)) = cursor_pos {
-                    if runtime.handle_event(InputEvent::Scroll { x: cx as f32, y: cy as f32, delta_x: dx, delta_y: dy }) {
-                        leaked_window.request_redraw();
-                    }
-                }
-            },
-            _ => {}
-        }
-    }).unwrap();
+    #[cfg(all(target_os = "linux", feature = "linuxfb", feature = "evdev"))]
+    {
+        support::linux_backend::run_app("RMTUI Todo Example", 800, 600, runtime, fonts_ref, None)
+    }
 }
 

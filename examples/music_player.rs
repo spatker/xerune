@@ -1,21 +1,15 @@
 use askama::Template;
-// use taffy::prelude::*;
 use fontdue::Font;
-use tiny_skia::{Pixmap, Color};
-use std::num::NonZeroU32;
-use std::rc::Rc;
-use winit::event::{Event, WindowEvent, ElementState, MouseButton};
-use winit::event_loop::{ControlFlow, EventLoop};
-use winit::window::WindowBuilder;
 use serde::Deserialize;
 use std::fs;
-// use std::path::Path;
-
 use std::time::{Duration, Instant};
 
 // Import from the library and renderer
-use xerune::{Model, InputEvent, Runtime};
-use skia_renderer::{TinySkiaRenderer, TinySkiaMeasurer};
+use xerune::{Model, Runtime};
+use skia_renderer::TinySkiaMeasurer;
+
+#[path = "support/mod.rs"]
+mod support;
 
 #[derive(Debug, Deserialize, Clone)]
 struct Track {
@@ -57,6 +51,7 @@ struct MusicPlayerModel {
     current_track_index: Option<usize>,
     is_playing: bool,
     elapsed_seconds: u64,
+    last_tick: Instant,
 }
 
 impl MusicPlayerModel {
@@ -72,6 +67,7 @@ impl MusicPlayerModel {
             current_track_index: None,
             is_playing: false,
             elapsed_seconds: 0,
+            last_tick: Instant::now(),
         }
     }
 
@@ -106,16 +102,11 @@ impl Model for MusicPlayerModel {
                  self.current_track_index = Some(index);
                  self.is_playing = true;
                  self.elapsed_seconds = 0;
+                 self.last_tick = Instant::now();
              }
         } else {
              match msg {
                  "back" => {
-                     // Back now acts as minimized or just list view 
-                     // User said "Selecting music brings user to player, stopping music brings them back"
-                     // So specific "Stop" button brings back.
-                     // "Back" button on player functionality
-                     // Let's make "back" go back to list, keep playing.
-                     // And "stop" go back to list, stop playing.
                      self.current_track_index = None;
                  },
                  "stop" => {
@@ -125,13 +116,16 @@ impl Model for MusicPlayerModel {
                  },
                  "play_pause" => {
                      self.is_playing = !self.is_playing;
+                     if self.is_playing {
+                         self.last_tick = Instant::now();
+                     }
                  },
                  "next" => {
                      if let Some(mut idx) = self.current_track_index {
                          idx = (idx + 1) % self.tracks.len();
                          self.current_track_index = Some(idx);
                          self.elapsed_seconds = 0;
-                         // Keep playing state
+                         self.last_tick = Instant::now();
                      }
                  },
                  "prev" => {
@@ -143,17 +137,21 @@ impl Model for MusicPlayerModel {
                          }
                          self.current_track_index = Some(idx);
                          self.elapsed_seconds = 0;
+                         self.last_tick = Instant::now();
                      }
                  },
                  "tick" => {
                      if self.is_playing {
-                         if let Some(idx) = self.current_track_index {
-                             let duration = self.tracks[idx].duration_seconds();
-                             if self.elapsed_seconds < duration {
-                                 self.elapsed_seconds += 1;
-                             } else {
-                                 // Auto next
-                                 self.update("next"); 
+                         if self.last_tick.elapsed() >= Duration::from_secs(1) {
+                             if let Some(idx) = self.current_track_index {
+                                 let duration = self.tracks[idx].duration_seconds();
+                                 if self.elapsed_seconds < duration {
+                                     self.elapsed_seconds += 1;
+                                     self.last_tick = Instant::now();
+                                 } else {
+                                     // Auto next
+                                     self.update("next"); 
+                                 }
                              }
                          }
                      }
@@ -164,109 +162,26 @@ impl Model for MusicPlayerModel {
     }
 }
 
-fn main() {
-    let event_loop = EventLoop::new().unwrap();
-    let window = Rc::new(WindowBuilder::new()
-        .with_title("RMTUI Music Player")
-        .with_inner_size(winit::dpi::LogicalSize::new(800.0, 480.0))
-        .build(&event_loop)
-        .unwrap());
-
-    let context = softbuffer::Context::new(&window).unwrap();
-    let mut surface = softbuffer::Surface::new(&context, &window).unwrap();
-
+fn main() -> anyhow::Result<()> {
     // Load fonts
     let font_data = include_bytes!("../resources/fonts/Roboto-Regular.ttf") as &[u8];
     let roboto_regular = Font::from_bytes(font_data, fontdue::FontSettings::default()).unwrap();
     let font_data_bold = include_bytes!("../resources/fonts/Roboto-Bold.ttf") as &[u8];
     let roboto_bold = Font::from_bytes(font_data_bold, fontdue::FontSettings::default()).unwrap();
     let fonts = vec![roboto_regular, roboto_bold];
-    // Leak fonts to get 'static lifetime for the closure
     let fonts_ref: &'static [Font] = Box::leak(fonts.into_boxed_slice());
 
     let measurer = TinySkiaMeasurer { fonts: fonts_ref };
     let model = MusicPlayerModel::new();
-    let mut runtime = Runtime::new(model, measurer);
-
-    let mut cursor_position = (0.0, 0.0);
+    let runtime = Runtime::new(model, measurer);
     
-    // Initial compute
-    runtime.set_size(800.0, 480.0);
+    #[cfg(not(all(target_os = "linux", feature = "linuxfb", feature = "evdev")))]
+    {
+        support::winit_backend::run_app("RMTUI Music Player", 800, 480, runtime, fonts_ref, Some(Duration::from_secs(1)))
+    }
 
-    let window_clone = window.clone();
-    let mut next_tick = Instant::now() + Duration::from_secs(1);
-
-    event_loop.run(move |event, target| {
-        target.set_control_flow(ControlFlow::WaitUntil(next_tick));
-
-        match event {
-            Event::NewEvents(winit::event::StartCause::ResumeTimeReached { .. }) => {
-                 if runtime.handle_event(InputEvent::Tick { render_time_ms: None }) {
-                     window_clone.request_redraw();
-                 }
-                 next_tick = Instant::now() + Duration::from_secs(1);
-                 target.set_control_flow(ControlFlow::WaitUntil(next_tick));
-            },
-            Event::WindowEvent { window_id, event: WindowEvent::RedrawRequested } if window_id == window_clone.id() => {
-                let size = window_clone.inner_size();
-                let width = size.width;
-                let height = size.height;
-                
-                 if width == 0 || height == 0 { return; }
-
-                surface.resize(
-                    NonZeroU32::new(width).unwrap(),
-                    NonZeroU32::new(height).unwrap(),
-                ).unwrap();
-
-                let mut buffer = surface.buffer_mut().unwrap();
-                
-                // Re-compute layout with window size constraint
-                 runtime.set_size(width as f32, height as f32);
-
-                let mut pixmap = Pixmap::new(width, height).unwrap();
-                pixmap.fill(Color::from_rgba8(18, 18, 18, 255)); // Dark background
-
-                let mut renderer = TinySkiaRenderer::new(&mut pixmap, fonts_ref);
-                runtime.render(&mut renderer);
-
-                let data = pixmap.data();
-                for (i, chunk) in data.chunks_exact(4).enumerate() {
-                    let r = chunk[0] as u32;
-                    let g = chunk[1] as u32;
-                    let b = chunk[2] as u32;
-                    buffer[i] = (r << 16) | (g << 8) | b;
-                }
-                
-                buffer.present().unwrap();
-            },
-            Event::WindowEvent { window_id, event: WindowEvent::CloseRequested } if window_id == window_clone.id() => {
-                 target.exit();
-            },
-           Event::WindowEvent { window_id, event: WindowEvent::CursorMoved { position, .. } } if window_id == window_clone.id() => {
-               cursor_position = (position.x as f32, position.y as f32);
-            },
-            Event::WindowEvent { window_id, event: WindowEvent::MouseInput { state, button, .. } } if window_id == window_clone.id() => {
-                if state == ElementState::Pressed && button == MouseButton::Left {
-                     let (x, y) = cursor_position;
-                     if runtime.handle_event(InputEvent::Click { x, y }) {
-                         window_clone.request_redraw();
-                     }
-                }
-            },
-            Event::WindowEvent { window_id, event: WindowEvent::MouseWheel { delta, .. } } if window_id == window_clone.id() => {
-                let (dx, dy) = match delta {
-                    winit::event::MouseScrollDelta::LineDelta(x, y) => (x * 30.0, y * 30.0),
-                    winit::event::MouseScrollDelta::PixelDelta(p) => (p.x as f32, p.y as f32),
-                };
-                
-                let (cx, cy) = cursor_position;
-                if runtime.handle_event(InputEvent::Scroll { x: cx, y: cy, delta_x: dx, delta_y: dy }) {
-                    window_clone.request_redraw();
-                }
-            },
-             _ => {}
-        }
-    }).unwrap();
+    #[cfg(all(target_os = "linux", feature = "linuxfb", feature = "evdev"))]
+    {
+         support::linux_backend::run_app("RMTUI Music Player", 800, 480, runtime, fonts_ref, Some(Duration::from_secs(1)))
+    }
 }
-
