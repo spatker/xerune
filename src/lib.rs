@@ -105,6 +105,68 @@ pub enum RenderData {
 
 
 
+pub trait Model {
+    fn view(&self) -> String;
+    fn update(&mut self, msg: &str);
+}
+
+pub enum InputEvent {
+    Click { x: f32, y: f32 },
+    Hover { x: f32, y: f32 },
+}
+
+pub struct Runtime<M, R> {
+    model: M,
+    measurer: R,
+    ui: Ui,
+    default_style: TextStyle,
+}
+
+impl<M: Model, R: TextMeasurer> Runtime<M, R> {
+    pub fn new(model: M, measurer: R) -> Self {
+         let default_style = TextStyle::default();
+         let html = model.view();
+         let ui = Ui::new(&html, &measurer, default_style).unwrap();
+         Self {
+             model,
+             measurer,
+             ui,
+             default_style,
+         }
+    }
+
+    pub fn handle_event(&mut self, event: InputEvent) -> bool {
+        match event {
+            InputEvent::Click { x, y } => {
+                if let Some(msg) = self.ui.hit_test(x, y) {
+                    self.model.update(&msg);
+                    let html = self.model.view();
+                    // Recreate UI to reflect changes
+                    self.ui = Ui::new(&html, &self.measurer, self.default_style).unwrap();
+                    return true;
+                }
+            }
+             _ => {}
+        }
+        false
+    }
+    
+    pub fn render(&self, renderer: &mut impl Renderer) {
+        self.ui.render(renderer);
+    }
+
+    pub fn set_size(&mut self, width: f32, height: f32) {
+         let _ = self.ui.compute_layout(Size {
+            width: length(width),
+             height: length(height),
+         });
+    }
+
+    pub fn compute_layout(&mut self, size: Size<AvailableSpace>) {
+        let _ = self.ui.compute_layout(size);
+    }
+}
+
 pub struct Ui {
 
     taffy: TaffyTree,

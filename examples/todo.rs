@@ -9,7 +9,7 @@ use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::WindowBuilder;
 
 // Import from the library
-use rmtui::{Ui, TextStyle};
+use rmtui::{Runtime, Model, InputEvent};
 use skia_renderer::{TinySkiaRenderer, TinySkiaMeasurer};
 
 #[derive(Template)]
@@ -24,13 +24,20 @@ struct TodoItem<'a> {
     completed: bool,
 }
 
-fn build_ui(
-    todo_list: &TodoList,
-    fonts: &[Font],
-) -> Ui {
-    let html = todo_list.render().unwrap();
-    let measurer = TinySkiaMeasurer { fonts };
-    Ui::new(&html, &measurer, TextStyle::default()).unwrap()
+impl<'a> Model for TodoList<'a> {
+    fn view(&self) -> String {
+        self.render().unwrap()
+    }
+
+    fn update(&mut self, msg: &str) {
+         if let Some(index_str) = msg.strip_prefix("toggle:") {
+             if let Ok(index) = index_str.parse::<usize>() {
+                if index < self.items.len() {
+                    self.items[index].completed = !self.items[index].completed;
+                }
+             }
+         }
+    }
 }
 
 fn main() {
@@ -41,16 +48,23 @@ fn main() {
         .build(&event_loop)
         .unwrap());
 
-    let context = softbuffer::Context::new(&window).unwrap();
-    let mut surface = softbuffer::Surface::new(&context, &window).unwrap();
+    // Leak window to satisfy static lifetime for softbuffer surface in the event loop
+    let leaked_window: &'static Rc<winit::window::Window> = Box::leak(Box::new(window.clone()));
+    
+    let context = softbuffer::Context::new(leaked_window).unwrap();
+    let leaked_context = Box::leak(Box::new(context));
+    
+    let mut surface = softbuffer::Surface::new(leaked_context, leaked_window).unwrap();
 
     let font_data = include_bytes!("../resources/fonts/Roboto-Regular.ttf") as &[u8];
     let roboto_regular = Font::from_bytes(font_data, fontdue::FontSettings::default()).unwrap();
     let font_data_bold = include_bytes!("../resources/fonts/Roboto-Bold.ttf") as &[u8];
     let roboto_bold = Font::from_bytes(font_data_bold, fontdue::FontSettings::default()).unwrap();
     let fonts = vec![roboto_regular, roboto_bold];
+    // Leak fonts to satisfy static lifetime for winit event loop
+    let fonts: &'static [Font] = Box::leak(Box::new(fonts));
 
-    let mut todo_list = TodoList {
+    let todo_list = TodoList {
         items: vec![
             TodoItem {
                 title: "Refactor to library",
@@ -63,20 +77,21 @@ fn main() {
         ],
     };
 
-    let mut ui = build_ui(&todo_list, &fonts);
+    let measurer = TinySkiaMeasurer { fonts };
+    let mut runtime = Runtime::new(todo_list, measurer);
     
     // Initial compute
-    ui.compute_layout(Size::MAX_CONTENT).unwrap();
+    runtime.compute_layout(Size::MAX_CONTENT);
 
     let mut cursor_pos = None;
 
-    event_loop.run(|event, target| {
+    event_loop.run(move |event, target| {
         target.set_control_flow(ControlFlow::Wait);
 
         match event {
-            Event::WindowEvent { window_id, event: WindowEvent::RedrawRequested } if window_id == window.id() => {
+            Event::WindowEvent { window_id, event: WindowEvent::RedrawRequested } if window_id == leaked_window.id() => {
                 let (width, height) = {
-                    let size = window.inner_size();
+                    let size = leaked_window.inner_size();
                     (size.width, size.height)
                 };
                 
@@ -90,16 +105,13 @@ fn main() {
                 let mut buffer = surface.buffer_mut().unwrap();
                 
                 // Re-compute layout with window size constraint
-                ui.compute_layout(Size {
-                    width: length(width as f32),
-                    height: length(height as f32),
-                }).unwrap();
+                runtime.set_size(width as f32, height as f32);
 
                 let mut pixmap = Pixmap::new(width, height).unwrap();
                 pixmap.fill(Color::WHITE);
 
-                let mut renderer = TinySkiaRenderer { pixmap: &mut pixmap, fonts: &fonts };
-                ui.render(&mut renderer);
+                let mut renderer = TinySkiaRenderer { pixmap: &mut pixmap, fonts };
+                runtime.render(&mut renderer);
 
                 let data = pixmap.data();
                 for (i, chunk) in data.chunks_exact(4).enumerate() {
@@ -111,27 +123,16 @@ fn main() {
                 
                 buffer.present().unwrap();
             },
-            Event::WindowEvent { window_id, event: WindowEvent::CloseRequested } if window_id == window.id() => {
+            Event::WindowEvent { window_id, event: WindowEvent::CloseRequested } if window_id == leaked_window.id() => {
                  target.exit();
             },
-            Event::WindowEvent { window_id, event: WindowEvent::CursorMoved { position, .. } } if window_id == window.id() => {
+            Event::WindowEvent { window_id, event: WindowEvent::CursorMoved { position, .. } } if window_id == leaked_window.id() => {
                 cursor_pos = Some((position.x, position.y));
             },
-            Event::WindowEvent { window_id, event: WindowEvent::MouseInput { state: ElementState::Pressed, button: MouseButton::Left, .. } } if window_id == window.id() => {
+            Event::WindowEvent { window_id, event: WindowEvent::MouseInput { state: ElementState::Pressed, button: MouseButton::Left, .. } } if window_id == leaked_window.id() => {
                 if let Some((cx, cy)) = cursor_pos {
-                    if let Some(act) = ui.hit_test(cx as f32, cy as f32) {
-                         if let Some(index_str) = act.strip_prefix("toggle:") {
-                             if let Ok(index) = index_str.parse::<usize>() {
-                                if index < todo_list.items.len() {
-                                    todo_list.items[index].completed = !todo_list.items[index].completed;
-                                    
-                                    // Rebuild layout
-                                    ui = build_ui(&todo_list, &fonts);
-                                    
-                                    window.request_redraw();
-                                }
-                             }
-                         }
+                    if runtime.handle_event(InputEvent::Click { x: cx as f32, y: cy as f32 }) {
+                        leaked_window.request_redraw();
                     }
                 }
             },
@@ -139,3 +140,4 @@ fn main() {
         }
     }).unwrap();
 }
+
