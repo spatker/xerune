@@ -1,11 +1,18 @@
 use taffy::prelude::*;
 use crate::TextStyle;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ElementType {
+    Container,
+    Image,
+    Checkbox,
+    Slider,
+}
+
 pub struct StyleBundle {
     pub style: Style,
     pub text_style: TextStyle,
-    pub is_image: bool,
-    pub is_checkbox: bool,
+    pub element_type: ElementType,
 }
 
 impl Default for StyleBundle {
@@ -13,8 +20,7 @@ impl Default for StyleBundle {
         Self {
             style: Style::default(),
             text_style: TextStyle::default(),
-            is_image: false,
-            is_checkbox: false,
+            element_type: ElementType::Container,
         }
     }
 }
@@ -65,14 +71,14 @@ pub fn get_default_style(tag: &str, parent_style: &TextStyle) -> StyleBundle {
             bundle.style.flex_direction = FlexDirection::Column;
         }
         "img" => {
-            bundle.is_image = true;
+            bundle.element_type = ElementType::Image;
             bundle.style.size = Size { width: length(100.0), height: length(100.0) };
         }
         "strong" | "b" => {
              bundle.text_style.weight = 1; // Bold
         }
         "checkbox" => {
-            bundle.is_checkbox = true;
+            bundle.element_type = ElementType::Checkbox;
             bundle.style.size = Size { width: length(20.0), height: length(20.0) };
             bundle.style.margin = taffy::geometry::Rect { left: length(5.0), right: length(5.0), top: length(0.0), bottom: length(0.0) };
         }

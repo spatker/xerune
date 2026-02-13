@@ -467,9 +467,7 @@ fn dom_to_taffy(
             // Resetting here is safe to ensure no unexpected inheritance.
             // (Note: defaults.text_style usually has the reset properties from input current_style, but get_default_style logic governs this)
 
-            let is_image = defaults.is_image;
-            let mut is_checkbox = defaults.is_checkbox;
-            let mut is_slider = false;
+            let mut element_type = defaults.element_type;
             let mut slider_value = 0.0;
             let mut checkbox_checked = false;
             let mut interaction_id: Option<String> = None;
@@ -486,11 +484,11 @@ fn dom_to_taffy(
                     },
                     "type" if tag == "input" => {
                         if value.as_ref() == "checkbox" {
-                            is_checkbox = true;
+                            element_type = defaults::ElementType::Checkbox;
                             layout_style.size = Size { width: length(20.0), height: length(20.0) };
                             layout_style.margin = taffy::geometry::Rect { left: length(5.0), right: length(5.0), top: length(0.0), bottom: length(0.0) };
                         } else if value.as_ref() == "range" {
-                            is_slider = true;
+                            element_type = defaults::ElementType::Slider;
                             layout_style.size = Size { width: length(100.0), height: length(20.0) };
                         }
                     },
@@ -523,7 +521,7 @@ fn dom_to_taffy(
             
             // 3. Process Children (recurse if not a leaf element like img/input)
             let mut children = Vec::new();
-            if !is_image && !is_checkbox && !is_slider {
+            if element_type != defaults::ElementType::Image && element_type != defaults::ElementType::Checkbox  && element_type != defaults::ElementType::Slider {
                 for child in handle.children.borrow().iter() {
                      if let Some(id) = dom_to_taffy(taffy, child, text_measurer, render_data, interactions, current_style.clone()) {
                          children.push(id);
@@ -535,14 +533,19 @@ fn dom_to_taffy(
             let id = taffy.new_with_children(layout_style, &children).ok()?;
 
             // 5. Store Render Data
-            if is_image {
-                render_data.insert(id, RenderData::Image(image_src, current_style));
-            } else if is_checkbox {
-                render_data.insert(id, RenderData::Checkbox(checkbox_checked, current_style));
-            } else if is_slider {
-                render_data.insert(id, RenderData::Slider(slider_value, current_style));
-            } else {
-                render_data.insert(id, RenderData::Container(current_style));
+            match element_type {
+                defaults::ElementType::Image => {
+                    render_data.insert(id, RenderData::Image(image_src, current_style));
+                },
+                defaults::ElementType::Checkbox => {
+                    render_data.insert(id, RenderData::Checkbox(checkbox_checked, current_style));
+                },
+                defaults::ElementType::Slider => {
+                    render_data.insert(id, RenderData::Slider(slider_value, current_style));
+                },
+                _ => {
+                    render_data.insert(id, RenderData::Container(current_style));
+                }
             }
 
              // 6. Register Interaction
