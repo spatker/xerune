@@ -223,6 +223,33 @@ pub fn parse_inline_style(style_str: &str, current_style: &mut TextStyle, taffy_
                     _ => {}
                 }
             }
+            "position" => {
+                match val {
+                    "absolute" => taffy_style.position = Position::Absolute,
+                    "relative" => taffy_style.position = Position::Relative,
+                    _ => {}
+                }
+            }
+             "left" => {
+                if let Some(v) = parse_px(val) {
+                    taffy_style.inset.left = LengthPercentageAuto::length(v);
+                }
+            }
+            "right" => {
+                if let Some(v) = parse_px(val) {
+                    taffy_style.inset.right = LengthPercentageAuto::length(v);
+                }
+            }
+            "top" => {
+                if let Some(v) = parse_px(val) {
+                    taffy_style.inset.top = LengthPercentageAuto::length(v);
+                }
+            }
+            "bottom" => {
+                if let Some(v) = parse_px(val) {
+                    taffy_style.inset.bottom = LengthPercentageAuto::length(v);
+                }
+            }
             _ => {}
         }
     }

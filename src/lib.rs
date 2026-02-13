@@ -8,6 +8,7 @@ use html5ever::parse_document;
 use html5ever::tendril::TendrilSink;
 
 use std::collections::HashMap;
+use coarse_prof::profile;
 
 pub type Interaction = String;
 
@@ -188,20 +189,44 @@ impl<M: Model, R: TextMeasurer> Runtime<M, R> {
         match event {
             InputEvent::Click { x, y } => {
                 if let Some(msg) = self.ui.hit_test(x, y) {
-                    self.model.update(&msg);
-                    let html = self.model.view();
+                    {
+                        profile!("update");
+                        self.model.update(&msg);
+                    }
+                    let html = {
+                        profile!("view");
+                        self.model.view()
+                    };
                     // Recreate UI to reflect changes
-                    self.ui = Ui::new(&html, &self.measurer, self.default_style.clone()).unwrap();
-                    let _ = self.ui.compute_layout(self.cached_size);
+                    self.ui = {
+                        profile!("ui_new");
+                        Ui::new(&html, &self.measurer, self.default_style.clone()).unwrap()
+                    };
+                    {
+                        profile!("compute_layout");
+                        let _ = self.ui.compute_layout(self.cached_size);
+                    }
                     self.restore_scroll();
                     return true;
                 }
             }
             InputEvent::Tick => {
-                self.model.update("tick");
-                let html = self.model.view();
-                self.ui = Ui::new(&html, &self.measurer, self.default_style.clone()).unwrap();
-                let _ = self.ui.compute_layout(self.cached_size);
+                {
+                    profile!("update");
+                    self.model.update("tick");
+                }
+                let html = {
+                    profile!("view");
+                    self.model.view()
+                };
+                self.ui = {
+                     profile!("ui_new");
+                     Ui::new(&html, &self.measurer, self.default_style.clone()).unwrap()
+                };
+                {
+                    profile!("compute_layout");
+                    let _ = self.ui.compute_layout(self.cached_size);
+                }
                 self.restore_scroll();
                 return true;
             }
@@ -218,6 +243,7 @@ impl<M: Model, R: TextMeasurer> Runtime<M, R> {
     }
     
     pub fn render(&self, renderer: &mut impl Renderer) {
+        profile!("render");
         self.ui.render(renderer);
     }
 
@@ -254,6 +280,7 @@ impl Ui {
         measurer: &impl TextMeasurer,
         default_style: TextStyle,
     ) -> Result<Self, TaffyError> {
+        profile!("ui_new_internal");
         let mut taffy = TaffyTree::new();
         let mut render_data = HashMap::new();
         let mut interactions = HashMap::new();
@@ -282,6 +309,7 @@ impl Ui {
     }
 
     pub fn handle_scroll(&mut self, x: f32, y: f32, delta_x: f32, delta_y: f32) -> bool {
+        profile!("handle_scroll");
         // Find node under x,y
          if let Some(mut node) = hit_test_recursive(&self.taffy, self.root, &self.scroll_offsets, &self.render_data, x, y, 0.0, 0.0) {
             // Walk up looking for scrollable
@@ -390,6 +418,7 @@ impl Ui {
     }
 
     pub fn compute_layout(&mut self, available_space: Size<AvailableSpace>) -> Result<(), TaffyError> {
+        profile!("taffy_layout");
         self.taffy.compute_layout(self.root, available_space)
     }
 
@@ -406,6 +435,7 @@ impl Ui {
     }
 
     pub fn hit_test(&self, x: f32, y: f32) -> Option<Interaction> {
+         profile!("hit_test");
          if let Some(clicked_node) = hit_test_recursive(&self.taffy, self.root, &self.scroll_offsets, &self.render_data, x, y, 0.0, 0.0) {
              let mut current = Some(clicked_node);
              while let Some(node) = current {

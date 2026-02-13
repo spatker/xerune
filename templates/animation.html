@@ -1,0 +1,13 @@
+<div style="width: 800px; height: 600px; background-color: #222; overflow: hidden; position: relative;">
+    {% for item in items %}
+    <div
+        style="position: absolute; left: {{ item.x }}px; top: {{ item.y }}px; width: {{ item.size }}px; height: {{ item.size }}px; background-color: {{ item.color }}; border-radius: 4px; display: flex; justify-content: center; align-items: center; color: white; font-size: 12px; font-weight: bold;">
+        {{ item.text }}</div>
+    {% endfor %}
+    <div
+        style="position: absolute; left: 10px; top: 10px; color: white; font-size: 14px; background-color: rgba(0,0,0,0.5); padding: 5px;">
+        FPS: {{ fps }} <br>
+        Items: {{ item_count }} <br>
+        Render Time: {{ render_time_ms }}ms
+    </div>
+</div>

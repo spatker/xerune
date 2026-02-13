@@ -12,6 +12,7 @@ path = "src/lib.rs"
 
 [dependencies]
 askama = "0.14.0"
+coarse-prof = "0.2.6"
 html5ever = "0.36.1"
 markup5ever = "0.36.1"
 markup5ever_rcdom = "0.36.0"
