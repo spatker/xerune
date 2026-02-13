@@ -163,6 +163,7 @@ impl Model for MusicPlayerModel {
 }
 
 fn main() -> anyhow::Result<()> {
+    env_logger::init();
     // Load fonts
     let font_data = include_bytes!("../resources/fonts/Roboto-Regular.ttf") as &[u8];
     let roboto_regular = Font::from_bytes(font_data, fontdue::FontSettings::default()).unwrap();

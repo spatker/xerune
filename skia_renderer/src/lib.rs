@@ -293,8 +293,14 @@ impl<'a> Renderer for TinySkiaRenderer<'a> {
                                  );
                              }
                              true
-                         } else { false }
-                    } else { false };
+                         } else {
+                             log::warn!("Failed to decode PNG: {}", src);
+                             false
+                         }
+                    } else {
+                        log::warn!("Failed to read image file: {}", src);
+                        false
+                    };
 
                     if !loaded {
                         // Fallback

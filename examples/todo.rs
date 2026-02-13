@@ -35,6 +35,7 @@ impl<'a> Model for TodoList<'a> {
 }
 
 fn main() -> anyhow::Result<()> {
+    env_logger::init();
     let font_data = include_bytes!("../resources/fonts/Roboto-Regular.ttf") as &[u8];
     let roboto_regular = Font::from_bytes(font_data, fontdue::FontSettings::default()).unwrap();
     let font_data_bold = include_bytes!("../resources/fonts/Roboto-Bold.ttf") as &[u8];

@@ -165,7 +165,9 @@ pub fn get_default_style(tag: &str, parent_style: &TextStyle) -> StyleBundle {
              bundle.element_type = ElementType::Progress;
              bundle.style.size = Size { width: length(150.0), height: length(20.0) };
         }
-        _ => {}
+        _ => {
+            log::warn!("Unsupported tag encountered: {}", tag);
+        }
     }
     
     bundle

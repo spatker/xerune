@@ -575,7 +575,9 @@ fn dom_to_taffy(
                      "data-on-click" => {
                          interaction_id = Some(value.to_string());
                      }
-                     _ => {}
+                     _ => {
+                         log::debug!("Ignoring attribute: {} on tag: {}", name, tag);
+                     }
                 }
             }
             
@@ -640,7 +642,10 @@ fn dom_to_taffy(
             }
         },
 
-        _ => None
+        _ => {
+            log::warn!("Unsupported NodeData encountered");
+            None
+        }
     }
 }
 

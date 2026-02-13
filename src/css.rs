@@ -254,7 +254,9 @@ pub fn parse_inline_style(style_str: &str, current_style: &mut TextStyle, taffy_
                     taffy_style.inset.bottom = LengthPercentageAuto::length(v);
                 }
             }
-            _ => {}
+            _ => {
+                log::warn!("Unsupported CSS property: {}", prop);
+            }
         }
     }
 }
