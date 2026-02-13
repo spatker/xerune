@@ -73,15 +73,10 @@ impl<'a> TinySkiaRenderer<'a> {
             if let Some(i) = intersect.intersect(r) {
                 intersect = i;
             } else {
-                // Empty intersection -> empty mask (draw nothing)
-                // We'll use a 1x1 mask at negative coordinates or similar logic 
-                // Or explicit empty state. 
-                // For now, let's just make a 0x0 rect if possible or handle it.
-                // tiny_skia::Rect cannot be empty/invalid usually.
-                // If intersect returns None, they don't overlap.
-                // We should probably create a full opaque mask of 0s.
+                // Empty intersection -> empty mask (draw nothing).
+                // We create a new mask which is initialized to fully transparent (0), effectively hiding everything.
                 if let Some(mask) = Mask::new(self.pixmap.width(), self.pixmap.height()) {
-                     self.current_mask = Some(mask); // Default is transparent (masked out)
+                     self.current_mask = Some(mask);
                 }
                 return;
             }
@@ -265,20 +260,10 @@ impl<'a> Renderer for TinySkiaRenderer<'a> {
                                  if let Some(r) = tiny_skia::Rect::from_xywh(rect.x, rect.y, rect.width, rect.height) {
                                      if let Some(path) = rounded_rect_path(r, *border_radius) {
                                           let mut paint = tiny_skia::Paint::default();
-                                          // Create Pattern Shader
-                                           // Need to handle scaling manually
-                                          // Pattern shader loops. We need to set transform on shader.
+                                          paint.anti_alias = true;
                                           
-                                          // Simplified for now: just draw rectangular because pattern shader setup is complex
-                                          // without looking up docs.
-                                          // But wait, user wants stylish. Rounded corners on album art is key.
-                                                                                    // Alternative: draw transparent corners. No.
-                                           // We use Pattern shader.
-                                          
-
-                                           paint.anti_alias = true;
-                                            // shader transform needs to map 0,0 of image to rect.x, rect.y and scale.
-                                           let _shader_transform = Transform::from_scale(sx, sy).post_translate(rect.x, rect.y);
+                                          // Use a Pattern shader to draw the image within the rounded rect path.
+                                          // The transform maps the image to the rect's coordinates and scale.
                                            
                                            let shader = tiny_skia::Pattern::new(
                                                png_pixmap.as_ref(),
@@ -322,24 +307,8 @@ impl<'a> Renderer for TinySkiaRenderer<'a> {
                          let mut stroke = tiny_skia::Stroke::default();
                          stroke.width = 1.0;
                          
-                         // Fix from_rect usage in helper.
-                         // The original instruction snippet was syntactically incorrect and misplaced.
-                         // Assuming the intent was to ensure `from_rect` is called with a valid `Rect`.
-                         // The `r` variable is already a `tiny_skia::Rect`, so `tiny_skia::PathBuilder::from_rect(r)` is correct.
-                         // The provided snippet `if r <= 0.0 { return Some(tiny_skia::PathBuilder::from_rect(rect)); }`
-                         // is not valid Rust for a `tiny_skia::Rect` and would cause a compile error.
-                         // The most faithful interpretation of "Fix from_rect usage in helper" given the snippet's
-                         // location is to ensure the `from_rect` call is robust, but the existing code already
-                         // handles the `Option` from `from_xywh`.
-                         // Since the instruction provided a specific code block to insert, and it's syntactically
-                         // incorrect as written, I'm inserting it as literally as possible while making it compile
-                         // by changing `r <= 0.0` to `r.width <= 0.0 || r.height <= 0.0` and `return Some(...)`
-                         // to a `continue` to skip drawing if the rect is invalid, as `return Some` is not valid here.
-                         // This is a best-effort interpretation of a problematic instruction.
+                         // Ensure the rect is valid before attempting to draw.
                          if r.width() <= 0.0 || r.height() <= 0.0 {
-                            // If the rect is invalid, skip drawing this checkbox.
-                            // The original instruction had `return Some(...)` which is not valid in this context.
-                            // `continue` will skip to the next command in the loop.
                             continue; 
                          }
                          let path = tiny_skia::PathBuilder::from_rect(r);
@@ -418,30 +387,65 @@ impl<'a> Renderer for TinySkiaRenderer<'a> {
 
 fn rounded_rect_path(rect: tiny_skia::Rect, radius: f32) -> Option<tiny_skia::Path> {
     let mut pb = tiny_skia::PathBuilder::new();
-    let r = radius.clamp(0.0, rect.width() / 2.0).clamp(0.0, rect.height() / 2.0);
+    
+    // Clamp radius to ensure it doesn't exceed half the rectangle's dimensions
+    let r = radius.min(rect.width() / 2.0).min(rect.height() / 2.0).max(0.0);
     
     if r <= 0.0 {
         return Some(tiny_skia::PathBuilder::from_rect(rect));
     }
     
-    let k = 0.551915024494 * r;
+    // The factor for approximating a circle quadrant with a cubic Bezier curve.
+    let bezier_circle_factor = (4.0 / 3.0) * (std::f32::consts::PI / 8.0).tan();
+    let handle_offset = r * bezier_circle_factor;
     
-    let x = rect.x();
-    let y = rect.y();
-    let w = rect.width();
-    let h = rect.height();
-    let right = x + w;
-    let bottom = y + h;
+    let left = rect.x();
+    let top = rect.y();
+    let right = rect.x() + rect.width();
+    let bottom = rect.y() + rect.height();
 
-    pb.move_to(x + r, y);
-    pb.line_to(right - r, y);
-    pb.cubic_to(right - r + k, y, right, y + r - k, right, y + r);
+    // Start at the top edge, just after the top-left corner
+    pb.move_to(left + r, top);
+    
+    // Top edge
+    pb.line_to(right - r, top);
+    
+    // Top-right corner
+    pb.cubic_to(
+        right - r + handle_offset, top,            // Control point 1
+        right, top + r - handle_offset,            // Control point 2
+        right, top + r                             // End point
+    );
+    
+    // Right edge
     pb.line_to(right, bottom - r);
-    pb.cubic_to(right, bottom - r + k, right - r + k, bottom, right - r, bottom);
-    pb.line_to(x + r, bottom);
-    pb.cubic_to(x + r - k, bottom, x, bottom - r + k, x, bottom - r);
-    pb.line_to(x, y + r);
-    pb.cubic_to(x, y + r - k, x + r - k, y, x + r, y);
+    
+    // Bottom-right corner
+    pb.cubic_to(
+        right, bottom - r + handle_offset,
+        right - r + handle_offset, bottom,
+        right - r, bottom
+    );
+    
+    // Bottom edge
+    pb.line_to(left + r, bottom);
+    
+    // Bottom-left corner
+    pb.cubic_to(
+        left + r - handle_offset, bottom,
+        left, bottom - r + handle_offset,
+        left, bottom - r
+    );
+    
+    // Left edge
+    pb.line_to(left, top + r);
+    
+    // Top-left corner
+    pb.cubic_to(
+        left, top + r - handle_offset,
+        left + r - handle_offset, top,
+        left + r, top
+    );
     
     pb.close();
     pb.finish()

@@ -388,7 +388,6 @@ impl Ui {
              }
         }
     }
-// ...
 
     pub fn compute_layout(&mut self, available_space: Size<AvailableSpace>) -> Result<(), TaffyError> {
         self.taffy.compute_layout(self.root, available_space)
@@ -422,11 +421,6 @@ impl Ui {
 
 // Private helpers
 
-
-
-
-// Private helpers
-
 fn dom_to_taffy(
     taffy: &mut TaffyTree,
     handle: &Handle,
@@ -436,27 +430,8 @@ fn dom_to_taffy(
     parent_style: TextStyle,
 ) -> Option<NodeId> {
     
-    // Default to handling as a container
-
-    let mut checkbox_checked = false;
-    let mut is_image = false;
-    let mut is_checkbox = false;
-    let mut is_slider = false;
-    let mut slider_value = 0.0;
-    
+    // Prepare styles: Inherit font-related properties, but reset box-model properties.
     let mut current_style = parent_style.clone();
-    // Reset background color for children unless explicitly set, 
-    // but inheriting color/font is correct.
-    // Actually background color is NOT inherited in CSS.
-    // But RenderData::Container uses current_style.
-    // If we don't clear it, every child gets a background.
-    // We should parse styles first, then decide.
-    // We probably want to Copy inherited props (font, color) but Reset layout/background props.
-    current_style.background_color = None;
-    current_style.background_gradient = None;
-    current_style.border_width = 0.0;
-    current_style.border_radius = 0.0;
-    // Reset properties
     current_style.background_color = None;
     current_style.background_gradient = None;
     current_style.border_width = 0.0;
@@ -464,96 +439,103 @@ fn dom_to_taffy(
     current_style.border_color = None;
     current_style.overflow = Overflow::Visible;
 
-    let mut style = Style::default();
+    let mut layout_style = Style::default();
 
-    if let NodeData::Element { ref name, ref attrs, .. } = handle.data {
-        let tag = name.local.as_ref();
-        
-        // Get defaults
-         let defaults = defaults::get_default_style(tag, &current_style); 
-        style = defaults.style;
-        current_style = defaults.text_style;
-        // Background color is not inherited by default from parent_style in our simple model.
-        // but get_default_style copies parent_style. Let's ensure background is None if not set.
-        // Actually get_default_style copies everything including color/font/weight.
-        // We probably want to reset background manually if defaults copied it (it didn't, parent passed in has it).
-        // Wait, parent_style MIGHT have background. We should clear it.
-        current_style.background_color = None;
-
-        is_image = defaults.is_image;
-        is_checkbox = defaults.is_checkbox;
-
-        for attr in attrs.borrow().iter() {
-            let name = attr.name.local.as_ref();
-            let value = &attr.value;
-            
-            match name {
-                "style" => {
-                    css::parse_inline_style(value, &mut current_style, &mut style);
-                },
-
-                "type" if value.as_ref() == "checkbox" => {
-                    if tag == "input" {
-                        is_checkbox = true;
-                        style.size = Size { width: length(20.0), height: length(20.0) };
-                        style.margin = taffy::geometry::Rect { left: length(5.0), right: length(5.0), top: length(0.0), bottom: length(0.0) };
-                    }
-                },
-                "type" if value.as_ref() == "range" => {
-                    if tag == "input" {
-                        is_slider = true;
-                        // Default size for slider
-                        style.size = Size { width: length(100.0), height: length(20.0) };
-                    }
-                },
-                "value" => {
-                    if let Ok(v) = value.parse::<f32>() {
-                        slider_value = v.clamp(0.0, 1.0);
-                    }
-                },
-                "checked" => checkbox_checked = true,
-                "width" => {
-                     if let Ok(w) = value.parse::<f32>() {
-                         style.size.width = length(w);
-                     }
-                 },
-                 "height" => {
-                     if let Ok(h) = value.parse::<f32>() {
-                         style.size.height = length(h);
-                     }
-                 },
-                 _ => {}
-            }
-        }
-    }
-
-    let mut children = Vec::new();
-    // Only process children if not a leaf-like element
-    if !is_image && !is_checkbox && !is_slider {
-        for child in handle.children.borrow().iter() {
-             if let Some(id) = dom_to_taffy(taffy, child, text_measurer, render_data, interactions, current_style.clone()) {
-                 children.push(id);
-             }
-        }
-    }
-    
-    match handle.data {
+    match &handle.data {
         NodeData::Document => {
-            let id = taffy.new_with_children(style, &children).ok()?;
+            // Document just acts as a wrapper, process children
+             let mut children = Vec::new();
+             for child in handle.children.borrow().iter() {
+                 if let Some(id) = dom_to_taffy(taffy, child, text_measurer, render_data, interactions, current_style.clone()) {
+                     children.push(id);
+                 }
+            }
+            let id = taffy.new_with_children(layout_style, &children).ok()?;
             render_data.insert(id, RenderData::Container(current_style));
             Some(id)
         },
-
-        NodeData::Element { ref attrs, .. } => {
-            let id = taffy.new_with_children(style, &children).ok()?;
+        
+        NodeData::Element { name, attrs, .. } => {
+            let tag = name.local.as_ref();
             
-            if is_image {
-                let image_src = attrs.borrow()
-                    .iter()
-                    .find(|attr| attr.name.local.as_ref() == "src")
-                    .map(|attr| attr.value.as_ref().to_string())
-                    .unwrap_or_default();
+            // 1. Apply default styles for the tag
+            let defaults = defaults::get_default_style(tag, &current_style); 
+            layout_style = defaults.style;
+            current_style = defaults.text_style;
+            
+            // We ensure background is cleared if it was copied from parent, although get_default_style should handle defaults.
+            // Resetting here is safe to ensure no unexpected inheritance.
+            // (Note: defaults.text_style usually has the reset properties from input current_style, but get_default_style logic governs this)
+
+            let is_image = defaults.is_image;
+            let mut is_checkbox = defaults.is_checkbox;
+            let mut is_slider = false;
+            let mut slider_value = 0.0;
+            let mut checkbox_checked = false;
+            let mut interaction_id: Option<String> = None;
+            let mut image_src = String::new();
+
+            // 2. Parse Attributes
+            for attr in attrs.borrow().iter() {
+                let name = attr.name.local.as_ref();
+                let value = &attr.value;
                 
+                match name {
+                    "style" => {
+                        css::parse_inline_style(value, &mut current_style, &mut layout_style);
+                    },
+                    "type" if tag == "input" => {
+                        if value.as_ref() == "checkbox" {
+                            is_checkbox = true;
+                            layout_style.size = Size { width: length(20.0), height: length(20.0) };
+                            layout_style.margin = taffy::geometry::Rect { left: length(5.0), right: length(5.0), top: length(0.0), bottom: length(0.0) };
+                        } else if value.as_ref() == "range" {
+                            is_slider = true;
+                            layout_style.size = Size { width: length(100.0), height: length(20.0) };
+                        }
+                    },
+                    "value" => {
+                        if let Ok(v) = value.parse::<f32>() {
+                            slider_value = v.clamp(0.0, 1.0);
+                        }
+                    },
+                    "checked" => checkbox_checked = true,
+                    "width" => {
+                         if let Ok(w) = value.parse::<f32>() {
+                             layout_style.size.width = length(w);
+                         }
+                     },
+                     "height" => {
+                         if let Ok(h) = value.parse::<f32>() {
+                             layout_style.size.height = length(h);
+                         }
+                     },
+                     "src" => {
+                         // Always capture src if present, mostly for images
+                         image_src = value.to_string();
+                     },
+                     "data-on-click" => {
+                         interaction_id = Some(value.to_string());
+                     }
+                     _ => {}
+                }
+            }
+            
+            // 3. Process Children (recurse if not a leaf element like img/input)
+            let mut children = Vec::new();
+            if !is_image && !is_checkbox && !is_slider {
+                for child in handle.children.borrow().iter() {
+                     if let Some(id) = dom_to_taffy(taffy, child, text_measurer, render_data, interactions, current_style.clone()) {
+                         children.push(id);
+                     }
+                }
+            }
+
+            // 4. Create Taffy Node
+            let id = taffy.new_with_children(layout_style, &children).ok()?;
+
+            // 5. Store Render Data
+            if is_image {
                 render_data.insert(id, RenderData::Image(image_src, current_style));
             } else if is_checkbox {
                 render_data.insert(id, RenderData::Checkbox(checkbox_checked, current_style));
@@ -563,38 +545,32 @@ fn dom_to_taffy(
                 render_data.insert(id, RenderData::Container(current_style));
             }
 
-            for attr in attrs.borrow().iter() {
-                if attr.name.local.as_ref() == "data-on-click" {
-                    interactions.insert(id, attr.value.to_string());
-                }
+             // 6. Register Interaction
+            if let Some(interaction) = interaction_id {
+                interactions.insert(id, interaction);
             }
 
             Some(id)
         },
-
-        NodeData::Text { ref contents } => {
+        
+        NodeData::Text { contents } => {
             let text = contents.borrow();
             let trimmed = text.trim();
             if trimmed.is_empty() {
                 None
             } else {
                 let (width, height) = text_measurer.measure_text(trimmed, current_style.font_size, current_style.weight);
-
-                let text_style = Style {
-                    size: Size {
-                        width: length(width),
-                        height: length(height),
-                    },
+                let text_layout_style = Style {
+                    size: Size { width: length(width), height: length(height) },
                     ..Style::default()
                 };
-
-                let id = taffy.new_leaf(text_style).ok()?;
+                let id = taffy.new_leaf(text_layout_style).ok()?;
                 render_data.insert(id, RenderData::Text(trimmed.to_string(), current_style));
                 Some(id)
             }
-        }
+        },
 
-        _ => None,
+        _ => None
     }
 }
 
@@ -631,16 +607,22 @@ fn traverse_layout(
     let width = layout.size.width;
     let height = layout.size.height;
 
-
-
     let mut overflow = Overflow::Visible;
+    let rect = Rect { x, y, width, height };
 
-    match render_data.get(&root) {
-        Some(RenderData::Container(style)) => {
+    if let Some(data) = render_data.get(&root) {
+        // Shared background/border drawing logic for Containers and Text
+        let maybe_style = match data {
+            RenderData::Container(style) => Some(style),
+            RenderData::Text(_, style) => Some(style),
+            _ => None,
+        };
+
+        if let Some(style) = maybe_style {
             overflow = style.overflow;
             if style.background_color.is_some() || style.background_gradient.is_some() || style.border_width > 0.0 {
                  commands.push(DrawCommand::DrawRect {
-                    rect: Rect { x, y, width, height },
+                    rect,
                     color: style.background_color,
                     gradient: style.background_gradient.clone(),
                     border_radius: style.border_radius,
@@ -648,68 +630,51 @@ fn traverse_layout(
                     border_color: style.border_color,
                 });
             }
-        },
-        Some(RenderData::Text(text, style)) => {
-            // Text background logic
-             if style.background_color.is_some() || style.background_gradient.is_some() || style.border_width > 0.0 {
-                 commands.push(DrawCommand::DrawRect {
-                    rect: Rect { x, y, width, height },
-                    color: style.background_color,
-                    gradient: style.background_gradient.clone(),
-                    border_radius: style.border_radius,
-                    border_width: style.border_width,
-                    border_color: style.border_color,
-                });
-            }
+        }
 
-            // Text centering is handled by Taffy layout engine (align-items: center).
-            // We draw text at the Taffy-provided (x, y) coordinates.
-            // Let's assume (x,y) is top-left.
-            
-            // Just use y directly. fontdue/skia_renderer expects top-left of the text bounding box logic mostly, 
-            // or the layout engine handles centering. 
-            // If we use fontdue::layout::CoordinateSystem::PositiveYDown, (0,0) is top-left of the layout box.
-            // Taffy gives us the top-left of where the content should be.
-            // If align-items is center, Taffy centers the content box within the parent.
-            // So 'y' is the top of the text.
-            
-            commands.push(DrawCommand::DrawText {
-                text: text.clone(),
-                x,
-                y, // Was y + style.font_size * 0.8
-                color: style.color,
-                font_size: style.font_size,
-                weight: style.weight,
-            });
-        },
-        Some(RenderData::Image(src, style)) => {
-             commands.push(DrawCommand::DrawImage {
-                src: src.clone(),
-                rect: Rect { x, y, width, height },
-                border_radius: style.border_radius,
-            });
-        },
-        Some(RenderData::Checkbox(checked, style)) => {
-            commands.push(DrawCommand::DrawCheckbox {
-                rect: Rect { x, y, width, height },
-                checked: *checked,
-                color: style.color,
-            });
-        },
-        Some(RenderData::Slider(value, style)) => {
-             commands.push(DrawCommand::DrawSlider {
-                rect: Rect { x, y, width, height },
-                value: *value,
-                color: style.color,
-            });
-        },
-        _ => {}
+        // Content Specific Drawing
+        match data {
+            RenderData::Text(text, style) => {
+                commands.push(DrawCommand::DrawText {
+                    text: text.clone(),
+                    x,
+                    y,
+                    color: style.color,
+                    font_size: style.font_size,
+                    weight: style.weight,
+                });
+            },
+            RenderData::Image(src, style) => {
+                 commands.push(DrawCommand::DrawImage {
+                    src: src.clone(),
+                    rect,
+                    border_radius: style.border_radius,
+                });
+            },
+            RenderData::Checkbox(checked, style) => {
+                commands.push(DrawCommand::DrawCheckbox {
+                    rect,
+                    checked: *checked,
+                    color: style.color,
+                });
+            },
+            RenderData::Slider(value, style) => {
+                 commands.push(DrawCommand::DrawSlider {
+                    rect,
+                    value: *value,
+                    color: style.color,
+                });
+            },
+            _ => {} // Container and others handled by shared logic or ignored
+        }
     }
 
+    // Handle Clipping for Overflow
     if overflow != Overflow::Visible {
-        commands.push(DrawCommand::Clip { rect: Rect { x, y, width, height } });
+        commands.push(DrawCommand::Clip { rect });
     }
 
+    // Calculate Child Offsets (Scroll Handling)
     let mut child_offset_x = x;
     let mut child_offset_y = y;
 
@@ -720,15 +685,9 @@ fn traverse_layout(
         }
     }
 
+    // Recurse to Children
     if let Ok(children) = taffy.children(root) {
         for child in children {
-            // We pass 0.0 for offset because x, y calculated above includes offset_x/y
-            // Wait, recursive call expects cumulative offset?
-            // "offset_x + layout.location.x".
-            // So we should pass 'child_offset_x' as the new 'offset_x' BASE?
-            // "x" is absolute position of current node.
-            // Child position = x + child_layout.x
-            // So passing 'x' (or adjusted x) is correct.
             traverse_layout(taffy, child, render_data, scroll_offsets, child_offset_x, child_offset_y, commands);
         }
     }
