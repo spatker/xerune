@@ -1,0 +1,42 @@
+[
+  {
+    "id": "1",
+    "title": "Midnight City",
+    "artist": "M83",
+    "album": "Hurry Up, We're Dreaming",
+    "duration": "4:03",
+    "cover_url": "https://placehold.co/400x400/1a1a1a/e91e63?text=Midnight+City"
+  },
+  {
+    "id": "2",
+    "title": "Get Lucky",
+    "artist": "Daft Punk",
+    "album": "Random Access Memories",
+    "duration": "6:09",
+    "cover_url": "https://placehold.co/400x400/1a1a1a/00bcd4?text=Get+Lucky"
+  },
+  {
+    "id": "3",
+    "title": "The Less I Know The Better",
+    "artist": "Tame Impala",
+    "album": "Currents",
+    "duration": "3:36",
+    "cover_url": "https://placehold.co/400x400/1a1a1a/9c27b0?text=Currents"
+  },
+  {
+    "id": "4",
+    "title": "Blinding Lights",
+    "artist": "The Weeknd",
+    "album": "After Hours",
+    "duration": "3:20",
+    "cover_url": "https://placehold.co/400x400/1a1a1a/f44336?text=After+Hours"
+  },
+  {
+    "id": "5",
+    "title": "Levitating",
+    "artist": "Dua Lipa",
+    "album": "Future Nostalgia",
+    "duration": "3:23",
+    "cover_url": "https://placehold.co/400x400/1a1a1a/ffeb3b?text=Future+Nostalgia"
+  }
+]

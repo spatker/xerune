@@ -1262,6 +1262,8 @@ dependencies = [
  "html5ever",
  "markup5ever",
  "markup5ever_rcdom",
+ "serde",
+ "serde_json",
  "skia_renderer",
  "softbuffer",
  "taffy",

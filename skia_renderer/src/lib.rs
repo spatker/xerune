@@ -171,6 +171,38 @@ impl<'a> Renderer for TinySkiaRenderer<'a> {
                          }
                      }
                 }
+                DrawCommand::DrawSlider { rect, value, color } => {
+                    let mut paint = tiny_skia::Paint::default();
+                    paint.set_color_rgba8(color.r, color.g, color.b, color.a);
+
+                    // Track
+                    let track_height = 4.0;
+                    let track_y = rect.y + (rect.height - track_height) / 2.0;
+                    if let Some(track_rect) = tiny_skia::Rect::from_xywh(rect.x, track_y, rect.width, track_height) {
+                         // Background track (darker)
+                        let mut bg_paint = tiny_skia::Paint::default();
+                        bg_paint.set_color_rgba8(60, 60, 60, 255);
+                        self.pixmap.fill_rect(track_rect, &bg_paint, Transform::identity(), None);
+                        
+                        // Active track
+                        if let Some(active_rect) = tiny_skia::Rect::from_xywh(rect.x, track_y, rect.width * value, track_height) {
+                            self.pixmap.fill_rect(active_rect, &paint, Transform::identity(), None);
+                        }
+                    }
+
+                    // Thumb
+                    let thumb_radius = 8.0;
+                    let thumb_x = rect.x + rect.width * value;
+                    let thumb_y = rect.y + rect.height / 2.0;
+                    
+                    let mut thumb_paint = tiny_skia::Paint::default();
+                    thumb_paint.set_color_rgba8(255, 255, 255, 255);
+                    
+                    let path = tiny_skia::PathBuilder::from_circle(thumb_x, thumb_y, thumb_radius);
+                     if let Some(p) = path {
+                        self.pixmap.fill_path(&p, &thumb_paint, tiny_skia::FillRule::Winding, Transform::identity(), None);
+                     }
+                }
                 _ => {}
             }
         }

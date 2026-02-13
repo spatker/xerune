@@ -66,6 +66,11 @@ pub enum DrawCommand {
         checked: bool,
         color: Color,
     },
+    DrawSlider {
+        rect: Rect,
+        value: f32,
+        color: Color,
+    },
 }
 
 pub trait TextMeasurer {
@@ -100,6 +105,7 @@ pub enum RenderData {
     Text(String, TextStyle),
     Image(String),
     Checkbox(bool, TextStyle),
+    Slider(f32, TextStyle),
 }
 
 
@@ -113,6 +119,7 @@ pub trait Model {
 pub enum InputEvent {
     Click { x: f32, y: f32 },
     Hover { x: f32, y: f32 },
+    Tick,
 }
 
 pub struct Runtime<M, R> {
@@ -145,6 +152,12 @@ impl<M: Model, R: TextMeasurer> Runtime<M, R> {
                     self.ui = Ui::new(&html, &self.measurer, self.default_style).unwrap();
                     return true;
                 }
+            }
+            InputEvent::Tick => {
+                self.model.update("tick");
+                let html = self.model.view();
+                self.ui = Ui::new(&html, &self.measurer, self.default_style).unwrap();
+                return true;
             }
              _ => {}
         }
@@ -253,6 +266,8 @@ fn dom_to_taffy(
     let mut checkbox_checked = false;
     let mut is_image = false;
     let mut is_checkbox = false;
+    let mut is_slider = false;
+    let mut slider_value = 0.0;
     
     let mut current_style = parent_style;
     // Reset background color for children unless explicitly set, 
@@ -295,6 +310,18 @@ fn dom_to_taffy(
                         style.margin = taffy::geometry::Rect { left: length(5.0), right: length(5.0), top: length(0.0), bottom: length(0.0) };
                     }
                 },
+                "type" if value.as_ref() == "range" => {
+                    if tag == "input" {
+                        is_slider = true;
+                        // Default size for slider
+                        style.size = Size { width: length(100.0), height: length(20.0) };
+                    }
+                },
+                "value" => {
+                    if let Ok(v) = value.parse::<f32>() {
+                        slider_value = v.clamp(0.0, 1.0);
+                    }
+                },
                 "checked" => checkbox_checked = true,
                 "width" => {
                      if let Ok(w) = value.parse::<f32>() {
@@ -313,7 +340,7 @@ fn dom_to_taffy(
 
     let mut children = Vec::new();
     // Only process children if not a leaf-like element
-    if !is_image && !is_checkbox {
+    if !is_image && !is_checkbox && !is_slider {
         for child in handle.children.borrow().iter() {
              if let Some(id) = dom_to_taffy(taffy, child, text_measurer, render_data, interactions, current_style) {
                  children.push(id);
@@ -335,6 +362,8 @@ fn dom_to_taffy(
                 render_data.insert(id, RenderData::Image(image_src));
             } else if is_checkbox {
                 render_data.insert(id, RenderData::Checkbox(checkbox_checked, current_style));
+            } else if is_slider {
+                render_data.insert(id, RenderData::Slider(slider_value, current_style));
             } else {
                 render_data.insert(id, RenderData::Container(current_style));
             }
@@ -439,6 +468,13 @@ fn traverse_layout(
             commands.push(DrawCommand::DrawCheckbox {
                 rect: Rect { x, y, width, height },
                 checked: *checked,
+                color: style.color,
+            });
+        },
+        Some(RenderData::Slider(value, style)) => {
+             commands.push(DrawCommand::DrawSlider {
+                rect: Rect { x, y, width, height },
+                value: *value,
                 color: style.color,
             });
         },
