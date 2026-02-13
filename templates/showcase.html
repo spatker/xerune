@@ -20,7 +20,8 @@
                 <div style="padding: 6px; background-color: rgba(0,255,0,0.2); border-radius: 50%; margin-right: 12px;">
                     <div style="width: 10px; height: 10px; border-radius: 5px; background-color: #00ff00;"></div>
                 </div>
-                <span style="font-size: 24px; font-weight: bold;">{{ "{:.0}"|format(progress_value) }}% Load</span>
+                <span style="font-size: 24px; font-weight: bold; width: 120px;">
+                    {{ "{:.0}"|format(progress_value) }}% Load</span>
             </div>
             <progress value="{{ progress_value }}" max="100.0"
                 style="height: 8px; border-radius: 4px; background-color: rgba(255,255,255,0.1); color: #00ff00; width: 100%;"></progress>
@@ -31,7 +32,8 @@
             style="flex-grow: 1; padding: 25px; background-color: rgba(255,255,255,0.05); border-radius: 16px; border: 1px solid rgba(255,255,255,0.1);">
             <h2 style="font-size: 16px; color: #aaaaaa; margin: 0 0 15px 0;">ACTIVE USERS</h2>
             <div style="flex-direction: row; align-items: flex-end;">
-                <span style="font-size: 48px; font-weight: bold; margin: 0; line-height: 1;">{{ counter }}</span>
+                <span style="font-size: 48px; font-weight: bold; margin: 0; line-height: 1; width: 120px;">
+                    {{ counter }}</span>
                 <span style="font-size: 16px; color: #ea5455; margin-left: 10px; margin-bottom: 8px;">+12%</span>
             </div>
         </div>

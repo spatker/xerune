@@ -38,8 +38,15 @@ impl<'a> TextMeasurer for TinySkiaMeasurer<'a> {
             if gy + gh > max_y { max_y = gy + gh; }
         }
 
-        let width = if max_x > min_x { max_x - min_x } else { 20.0 };
-        let height = if max_y > min_y { max_y - min_y } else { 20.0 };
+        let width = if max_x > min_x { max_x - min_x } else { 0.0 };
+        
+        // Use font metrics for stable height
+        let height = if let Some(metrics) = self.fonts[font_index].horizontal_line_metrics(font_size) {
+            metrics.new_line_size
+        } else {
+            if max_y > min_y { max_y - min_y } else { 20.0 }
+        };
+
         (width, height)
     }
 }

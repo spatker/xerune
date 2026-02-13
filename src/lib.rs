@@ -622,17 +622,20 @@ fn dom_to_taffy(
         
         NodeData::Text { contents } => {
             let text = contents.borrow();
-            let trimmed = text.trim();
-            if trimmed.is_empty() {
+            // Normalize whitespace: collapse all whitespace sequences to a single space
+            // and trim leading/trailing whitespace.
+            let normalized = text.split_whitespace().collect::<Vec<&str>>().join(" ");
+            
+            if normalized.is_empty() {
                 None
             } else {
-                let (width, height) = text_measurer.measure_text(trimmed, current_style.font_size, current_style.weight);
+                let (width, height) = text_measurer.measure_text(&normalized, current_style.font_size, current_style.weight);
                 let text_layout_style = Style {
                     size: Size { width: length(width), height: length(height) },
                     ..Style::default()
                 };
                 let id = taffy.new_leaf(text_layout_style).ok()?;
-                render_data.insert(id, RenderData::Text(trimmed.to_string(), current_style));
+                render_data.insert(id, RenderData::Text(normalized, current_style));
                 Some(id)
             }
         },
