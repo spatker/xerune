@@ -32,8 +32,8 @@
                 <div
                     style="flex-direction: row; align-items: center; justify-content: space-between; margin-bottom: 20px;">
                     <p style="font-size: 14px; color: #b3b3b3;">{{ elapsed_time }}</p>
-                    <input type="range" value="{{ progress }}" style="flex-grow: 1; margin: 0 15px; height: 20px;"
-                        color="#1ed760" />
+                    <progress value="{{ progress * 100.0 }}" max="100.0"
+                        style="flex-grow: 1; margin: 0 15px; height: 6px; border-radius: 3px; background-color: rgba(255,255,255,0.2); color: #1ed760;"></progress>
                     <p style="font-size: 14px; color: #b3b3b3;">{{ total_time }}</p>
                 </div>
 

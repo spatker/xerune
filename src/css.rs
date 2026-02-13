@@ -160,7 +160,11 @@ pub fn parse_inline_style(style_str: &str, current_style: &mut TextStyle, taffy_
                 }
             }
             "width" => {
-                if let Some(w) = parse_px(val) {
+                if val.ends_with("%") {
+                    if let Ok(p) = val.trim_end_matches('%').parse::<f32>() {
+                        taffy_style.size.width = Dimension::percent(p / 100.0);
+                    }
+                } else if let Some(w) = parse_px(val) {
                     taffy_style.size.width = length(w);
                 }
             }

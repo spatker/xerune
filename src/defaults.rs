@@ -7,6 +7,7 @@ pub enum ElementType {
     Image,
     Checkbox,
     Slider,
+    Progress,
 }
 
 pub struct StyleBundle {
@@ -81,6 +82,88 @@ pub fn get_default_style(tag: &str, parent_style: &TextStyle) -> StyleBundle {
             bundle.element_type = ElementType::Checkbox;
             bundle.style.size = Size { width: length(20.0), height: length(20.0) };
             bundle.style.margin = taffy::geometry::Rect { left: length(5.0), right: length(5.0), top: length(0.0), bottom: length(0.0) };
+        }
+        "h3" => {
+            bundle.text_style.font_size = 20.0;
+            bundle.text_style.weight = 1;
+            bundle.style.flex_direction = FlexDirection::Column;
+            bundle.style.margin = taffy::geometry::Rect {
+                left: length(0.0), right: length(0.0),
+                top: length(12.0), bottom: length(12.0)
+            };
+        }
+        "h4" => {
+            bundle.text_style.font_size = 18.0;
+            bundle.text_style.weight = 1;
+            bundle.style.flex_direction = FlexDirection::Column;
+            bundle.style.margin = taffy::geometry::Rect {
+                left: length(0.0), right: length(0.0),
+                top: length(10.0), bottom: length(10.0)
+            };
+        }
+        "h5" => {
+            bundle.text_style.font_size = 16.0;
+            bundle.text_style.weight = 1;
+            bundle.style.flex_direction = FlexDirection::Column;
+            bundle.style.margin = taffy::geometry::Rect {
+                left: length(0.0), right: length(0.0),
+                top: length(8.0), bottom: length(8.0)
+            };
+        }
+        "h6" => {
+            bundle.text_style.font_size = 14.0;
+            bundle.text_style.weight = 1;
+            bundle.style.flex_direction = FlexDirection::Column;
+            bundle.style.margin = taffy::geometry::Rect {
+                left: length(0.0), right: length(0.0),
+                top: length(6.0), bottom: length(6.0)
+            };
+        }
+        "table" | "tbody" | "thead" | "tfoot" => {
+            bundle.style.flex_direction = FlexDirection::Column;
+             bundle.style.padding = taffy::geometry::Rect {
+                left: length(2.0), right: length(2.0),
+                top: length(2.0), bottom: length(2.0)
+            };
+        }
+        "tr" => {
+             bundle.style.flex_direction = FlexDirection::Row;
+             bundle.style.size.width = Dimension::percent(1.0);
+        }
+        "td" => {
+            bundle.style.padding = taffy::geometry::Rect {
+                left: length(5.0), right: length(5.0),
+                top: length(2.0), bottom: length(2.0)
+            };
+        }
+        "th" => {
+            bundle.text_style.weight = 1;
+             bundle.style.padding = taffy::geometry::Rect {
+                left: length(5.0), right: length(5.0),
+                top: length(2.0), bottom: length(2.0)
+            };
+            bundle.style.align_items = Some(AlignItems::Center);
+            bundle.style.justify_content = Some(JustifyContent::Center);
+        }
+        "button" => {
+            bundle.style.padding = taffy::geometry::Rect {
+                left: length(10.0), right: length(10.0),
+                top: length(5.0), bottom: length(5.0)
+            };
+             bundle.style.margin = taffy::geometry::Rect {
+                left: length(2.0), right: length(2.0),
+                top: length(2.0), bottom: length(2.0)
+            };
+            bundle.style.align_items = Some(AlignItems::Center);
+            bundle.style.justify_content = Some(JustifyContent::Center);
+            bundle.text_style.background_color = Some(crate::Color::from_rgba8(220, 220, 220, 255));
+            bundle.text_style.border_radius = 4.0;
+            bundle.text_style.border_width = 1.0;
+            bundle.text_style.border_color = Some(crate::Color::from_rgba8(180, 180, 180, 255));
+        }
+        "progress" => {
+             bundle.element_type = ElementType::Progress;
+             bundle.style.size = Size { width: length(150.0), height: length(20.0) };
         }
         _ => {}
     }

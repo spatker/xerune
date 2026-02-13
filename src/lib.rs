@@ -100,6 +100,13 @@ pub enum DrawCommand {
         value: f32,
         color: Color,
     },
+
+    DrawProgress {
+        rect: Rect,
+        value: f32,
+        max: f32,
+        color: Color,
+    },
 }
 
 pub trait TextMeasurer {
@@ -146,6 +153,7 @@ pub enum RenderData {
     Image(String, TextStyle),
     Checkbox(bool, TextStyle),
     Slider(f32, TextStyle),
+    Progress(f32, f32, TextStyle), // value, max, style
 }
 
 
@@ -506,8 +514,14 @@ fn dom_to_taffy(
             // Resetting here is safe to ensure no unexpected inheritance.
             // (Note: defaults.text_style usually has the reset properties from input current_style, but get_default_style logic governs this)
 
-            let mut element_type = defaults.element_type;
+            let mut element_type = defaults::ElementType::Container; // Default to container if not overridden
+            if defaults.element_type != defaults::ElementType::Container {
+                element_type = defaults.element_type;
+            }
+
             let mut slider_value = 0.0;
+            let mut progress_value = 0.0;
+            let mut progress_max = 1.0;
             let mut checkbox_checked = false;
             let mut interaction_id: Option<String> = None;
             let mut image_src = String::new();
@@ -531,9 +545,16 @@ fn dom_to_taffy(
                             layout_style.size = Size { width: length(100.0), height: length(20.0) };
                         }
                     },
+
                     "value" => {
                         if let Ok(v) = value.parse::<f32>() {
                             slider_value = v.clamp(0.0, 1.0);
+                            progress_value = v; 
+                        }
+                    },
+                    "max" => {
+                        if let Ok(v) = value.parse::<f32>() {
+                            progress_max = v;
                         }
                     },
                     "checked" => checkbox_checked = true,
@@ -560,7 +581,7 @@ fn dom_to_taffy(
             
             // 3. Process Children (recurse if not a leaf element like img/input)
             let mut children = Vec::new();
-            if element_type != defaults::ElementType::Image && element_type != defaults::ElementType::Checkbox  && element_type != defaults::ElementType::Slider {
+            if element_type != defaults::ElementType::Image && element_type != defaults::ElementType::Checkbox  && element_type != defaults::ElementType::Slider && element_type != defaults::ElementType::Progress {
                 for child in handle.children.borrow().iter() {
                      if let Some(id) = dom_to_taffy(taffy, child, text_measurer, render_data, interactions, current_style.clone()) {
                          children.push(id);
@@ -582,9 +603,13 @@ fn dom_to_taffy(
                 defaults::ElementType::Slider => {
                     render_data.insert(id, RenderData::Slider(slider_value, current_style));
                 },
+                defaults::ElementType::Progress => {
+                    render_data.insert(id, RenderData::Progress(progress_value, progress_max, current_style));
+                },
                 _ => {
                     render_data.insert(id, RenderData::Container(current_style));
                 }
+
             }
 
              // 6. Register Interaction
@@ -704,6 +729,14 @@ fn traverse_layout(
                  commands.push(DrawCommand::DrawSlider {
                     rect,
                     value: *value,
+                    color: style.color,
+                });
+            },
+            RenderData::Progress(value, max, style) => {
+                 commands.push(DrawCommand::DrawProgress {
+                    rect,
+                    value: *value,
+                    max: *max,
                     color: style.color,
                 });
             },

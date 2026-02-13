@@ -379,6 +379,38 @@ impl<'a> Renderer for TinySkiaRenderer<'a> {
                         self.pixmap.stroke_path(&p, &stroke_paint, &stroke, Transform::identity(), self.current_mask.as_ref());
                       }
                 }
+                DrawCommand::DrawProgress { rect, value, max, color } => {
+                    let mut paint = tiny_skia::Paint::default();
+                    paint.set_color_rgba8(color.r, color.g, color.b, color.a);
+                    
+                    let track_height = rect.height;
+                    let track_rect = tiny_skia::Rect::from_xywh(rect.x, rect.y, rect.width, track_height);
+
+                    if let Some(track_rect) = track_rect {
+                        // Background track
+                        let mut bg_paint = tiny_skia::Paint::default();
+                        bg_paint.set_color_rgba8(200, 200, 200, 255); // Light gray background
+                        bg_paint.anti_alias = true;
+                        
+                        if let Some(path) = rounded_rect_path(track_rect, track_height / 2.0) {
+                             self.pixmap.fill_path(&path, &bg_paint, tiny_skia::FillRule::Winding, Transform::identity(), self.current_mask.as_ref());
+                        } else {
+                             self.pixmap.fill_rect(track_rect, &bg_paint, Transform::identity(), self.current_mask.as_ref());
+                        }
+
+                        // Filled bar
+                        let progress = (value / max).clamp(0.0, 1.0);
+                        if progress > 0.0 {
+                            if let Some(active_rect) = tiny_skia::Rect::from_xywh(rect.x, rect.y, rect.width * progress, track_height) {
+                                if let Some(path) = rounded_rect_path(active_rect, track_height / 2.0) {
+                                     self.pixmap.fill_path(&path, &paint, tiny_skia::FillRule::Winding, Transform::identity(), self.current_mask.as_ref());
+                                } else {
+                                     self.pixmap.fill_rect(active_rect, &paint, Transform::identity(), self.current_mask.as_ref());
+                                }
+                            }
+                        }
+                    }
+                }
 
             }
         }

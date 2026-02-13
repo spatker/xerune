@@ -1,5 +1,5 @@
 <div
-    style="width: 800px; height: 600px; background: linear-gradient(160deg, #0f2027 0%, #203a43 50%, #2c5364 100%); color: white; padding: 40px; font-family: 'Roboto', sans-serif;">
+    style="width: 900px; height: 700px; background: linear-gradient(160deg, #0f2027 0%, #203a43 50%, #2c5364 100%); color: white; padding: 40px; font-family: 'Roboto', sans-serif;">
 
     <!-- Header -->
     <div style="flex-direction: row; justify-content: space-between; align-items: center; margin-bottom: 40px;">
@@ -16,12 +16,14 @@
         <div
             style="flex-grow: 1; padding: 25px; background-color: rgba(255,255,255,0.05); border-radius: 16px; border: 1px solid rgba(255,255,255,0.1); margin-right: 20px;">
             <h2 style="font-size: 16px; color: #aaaaaa; margin: 0 0 15px 0;">SYSTEM STATUS</h2>
-            <div style="flex-direction: row; align-items: center;">
+            <div style="flex-direction: row; align-items: center; margin-bottom: 10px;">
                 <div style="padding: 6px; background-color: rgba(0,255,0,0.2); border-radius: 50%; margin-right: 12px;">
                     <div style="width: 10px; height: 10px; border-radius: 5px; background-color: #00ff00;"></div>
                 </div>
-                <span style="font-size: 24px; font-weight: bold;">All Systems Operational</span>
+                <span style="font-size: 24px; font-weight: bold;">{{ "{:.0}"|format(progress_value) }}% Load</span>
             </div>
+            <progress value="{{ progress_value }}" max="100.0"
+                style="height: 8px; border-radius: 4px; background-color: rgba(255,255,255,0.1); color: #00ff00; width: 100%;"></progress>
         </div>
 
         <!-- Active Users -->
@@ -29,7 +31,7 @@
             style="flex-grow: 1; padding: 25px; background-color: rgba(255,255,255,0.05); border-radius: 16px; border: 1px solid rgba(255,255,255,0.1);">
             <h2 style="font-size: 16px; color: #aaaaaa; margin: 0 0 15px 0;">ACTIVE USERS</h2>
             <div style="flex-direction: row; align-items: flex-end;">
-                <span style="font-size: 48px; font-weight: bold; margin: 0; line-height: 1;">1,234</span>
+                <span style="font-size: 48px; font-weight: bold; margin: 0; line-height: 1;">{{ counter }}</span>
                 <span style="font-size: 16px; color: #ea5455; margin-left: 10px; margin-bottom: 8px;">+12%</span>
             </div>
         </div>
@@ -41,29 +43,22 @@
         <!-- List Panel -->
         <div
             style="flex-grow: 2; padding: 25px; background-color: rgba(255,255,255,0.05); border-radius: 16px; border: 1px solid rgba(255,255,255,0.1); margin-right: 20px;">
-            <h2 style="font-size: 18px; margin: 0 0 20px 0;">Recent Activity</h2>
+            <h2 style="font-size: 18px; margin: 0 0 20px 0;">System Processes</h2>
 
-            <div style="flex-direction: column;">
-                <div style="flex-direction: row; align-items: center; padding: 12px 0; margin-bottom: 8px;">
-                    <div
-                        style="width: 40px; height: 40px; border-radius: 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); margin-right: 15px;">
-                    </div>
-                    <div style="flex-direction: column;">
-                        <span style="font-weight: bold; font-size: 16px;">Project Alpha Deployment</span>
-                        <span style="font-size: 14px; color: #888;">Deployed to production server</span>
-                    </div>
-                </div>
-
-                <div style="flex-direction: row; align-items: center; padding: 12px 0;">
-                    <div
-                        style="width: 40px; height: 40px; border-radius: 20px; background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 99%, #fecfef 100%); margin-right: 15px;">
-                    </div>
-                    <div style="flex-direction: column;">
-                        <span style="font-weight: bold; font-size: 16px;">Database Backup</span>
-                        <span style="font-size: 14px; color: #888;">Completed successfully</span>
-                    </div>
-                </div>
-            </div>
+            <table style="width: 100%;">
+                <tr style="border-bottom-width: 1px; border-color: rgba(255,255,255,0.1);">
+                    <th style="width: 20%; text-align: left; padding: 8px; color: #aaa;">ID</th>
+                    <th style="width: 50%; text-align: left; padding: 8px; color: #aaa;">Name</th>
+                    <th style="width: 30%; text-align: right; padding: 8px; color: #aaa;">Status</th>
+                </tr>
+                {% for row in table_data %}
+                <tr style="padding: 8px;">
+                    <td style="width: 20%; color: #ddd; font-weight: bold;">{{ row.id }}</td>
+                    <td style="width: 50%; color: #eee;">{{ row.name }}</td>
+                    <td style="width: 30%; color: #4caf50; text-align: right;">{{ row.status }}</td>
+                </tr>
+                {% endfor %}
+            </table>
         </div>
 
         <!-- Control Panel -->
@@ -72,15 +67,15 @@
             <h2 style="font-size: 18px; margin: 0 0 20px 0;">Quick Controls</h2>
 
             <div style="flex-direction: column; align-items: stretch;">
-                <div
-                    style="padding: 15px; background: linear-gradient(90deg, #ff8a00, #e52e71); border-radius: 10px; margin-bottom: 15px; align-items: center;">
-                    <span style="font-weight: bold;">Launch Instance</span>
-                </div>
+                <button data-on-click="increment_progress"
+                    style="padding: 15px; background: linear-gradient(90deg, #ff8a00, #e52e71); border-radius: 10px; margin-bottom: 15px; align-items: center; border-width: 0px; color: white;">
+                    <span style="font-weight: bold;">Simulate Load (+10%)</span>
+                </button>
 
-                <div
-                    style="padding: 15px; background-color: rgba(255,255,255,0.05); border-radius: 10px; border: 1px solid rgba(255,255,255,0.2); margin-bottom: 25px; align-items: center;">
-                    <span style="font-weight: bold;">Server Settings</span>
-                </div>
+                <button data-on-click="increment_counter"
+                    style="padding: 15px; background-color: rgba(255,255,255,0.05); border-radius: 10px; border: 1px solid rgba(255,255,255,0.2); margin-bottom: 25px; align-items: center; border-width: 0px; color: white;">
+                    <span style="font-weight: bold;">Add User</span>
+                </button>
 
                 <h3 style="font-size: 14px; color: #aaa; margin: 0 0 10px 0;">CONFIGURATIONS</h3>
                 <div style="flex-direction: row; align-items: center; margin-bottom: 15px;">
