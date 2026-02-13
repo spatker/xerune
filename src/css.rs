@@ -1,5 +1,4 @@
-use crate::Color;
-use crate::TextStyle;
+use crate::{Color, TextStyle, LinearGradient};
 use csscolorparser::parse as parse_color;
 use taffy::prelude::*;
 use taffy::style::Style;
@@ -30,7 +29,7 @@ pub fn parse_inline_style(style_str: &str, current_style: &mut TextStyle, taffy_
                     );
                 }
             }
-            "background-color" | "background" => {
+            "background-color" => {
                 if let Ok(c) = parse_color(val) {
                     current_style.background_color = Some(Color::from_rgba8(
                         (c.r * 255.0) as u8,
@@ -38,6 +37,23 @@ pub fn parse_inline_style(style_str: &str, current_style: &mut TextStyle, taffy_
                         (c.b * 255.0) as u8,
                         (c.a * 255.0) as u8,
                     ));
+                    current_style.background_gradient = None; // Color overrides gradient if set.
+                }
+            }
+             "background" => {
+                 if val.contains("linear-gradient") {
+                     if let Some(grad) = parse_linear_gradient(val) {
+                         current_style.background_gradient = Some(grad);
+                         current_style.background_color = None;
+                     }
+                 } else if let Ok(c) = parse_color(val) {
+                    current_style.background_color = Some(Color::from_rgba8(
+                        (c.r * 255.0) as u8,
+                        (c.g * 255.0) as u8,
+                        (c.b * 255.0) as u8,
+                        (c.a * 255.0) as u8,
+                    ));
+                     current_style.background_gradient = None;
                 }
             }
             "font-size" => {
@@ -52,14 +68,95 @@ pub fn parse_inline_style(style_str: &str, current_style: &mut TextStyle, taffy_
                     current_style.weight = 0; // Regular
                 }
             }
+            "border-radius" => {
+                if let Some(r) = parse_px(val) {
+                    current_style.border_radius = r;
+                } else if val.ends_with("%") {
+                     // Hack implementation for 50% on circles
+                     if val.trim() == "50%" {
+                         current_style.border_radius = 9999.0; // Large radius
+                     }
+                }
+            }
+            "border-width" => {
+                if let Some(w) = parse_px(val) {
+                    current_style.border_width = w;
+                }
+            }
+            "border-color" => {
+                if let Ok(c) = parse_color(val) {
+                    current_style.border_color = Some(Color::from_rgba8(
+                        (c.r * 255.0) as u8,
+                        (c.g * 255.0) as u8,
+                        (c.b * 255.0) as u8,
+                        (c.a * 255.0) as u8,
+                    ));
+                }
+            }
+            "border" => {
+                // Simplified: "1px solid #fff"
+                let parts: Vec<&str> = val.split_whitespace().collect();
+                for part in parts {
+                    if let Some(w) = parse_px(part) {
+                        current_style.border_width = w;
+                    } else if let Ok(c) = parse_color(part) {
+                         current_style.border_color = Some(Color::from_rgba8(
+                            (c.r * 255.0) as u8,
+                            (c.g * 255.0) as u8,
+                            (c.b * 255.0) as u8,
+                            (c.a * 255.0) as u8,
+                        ));
+                    }
+                }
+            }
             "padding" => {
                 if let Some(p) = parse_padding(val) {
                     taffy_style.padding = p;
                 }
             }
+            "padding-left" => {
+                if let Some(p) = parse_px(val) {
+                    taffy_style.padding.left = length(p);
+                }
+            }
+            "padding-right" => {
+                if let Some(p) = parse_px(val) {
+                    taffy_style.padding.right = length(p);
+                }
+            }
+            "padding-top" => {
+                if let Some(p) = parse_px(val) {
+                    taffy_style.padding.top = length(p);
+                }
+            }
+            "padding-bottom" => {
+                if let Some(p) = parse_px(val) {
+                    taffy_style.padding.bottom = length(p);
+                }
+            }
             "margin" => {
                 if let Some(m) = parse_margin(val) {
                     taffy_style.margin = m;
+                }
+            }
+            "margin-left" => {
+                if let Some(m) = parse_px(val) {
+                    taffy_style.margin.left = length(m);
+                }
+            }
+            "margin-right" => {
+                if let Some(m) = parse_px(val) {
+                    taffy_style.margin.right = length(m);
+                }
+            }
+            "margin-top" => {
+                if let Some(m) = parse_px(val) {
+                    taffy_style.margin.top = length(m);
+                }
+            }
+            "margin-bottom" => {
+                if let Some(m) = parse_px(val) {
+                    taffy_style.margin.bottom = length(m);
                 }
             }
             "width" => {
@@ -81,9 +178,94 @@ pub fn parse_inline_style(style_str: &str, current_style: &mut TextStyle, taffy_
                     _ => {}
                 }
             }
+            "justify-content" => {
+                 match val {
+                    "flex-start" => taffy_style.justify_content = Some(JustifyContent::FlexStart),
+                    "flex-end" => taffy_style.justify_content = Some(JustifyContent::FlexEnd),
+                    "center" => taffy_style.justify_content = Some(JustifyContent::Center),
+                    "space-between" => taffy_style.justify_content = Some(JustifyContent::SpaceBetween),
+                    "space-around" => taffy_style.justify_content = Some(JustifyContent::SpaceAround),
+                    "space-evenly" => taffy_style.justify_content = Some(JustifyContent::SpaceEvenly),
+                    _ => {}
+                }
+            }
+             "align-items" => {
+                 match val {
+                    "flex-start" => taffy_style.align_items = Some(AlignItems::FlexStart),
+                    "flex-end" => taffy_style.align_items = Some(AlignItems::FlexEnd),
+                    "center" => taffy_style.align_items = Some(AlignItems::Center),
+                    "baseline" => taffy_style.align_items = Some(AlignItems::Baseline),
+                    "stretch" => taffy_style.align_items = Some(AlignItems::Stretch),
+                    _ => {}
+                }
+            }
+             "flex-grow" => {
+                 if let Ok(f) = val.parse::<f32>() {
+                     taffy_style.flex_grow = f;
+                 }
+            }
             _ => {}
         }
     }
+}
+
+fn parse_linear_gradient(val: &str) -> Option<LinearGradient> {
+    // linear-gradient(180deg, #121212 0%, #1ed760 100%)
+    // Simplified parsing: assumes "linear-gradient(" prefix and ")" suffix
+    let inner = val.trim_start_matches("linear-gradient(").trim_end_matches(")");
+    let parts: Vec<&str> = inner.split(',').collect();
+    if parts.is_empty() { return None; }
+
+    let mut angle = 180.0; // Default to bottom
+    let mut stops = Vec::new();
+
+    let mut start_idx = 0;
+    // Check first part for angle
+    if parts[0].contains("deg") {
+        if let Some(num) = parts[0].trim().replace("deg", "").parse::<f32>().ok() {
+            angle = num;
+        }
+        start_idx = 1;
+    } else if parts[0].contains("to right") {
+         angle = 90.0;
+         start_idx = 1;
+    } else if parts[0].contains("to bottom") {
+         angle = 180.0;
+         start_idx = 1;
+    }
+    // ... other directions omitted for brevity
+
+    for i in start_idx..parts.len() {
+        let stop_str = parts[i].trim();
+        // Split color and percentage
+        let stop_parts: Vec<&str> = stop_str.split_whitespace().collect();
+        if stop_parts.is_empty() { continue; }
+        
+        let color_str = stop_parts[0];
+        if let Ok(c) = parse_color(color_str) {
+             let color = Color::from_rgba8(
+                        (c.r * 255.0) as u8,
+                        (c.g * 255.0) as u8,
+                        (c.b * 255.0) as u8,
+                        (c.a * 255.0) as u8,
+             );
+             
+             let pos = if stop_parts.len() > 1 {
+                 if let Some(p) = stop_parts[1].strip_suffix("%") {
+                     p.parse::<f32>().unwrap_or(0.0) / 100.0
+                 } else {
+                     0.0 // Default or parse partial
+                 }
+             } else {
+                 // Distribute evenly if possible
+                 if i == start_idx { 0.0 } else { 1.0 }
+             };
+             
+             stops.push((color, pos));
+        }
+    }
+    
+    Some(LinearGradient { angle, stops })
 }
 
 fn parse_px(val: &str) -> Option<f32> {

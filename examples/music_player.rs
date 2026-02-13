@@ -62,7 +62,7 @@ struct MusicPlayerModel {
 impl MusicPlayerModel {
     fn new() -> Self {
         // Load tracks from JSON
-        let json_content = fs::read_to_string("resources/music.json")
+        let json_content = fs::read_to_string("resources/music_player/music.json")
             .expect("Failed to read music.json");
         let tracks: Vec<Track> = serde_json::from_str(&json_content)
             .expect("Failed to parse music.json");
@@ -110,10 +110,10 @@ impl Model for MusicPlayerModel {
         } else {
              match msg {
                  "back" => {
-                     // Back now acts as minimized or just list view? 
+                     // Back now acts as minimized or just list view 
                      // User said "Selecting music brings user to player, stopping music brings them back"
                      // So specific "Stop" button brings back.
-                     // "Back" button on player should probably also bring back but keep playing?
+                     // "Back" button on player functionality
                      // Let's make "back" go back to list, keep playing.
                      // And "stop" go back to list, stop playing.
                      self.current_track_index = None;

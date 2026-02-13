@@ -21,7 +21,7 @@ impl Default for StyleBundle {
 
 pub fn get_default_style(tag: &str, parent_style: &TextStyle) -> StyleBundle {
     let mut bundle = StyleBundle::default();
-    bundle.text_style = *parent_style;
+    bundle.text_style = parent_style.clone();
 
     match tag {
         "h1" => {

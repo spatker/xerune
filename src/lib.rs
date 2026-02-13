@@ -31,6 +31,12 @@ impl Color {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct LinearGradient {
+    pub angle: f32, // in degrees
+    pub stops: Vec<(Color, f32)>, // Color and position (0.0 to 1.0)
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct Rect {
     pub x: f32,
@@ -48,7 +54,14 @@ impl Rect {
 pub enum DrawCommand {
     Clip { rect: Rect },
     PopClip,
-    DrawRect { rect: Rect, color: Color },
+    DrawRect {
+        rect: Rect,
+        color: Option<Color>,
+        gradient: Option<LinearGradient>,
+        border_radius: f32,
+        border_width: f32,
+        border_color: Option<Color>,
+    },
     DrawText { 
         text: String, 
         x: f32, 
@@ -60,6 +73,7 @@ pub enum DrawCommand {
     DrawImage {
         src: String,
         rect: Rect,
+        border_radius: f32,
     },
     DrawCheckbox {
         rect: Rect,
@@ -81,21 +95,29 @@ pub trait Renderer: TextMeasurer {
     fn render(&mut self, commands: &[DrawCommand]);
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Debug, Clone)]
 pub struct TextStyle {
     pub color: Color,
     pub font_size: f32,
     pub weight: u16, // 0 = Regular, 1 = Bold
     pub background_color: Option<Color>,
+    pub border_radius: f32,
+    pub border_width: f32,
+    pub border_color: Option<Color>,
+    pub background_gradient: Option<LinearGradient>,
 }
 
 impl Default for TextStyle {
     fn default() -> Self {
         Self {
-            color: Color::BLACK,
+            color: Color::from_rgba8(0, 0, 0, 255),
             font_size: 16.0,
             weight: 0,
             background_color: None,
+            border_radius: 0.0,
+            border_width: 0.0,
+            border_color: None,
+            background_gradient: None,
         }
     }
 }
@@ -103,7 +125,7 @@ impl Default for TextStyle {
 pub enum RenderData {
     Container(TextStyle),
     Text(String, TextStyle),
-    Image(String),
+    Image(String, TextStyle),
     Checkbox(bool, TextStyle),
     Slider(f32, TextStyle),
 }
@@ -133,7 +155,7 @@ impl<M: Model, R: TextMeasurer> Runtime<M, R> {
     pub fn new(model: M, measurer: R) -> Self {
          let default_style = TextStyle::default();
          let html = model.view();
-         let ui = Ui::new(&html, &measurer, default_style).unwrap();
+         let ui = Ui::new(&html, &measurer, default_style.clone()).unwrap();
          Self {
              model,
              measurer,
@@ -149,14 +171,14 @@ impl<M: Model, R: TextMeasurer> Runtime<M, R> {
                     self.model.update(&msg);
                     let html = self.model.view();
                     // Recreate UI to reflect changes
-                    self.ui = Ui::new(&html, &self.measurer, self.default_style).unwrap();
+                    self.ui = Ui::new(&html, &self.measurer, self.default_style.clone()).unwrap();
                     return true;
                 }
             }
             InputEvent::Tick => {
                 self.model.update("tick");
                 let html = self.model.view();
-                self.ui = Ui::new(&html, &self.measurer, self.default_style).unwrap();
+                self.ui = Ui::new(&html, &self.measurer, self.default_style.clone()).unwrap();
                 return true;
             }
              _ => {}
@@ -262,18 +284,26 @@ fn dom_to_taffy(
 ) -> Option<NodeId> {
     
     // Default to handling as a container
-    let mut image_src = String::new();
+
     let mut checkbox_checked = false;
     let mut is_image = false;
     let mut is_checkbox = false;
     let mut is_slider = false;
     let mut slider_value = 0.0;
     
-    let mut current_style = parent_style;
+    let mut current_style = parent_style.clone();
     // Reset background color for children unless explicitly set, 
-    // actually CSS inherits some things but not background color usually.
-    // For simplicity let's say background color is NOT inherited.
+    // but inheriting color/font is correct.
+    // Actually background color is NOT inherited in CSS.
+    // But RenderData::Container uses current_style.
+    // If we don't clear it, every child gets a background.
+    // We should parse styles first, then decide.
+    // We probably want to Copy inherited props (font, color) but Reset layout/background props.
     current_style.background_color = None;
+    current_style.background_gradient = None;
+    current_style.border_width = 0.0;
+    current_style.border_radius = 0.0;
+    current_style.border_color = None;
 
     let mut style = Style::default();
 
@@ -281,10 +311,10 @@ fn dom_to_taffy(
         let tag = name.local.as_ref();
         
         // Get defaults
-        let defaults = defaults::get_default_style(tag, &parent_style);
+         let defaults = defaults::get_default_style(tag, &current_style); 
         style = defaults.style;
         current_style = defaults.text_style;
-        // Background color is not inherited by default from parent_style in our simple model,
+        // Background color is not inherited by default from parent_style in our simple model.
         // but get_default_style copies parent_style. Let's ensure background is None if not set.
         // Actually get_default_style copies everything including color/font/weight.
         // We probably want to reset background manually if defaults copied it (it didn't, parent passed in has it).
@@ -302,7 +332,7 @@ fn dom_to_taffy(
                 "style" => {
                     css::parse_inline_style(value, &mut current_style, &mut style);
                 },
-                "src" => image_src = value.to_string(),
+
                 "type" if value.as_ref() == "checkbox" => {
                     if tag == "input" {
                         is_checkbox = true;
@@ -342,7 +372,7 @@ fn dom_to_taffy(
     // Only process children if not a leaf-like element
     if !is_image && !is_checkbox && !is_slider {
         for child in handle.children.borrow().iter() {
-             if let Some(id) = dom_to_taffy(taffy, child, text_measurer, render_data, interactions, current_style) {
+             if let Some(id) = dom_to_taffy(taffy, child, text_measurer, render_data, interactions, current_style.clone()) {
                  children.push(id);
              }
         }
@@ -359,7 +389,13 @@ fn dom_to_taffy(
             let id = taffy.new_with_children(style, &children).ok()?;
             
             if is_image {
-                render_data.insert(id, RenderData::Image(image_src));
+                let image_src = attrs.borrow()
+                    .iter()
+                    .find(|attr| attr.name.local.as_ref() == "src")
+                    .map(|attr| attr.value.as_ref().to_string())
+                    .unwrap_or_default();
+                
+                render_data.insert(id, RenderData::Image(image_src, current_style));
             } else if is_checkbox {
                 render_data.insert(id, RenderData::Checkbox(checkbox_checked, current_style));
             } else if is_slider {
@@ -435,33 +471,55 @@ fn traverse_layout(
 
     match render_data.get(&root) {
         Some(RenderData::Container(style)) => {
-            if let Some(bg) = style.background_color {
-                commands.push(DrawCommand::DrawRect {
+            if style.background_color.is_some() || style.background_gradient.is_some() || style.border_width > 0.0 {
+                 commands.push(DrawCommand::DrawRect {
                     rect: Rect { x, y, width, height },
-                    color: bg,
+                    color: style.background_color,
+                    gradient: style.background_gradient.clone(),
+                    border_radius: style.border_radius,
+                    border_width: style.border_width,
+                    border_color: style.border_color,
                 });
             }
         },
-        Some(RenderData::Text(content, style)) => {
-            if let Some(bg) = style.background_color {
-                commands.push(DrawCommand::DrawRect {
+        Some(RenderData::Text(text, style)) => {
+            // Text background logic
+             if style.background_color.is_some() || style.background_gradient.is_some() || style.border_width > 0.0 {
+                 commands.push(DrawCommand::DrawRect {
                     rect: Rect { x, y, width, height },
-                    color: bg,
+                    color: style.background_color,
+                    gradient: style.background_gradient.clone(),
+                    border_radius: style.border_radius,
+                    border_width: style.border_width,
+                    border_color: style.border_color,
                 });
             }
+
+            // Text centering is handled by Taffy layout engine (align-items: center).
+            // We draw text at the Taffy-provided (x, y) coordinates.
+            // Let's assume (x,y) is top-left.
+            
+            // Just use y directly. fontdue/skia_renderer expects top-left of the text bounding box logic mostly, 
+            // or the layout engine handles centering. 
+            // If we use fontdue::layout::CoordinateSystem::PositiveYDown, (0,0) is top-left of the layout box.
+            // Taffy gives us the top-left of where the content should be.
+            // If align-items is center, Taffy centers the content box within the parent.
+            // So 'y' is the top of the text.
+            
             commands.push(DrawCommand::DrawText {
-                text: content.clone(),
+                text: text.clone(),
                 x,
-                y,
+                y, // Was y + style.font_size * 0.8
                 color: style.color,
                 font_size: style.font_size,
                 weight: style.weight,
             });
         },
-        Some(RenderData::Image(src)) => {
-            commands.push(DrawCommand::DrawImage {
+        Some(RenderData::Image(src, style)) => {
+             commands.push(DrawCommand::DrawImage {
                 src: src.clone(),
                 rect: Rect { x, y, width, height },
+                border_radius: style.border_radius,
             });
         },
         Some(RenderData::Checkbox(checked, style)) => {
