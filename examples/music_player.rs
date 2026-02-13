@@ -201,7 +201,7 @@ fn main() {
 
         match event {
             Event::NewEvents(winit::event::StartCause::ResumeTimeReached { .. }) => {
-                 if runtime.handle_event(InputEvent::Tick) {
+                 if runtime.handle_event(InputEvent::Tick { render_time_ms: None }) {
                      window_clone.request_redraw();
                  }
                  next_tick = Instant::now() + Duration::from_secs(1);

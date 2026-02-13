@@ -57,6 +57,7 @@ struct AnimationModel {
     last_frame: Instant,
     frame_count: u32,
     fps: u32,
+    render_time: Option<f32>,
 }
 
 impl AnimationModel {
@@ -83,6 +84,7 @@ impl AnimationModel {
             last_frame: Instant::now(),
             frame_count: 0,
             fps: 0,
+            render_time: None,
         }
     }
 }
@@ -93,13 +95,17 @@ impl Model for AnimationModel {
             items: &self.items,
             fps: self.fps,
             item_count: self.items.len(),
-            render_time_ms: format!("{:.2}", 0.0), // Placeholder, can pass in later if we want feedback in UI
+            render_time_ms: self.render_time.map(|t| format!("{:.2}", t)).unwrap_or_else(|| "0.00".to_string()),
         };
         template.render().unwrap()
     }
 
     fn update(&mut self, msg: &str) {
-        if msg == "tick" {
+        if let Some(val) = msg.strip_prefix("render_time_ms:") {
+            if let Ok(ms) = val.parse::<f32>() {
+                self.render_time = Some(ms);
+            }
+        } else if msg == "tick" {
             // Update items
             for item in &mut self.items {
                 item.x += item.vx;
@@ -154,6 +160,7 @@ fn main() {
     runtime.set_size(800.0, 600.0);
 
     let window_clone = window.clone();
+    let mut last_render_time: Option<f32> = None;
 
     event_loop.run(move |event, target| {
          // Force high refresh rate by not waiting too long, but let's effectively poll for max speed test
@@ -162,7 +169,7 @@ fn main() {
         match event {
             Event::AboutToWait => {
                  // Update logic
-                if runtime.handle_event(InputEvent::Tick) {
+                if runtime.handle_event(InputEvent::Tick { render_time_ms: last_render_time }) {
                     window_clone.request_redraw();
                 }
             },
@@ -186,7 +193,9 @@ fn main() {
                 pixmap.fill(Color::from_rgba8(34, 34, 34, 255)); 
 
                 let mut renderer = TinySkiaRenderer::new(&mut pixmap, fonts_ref);
+                let start_render = Instant::now();
                 runtime.render(&mut renderer);
+                last_render_time = Some(start_render.elapsed().as_secs_f32() * 1000.0);
 
                 let data = pixmap.data();
                 for (i, chunk) in data.chunks_exact(4).enumerate() {

@@ -12,14 +12,18 @@ path = "src/lib.rs"
 
 [dependencies]
 askama = "0.14.0"
-coarse-prof = "0.2.6"
+coarse-prof = { version = "0.2.6", optional = true }
 html5ever = "0.36.1"
 markup5ever = "0.36.1"
 markup5ever_rcdom = "0.36.0"
 taffy = "0.9.2"
 csscolorparser = "0.6.2"
 
+[features]
+profile = ["dep:coarse-prof"]
+
 [dev-dependencies]
+coarse-prof = "0.2.6"
 winit = "0.29.15"
 softbuffer = "0.4.1"
 tiny-skia = "0.12.0"
