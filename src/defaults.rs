@@ -8,6 +8,7 @@ pub enum ElementType {
     Checkbox,
     Slider,
     Progress,
+    Canvas,
 }
 
 pub struct StyleBundle {
@@ -164,6 +165,10 @@ pub fn get_default_style(tag: &str, parent_style: &TextStyle) -> StyleBundle {
         "progress" => {
              bundle.element_type = ElementType::Progress;
              bundle.style.size = Size { width: length(150.0), height: length(20.0) };
+        }
+        "canvas" => {
+            bundle.element_type = ElementType::Canvas;
+            bundle.style.size = Size { width: length(200.0), height: length(200.0) };
         }
         _ => {
             log::warn!("Unsupported tag encountered: {}", tag);

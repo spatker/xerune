@@ -1,6 +1,8 @@
 use xerune::{Model, Runtime};
 use fontdue::Font;
 use askama::Template;
+use tiny_skia::{PixmapMut, Paint, Color, Transform, Rect};
+use rand::Rng;
 
 mod support;
 
@@ -35,7 +37,7 @@ impl Model for ShowcaseModel {
         template.render().unwrap()
     }
 
-    fn update(&mut self, msg: &str) {
+    fn update(&mut self, msg: &str, context: &mut xerune::Context) {
         match msg {
             "increment_progress" => {
                 self.progress_value += 10.0;
@@ -45,6 +47,87 @@ impl Model for ShowcaseModel {
             },
             "increment_counter" => {
                 self.counter += 1;
+            },
+            "tick" => {
+                 // Update simulated CPU loads
+                 let mut cpu_loads = vec![0.0; 4];
+
+                 for load in cpu_loads.iter_mut() {
+                     let noise = rand::thread_rng().gen_range(-10.0..10.0);
+                     
+                     *load = (self.progress_value + noise).clamp(0.0, 100.0);
+                 }
+
+                 if let Some(canvas) = context.canvas_mut("load_chart") {
+                     let w = canvas.width;
+                     let h = canvas.height;
+                     
+                     if let Some(mut pixmap) = PixmapMut::from_bytes(&mut canvas.data, w, h) {
+                         pixmap.fill(Color::from_rgba8(0, 0, 0, 0)); // Transparent background
+
+                         let num_cores = cpu_loads.len();
+                         let padding_top = 10.0;
+                         let padding_bottom = 10.0;
+                         let padding_left = 60.0; // Space for "CPU X"
+                         let padding_right = 20.0;
+                         
+                         let total_h = h as f32 - padding_top - padding_bottom;
+                         let bar_gap = 10.0;
+                         let bar_height = (total_h - (bar_gap * (num_cores as f32 - 1.0))) / num_cores as f32;
+                         
+                         for (i, load) in cpu_loads.iter().enumerate() {
+                             let y = padding_top + i as f32 * (bar_height + bar_gap);
+                             
+                             // Draw "CPU {i}" label dots
+                             let mut text_paint = Paint::default();
+                             text_paint.set_color_rgba8(180, 180, 180, 255);
+                             let dot_size = 3.0;
+                             for d in 0..(i+1).min(4) {
+                                  let dot_rect = Rect::from_xywh(15.0 + (d as f32 * 6.0), y + bar_height/2.0 - 1.5, dot_size, dot_size).unwrap();
+                                  pixmap.fill_rect(dot_rect, &text_paint, Transform::identity(), None);
+                             }
+
+                             // Draw stepped bars
+                             // 20 steps total (10% = 2 steps)
+                             let steps = 40; 
+                             let track_width = w as f32 - padding_left - padding_right;
+                             let step_gap = 2.0;
+                             let step_width = (track_width - (step_gap * (steps as f32 - 1.0))) / steps as f32;
+                             
+                             let active_steps = (*load / 100.0 * steps as f32).round() as usize;
+                             
+                             for s in 0..steps {
+                                 let sx = padding_left + s as f32 * (step_width + step_gap);
+                                 let step_rect = Rect::from_xywh(sx, y, step_width, bar_height).unwrap();
+                                 let mut paint = Paint::default();
+                                 
+                                 if s < active_steps {
+                                     // Htop colors: Green -> Cyan -> Blue -> Purple/Red
+                                     // Let's do: Green -> Cyan -> Orange -> Red
+                                     let pct = s as f32 / steps as f32;
+                                     if pct < 0.4 {
+                                         paint.set_color_rgba8(20, 220, 20, 255); // Green
+                                     } else if pct < 0.6 {
+                                          paint.set_color_rgba8(20, 220, 220, 255); // Cyan
+                                     } else if pct < 0.8 {
+                                          paint.set_color_rgba8(220, 160, 20, 255); // Orange
+                                     } else {
+                                          paint.set_color_rgba8(220, 40, 40, 255); // Red
+                                     }
+                                 } else {
+                                     // Empty track color
+                                     paint.set_color_rgba8(40, 45, 50, 255); 
+                                 }
+                                 
+                                 pixmap.fill_rect(step_rect, &paint, Transform::identity(), None);
+                             }
+                             
+                             // Optional: Draw percentage text logic would go here if we had text rendering on canvas
+                         }
+                     }
+                     
+                     canvas.dirty = true;
+                 }
             },
             _ => {}
         }
@@ -80,10 +163,10 @@ fn main() -> anyhow::Result<()> {
     support::winit_backend::run_app(
         "Xerune Showcase",
         900,
-        700,
+        900,
         runtime,
         fonts_ref,
-        None,
+        Some(std::time::Duration::from_millis(300)),
     )?;
 
     Ok(())

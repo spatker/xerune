@@ -23,7 +23,7 @@ impl<'a> Model for TodoList<'a> {
         self.render().unwrap()
     }
 
-    fn update(&mut self, msg: &str) {
+    fn update(&mut self, msg: &str, _context: &mut xerune::Context) {
          if let Some(index_str) = msg.strip_prefix("toggle:") {
              if let Ok(index) = index_str.parse::<usize>() {
                 if index < self.items.len() {

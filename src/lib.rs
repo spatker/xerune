@@ -66,6 +66,40 @@ impl Rect {
     }
 }
 
+pub struct Canvas {
+    pub width: u32,
+    pub height: u32,
+    pub data: Vec<u8>,
+    pub dirty: bool,
+}
+
+impl Canvas {
+    pub fn new(width: u32, height: u32) -> Self {
+        Self {
+            width,
+            height,
+            data: vec![0; (width * height * 4) as usize],
+            dirty: true,
+        }
+    }
+}
+
+pub struct Context {
+    pub canvases: HashMap<String, Canvas>,
+}
+
+impl Context {
+    pub fn new() -> Self {
+        Self {
+            canvases: HashMap::new(),
+        }
+    }
+    
+    pub fn canvas_mut(&mut self, id: &str) -> Option<&mut Canvas> {
+        self.canvases.get_mut(id)
+    }
+}
+
 pub enum DrawCommand {
     Clip { rect: Rect },
     PopClip,
@@ -107,6 +141,10 @@ pub enum DrawCommand {
         max: f32,
         color: Color,
     },
+    DrawCanvas {
+        id: String,
+        rect: Rect,
+    },
 }
 
 pub trait TextMeasurer {
@@ -114,7 +152,7 @@ pub trait TextMeasurer {
 }
 
 pub trait Renderer: TextMeasurer {
-    fn render(&mut self, commands: &[DrawCommand]);
+    fn render(&mut self, commands: &[DrawCommand], canvases: &HashMap<String, Canvas>);
 }
 
 #[derive(Debug, Clone)]
@@ -154,6 +192,7 @@ pub enum RenderData {
     Checkbox(bool, TextStyle),
     Slider(f32, TextStyle),
     Progress(f32, f32, TextStyle), // value, max, style
+    Canvas(String, TextStyle),
 }
 
 
@@ -161,7 +200,7 @@ pub enum RenderData {
 
 pub trait Model {
     fn view(&self) -> String;
-    fn update(&mut self, msg: &str);
+    fn update(&mut self, msg: &str, context: &mut Context);
 }
 
 pub enum InputEvent {
@@ -178,6 +217,7 @@ pub struct Runtime<M, R> {
     default_style: TextStyle,
     scroll_offsets: HashMap<NodeId, (f32, f32)>, // Persist scroll offsets
     cached_size: Size<AvailableSpace>,
+    context: Context,
 }
 
 impl<M: Model, R: TextMeasurer> Runtime<M, R> {
@@ -185,6 +225,11 @@ impl<M: Model, R: TextMeasurer> Runtime<M, R> {
          let default_style = TextStyle::default();
          let html = model.view();
          let ui = Ui::new(&html, &measurer, default_style.clone()).unwrap();
+         
+         let mut context = Context::new();
+         // Initial sync of canvases
+         Runtime::<M, R>::sync_canvases(&ui, &mut context);
+
          Self {
              model,
              measurer,
@@ -192,7 +237,40 @@ impl<M: Model, R: TextMeasurer> Runtime<M, R> {
              default_style,
              scroll_offsets: HashMap::new(),
              cached_size: Size::MAX_CONTENT,
+             context,
          }
+    }
+
+    fn sync_canvases(ui: &Ui, context: &mut Context) {
+        for (node_id, data) in &ui.render_data {
+            if let RenderData::Canvas(id, _style) = data {
+                if !context.canvases.contains_key(id) {
+                     // Try to get size from Taffy style (set by CSS or attributes)
+                     let mut width = 200;
+                     let mut height = 200;
+
+                     if let Ok(style) = ui.taffy.style(*node_id) {
+                         let w_dim = style.size.width;
+                         if !w_dim.is_auto() {
+                             let val = w_dim.value();
+                             if w_dim == Dimension::length(val) {
+                                  width = val as u32;
+                             }
+                         }
+
+                         let h_dim = style.size.height;
+                         if !h_dim.is_auto() {
+                             let val = h_dim.value();
+                             if h_dim == Dimension::length(val) {
+                                 height = val as u32;
+                             }
+                         }
+                     }
+
+                     context.canvases.insert(id.clone(), Canvas::new(width, height));
+                }
+            }
+        }
     }
 
     fn restore_scroll(&mut self) {
@@ -205,7 +283,7 @@ impl<M: Model, R: TextMeasurer> Runtime<M, R> {
                 if let Some(msg) = self.ui.hit_test(x, y) {
                     {
                         profile!("update");
-                        self.model.update(&msg);
+                        self.model.update(&msg, &mut self.context);
                     }
                     let html = {
                         profile!("view");
@@ -220,6 +298,7 @@ impl<M: Model, R: TextMeasurer> Runtime<M, R> {
                         profile!("compute_layout");
                         let _ = self.ui.compute_layout(self.cached_size);
                     }
+                    Runtime::<M, R>::sync_canvases(&self.ui, &mut self.context);
                     self.restore_scroll();
                     return true;
                 }
@@ -228,9 +307,9 @@ impl<M: Model, R: TextMeasurer> Runtime<M, R> {
                 {
                     profile!("update");
                     if let Some(ms) = render_time_ms {
-                        self.model.update(&format!("render_time_ms:{}", ms));
+                        self.model.update(&format!("render_time_ms:{}", ms), &mut self.context);
                     }
-                    self.model.update("tick");
+                    self.model.update("tick", &mut self.context);
                 }
                 let html = {
                     profile!("view");
@@ -244,6 +323,7 @@ impl<M: Model, R: TextMeasurer> Runtime<M, R> {
                     profile!("compute_layout");
                     let _ = self.ui.compute_layout(self.cached_size);
                 }
+                Runtime::<M, R>::sync_canvases(&self.ui, &mut self.context);
                 self.restore_scroll();
                 return true;
             }
@@ -261,7 +341,7 @@ impl<M: Model, R: TextMeasurer> Runtime<M, R> {
     
     pub fn render(&self, renderer: &mut impl Renderer) {
         profile!("render");
-        self.ui.render(renderer);
+        self.ui.render(renderer, &self.context.canvases);
     }
 
     pub fn set_size(&mut self, width: f32, height: f32) {
@@ -439,7 +519,7 @@ impl Ui {
         self.taffy.compute_layout(self.root, available_space)
     }
 
-    pub fn render(&self, renderer: &mut impl Renderer) {
+    pub fn render(&self, renderer: &mut impl Renderer, canvases: &HashMap<String, Canvas>) {
         let commands = layout_to_draw_commands(
             &self.taffy, 
             self.root, 
@@ -448,7 +528,7 @@ impl Ui {
             0.0, 
             0.0
         );
-        renderer.render(&commands);
+        renderer.render(&commands, canvases);
     }
 
     pub fn hit_test(&self, x: f32, y: f32) -> Option<Interaction> {
@@ -525,13 +605,17 @@ fn dom_to_taffy(
             let mut checkbox_checked = false;
             let mut interaction_id: Option<String> = None;
             let mut image_src = String::new();
-
+            let mut canvas_id = String::new();
+            
             // 2. Parse Attributes
             for attr in attrs.borrow().iter() {
                 let name = attr.name.local.as_ref();
                 let value = &attr.value;
                 
                 match name {
+                    "id" => {
+                        canvas_id = value.to_string();
+                    },
                     "style" => {
                         css::parse_inline_style(value, &mut current_style, &mut layout_style);
                     },
@@ -583,7 +667,7 @@ fn dom_to_taffy(
             
             // 3. Process Children (recurse if not a leaf element like img/input)
             let mut children = Vec::new();
-            if element_type != defaults::ElementType::Image && element_type != defaults::ElementType::Checkbox  && element_type != defaults::ElementType::Slider && element_type != defaults::ElementType::Progress {
+            if element_type != defaults::ElementType::Image && element_type != defaults::ElementType::Checkbox  && element_type != defaults::ElementType::Slider && element_type != defaults::ElementType::Progress && element_type != defaults::ElementType::Canvas {
                 for child in handle.children.borrow().iter() {
                      if let Some(id) = dom_to_taffy(taffy, child, text_measurer, render_data, interactions, current_style.clone()) {
                          children.push(id);
@@ -607,6 +691,9 @@ fn dom_to_taffy(
                 },
                 defaults::ElementType::Progress => {
                     render_data.insert(id, RenderData::Progress(progress_value, progress_max, current_style));
+                },
+                defaults::ElementType::Canvas => {
+                    render_data.insert(id, RenderData::Canvas(canvas_id, current_style));
                 },
                 _ => {
                     render_data.insert(id, RenderData::Container(current_style));
@@ -746,6 +833,12 @@ fn traverse_layout(
                     value: *value,
                     max: *max,
                     color: style.color,
+                });
+            },
+            RenderData::Canvas(id, _) => {
+                commands.push(DrawCommand::DrawCanvas {
+                    id: id.clone(),
+                    rect,
                 });
             },
             _ => {} // Container and others handled by shared logic or ignored

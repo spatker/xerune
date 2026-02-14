@@ -97,7 +97,7 @@ impl Model for AnimationModel {
         template.render().unwrap()
     }
 
-    fn update(&mut self, msg: &str) {
+    fn update(&mut self, msg: &str, _context: &mut xerune::Context) {
         if let Some(val) = msg.strip_prefix("render_time_ms:") {
             if let Ok(ms) = val.parse::<f32>() {
                 self.render_time = Some(ms);

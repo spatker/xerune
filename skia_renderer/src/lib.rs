@@ -1,6 +1,7 @@
-use xerune::{DrawCommand, TextMeasurer, Renderer};
+use xerune::{Canvas, DrawCommand, TextMeasurer, Renderer};
 use fontdue::Font;
-use tiny_skia::{Pixmap, Transform, PixmapPaint, Mask, PathBuilder, FillRule};
+use tiny_skia::{Pixmap, Transform, PixmapPaint, Mask, PathBuilder, FillRule, PixmapRef};
+use std::collections::HashMap;
 
 pub struct TinySkiaMeasurer<'a> {
     pub fonts: &'a [Font],
@@ -106,7 +107,7 @@ impl<'a> TextMeasurer for TinySkiaRenderer<'a> {
 }
 
 impl<'a> Renderer for TinySkiaRenderer<'a> {
-    fn render(&mut self, commands: &[DrawCommand]) {
+    fn render(&mut self, commands: &[DrawCommand], canvases: &HashMap<String, Canvas>) {
         for command in commands {
             match command {
                 DrawCommand::Clip { rect } => {
@@ -425,6 +426,24 @@ impl<'a> Renderer for TinySkiaRenderer<'a> {
                     }
                 }
 
+        
+                DrawCommand::DrawCanvas { id, rect } => {
+                    if let Some(canvas) = canvases.get(id) {
+                        if let Some(canvas_pixmap) = PixmapRef::from_bytes(&canvas.data, canvas.width, canvas.height) {
+                            let sx = rect.width / canvas.width as f32;
+                            let sy = rect.height / canvas.height as f32;
+                            let transform = Transform::from_scale(sx, sy).post_translate(rect.x, rect.y);
+
+                            self.pixmap.draw_pixmap(
+                                0, 0,
+                                canvas_pixmap,
+                                &PixmapPaint::default(),
+                                transform,
+                                self.current_mask.as_ref()
+                            );
+                        }
+                    }
+                }
             }
         }
     }

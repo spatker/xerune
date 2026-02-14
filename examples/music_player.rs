@@ -96,7 +96,7 @@ impl Model for MusicPlayerModel {
         template.render().unwrap()
     }
 
-    fn update(&mut self, msg: &str) {
+    fn update(&mut self, msg: &str, _context: &mut xerune::Context) {
         if let Some(id_str) = msg.strip_prefix("select_track:") {
              if let Some(index) = self.tracks.iter().position(|t| t.id == id_str) {
                  self.current_track_index = Some(index);
@@ -150,7 +150,7 @@ impl Model for MusicPlayerModel {
                                      self.last_tick = Instant::now();
                                  } else {
                                      // Auto next
-                                     self.update("next"); 
+                                     self.update("next", _context); 
                                  }
                              }
                          }
