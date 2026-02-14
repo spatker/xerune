@@ -178,11 +178,32 @@ fn main() -> anyhow::Result<()> {
     
     #[cfg(not(all(target_os = "linux", feature = "linuxfb", feature = "evdev")))]
     {
-        support::winit_backend::run_app("RMTUI Music Player", 800, 480, runtime, fonts_ref, Some(Duration::from_secs(1)))
+        support::winit_backend::run_app(
+            "RMTUI Music Player", 
+            800, 
+            480, 
+            runtime, 
+            fonts_ref, 
+            move |proxy| {
+                std::thread::spawn(move || {
+                     loop {
+                         let _ = proxy.send_event("tick".to_string());
+                         std::thread::sleep(std::time::Duration::from_secs(1));
+                     }
+                });
+            }
+        )
     }
 
     #[cfg(all(target_os = "linux", feature = "linuxfb", feature = "evdev"))]
     {
-         support::linux_backend::run_app("RMTUI Music Player", 800, 480, runtime, fonts_ref, Some(Duration::from_secs(1)))
+         support::linux_backend::run_app(
+             "RMTUI Music Player", 
+             800, 
+             480, 
+             runtime, 
+             fonts_ref, 
+             |_| {}
+         )
     }
 }

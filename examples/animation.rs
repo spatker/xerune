@@ -147,11 +147,32 @@ fn main() -> anyhow::Result<()> {
     
     #[cfg(not(all(target_os = "linux", feature = "linuxfb", feature = "evdev")))]
     {
-        support::winit_backend::run_app("RMTUI Animation Benchmark", 800, 600, runtime, fonts_ref, Some(std::time::Duration::ZERO))
+        support::winit_backend::run_app(
+            "RMTUI Animation Benchmark",
+            800, 
+            600, 
+            runtime, 
+            fonts_ref, 
+            move |proxy| {
+                std::thread::spawn(move || {
+                    loop {
+                        let _ = proxy.send_event("tick".to_string());
+                        std::thread::sleep(std::time::Duration::from_millis(16));
+                    }
+                });
+            }
+        )
     }
     
     #[cfg(all(target_os = "linux", feature = "linuxfb", feature = "evdev"))]
     {
-        support::linux_backend::run_app("RMTUI Animation Benchmark", 800, 600, runtime, fonts_ref, Some(std::time::Duration::ZERO))
+        support::linux_backend::run_app(
+            "RMTUI Animation Benchmark",
+            800, 
+            600, 
+            runtime, 
+            fonts_ref, 
+            |_| {} // Linux backend handles its own loop for now
+        )
     }
 }

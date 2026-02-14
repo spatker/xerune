@@ -207,7 +207,7 @@ pub enum InputEvent {
     Click { x: f32, y: f32 },
     Hover { x: f32, y: f32 },
     Scroll { x: f32, y: f32, delta_x: f32, delta_y: f32 },
-    Tick { render_time_ms: Option<f32> },
+    Message(String),
 }
 
 pub struct Runtime<M, R> {
@@ -303,13 +303,10 @@ impl<M: Model, R: TextMeasurer> Runtime<M, R> {
                     return true;
                 }
             }
-            InputEvent::Tick { render_time_ms } => {
+            InputEvent::Message(msg) => {
                 {
                     profile!("update");
-                    if let Some(ms) = render_time_ms {
-                        self.model.update(&format!("render_time_ms:{}", ms), &mut self.context);
-                    }
-                    self.model.update("tick", &mut self.context);
+                    self.model.update(&msg, &mut self.context);
                 }
                 let html = {
                     profile!("view");

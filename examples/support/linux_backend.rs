@@ -15,7 +15,7 @@ pub fn run_app<M: Model + 'static, TM: TextMeasurer + 'static>(
     height: u32,
     mut runtime: Runtime<M, TM>,
     fonts: &'static [Font],
-    _tick_interval: Option<std::time::Duration>,
+    _setup: impl FnOnce(winit::event_loop::EventLoopProxy<String>),
 ) -> anyhow::Result<()> {
     
     // Attempt to open framebuffer

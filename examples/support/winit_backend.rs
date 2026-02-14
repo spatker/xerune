@@ -1,8 +1,8 @@
 use winit::event::{Event, WindowEvent, ElementState, MouseButton, MouseScrollDelta};
-use winit::event_loop::{ControlFlow, EventLoop};
+use winit::event_loop::{ControlFlow};
 use winit::window::WindowBuilder;
 use std::rc::Rc;
-use std::time::Instant;
+
 use std::num::NonZeroU32;
 use tiny_skia::{Pixmap, Color};
 use xerune::{Model, InputEvent, Runtime, TextMeasurer};
@@ -15,9 +15,11 @@ pub fn run_app<M: Model + 'static, TM: TextMeasurer + 'static>(
     height: u32,
     mut runtime: Runtime<M, TM>,
     fonts: &'static [Font],
-    tick_interval: Option<std::time::Duration>,
+    setup: impl FnOnce(winit::event_loop::EventLoopProxy<String>),
 ) -> anyhow::Result<()> {
-    let event_loop = EventLoop::new()?;
+    let event_loop = winit::event_loop::EventLoopBuilder::<String>::with_user_event().build()?;
+    let proxy = event_loop.create_proxy();
+    setup(proxy.clone());
     let window = Rc::new(WindowBuilder::new()
         .with_title(title)
         .with_inner_size(winit::dpi::LogicalSize::new(width as f64, height as f64))
@@ -32,46 +34,16 @@ pub fn run_app<M: Model + 'static, TM: TextMeasurer + 'static>(
     let mut mouse_x = 0.0;
     let mut mouse_y = 0.0;
     
-    let mut last_render_time: Option<f32> = None;
-    let mut next_tick = Instant::now();
+
 
     event_loop.run(move |event, target| {
-         // handle control flow based on tick_interval
-         match tick_interval {
-            Some(interval) if interval.is_zero() => {
-                 target.set_control_flow(ControlFlow::Poll);
-            }
-            Some(_interval) => {
-                if target.control_flow() != ControlFlow::WaitUntil(next_tick) {
-                     target.set_control_flow(ControlFlow::WaitUntil(next_tick));
-                }
-            }
-            None => {
-                target.set_control_flow(ControlFlow::Wait);
-            }
-        }
+         target.set_control_flow(ControlFlow::Wait);
 
         match event {
-             winit::event::Event::NewEvents(winit::event::StartCause::ResumeTimeReached { .. }) => {
-                 if let Some(interval) = tick_interval {
-                     if !interval.is_zero() {
-                         if runtime.handle_event(InputEvent::Tick { render_time_ms: last_render_time }) {
-                            window_clone.request_redraw();
-                         }
-                         next_tick = Instant::now() + interval;
-                         target.set_control_flow(ControlFlow::WaitUntil(next_tick));
-                     }
-                 }
-             },
-            Event::AboutToWait => {
-                 // Only tick on AboutToWait if we are polling (interval == 0)
-                 if let Some(interval) = tick_interval {
-                     if interval.is_zero() {
-                        if runtime.handle_event(InputEvent::Tick { render_time_ms: last_render_time }) {
-                            window_clone.request_redraw();
-                        }
-                     }
-                 }
+            Event::UserEvent(msg) => {
+                if runtime.handle_event(InputEvent::Message(msg)) {
+                    window_clone.request_redraw();
+                }
             },
             Event::WindowEvent { window_id, event } if window_id == window_clone.id() => {
                 match event {
@@ -104,9 +76,11 @@ pub fn run_app<M: Model + 'static, TM: TextMeasurer + 'static>(
                             pixmap.fill(Color::from_rgba8(34, 34, 34, 255)); 
 
                             let mut renderer = TinySkiaRenderer::new(&mut pixmap, fonts);
-                            let start_render = Instant::now();
+                            // let start_render = Instant::now();
                             runtime.render(&mut renderer);
-                            last_render_time = Some(start_render.elapsed().as_secs_f32() * 1000.0);
+                            // let elapsed = start_render.elapsed().as_secs_f32() * 1000.0;
+                            // last_render_time = Some(elapsed);
+
 
                             let data = pixmap.data();
                             for (i, chunk) in data.chunks_exact(4).enumerate() {

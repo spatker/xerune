@@ -166,7 +166,14 @@ fn main() -> anyhow::Result<()> {
         900,
         runtime,
         fonts_ref,
-        Some(std::time::Duration::from_millis(300)),
+        move |proxy| {
+            std::thread::spawn(move || {
+                loop {
+                    let _ = proxy.send_event("tick".to_string());
+                    std::thread::sleep(std::time::Duration::from_millis(300));
+                }
+            });
+        }
     )?;
 
     Ok(())

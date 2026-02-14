@@ -59,12 +59,12 @@ fn main() -> anyhow::Result<()> {
     
     #[cfg(not(all(target_os = "linux", feature = "linuxfb", feature = "evdev")))]
     {
-        support::winit_backend::run_app("RMTUI Todo Example", 800, 600, runtime, fonts_ref, None)
+        support::winit_backend::run_app("RMTUI Todo Example", 800, 600, runtime, fonts_ref, | _ | {})
     }
 
     #[cfg(all(target_os = "linux", feature = "linuxfb", feature = "evdev"))]
     {
-        support::linux_backend::run_app("RMTUI Todo Example", 800, 600, runtime, fonts_ref, None)
+        support::linux_backend::run_app("RMTUI Todo Example", 800, 600, runtime, fonts_ref, | _ | {})
     }
 }
 
