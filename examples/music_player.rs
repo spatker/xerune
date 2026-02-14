@@ -78,7 +78,38 @@ impl MusicPlayerModel {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+enum Msg {
+    SelectTrack(String),
+    Back,
+    Stop,
+    PlayPause,
+    Next,
+    Prev,
+    Tick,
+}
+
+impl std::str::FromStr for Msg {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+         if let Some(id_str) = s.strip_prefix("select_track:") {
+             return Ok(Msg::SelectTrack(id_str.to_string()));
+         }
+         match s {
+             "back" => Ok(Msg::Back),
+             "stop" => Ok(Msg::Stop),
+             "play_pause" => Ok(Msg::PlayPause),
+             "next" => Ok(Msg::Next),
+             "prev" => Ok(Msg::Prev),
+             "tick" => Ok(Msg::Tick),
+             _ => Err(()),
+         }
+    }
+}
+
 impl Model for MusicPlayerModel {
+    type Message = Msg;
+
     fn view(&self) -> String {
         let dummy_track = &self.tracks[0]; 
         let current = self.current_track_index.map(|i| &self.tracks[i]).unwrap_or(dummy_track);
@@ -96,69 +127,67 @@ impl Model for MusicPlayerModel {
         template.render().unwrap()
     }
 
-    fn update(&mut self, msg: &str, _context: &mut xerune::Context) {
-        if let Some(id_str) = msg.strip_prefix("select_track:") {
-             if let Some(index) = self.tracks.iter().position(|t| t.id == id_str) {
-                 self.current_track_index = Some(index);
-                 self.is_playing = true;
-                 self.elapsed_seconds = 0;
-                 self.last_tick = Instant::now();
-             }
-        } else {
-             match msg {
-                 "back" => {
-                     self.current_track_index = None;
-                 },
-                 "stop" => {
-                     self.is_playing = false;
+    fn update(&mut self, msg: Self::Message, context: &mut xerune::Context) {
+         match msg {
+             Msg::SelectTrack(id_str) => {
+                 if let Some(index) = self.tracks.iter().position(|t| t.id == id_str) {
+                     self.current_track_index = Some(index);
+                     self.is_playing = true;
                      self.elapsed_seconds = 0;
-                     self.current_track_index = None;
-                 },
-                 "play_pause" => {
-                     self.is_playing = !self.is_playing;
-                     if self.is_playing {
-                         self.last_tick = Instant::now();
+                     self.last_tick = Instant::now();
+                 }
+             },
+             Msg::Back => {
+                 self.current_track_index = None;
+             },
+             Msg::Stop => {
+                 self.is_playing = false;
+                 self.elapsed_seconds = 0;
+                 self.current_track_index = None;
+             },
+             Msg::PlayPause => {
+                 self.is_playing = !self.is_playing;
+                 if self.is_playing {
+                     self.last_tick = Instant::now();
+                 }
+             },
+             Msg::Next => {
+                 if let Some(mut idx) = self.current_track_index {
+                     idx = (idx + 1) % self.tracks.len();
+                     self.current_track_index = Some(idx);
+                     self.elapsed_seconds = 0;
+                     self.last_tick = Instant::now();
+                 }
+             },
+             Msg::Prev => {
+                  if let Some(mut idx) = self.current_track_index {
+                     if idx > 0 {
+                         idx -= 1;
+                     } else {
+                         idx = self.tracks.len() - 1;
                      }
-                 },
-                 "next" => {
-                     if let Some(mut idx) = self.current_track_index {
-                         idx = (idx + 1) % self.tracks.len();
-                         self.current_track_index = Some(idx);
-                         self.elapsed_seconds = 0;
-                         self.last_tick = Instant::now();
-                     }
-                 },
-                 "prev" => {
-                      if let Some(mut idx) = self.current_track_index {
-                         if idx > 0 {
-                             idx -= 1;
-                         } else {
-                             idx = self.tracks.len() - 1;
-                         }
-                         self.current_track_index = Some(idx);
-                         self.elapsed_seconds = 0;
-                         self.last_tick = Instant::now();
-                     }
-                 },
-                 "tick" => {
-                     if self.is_playing {
-                         if self.last_tick.elapsed() >= Duration::from_secs(1) {
-                             if let Some(idx) = self.current_track_index {
-                                 let duration = self.tracks[idx].duration_seconds();
-                                 if self.elapsed_seconds < duration {
-                                     self.elapsed_seconds += 1;
-                                     self.last_tick = Instant::now();
-                                 } else {
-                                     // Auto next
-                                     self.update("next", _context); 
-                                 }
+                     self.current_track_index = Some(idx);
+                     self.elapsed_seconds = 0;
+                     self.last_tick = Instant::now();
+                 }
+             },
+             Msg::Tick => {
+                 if self.is_playing {
+                     if self.last_tick.elapsed() >= Duration::from_secs(1) {
+                         if let Some(idx) = self.current_track_index {
+                             let duration = self.tracks[idx].duration_seconds();
+                             if self.elapsed_seconds < duration {
+                                 self.elapsed_seconds += 1;
+                                 self.last_tick = Instant::now();
+                             } else {
+                                 // Auto next
+                                 self.update(Msg::Next, context); 
                              }
                          }
                      }
                  }
-                 _ => {}
              }
-        }
+         }
     }
 }
 

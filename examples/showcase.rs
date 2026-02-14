@@ -16,46 +16,68 @@ struct RowData {
 #[derive(Template)]
 #[template(path = "showcase.html")]
 struct ShowcaseTemplate<'a> {
-    progress_value: f32,
+    system_load_value: f32,
     table_data: &'a [RowData],
-    counter: i32,
+    user_counter: i32,
 }
 
 struct ShowcaseModel {
-    progress_value: f32,
+    system_load_value: f32,
     table_data: Vec<RowData>,
-    counter: i32,
+    user_counter: i32,
+}
+
+#[derive(Debug, Clone)]
+enum ShowcaseMsg {
+    IncrementProgress,
+    IncrementUserCounter,
+    Tick,
+}
+
+impl std::str::FromStr for ShowcaseMsg {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "increment_progress" => Ok(ShowcaseMsg::IncrementProgress),
+            "increment_user_counter" => Ok(ShowcaseMsg::IncrementUserCounter),
+            "tick" => Ok(ShowcaseMsg::Tick),
+            _ => Err(()),
+        }
+    }
 }
 
 impl Model for ShowcaseModel {
+    type Message = ShowcaseMsg;
+
     fn view(&self) -> String {
         let template = ShowcaseTemplate {
-            progress_value: self.progress_value,
+            system_load_value: self.system_load_value,
             table_data: &self.table_data,
-            counter: self.counter,
+            user_counter: self.user_counter,
         };
         template.render().unwrap()
     }
 
-    fn update(&mut self, msg: &str, context: &mut xerune::Context) {
+    fn update(&mut self, msg: Self::Message, context: &mut xerune::Context) {
         match msg {
-            "increment_progress" => {
-                self.progress_value += 10.0;
-                if self.progress_value > 100.0 {
-                    self.progress_value = 0.0;
+            ShowcaseMsg::IncrementProgress => {
+                self.system_load_value += 10.0;
+                if self.system_load_value > 100.0 {
+                    self.system_load_value = 0.0;
                 }
             },
-            "increment_counter" => {
-                self.counter += 1;
+            ShowcaseMsg::IncrementUserCounter => {
+                self.user_counter += 1;
             },
-            "tick" => {
+            ShowcaseMsg::Tick => {
                  // Update simulated CPU loads
                  let mut cpu_loads = vec![0.0; 4];
 
                  for load in cpu_loads.iter_mut() {
                      let noise = rand::thread_rng().gen_range(-10.0..10.0);
                      
-                     *load = (self.progress_value + noise).clamp(0.0, 100.0);
+                     *load = (self.system_load_value + noise).clamp(0.0, 100.0);
                  }
 
                  if let Some(canvas) = context.canvas_mut("load_chart") {
@@ -128,8 +150,7 @@ impl Model for ShowcaseModel {
                      
                      canvas.dirty = true;
                  }
-            },
-            _ => {}
+            }
         }
     }
 }
@@ -147,7 +168,7 @@ fn main() -> anyhow::Result<()> {
     let measurer = skia_renderer::TinySkiaMeasurer { fonts: fonts_ref };
 
     let model = ShowcaseModel {
-        progress_value: 30.0,
+        system_load_value: 30.0,
         table_data: vec![
             RowData { id: "001".into(), name: "System Core".into(), status: "Online".into() },
             RowData { id: "002".into(), name: "Render Engine".into(), status: "Active".into() },
@@ -155,7 +176,7 @@ fn main() -> anyhow::Result<()> {
             RowData { id: "004".into(), name: "Storage".into(), status: "Checking".into() },
             RowData { id: "005".into(), name: "Audio".into(), status: "Muted".into() },
         ],
-        counter: 1234,
+        user_counter: 1234,
     };
 
     let runtime = Runtime::new(model, measurer);

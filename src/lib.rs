@@ -1,6 +1,7 @@
 mod css;
 mod defaults;
 
+use std::str::FromStr;
 use taffy::prelude::*;
 use taffy::TaffyError;
 use markup5ever_rcdom::{Handle, NodeData, RcDom};
@@ -199,8 +200,9 @@ pub enum RenderData {
 
 
 pub trait Model {
+    type Message: std::str::FromStr + Send + Sync + 'static;
     fn view(&self) -> String;
-    fn update(&mut self, msg: &str, context: &mut Context);
+    fn update(&mut self, msg: Self::Message, context: &mut Context);
 }
 
 pub enum InputEvent {
@@ -224,7 +226,8 @@ impl<M: Model, R: TextMeasurer> Runtime<M, R> {
     pub fn new(model: M, measurer: R) -> Self {
          let default_style = TextStyle::default();
          let html = model.view();
-         let ui = Ui::new(&html, &measurer, default_style.clone()).unwrap();
+         let validator = |s: &str| M::Message::from_str(s).is_ok();
+         let ui = Ui::new(&html, &measurer, default_style.clone(), &validator).unwrap();
          
          let mut context = Context::new();
          // Initial sync of canvases
@@ -280,19 +283,49 @@ impl<M: Model, R: TextMeasurer> Runtime<M, R> {
     pub fn handle_event(&mut self, event: InputEvent) -> bool {
         match event {
             InputEvent::Click { x, y } => {
-                if let Some(msg) = self.ui.hit_test(x, y) {
+                if let Some(msg_str) = self.ui.hit_test(x, y) {
+                    if let Ok(msg) = M::Message::from_str(&msg_str) {
+                        {
+                            profile!("update");
+                            self.model.update(msg, &mut self.context);
+                        }
+                        let html = {
+                            profile!("view");
+                            self.model.view()
+                        };
+                        // Recreate UI to reflect changes
+                        self.ui = {
+                            profile!("ui_new");
+                            let validator = |s: &str| M::Message::from_str(s).is_ok();
+                            Ui::new(&html, &self.measurer, self.default_style.clone(), &validator).unwrap()
+                        };
+                        {
+                            profile!("compute_layout");
+                            let _ = self.ui.compute_layout(self.cached_size);
+                        }
+                        Runtime::<M, R>::sync_canvases(&self.ui, &mut self.context);
+                        self.restore_scroll();
+                        return true;
+                    } else {
+                        log::error!("Failed to parse message: {}", msg_str);
+                    }
+                }
+                return false; // Should return false if not handled or empty
+            }
+            InputEvent::Message(msg_str) => {
+                if let Ok(msg) = M::Message::from_str(&msg_str) {
                     {
                         profile!("update");
-                        self.model.update(&msg, &mut self.context);
+                        self.model.update(msg, &mut self.context);
                     }
                     let html = {
                         profile!("view");
                         self.model.view()
                     };
-                    // Recreate UI to reflect changes
                     self.ui = {
-                        profile!("ui_new");
-                        Ui::new(&html, &self.measurer, self.default_style.clone()).unwrap()
+                         profile!("ui_new");
+                         let validator = |s: &str| M::Message::from_str(s).is_ok();
+                         Ui::new(&html, &self.measurer, self.default_style.clone(), &validator).unwrap()
                     };
                     {
                         profile!("compute_layout");
@@ -301,28 +334,9 @@ impl<M: Model, R: TextMeasurer> Runtime<M, R> {
                     Runtime::<M, R>::sync_canvases(&self.ui, &mut self.context);
                     self.restore_scroll();
                     return true;
+                } else {
+                    log::error!("Failed to parse message: {}", msg_str);
                 }
-            }
-            InputEvent::Message(msg) => {
-                {
-                    profile!("update");
-                    self.model.update(&msg, &mut self.context);
-                }
-                let html = {
-                    profile!("view");
-                    self.model.view()
-                };
-                self.ui = {
-                     profile!("ui_new");
-                     Ui::new(&html, &self.measurer, self.default_style.clone()).unwrap()
-                };
-                {
-                    profile!("compute_layout");
-                    let _ = self.ui.compute_layout(self.cached_size);
-                }
-                Runtime::<M, R>::sync_canvases(&self.ui, &mut self.context);
-                self.restore_scroll();
-                return true;
             }
 
             InputEvent::Scroll { x, y, delta_x, delta_y } => {
@@ -373,6 +387,7 @@ impl Ui {
         html: &str, 
         measurer: &impl TextMeasurer,
         default_style: TextStyle,
+        message_validator: &impl Fn(&str) -> bool,
     ) -> Result<Self, TaffyError> {
         profile!("ui_new_internal");
         let mut taffy = TaffyTree::new();
@@ -390,7 +405,8 @@ impl Ui {
             measurer, 
             &mut render_data, 
             &mut interactions, 
-            default_style
+            default_style,
+            message_validator
         ).ok_or(TaffyError::ChildIndexOutOfBounds { parent: NodeId::new(0), child_index: 0, child_count: 0 })?; // TODO: Better error
 
         Ok(Self {
@@ -552,6 +568,7 @@ fn dom_to_taffy(
     render_data: &mut HashMap<NodeId, RenderData>,
     interactions: &mut HashMap<NodeId, Interaction>,
     parent_style: TextStyle,
+    message_validator: &impl Fn(&str) -> bool,
 ) -> Option<NodeId> {
     
     // Prepare styles: Inherit font-related properties, but reset box-model properties.
@@ -570,7 +587,7 @@ fn dom_to_taffy(
             // Document just acts as a wrapper, process children
              let mut children = Vec::new();
              for child in handle.children.borrow().iter() {
-                 if let Some(id) = dom_to_taffy(taffy, child, text_measurer, render_data, interactions, current_style.clone()) {
+                 if let Some(id) = dom_to_taffy(taffy, child, text_measurer, render_data, interactions, current_style.clone(), message_validator) {
                      children.push(id);
                  }
             }
@@ -654,6 +671,9 @@ fn dom_to_taffy(
                          image_src = value.to_string();
                      },
                      "data-on-click" => {
+                         if !message_validator(value) {
+                             log::warn!("Invalid message in data-on-click: {}", value);
+                         }
                          interaction_id = Some(value.to_string());
                      }
                      _ => {
@@ -666,7 +686,7 @@ fn dom_to_taffy(
             let mut children = Vec::new();
             if element_type != defaults::ElementType::Image && element_type != defaults::ElementType::Checkbox  && element_type != defaults::ElementType::Slider && element_type != defaults::ElementType::Progress && element_type != defaults::ElementType::Canvas {
                 for child in handle.children.borrow().iter() {
-                     if let Some(id) = dom_to_taffy(taffy, child, text_measurer, render_data, interactions, current_style.clone()) {
+                     if let Some(id) = dom_to_taffy(taffy, child, text_measurer, render_data, interactions, current_style.clone(), message_validator) {
                          children.push(id);
                      }
                 }

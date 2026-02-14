@@ -86,7 +86,30 @@ impl AnimationModel {
     }
 }
 
+#[derive(Debug, Clone)]
+enum AnimationMsg {
+    RenderTime(f32),
+    Tick,
+}
+
+impl std::str::FromStr for AnimationMsg {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if let Some(val) = s.strip_prefix("render_time_ms:") {
+            if let Ok(ms) = val.parse::<f32>() {
+                return Ok(AnimationMsg::RenderTime(ms));
+            }
+        }
+        if s == "tick" {
+            return Ok(AnimationMsg::Tick);
+        }
+        Err(())
+    }
+}
+
 impl Model for AnimationModel {
+    type Message = AnimationMsg;
+
     fn view(&self) -> String {
         let template = AnimationTemplate {
             items: &self.items,
@@ -97,33 +120,34 @@ impl Model for AnimationModel {
         template.render().unwrap()
     }
 
-    fn update(&mut self, msg: &str, _context: &mut xerune::Context) {
-        if let Some(val) = msg.strip_prefix("render_time_ms:") {
-            if let Ok(ms) = val.parse::<f32>() {
+    fn update(&mut self, msg: Self::Message, _context: &mut xerune::Context) {
+        match msg {
+            AnimationMsg::RenderTime(ms) => {
                 self.render_time = Some(ms);
-            }
-        } else if msg == "tick" {
-            // Update items
-            for item in &mut self.items {
-                item.x += item.vx;
-                item.y += item.vy;
+            },
+            AnimationMsg::Tick => {
+                // Update items
+                for item in &mut self.items {
+                    item.x += item.vx;
+                    item.y += item.vy;
+                    
+                    if item.x < 0.0 || item.x > 780.0 { item.vx *= -1.0; }
+                    if item.y < 0.0 || item.y > 580.0 { item.vy *= -1.0; }
+                }
                 
-                if item.x < 0.0 || item.x > 780.0 { item.vx *= -1.0; }
-                if item.y < 0.0 || item.y > 580.0 { item.vy *= -1.0; }
-            }
-            
-            self.frame_count += 1;
-            let now = Instant::now();
-            let elapsed = now.duration_since(self.last_frame);
-            if elapsed.as_secs() >= 1 {
-                self.fps = self.frame_count;
-                self.frame_count = 0;
-                self.last_frame = now;
-                
-                // Dump profile to stdout
-                println!("--- 1 Second Profile Dump ---");
-                coarse_prof::write(&mut std::io::stdout()).unwrap();
-                coarse_prof::reset();
+                self.frame_count += 1;
+                let now = Instant::now();
+                let elapsed = now.duration_since(self.last_frame);
+                if elapsed.as_secs() >= 1 {
+                    self.fps = self.frame_count;
+                    self.frame_count = 0;
+                    self.last_frame = now;
+                    
+                    // Dump profile to stdout
+                    println!("--- 1 Second Profile Dump ---");
+                    coarse_prof::write(&mut std::io::stdout()).unwrap();
+                    coarse_prof::reset();
+                }
             }
         }
     }

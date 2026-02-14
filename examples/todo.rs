@@ -18,19 +18,38 @@ struct TodoItem<'a> {
     completed: bool,
 }
 
+#[derive(Debug, Clone)]
+enum TodoMsg {
+    Toggle(usize),
+}
+
+impl std::str::FromStr for TodoMsg {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if let Some(index_str) = s.strip_prefix("toggle:") {
+             if let Ok(index) = index_str.parse::<usize>() {
+                 return Ok(TodoMsg::Toggle(index));
+             }
+        }
+        Err(())
+    }
+}
+
 impl<'a> Model for TodoList<'a> {
+    type Message = TodoMsg;
+
     fn view(&self) -> String {
         self.render().unwrap()
     }
 
-    fn update(&mut self, msg: &str, _context: &mut xerune::Context) {
-         if let Some(index_str) = msg.strip_prefix("toggle:") {
-             if let Ok(index) = index_str.parse::<usize>() {
+    fn update(&mut self, msg: Self::Message, _context: &mut xerune::Context) {
+        match msg {
+            TodoMsg::Toggle(index) => {
                 if index < self.items.len() {
                     self.items[index].completed = !self.items[index].completed;
                 }
-             }
-         }
+            }
+        }
     }
 }
 

@@ -3,7 +3,7 @@
 
     <!-- Header -->
     <div style="flex-direction: row; justify-content: space-between; align-items: center; margin-bottom: 40px;">
-        <h1 style="font-size: 36px; margin: 0; font-weight: bold; color: #ffffff;">RMTUI Dashboard</h1>
+        <h1 style="font-size: 36px; margin: 0; font-weight: bold; color: #ffffff;">Xerune Dashboard</h1>
         <div
             style="padding: 5px 15px; background-color: rgba(255,255,255,0.1); border-radius: 20px; border: 1px solid rgba(255,255,255,0.2);">
             <p style="margin: 0; font-size: 14px; font-weight: bold;">v0.2.0</p>
@@ -21,9 +21,9 @@
                     <div style="width: 10px; height: 10px; border-radius: 5px; background-color: #00ff00;"></div>
                 </div>
                 <span style="font-size: 24px; font-weight: bold; width: 120px;">
-                    {{ "{:.0}"|format(progress_value) }}% Load</span>
+                    {{ "{:.0}"|format(system_load_value) }}% Load</span>
             </div>
-            <progress value="{{ progress_value }}" max="100.0"
+            <progress value="{{ system_load_value }}" max="100.0"
                 style="height: 8px; border-radius: 4px; background-color: rgba(255,255,255,0.1); color: #00ff00; width: 100%;"></progress>
         </div>
 
@@ -33,7 +33,7 @@
             <h2 style="font-size: 16px; color: #aaaaaa; margin: 0 0 15px 0;">ACTIVE USERS</h2>
             <div style="flex-direction: row; align-items: flex-end;">
                 <span style="font-size: 48px; font-weight: bold; margin: 0; line-height: 1; width: 120px;">
-                    {{ counter }}</span>
+                    {{ user_counter }}</span>
                 <span style="font-size: 16px; color: #ea5455; margin-left: 10px; margin-bottom: 8px;">+12%</span>
             </div>
         </div>
@@ -77,7 +77,7 @@
                     <span style="font-weight: bold;">Simulate Load (+10%)</span>
                 </button>
 
-                <button data-on-click="increment_counter"
+                <button data-on-click="increment_user_counter"
                     style="padding: 15px; background-color: rgba(255,255,255,0.05); border-radius: 10px; border: 1px solid rgba(255,255,255,0.2); margin-bottom: 25px; align-items: center; border-width: 0px; color: white;">
                     <span style="font-weight: bold;">Add User</span>
                 </button>
