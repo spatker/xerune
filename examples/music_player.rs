@@ -7,9 +7,15 @@ use std::time::{Duration, Instant};
 // Import from the library and renderer
 use xerune::{Model, Runtime};
 use skia_renderer::TinySkiaMeasurer;
+use tiny_skia::{PixmapMut, Color, Paint, Rect, Transform, PathBuilder, FillRule};
+use rand::Rng;
 
 #[path = "support/mod.rs"]
 mod support;
+
+#[cfg(feature = "profile")]
+use coarse_prof::profile;
+
 
 #[derive(Debug, Deserialize, Clone)]
 struct Track {
@@ -52,6 +58,7 @@ struct MusicPlayerModel {
     is_playing: bool,
     elapsed_seconds: u64,
     last_tick: Instant,
+    visualizer_data: Vec<f32>,
 }
 
 impl MusicPlayerModel {
@@ -68,6 +75,7 @@ impl MusicPlayerModel {
             is_playing: false,
             elapsed_seconds: 0,
             last_tick: Instant::now(),
+            visualizer_data: vec![10.0; 30], // 30 bars
         }
     }
 
@@ -172,6 +180,64 @@ impl Model for MusicPlayerModel {
                  }
              },
              Msg::Tick => {
+                 // Update visualizer
+                 if self.is_playing {
+                     let mut rng = rand::thread_rng();
+                     for val in self.visualizer_data.iter_mut() {
+                        let change = rng.gen_range(-5.0..5.0);
+                        *val = (*val + change).clamp(5.0, 50.0);
+                     }
+                 } else {
+                     // Decay
+                     for val in self.visualizer_data.iter_mut() {
+                         *val = (*val * 0.9).max(2.0);
+                     }
+                 }
+
+                 // Draw Visualizer
+                 if let Some(canvas) = context.canvas_mut("visualizer") {
+                     let w = canvas.width as f32;
+                     let h = canvas.height as f32;
+                     
+                     // Create a PixmapMut wrapping the canvas data
+                     // Canvas data is RGBA u8
+                     if let Some(mut pixmap) = PixmapMut::from_bytes(&mut canvas.data, canvas.width, canvas.height) {
+                         pixmap.fill(Color::TRANSPARENT);
+                         
+                         let bars = self.visualizer_data.len();
+                         let gap = 4.0;
+                         let bar_width = (w - (bars as f32 - 1.0) * gap) / bars as f32;
+                         
+                         let mut paint = Paint::default();
+                         
+                         // Create linear gradient
+                         let gradient = tiny_skia::LinearGradient::new(
+                             tiny_skia::Point::from_xy(0.0, 0.0),
+                             tiny_skia::Point::from_xy(0.0, h),
+                             vec![
+                                 tiny_skia::GradientStop::new(0.0, tiny_skia::Color::from_rgba8(30, 215, 96, 255)), // Green
+                                 tiny_skia::GradientStop::new(1.0, tiny_skia::Color::from_rgba8(10, 100, 200, 200)), // Darker/Transparent Blue
+                             ],
+                             tiny_skia::SpreadMode::Pad,
+                             Transform::identity(),
+                         ).unwrap();
+                         
+                         paint.shader = gradient;
+                         
+                         for (i, &height) in self.visualizer_data.iter().enumerate() {
+                             let x = i as f32 * (bar_width + gap);
+                             let y = h - height;
+                             
+                             if let Some(rect) = Rect::from_xywh(x, y, bar_width, height) {
+                                 if let Some(path) = rounded_rect_path(rect, 4.0) {
+                                     pixmap.fill_path(&path, &paint, FillRule::Winding, Transform::identity(), None);
+                                 }
+                             }
+                         }
+                         canvas.dirty = true;
+                     }
+                 }
+
                  if self.is_playing {
                      if self.last_tick.elapsed() >= Duration::from_secs(1) {
                          if let Some(idx) = self.current_track_index {
@@ -186,9 +252,87 @@ impl Model for MusicPlayerModel {
                          }
                      }
                  }
+                 
+                 #[cfg(feature = "profile")]
+                 {
+                     static mut TICK_COUNT: usize = 0;
+                     unsafe {
+                         TICK_COUNT += 1;
+                         if TICK_COUNT % 100 == 0 {
+                             coarse_prof::write(&mut std::io::stdout()).unwrap();
+                             println!("--------------------------------------------------");
+                         }
+                     }
+                 }
              }
          }
     }
+}
+
+fn rounded_rect_path(rect: Rect, radius: f32) -> Option<tiny_skia::Path> {
+    let mut pb = PathBuilder::new();
+    
+    // Clamp radius to ensure it doesn't exceed half the rectangle's dimensions
+    let r = radius.min(rect.width() / 2.0).min(rect.height() / 2.0).max(0.0);
+    
+    if r <= 0.0 {
+        return Some(PathBuilder::from_rect(rect));
+    }
+    
+    // The factor for approximating a circle quadrant with a cubic Bezier curve.
+    let bezier_circle_factor = 0.55228475; // (4.0 / 3.0) * (std::f32::consts::PI / 8.0).tan();
+    let handle_offset = r * bezier_circle_factor;
+    
+    let left = rect.x();
+    let top = rect.y();
+    let right = rect.x() + rect.width();
+    let bottom = rect.y() + rect.height();
+
+    // Start at the top edge, just after the top-left corner
+    pb.move_to(left + r, top);
+    
+    // Top edge
+    pb.line_to(right - r, top);
+    
+    // Top-right corner
+    pb.cubic_to(
+        right - r + handle_offset, top,            // Control point 1
+        right, top + r - handle_offset,            // Control point 2
+        right, top + r                             // End point
+    );
+    
+    // Right edge
+    pb.line_to(right, bottom - r);
+    
+    // Bottom-right corner
+    pb.cubic_to(
+        right, bottom - r + handle_offset,
+        right - r + handle_offset, bottom,
+        right - r, bottom
+    );
+    
+    // Bottom edge
+    pb.line_to(left + r, bottom);
+    
+    // Bottom-left corner
+    pb.cubic_to(
+        left + r - handle_offset, bottom,
+        left, bottom - r + handle_offset,
+        left, bottom - r
+    );
+    
+    // Left edge
+    pb.line_to(left, top + r);
+    
+    // Top-left corner
+    pb.cubic_to(
+        left, top + r - handle_offset,
+        left + r - handle_offset, top,
+        left + r, top
+    );
+    
+    pb.close();
+    pb.finish()
 }
 
 fn main() -> anyhow::Result<()> {
@@ -217,7 +361,7 @@ fn main() -> anyhow::Result<()> {
                 std::thread::spawn(move || {
                      loop {
                          let _ = proxy.send_event("tick".to_string());
-                         std::thread::sleep(std::time::Duration::from_secs(1));
+                         std::thread::sleep(std::time::Duration::from_millis(33));
                      }
                 });
             }
