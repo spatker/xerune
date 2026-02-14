@@ -220,6 +220,7 @@ pub struct Runtime<M, R> {
     scroll_offsets: HashMap<NodeId, (f32, f32)>, // Persist scroll offsets
     cached_size: Size<AvailableSpace>,
     context: Context,
+    last_html: String,
 }
 
 impl<M: Model, R: TextMeasurer> Runtime<M, R> {
@@ -241,6 +242,7 @@ impl<M: Model, R: TextMeasurer> Runtime<M, R> {
              scroll_offsets: HashMap::new(),
              cached_size: Size::MAX_CONTENT,
              context,
+             last_html: html,
          }
     }
 
@@ -293,18 +295,23 @@ impl<M: Model, R: TextMeasurer> Runtime<M, R> {
                             profile!("view");
                             self.model.view()
                         };
-                        // Recreate UI to reflect changes
-                        self.ui = {
-                            profile!("ui_new");
-                            let validator = |s: &str| M::Message::from_str(s).is_ok();
-                            Ui::new(&html, &self.measurer, self.default_style.clone(), &validator).unwrap()
-                        };
-                        {
-                            profile!("compute_layout");
-                            let _ = self.ui.compute_layout(self.cached_size);
+                        
+                        // Optimization: Only rebuild UI if HTML changed
+                        if html != self.last_html {
+                            self.last_html = html.clone();
+                            // Recreate UI to reflect changes
+                            self.ui = {
+                                profile!("ui_new");
+                                let validator = |s: &str| M::Message::from_str(s).is_ok();
+                                Ui::new(&html, &self.measurer, self.default_style.clone(), &validator).unwrap()
+                            };
+                            {
+                                profile!("compute_layout");
+                                let _ = self.ui.compute_layout(self.cached_size);
+                            }
+                            Runtime::<M, R>::sync_canvases(&self.ui, &mut self.context);
+                            self.restore_scroll();
                         }
-                        Runtime::<M, R>::sync_canvases(&self.ui, &mut self.context);
-                        self.restore_scroll();
                         return true;
                     } else {
                         log::error!("Failed to parse message: {}", msg_str);
@@ -322,17 +329,21 @@ impl<M: Model, R: TextMeasurer> Runtime<M, R> {
                         profile!("view");
                         self.model.view()
                     };
-                    self.ui = {
-                         profile!("ui_new");
-                         let validator = |s: &str| M::Message::from_str(s).is_ok();
-                         Ui::new(&html, &self.measurer, self.default_style.clone(), &validator).unwrap()
-                    };
-                    {
-                        profile!("compute_layout");
-                        let _ = self.ui.compute_layout(self.cached_size);
+                    
+                    if html != self.last_html {
+                        self.last_html = html.clone();
+                        self.ui = {
+                             profile!("ui_new");
+                             let validator = |s: &str| M::Message::from_str(s).is_ok();
+                             Ui::new(&html, &self.measurer, self.default_style.clone(), &validator).unwrap()
+                        };
+                        {
+                            profile!("compute_layout");
+                            let _ = self.ui.compute_layout(self.cached_size);
+                        }
+                        Runtime::<M, R>::sync_canvases(&self.ui, &mut self.context);
+                        self.restore_scroll();
                     }
-                    Runtime::<M, R>::sync_canvases(&self.ui, &mut self.context);
-                    self.restore_scroll();
                     return true;
                 } else {
                     log::error!("Failed to parse message: {}", msg_str);
