@@ -48,7 +48,8 @@ rand = "0.8"
 [profile.release]
 # Turn on only when you really need smaller binary size, it has a significant performance impact
 # opt-level = "z"
-lto = true
-codegen-units = 1
-panic = "abort"
-strip = true
+# Turn on for final binary, it slows down build time
+# lto = true
+# codegen-units = 1
+# panic = "abort"
+# strip = true
