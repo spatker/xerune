@@ -36,6 +36,10 @@ pub fn run_app<M: Model + 'static, TM: TextMeasurer + 'static>(
     
 
 
+    let mut image_cache = std::collections::HashMap::new();
+    let mut gradient_cache = std::collections::HashMap::new();
+    let mut app_pixmap: Option<Pixmap> = None;
+
     event_loop.run(move |event, target| {
          target.set_control_flow(ControlFlow::Wait);
 
@@ -72,10 +76,15 @@ pub fn run_app<M: Model + 'static, TM: TextMeasurer + 'static>(
                         
                         runtime.set_size(width as f32, height as f32);
 
-                        if let Some(mut pixmap) = Pixmap::new(width, height) {
-                            pixmap.fill(Color::from_rgba8(34, 34, 34, 255)); 
+                        if app_pixmap.is_none() || app_pixmap.as_ref().unwrap().width() != width || app_pixmap.as_ref().unwrap().height() != height {
+                            app_pixmap = Pixmap::new(width, height);
+                            if let Some(p) = app_pixmap.as_mut() {
+                                p.fill(Color::from_rgba8(34, 34, 34, 255));
+                            }
+                        }
 
-                            let mut renderer = TinySkiaRenderer::new(&mut pixmap, fonts);
+                        if let Some(pixmap) = app_pixmap.as_mut() {
+                            let mut renderer = TinySkiaRenderer::new(pixmap, fonts, &mut image_cache, &mut gradient_cache);
                             // let start_render = Instant::now();
                             runtime.render(&mut renderer);
                             // let elapsed = start_render.elapsed().as_secs_f32() * 1000.0;

@@ -21,11 +21,11 @@ High quality videos: [Music Player](docs/img/music_player.mkv), [Showcase](docs/
 
 ## Roadmap
 
-- [ ] Dirty region handling
-- [ ] Performance improvements
+- [x] Dirty region handling
+- [x] Performance improvements
 - [ ] ARM Linux as first class citizen
 - [ ] Animations
-- [ ] Performance and resource optimization (CPU, RAM, storage)
+- [x] Performance and resource optimization (CPU, RAM, storage)
 - [ ] More CSS and HTML tags
 
 ## Dependencies

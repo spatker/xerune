@@ -57,15 +57,24 @@ pub struct TinySkiaRenderer<'a> {
     pub fonts: &'a [Font],
     pub clip_stack: Vec<tiny_skia::Rect>,
     pub current_mask: Option<Mask>,
+    pub image_cache: &'a mut HashMap<String, Pixmap>,
+    pub gradient_cache: &'a mut HashMap<String, Pixmap>,
 }
 
 impl<'a> TinySkiaRenderer<'a> {
-    pub fn new(pixmap: &'a mut Pixmap, fonts: &'a [Font]) -> Self {
+    pub fn new(
+        pixmap: &'a mut Pixmap,
+        fonts: &'a [Font],
+        image_cache: &'a mut HashMap<String, Pixmap>,
+        gradient_cache: &'a mut HashMap<String, Pixmap>,
+    ) -> Self {
         Self {
             pixmap,
             fonts,
             clip_stack: Vec::new(),
             current_mask: None,
+            image_cache,
+            gradient_cache,
         }
     }
 
@@ -107,8 +116,32 @@ impl<'a> TextMeasurer for TinySkiaRenderer<'a> {
 }
 
 impl<'a> Renderer for TinySkiaRenderer<'a> {
-    fn render(&mut self, commands: &[DrawCommand], canvases: &HashMap<String, Canvas>) {
+    fn render(&mut self, commands: &[DrawCommand], canvases: &HashMap<String, Canvas>, dirty_rect: Option<xerune::Rect>) {
+        if let Some(dr) = dirty_rect {
+            if let Some(tr) = tiny_skia::Rect::from_xywh(dr.x, dr.y, dr.width, dr.height) {
+                let mut paint = tiny_skia::Paint::default();
+                paint.set_color_rgba8(34, 34, 34, 255);
+                paint.blend_mode = tiny_skia::BlendMode::Source;
+                self.pixmap.fill_rect(tr, &paint, Transform::identity(), None);
+                
+                self.clip_stack.push(tr);
+                self.update_clip_mask();
+            }
+        } else {
+            self.pixmap.fill(tiny_skia::Color::from_rgba8(34, 34, 34, 255));
+        }
+
         for command in commands {
+            // Optimization: Skip drawing commands that are strictly outside the dirty_rect
+            if let Some(dr) = dirty_rect {
+                if let Some(cmd_bounds) = command.bounds() {
+                    // Only draw commands that actually intersect the dirty region
+                    if !cmd_bounds.intersects(&dr) {
+                        continue;
+                    }
+                }
+            }
+
             match command {
                 DrawCommand::Clip { rect } => {
                     if let Some(r) = tiny_skia::Rect::from_xywh(rect.x, rect.y, rect.width, rect.height) {
@@ -120,7 +153,7 @@ impl<'a> Renderer for TinySkiaRenderer<'a> {
                     self.clip_stack.pop();
                     self.update_clip_mask();
                 }
-                DrawCommand::DrawText { text, x, y, color, font_size, weight } => {
+                DrawCommand::DrawText { text, rect, color, font_size, weight } => {
                     let font_index = if *weight > 0 && self.fonts.len() > 1 { 1 } else { 0 };
 
                     let mut text_layout = fontdue::layout::Layout::new(fontdue::layout::CoordinateSystem::PositiveYDown);
@@ -160,8 +193,8 @@ impl<'a> Renderer for TinySkiaRenderer<'a> {
                                 data[i*4 + 3] = a_byte;
                             }
 
-                            let gx = x + glyph.x;
-                            let gy = y + glyph.y;
+                            let gx = rect.x + glyph.x;
+                            let gy = rect.y + glyph.y;
 
                                 self.pixmap.draw_pixmap(
                                     gx as i32,
@@ -183,35 +216,54 @@ impl<'a> Renderer for TinySkiaRenderer<'a> {
 
                         if let Some(grad) = gradient {
                              // Gradient logic
-                             // Simplified approach for now:
-                             // Angle defines start/end points relative to center.
-                             let _angle_rad = (grad.angle - 90.0).to_radians(); 
-                             let cx = rect.x + rect.width / 2.0;
-                             let cy = rect.y + rect.height / 2.0;
+                             let width_int = rect.width.max(1.0) as u32;
+                             let height_int = rect.height.max(1.0) as u32;
+                             let cache_key = format!("grad_{}_{}_{}", grad.angle, width_int, height_int);
                              
-                             // Just handle top-to-bottom (180) and left-to-right (90) for demo
-                             let (sx, sy, ex, ey) = if (grad.angle - 180.0).abs() < 5.0 {
-                                 (cx, rect.y, cx, rect.y + rect.height)
-                             } else if (grad.angle - 90.0).abs() < 5.0 {
-                                  (rect.x, cy, rect.x + rect.width, cy)
-                             } else {
-                                  // Default top-to-bottom
-                                  (cx, rect.y, cx, rect.y + rect.height)
-                             };
+                             if !self.gradient_cache.contains_key(&cache_key) {
+                                 if let Some(mut grad_pixmap) = Pixmap::new(width_int, height_int) {
+                                     let stops: Vec<tiny_skia::GradientStop> = grad.stops.iter().map(|(c, p)| {
+                                         tiny_skia::GradientStop::new(*p, tiny_skia::Color::from_rgba8(c.r, c.g, c.b, c.a))
+                                     }).collect();
+                                     
+                                     // Create gradient relative to 0,0 for caching
+                                     let gcx = width_int as f32 / 2.0;
+                                     let gcy = height_int as f32 / 2.0;
+                                     let (gsx, gsy, gex, gey) = if (grad.angle - 180.0).abs() < 5.0 {
+                                         (gcx, 0.0, gcx, height_int as f32)
+                                     } else if (grad.angle - 90.0).abs() < 5.0 {
+                                         (0.0, gcy, width_int as f32, gcy)
+                                     } else {
+                                         (gcx, 0.0, gcx, height_int as f32)
+                                     };
 
-                            let stops: Vec<tiny_skia::GradientStop> = grad.stops.iter().map(|(c, p)| {
-                                tiny_skia::GradientStop::new(*p, tiny_skia::Color::from_rgba8(c.r, c.g, c.b, c.a))
-                            }).collect();
-
-                            if let Some(shader) = tiny_skia::LinearGradient::new(
-                                tiny_skia::Point::from_xy(sx, sy),
-                                 tiny_skia::Point::from_xy(ex, ey),
-                                 stops,
-                                 tiny_skia::SpreadMode::Pad,
-                                 Transform::identity(),
-                            ) {
+                                     if let Some(shader) = tiny_skia::LinearGradient::new(
+                                         tiny_skia::Point::from_xy(gsx, gsy),
+                                         tiny_skia::Point::from_xy(gex, gey),
+                                         stops,
+                                         tiny_skia::SpreadMode::Pad,
+                                         Transform::identity(),
+                                     ) {
+                                         let mut grad_paint = tiny_skia::Paint::default();
+                                         grad_paint.shader = shader;
+                                         grad_paint.blend_mode = tiny_skia::BlendMode::Source;
+                                         let grad_rect = tiny_skia::Rect::from_xywh(0.0, 0.0, width_int as f32, height_int as f32).unwrap();
+                                         grad_pixmap.fill_rect(grad_rect, &grad_paint, Transform::identity(), None);
+                                     }
+                                     self.gradient_cache.insert(cache_key.clone(), grad_pixmap);
+                                 }
+                             }
+                             
+                             if let Some(cached_grad) = self.gradient_cache.get(&cache_key) {
+                                 let shader = tiny_skia::Pattern::new(
+                                     cached_grad.as_ref(),
+                                     tiny_skia::SpreadMode::Pad,
+                                     tiny_skia::FilterQuality::Bilinear,
+                                     1.0,
+                                     Transform::from_translate(rect.x, rect.y),
+                                 );
                                  paint.shader = shader;
-                            }
+                             }
                         } else if let Some(c) = color {
                             paint.set_color_rgba8(c.r, c.g, c.b, c.a);
                         } else {
@@ -254,12 +306,22 @@ impl<'a> Renderer for TinySkiaRenderer<'a> {
                     }
                 }
                 DrawCommand::DrawImage { src, rect, border_radius } => {
-                    // Try to load image if local
-                    let loaded = if let Ok(data) = std::fs::read(src) {
-                         if let Ok(png_pixmap) = Pixmap::decode_png(&data) {
-                             let sx = rect.width / png_pixmap.width() as f32;
-                             let sy = rect.height / png_pixmap.height() as f32;
-                             let transform = Transform::from_scale(sx, sy).post_translate(rect.x, rect.y);
+                    if !self.image_cache.contains_key(src) {
+                        if let Ok(data) = std::fs::read(src) {
+                            if let Ok(png_pixmap) = Pixmap::decode_png(&data) {
+                                self.image_cache.insert(src.clone(), png_pixmap);
+                            } else {
+                                log::warn!("Failed to decode PNG: {}", src);
+                            }
+                        } else {
+                            log::warn!("Failed to read image file: {}", src);
+                        }
+                    }
+
+                    if let Some(png_pixmap) = self.image_cache.get(src) {
+                         let sx = rect.width / png_pixmap.width() as f32;
+                         let sy = rect.height / png_pixmap.height() as f32;
+                         let transform = Transform::from_scale(sx, sy).post_translate(rect.x, rect.y);
                              
                              // Proper clipping for rounded corners on image needs a mask or clip_path.
                              // We create a shader from the image and fill the rounded rect path.
@@ -293,17 +355,7 @@ impl<'a> Renderer for TinySkiaRenderer<'a> {
                                      self.current_mask.as_ref()
                                  );
                              }
-                             true
-                         } else {
-                             log::warn!("Failed to decode PNG: {}", src);
-                             false
-                         }
                     } else {
-                        log::warn!("Failed to read image file: {}", src);
-                        false
-                    };
-
-                    if !loaded {
                         // Fallback
                         let mut paint = tiny_skia::Paint::default();
                         paint.set_color_rgba8(200, 200, 200, 255);
@@ -445,6 +497,11 @@ impl<'a> Renderer for TinySkiaRenderer<'a> {
                     }
                 }
             }
+        }
+
+        if dirty_rect.is_some() {
+            self.clip_stack.pop();
+            self.update_clip_mask();
         }
     }
 }

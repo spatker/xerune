@@ -26,7 +26,7 @@ pub enum Overflow {
     Scroll,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Color {
     pub r: u8, 
     pub g: u8, 
@@ -47,13 +47,13 @@ impl Color {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct LinearGradient {
     pub angle: f32, // in degrees
     pub stops: Vec<(Color, f32)>, // Color and position (0.0 to 1.0)
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Rect {
     pub x: f32,
     pub y: f32,
@@ -64,6 +64,26 @@ pub struct Rect {
 impl Rect {
     pub fn new(x: f32, y: f32, width: f32, height: f32) -> Self {
         Self { x, y, width, height }
+    }
+
+    pub fn expand(&self, other: Rect) -> Rect {
+        let min_x = self.x.min(other.x);
+        let min_y = self.y.min(other.y);
+        let max_x = (self.x + self.width).max(other.x + other.width);
+        let max_y = (self.y + self.height).max(other.y + other.height);
+        Rect {
+            x: min_x,
+            y: min_y,
+            width: max_x - min_x,
+            height: max_y - min_y,
+        }
+    }
+
+    pub fn intersects(&self, other: &Rect) -> bool {
+        !(self.x + self.width <= other.x
+            || other.x + other.width <= self.x
+            || self.y + self.height <= other.y
+            || other.y + other.height <= self.y)
     }
 }
 
@@ -101,6 +121,7 @@ impl Context {
     }
 }
 
+#[derive(Clone, Debug, PartialEq)]
 pub enum DrawCommand {
     Clip { rect: Rect },
     PopClip,
@@ -114,8 +135,7 @@ pub enum DrawCommand {
     },
     DrawText { 
         text: String, 
-        x: f32, 
-        y: f32, 
+        rect: Rect,
         color: Color, 
         font_size: f32,
         weight: u16,
@@ -148,12 +168,36 @@ pub enum DrawCommand {
     },
 }
 
+impl DrawCommand {
+    pub fn bounds(&self) -> Option<Rect> {
+        let pad = 10.0; // Pad bounds generously to catch font overhangs and anti-aliasing bleeds
+        let apply_pad = |r: Rect| Rect {
+            x: r.x - pad,
+            y: r.y - pad,
+            width: r.width + pad * 2.0,
+            height: r.height + pad * 2.0,
+        };
+
+        match self {
+            DrawCommand::Clip { rect } => Some(apply_pad(*rect)),
+            DrawCommand::PopClip => None,
+            DrawCommand::DrawRect { rect, .. } => Some(apply_pad(*rect)),
+            DrawCommand::DrawText { rect, .. } => Some(apply_pad(*rect)),
+            DrawCommand::DrawImage { rect, .. } => Some(apply_pad(*rect)),
+            DrawCommand::DrawCheckbox { rect, .. } => Some(apply_pad(*rect)),
+            DrawCommand::DrawSlider { rect, .. } => Some(apply_pad(*rect)),
+            DrawCommand::DrawProgress { rect, .. } => Some(apply_pad(*rect)),
+            DrawCommand::DrawCanvas { rect, .. } => Some(apply_pad(*rect)),
+        }
+    }
+}
+
 pub trait TextMeasurer {
     fn measure_text(&self, text: &str, font_size: f32, weight: u16) -> (f32, f32);
 }
 
 pub trait Renderer: TextMeasurer {
-    fn render(&mut self, commands: &[DrawCommand], canvases: &HashMap<String, Canvas>);
+    fn render(&mut self, commands: &[DrawCommand], canvases: &HashMap<String, Canvas>, dirty_rect: Option<Rect>);
 }
 
 #[derive(Debug, Clone)]
@@ -221,6 +265,7 @@ pub struct Runtime<M, R> {
     cached_size: Size<AvailableSpace>,
     context: Context,
     last_html: String,
+    last_commands: Vec<DrawCommand>,
 }
 
 impl<M: Model, R: TextMeasurer> Runtime<M, R> {
@@ -243,6 +288,7 @@ impl<M: Model, R: TextMeasurer> Runtime<M, R> {
              cached_size: Size::MAX_CONTENT,
              context,
              last_html: html,
+             last_commands: Vec::new(),
          }
     }
 
@@ -296,6 +342,8 @@ impl<M: Model, R: TextMeasurer> Runtime<M, R> {
                             self.model.view()
                         };
                         
+                        let mut dirty = false;
+                        
                         // Optimization: Only rebuild UI if HTML changed
                         if html != self.last_html {
                             self.last_html = html.clone();
@@ -311,8 +359,24 @@ impl<M: Model, R: TextMeasurer> Runtime<M, R> {
                             }
                             Runtime::<M, R>::sync_canvases(&self.ui, &mut self.context);
                             self.restore_scroll();
+                            dirty = true;
                         }
-                        return true;
+
+                        if !dirty {
+                            // Only trigger redraw if a *visible* canvas is dirty
+                            for cmd in &self.last_commands {
+                                if let DrawCommand::DrawCanvas { id, .. } = cmd {
+                                    if let Some(canvas) = self.context.canvases.get(id) {
+                                        if canvas.dirty {
+                                            dirty = true;
+                                            break; // We DO NOT reset canvas.dirty here!
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        return dirty;
                     } else {
                         log::error!("Failed to parse message: {}", msg_str);
                     }
@@ -329,6 +393,8 @@ impl<M: Model, R: TextMeasurer> Runtime<M, R> {
                         profile!("view");
                         self.model.view()
                     };
+
+                    let mut dirty = false;
                     
                     if html != self.last_html {
                         self.last_html = html.clone();
@@ -343,8 +409,23 @@ impl<M: Model, R: TextMeasurer> Runtime<M, R> {
                         }
                         Runtime::<M, R>::sync_canvases(&self.ui, &mut self.context);
                         self.restore_scroll();
+                        dirty = true;
                     }
-                    return true;
+
+                    if !dirty {
+                        for cmd in &self.last_commands {
+                            if let DrawCommand::DrawCanvas { id, .. } = cmd {
+                                if let Some(canvas) = self.context.canvases.get(id) {
+                                    if canvas.dirty {
+                                        dirty = true;
+                                        break; // We DO NOT reset canvas.dirty here!
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    return dirty;
                 } else {
                     log::error!("Failed to parse message: {}", msg_str);
                 }
@@ -361,9 +442,60 @@ impl<M: Model, R: TextMeasurer> Runtime<M, R> {
         false
     }
     
-    pub fn render(&self, renderer: &mut impl Renderer) {
+    pub fn render(&mut self, renderer: &mut impl Renderer) {
         profile!("render");
-        self.ui.render(renderer, &self.context.canvases);
+        let commands = self.ui.build_commands(&self.context.canvases);
+        
+        let mut dirty_region: Option<Rect> = None;
+
+        // Compare with last_commands
+        let max_len = commands.len().max(self.last_commands.len());
+        for i in 0..max_len {
+            let cmd1 = commands.get(i);
+            let cmd2 = self.last_commands.get(i);
+
+            if cmd1 != cmd2 {
+                if let Some(cmd) = cmd1 {
+                    if let Some(b) = cmd.bounds() {
+                        dirty_region = match dirty_region {
+                            Some(dr) => Some(dr.expand(b)),
+                            None => Some(b),
+                        };
+                    }
+                }
+                if let Some(cmd) = cmd2 {
+                    if let Some(b) = cmd.bounds() {
+                        dirty_region = match dirty_region {
+                            Some(dr) => Some(dr.expand(b)),
+                            None => Some(b),
+                        };
+                    }
+                }
+            }
+        }
+
+        // Also invalidate for dirty canvases
+        for cmd in &commands {
+            if let DrawCommand::DrawCanvas { id, rect } = cmd {
+                if let Some(canvas) = self.context.canvases.get(id) {
+                    if canvas.dirty {
+                        dirty_region = match dirty_region {
+                            Some(dr) => Some(dr.expand(*rect)),
+                            None => Some(*rect),
+                        };
+                    }
+                }
+            }
+        }
+
+        // After expanding dirty_region bounds to cover the changes,
+        // reset the canvas dirty flags.
+        for canvas in self.context.canvases.values_mut() {
+            canvas.dirty = false;
+        }
+
+        renderer.render(&commands, &self.context.canvases, dirty_region);
+        self.last_commands = commands;
     }
 
     pub fn set_size(&mut self, width: f32, height: f32) {
@@ -543,16 +675,15 @@ impl Ui {
         self.taffy.compute_layout(self.root, available_space)
     }
 
-    pub fn render(&self, renderer: &mut impl Renderer, canvases: &HashMap<String, Canvas>) {
-        let commands = layout_to_draw_commands(
+    pub fn build_commands(&self, canvases: &HashMap<String, Canvas>) -> Vec<DrawCommand> {
+        layout_to_draw_commands(
             &self.taffy, 
             self.root, 
             &self.render_data, 
             &self.scroll_offsets,
             0.0, 
             0.0
-        );
-        renderer.render(&commands, canvases);
+        )
     }
 
     pub fn hit_test(&self, x: f32, y: f32) -> Option<Interaction> {
@@ -827,8 +958,7 @@ fn traverse_layout(
             RenderData::Text(text, style) => {
                 commands.push(DrawCommand::DrawText {
                     text: text.clone(),
-                    x,
-                    y,
+                    rect,
                     color: style.color,
                     font_size: style.font_size,
                     weight: style.weight,
@@ -949,7 +1079,23 @@ mod tests {
     use taffy::prelude::TaffyMaxContent;
 
     struct MockModel;
+    #[derive(Debug, PartialEq)]
+    enum MockMsg {
+        Tick,
+    }
+    impl std::str::FromStr for MockMsg {
+        type Err = ();
+        fn from_str(s: &str) -> Result<Self, Self::Err> {
+            match s {
+                "tick" => Ok(MockMsg::Tick),
+                _ => Err(()),
+            }
+        }
+    }
+
     impl Model for MockModel {
+        type Message = MockMsg;
+        
         fn view(&self) -> String {
             // Use simple structure to ensure deterministic NodeIds
             r#"
@@ -958,7 +1104,7 @@ mod tests {
             </div>
             "#.to_string()
         }
-        fn update(&mut self, _msg: &str) {}
+        fn update(&mut self, _msg: Self::Message, _context: &mut Context) {}
     }
 
     struct MockMeasurer;
@@ -991,7 +1137,7 @@ mod tests {
         assert_eq!(offset.1, 10.0, "Offset should be 10.0 after first scroll");
         
         // Trigger UI Recreation via Tick
-        runtime.handle_event(InputEvent::Tick); 
+        runtime.handle_event(InputEvent::Message("tick".to_string()));
         
         // Verify persistence
         let offsets_after = &runtime.scroll_offsets;
