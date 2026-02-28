@@ -1,0 +1,74 @@
+<div
+    style="position: absolute; left: {{ player_x }}px; top: 0; width: 800px; height: 480px; flex-direction: row; padding: 20px;">
+    <!-- Player View (Landscape) -->
+    <!-- Left: Album Art -->
+    <div
+        style="flex-direction: column; width: 340px; align-items: center; justify-content: flex-start; margin-right: 40px;">
+        <!-- Back Button (Top Left of this section) -->
+        <div style="flex-direction: row; justify-content: flex-start; width: 100%; margin-bottom: 20px;">
+            <div data-on-click="back"
+                style="padding: 10px; border-radius: 20px; background-color: rgba(255,255,255,0.05);">
+                <p style="font-size: 16px; color: #ffffff; font-weight: bold; margin: 0;">&lt; Back</p>
+            </div>
+        </div>
+        <img src="{{ current_track.cover_url }}"
+            style="width: 280px; height: 280px; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.5);" />
+
+        <!-- Track Info Under Album Art for Better Balance -->
+        <div style="flex-direction: column; align-items: center; margin-top: 20px; text-align: center;">
+            <h1 style="font-size: 28px; margin: 0 0 5px 0; color: #ffffff; font-weight: 700;">{{ current_track.title }}
+            </h1>
+            <p style="font-size: 18px; color: #b3b3b3; margin: 0 0 5px 0;">{{ current_track.artist }}</p>
+            <p style="font-size: 14px; color: #888888; font-weight: 500; margin: 0;">{{ current_track.album }}</p>
+        </div>
+    </div>
+
+    <!-- Right: Controls & Visualizer -->
+    <div
+        style="flex-direction: column; flex-grow: 1; justify-content: flex-end; padding-right: 20px; padding-bottom: 20px;">
+        <!-- Visualizer -->
+        <div style=" padding: 10px; margin-bottom: 20px;">
+            <canvas id="visualizer" width="360" height="80"></canvas>
+        </div>
+
+        <!-- Progress Slider -->
+        <div style="flex-direction: row; align-items: center; justify-content: space-between; margin-bottom: 30px;">
+            <p
+                style="font-size: 14px; color: #b3b3b3; width: 45px; text-align: left; font-variant-numeric: tabular-nums;">
+                {{ elapsed_time }}</p>
+            <div
+                style="flex-grow: 1; margin: 0 10px; height: 6px; border-radius: 3px; background-color: rgba(255,255,255,0.1); position: relative;">
+                <div
+                    style="width: {{ progress * 100.0 }}%; height: 100%; border-radius: 3px; background-color: #1ed760; box-shadow: 0 0 10px rgba(30, 215, 96, 0.5);">
+                </div>
+                <div
+                    style="width: 12px; height: 12px; border-radius: 6px; background-color: #ffffff; position: absolute; left: calc({{ progress * 100.0 }}% - 6px); top: -3px; box-shadow: 0 2px 4px rgba(0,0,0,0.3);">
+                </div>
+            </div>
+            <p
+                style="font-size: 14px; color: #b3b3b3; width: 45px; text-align: right; font-variant-numeric: tabular-nums;">
+                {{ total_time }}</p>
+        </div>
+
+        <!-- Buttons -->
+        <div style="flex-direction: row; justify-content: space-around; align-items: center; padding: 0 20px;">
+            <div data-on-click="prev" style="padding: 15px; border-radius: 50%;">
+                <p style="font-size: 24px; color: #ffffff; margin: 0;">|&lt;</p>
+            </div>
+            <div data-on-click="play_pause"
+                style="padding: 20px 25px; background: linear-gradient(135deg, #1ed760 0%, #1db954 100%); border-radius: 50%; box-shadow: 0 8px 16px rgba(30, 215, 96, 0.3);">
+                {% if is_playing %}
+                <p style="font-size: 26px; color: #000000; font-weight: bold; margin: 0;">||</p>
+                {% else %}
+                <p style="font-size: 26px; color: #000000; font-weight: bold; margin: 0;">&gt;</p>
+                {% endif %}
+            </div>
+            <div data-on-click="stop" style="padding: 15px; border-radius: 50%;">
+                <p style="font-size: 24px; color: #ff5555; margin: 0;">[ ]</p>
+            </div>
+            <div data-on-click="next" style="padding: 15px; border-radius: 50%;">
+                <p style="font-size: 24px; color: #ffffff; margin: 0;">&gt;|</p>
+            </div>
+        </div>
+    </div>
+</div>

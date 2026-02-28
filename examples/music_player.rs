@@ -46,10 +46,12 @@ struct MusicPlayerTemplate<'a> {
     tracks: &'a [Track],
     current_track: &'a Track,
     is_playing: bool,
-    show_player: bool,
     elapsed_time: String,
     total_time: String,
     progress: f32,
+    list_x: f32,
+    player_x: f32,
+    hovered_track: String,
 }
 
 struct MusicPlayerModel {
@@ -59,6 +61,8 @@ struct MusicPlayerModel {
     elapsed_seconds: u64,
     last_tick: Instant,
     visualizer_data: Vec<f32>,
+    transition_progress: f32,
+    hovered_track: String,
 }
 
 impl MusicPlayerModel {
@@ -76,6 +80,8 @@ impl MusicPlayerModel {
             elapsed_seconds: 0,
             last_tick: Instant::now(),
             visualizer_data: vec![10.0; 30], // 30 bars
+            transition_progress: 0.0,
+            hovered_track: String::new(),
         }
     }
 
@@ -95,6 +101,8 @@ enum Msg {
     Next,
     Prev,
     Tick,
+    HoverTrack(String),
+    UnhoverTrack,
 }
 
 impl std::str::FromStr for Msg {
@@ -103,7 +111,11 @@ impl std::str::FromStr for Msg {
          if let Some(id_str) = s.strip_prefix("select_track:") {
              return Ok(Msg::SelectTrack(id_str.to_string()));
          }
+         if let Some(id_str) = s.strip_prefix("hover_track:") {
+             return Ok(Msg::HoverTrack(id_str.to_string()));
+         }
          match s {
+             "unhover_track" => Ok(Msg::UnhoverTrack),
              "back" => Ok(Msg::Back),
              "stop" => Ok(Msg::Stop),
              "play_pause" => Ok(Msg::PlayPause),
@@ -123,14 +135,20 @@ impl Model for MusicPlayerModel {
         let current = self.current_track_index.map(|i| &self.tracks[i]).unwrap_or(dummy_track);
         let duration = current.duration_seconds();
         
+        // Easing function: smoothstep
+        let p = self.transition_progress;
+        let t = p * p * (3.0 - 2.0 * p);
+        
         let template = MusicPlayerTemplate {
             tracks: &self.tracks,
             current_track: current,
             is_playing: self.is_playing,
-            show_player: self.current_track_index.is_some(),
             elapsed_time: Self::format_time(self.elapsed_seconds),
             total_time: current.duration.clone(),
             progress: if duration > 0 { self.elapsed_seconds as f32 / duration as f32 } else { 0.0 },
+            list_x: -t * 800.0,
+            player_x: 800.0 - (t * 800.0),
+            hovered_track: self.hovered_track.clone(),
         };
         template.render().unwrap()
     }
@@ -179,7 +197,21 @@ impl Model for MusicPlayerModel {
                      self.last_tick = Instant::now();
                  }
              },
+             Msg::HoverTrack(id_str) => {
+                 self.hovered_track = id_str;
+             },
+             Msg::UnhoverTrack => {
+                 self.hovered_track.clear();
+             },
              Msg::Tick => {
+                 // Transition animation
+                 let target = if self.current_track_index.is_some() { 1.0 } else { 0.0 };
+                 if self.transition_progress < target {
+                     self.transition_progress = (self.transition_progress + 0.1).min(1.0);
+                 } else if self.transition_progress > target {
+                     self.transition_progress = (self.transition_progress - 0.1).max(0.0);
+                 }
+
                  // Update visualizer
                  if self.is_playing {
                      let mut rng = rand::thread_rng();

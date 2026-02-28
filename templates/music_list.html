@@ -1,0 +1,24 @@
+<div
+    style="position: absolute; left: {{ list_x }}px; top: 0; width: 800px; height: 480px; flex-direction: column; padding: 20px;">
+    <!-- Selection View (Landscape List) -->
+    <p style="font-size: 32px; font-weight: 700; margin: 10px 0 20px 10px; color: #1ed760;">My Library</p>
+
+    <div style="flex-direction: column; flex-grow: 1; overflow: scroll; min-height: 0;">
+        {% for track in tracks %}
+        <div data-on-click="select_track:{{ track.id }}" data-on-hover="hover_track:{{ track.id }}"
+            data-on-hover-out="unhover_track"
+            style="flex-direction: row; align-items: center; padding: 15px; margin: 5px 10px; background-color: {% if track.id == hovered_track %} rgba(255,255,255,0.1) {% else %} rgba(255,255,255,0.05) {% endif %}; border-radius: 12px; border: 1px solid {% if track.id == hovered_track %} rgba(255,255,255,0.2) {% else %} rgba(255,255,255,0.05) {% endif %}; flex-shrink: 0; cursor: pointer;">
+            <img src="{{ track.cover_url }}"
+                style="width: 56px; height: 56px; margin-right: 20px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.3);" />
+            <div style="flex-direction: column; justify-content: center; flex-grow: 1;">
+                <p style="font-size: 18px; margin: 0 0 4px 0; color: #ffffff; font-weight: 600;">{{ track.title }}</p>
+                <p style="font-size: 14px; margin: 0; color: #a0a0a0;">{{ track.artist }}</p>
+            </div>
+            <p style="font-size: 14px; color: #888888; font-weight: 500;">{{ track.duration }}</p>
+            <div style="margin-left: 20px; font-size: 20px; color: #1ed760;">
+                {% if track.id == hovered_track %}▶{% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
