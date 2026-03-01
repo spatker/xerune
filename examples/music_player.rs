@@ -384,7 +384,7 @@ fn main() -> anyhow::Result<()> {
     #[cfg(not(all(target_os = "linux", feature = "linuxfb", feature = "evdev")))]
     {
         support::winit_backend::run_app(
-            "RMTUI Music Player", 
+            "Xerune Music Player", 
             800, 
             480, 
             runtime, 
@@ -403,7 +403,7 @@ fn main() -> anyhow::Result<()> {
     #[cfg(all(target_os = "linux", feature = "linuxfb", feature = "evdev"))]
     {
          support::linux_backend::run_app(
-             "RMTUI Music Player", 
+             "Xerune Music Player", 
              800, 
              480, 
              runtime, 

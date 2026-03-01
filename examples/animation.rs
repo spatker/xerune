@@ -172,7 +172,7 @@ fn main() -> anyhow::Result<()> {
     #[cfg(not(all(target_os = "linux", feature = "linuxfb", feature = "evdev")))]
     {
         support::winit_backend::run_app(
-            "RMTUI Animation Benchmark",
+            "Xerune Animation Benchmark",
             800, 
             600, 
             runtime, 
@@ -191,7 +191,7 @@ fn main() -> anyhow::Result<()> {
     #[cfg(all(target_os = "linux", feature = "linuxfb", feature = "evdev"))]
     {
         support::linux_backend::run_app(
-            "RMTUI Animation Benchmark",
+            "Xerune Animation Benchmark",
             800, 
             600, 
             runtime, 
