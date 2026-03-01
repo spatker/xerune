@@ -10,5 +10,7 @@ pub enum InputEvent {
     Click { x: f32, y: f32 },
     Hover { x: f32, y: f32 },
     Scroll { x: f32, y: f32, delta_x: f32, delta_y: f32 },
+    KeyDown(String),
+    KeyUp(String),
     Message(String),
 }

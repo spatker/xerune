@@ -105,6 +105,14 @@ impl<M: Model, R: TextMeasurer> Runtime<M, R> {
                 }
                 false
             }
+            InputEvent::KeyDown(key) => {
+                let msg_str = format!("keydown:{}", key);
+                self.process_message_str(&msg_str)
+            }
+            InputEvent::KeyUp(key) => {
+                let msg_str = format!("keyup:{}", key);
+                self.process_message_str(&msg_str)
+            }
              _ => false
         }
     }

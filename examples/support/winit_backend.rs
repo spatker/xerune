@@ -120,13 +120,27 @@ pub fn run_app<M: Model + 'static, TM: TextMeasurer + 'static>(
                              }
                         }
                     },
-                     WindowEvent::MouseWheel { delta, .. } => {
+                    WindowEvent::MouseWheel { delta, .. } => {
                         let (dx, dy) = match delta {
                             MouseScrollDelta::LineDelta(x, y) => (x * 20.0, y * 20.0),
                             MouseScrollDelta::PixelDelta(pos) => (pos.x as f32, pos.y as f32),
                         };
                         if runtime.handle_event(InputEvent::Scroll { x: mouse_x, y: mouse_y, delta_x: dx, delta_y: dy }) {
                             window_clone.request_redraw();
+                        }
+                    },
+                    WindowEvent::KeyboardInput { event: kb_event, .. } => {
+                        // For winit 0.29
+                        if let winit::keyboard::PhysicalKey::Code(keycode) = kb_event.physical_key {
+                            let key_name = format!("{:?}", keycode);
+                            let input_event = if kb_event.state == ElementState::Pressed {
+                                InputEvent::KeyDown(key_name)
+                            } else {
+                                InputEvent::KeyUp(key_name)
+                            };
+                            if runtime.handle_event(input_event) {
+                                window_clone.request_redraw();
+                            }
                         }
                     },
                     _ => {}

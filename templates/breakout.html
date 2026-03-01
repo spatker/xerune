@@ -1,0 +1,47 @@
+<div
+    style="position: absolute; left: 0; top: 0; width: {{ game_width }}px; height: {{ game_height }}px; background-color: #111111;">
+
+    <!-- Blocks -->
+    {% for block in blocks %}
+    {% if block.alive %}
+    <div
+        style="position: absolute; left: {{ block.x }}px; top: {{ block.y }}px; width: {{ block_w }}px; height: {{ block_h }}px; background-color: {{ block.color }}; border-radius: 4px; box-shadow: 0 4px 8px rgba(0,0,0,0.5);">
+    </div>
+    {% endif %}
+    {% endfor %}
+
+    <!-- Particles -->
+    {% for p in particles %}
+    <!-- We use rgba to fade them out as life goes from 1.0 to 0.0, but simple css might not support complex expressions in templates easily -->
+    <!-- We'll just draw them small. Ideally we'd fade them. -->
+    <div
+        style="position: absolute; left: {{ p.x }}px; top: {{ p.y }}px; width: 6px; height: 6px; background-color: {{ p.color }}; border-radius: 3px;">
+    </div>
+    {% endfor %}
+
+    <!-- Paddle -->
+    <div
+        style="position: absolute; left: {{ paddle_x }}px; top: {{ paddle_y }}px; width: {{ paddle_w }}px; height: {{ paddle_h }}px; background-color: #ffffff; border-radius: 8px; box-shadow: 0 0 10px rgba(255,255,255,0.5);">
+    </div>
+
+    <!-- Ball -->
+    <div
+        style="position: absolute; left: {{ ball_x }}px; top: {{ ball_y }}px; width: {{ ball_s }}px; height: {{ ball_s }}px; background-color: #ffffff; border-radius: 50%; box-shadow: 0 0 12px rgba(255,255,255,0.8);">
+    </div>
+
+    <!-- UI Overlay for Game Over/Win -->
+    {% if game_over %}
+    <div
+        style="position: absolute; left: 0; top: 0; width: {{ game_width }}px; height: {{ game_height }}px; background-color: rgba(0,0,0,0.8); flex-direction: column; align-items: center; justify-content: center;">
+        <p style="color: #ff5555; font-size: 48px; font-weight: bold; margin-bottom: 20px;">GAME OVER</p>
+    </div>
+    {% endif %}
+
+    {% if won %}
+    <div
+        style="position: absolute; left: 0; top: 0; width: {{ game_width }}px; height: {{ game_height }}px; background-color: rgba(0,0,0,0.8); flex-direction: column; align-items: center; justify-content: center;">
+        <p style="color: #55ff55; font-size: 48px; font-weight: bold; margin-bottom: 20px;">YOU WIN!</p>
+    </div>
+    {% endif %}
+
+</div>
