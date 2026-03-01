@@ -19,6 +19,18 @@ High quality videos: [Music Player](docs/img/music_player.mkv), [Showcase](docs/
 - **Custom callbacks**: Define logic for interactions.
 - **Layout and text rendering**: Built-in support for complex layouts and text.
 
+## Architecture
+
+Xerune is built around the **Model-View-Update (MVU)** architecture (similar to Elm), designed for highly decoupled, efficient updates:
+
+- **Model (`src/model.rs`)**: Owns the application state and the `Message` routing.
+- **View (`Model::view`)**: Purely declarative. Takes the model and outputs raw HTML/CSS strings.
+- **Update (`Model::update`)**: Mutates the state based on `Message` intents. 
+- **UI & Layout Engine (`src/ui.rs`)**: Parses the raw HTML into a Taffy Flexbox tree and processes styling, isolating the view from the backend renderer.
+- **Runtime (`src/runtime.rs`)**: The engine loop that ties MVU to the underlying event system.
+
+This modular separation makes it very easy to create custom components simply by emitting predictable HTML, whilst keeping hardware-specific drawing instructions sequestered in different backends.
+
 ## Roadmap
 
 - [x] Dirty region handling
