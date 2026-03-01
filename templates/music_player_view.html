@@ -13,19 +13,20 @@
         </div>
         <img src="{{ current_track.cover_url }}"
             style="width: 280px; height: 280px; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.5);" />
-
-        <!-- Track Info Under Album Art for Better Balance -->
-        <div style="flex-direction: column; align-items: center; margin-top: 20px; text-align: center;">
-            <h1 style="font-size: 28px; margin: 0 0 5px 0; color: #ffffff; font-weight: 700;">{{ current_track.title }}
-            </h1>
-            <p style="font-size: 18px; color: #b3b3b3; margin: 0 0 5px 0;">{{ current_track.artist }}</p>
-            <p style="font-size: 14px; color: #888888; font-weight: 500; margin: 0;">{{ current_track.album }}</p>
-        </div>
     </div>
 
     <!-- Right: Controls & Visualizer -->
     <div
         style="flex-direction: column; flex-grow: 1; justify-content: flex-end; padding-right: 20px; padding-bottom: 20px;">
+
+        <!-- Track Info above Visualizer -->
+        <div style="flex-direction: column; align-items: center; margin-bottom: 20px; text-align: center;">
+            <h1 style="font-size: 28px; margin: 0 0 5px 0; color: #ffffff; font-weight: 700;">{{ current_track.title }}
+            </h1>
+            <p style="font-size: 18px; color: #b3b3b3; margin: 0 0 5px 0;">{{ current_track.artist }}</p>
+            <p style="font-size: 14px; color: #888888; font-weight: 500; margin: 0;">{{ current_track.album }}</p>
+        </div>
+
         <!-- Visualizer -->
         <div style=" padding: 10px; margin-bottom: 20px;">
             <canvas id="visualizer" width="360" height="80"></canvas>
