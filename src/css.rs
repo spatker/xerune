@@ -1,9 +1,9 @@
-use crate::{Color, TextStyle, LinearGradient};
+use crate::{Color, ContainerStyle, LinearGradient};
 use csscolorparser::parse as parse_color;
 use taffy::prelude::*;
 use taffy::style::Style;
 
-pub fn parse_inline_style(style_str: &str, current_style: &mut TextStyle, taffy_style: &mut Style) {
+pub fn parse_inline_style(style_str: &str, current_style: &mut ContainerStyle, taffy_style: &mut Style) {
     for decl in style_str.split(';') {
         let decl = decl.trim();
         if decl.is_empty() {

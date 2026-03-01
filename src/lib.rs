@@ -201,7 +201,7 @@ pub trait Renderer: TextMeasurer {
 }
 
 #[derive(Debug, Clone)]
-pub struct TextStyle {
+pub struct ContainerStyle {
     pub color: Color,
     pub font_size: f32,
     pub weight: u16, // 0 = Regular, 1 = Bold
@@ -213,7 +213,7 @@ pub struct TextStyle {
     pub overflow: Overflow,
 }
 
-impl Default for TextStyle {
+impl Default for ContainerStyle {
     fn default() -> Self {
         Self {
             color: Color::from_rgba8(0, 0, 0, 255),
@@ -231,13 +231,13 @@ impl Default for TextStyle {
 }
 
 pub enum RenderData {
-    Container(TextStyle),
-    Text(String, TextStyle),
-    Image(String, TextStyle),
-    Checkbox(bool, TextStyle),
-    Slider(f32, TextStyle),
-    Progress(f32, f32, TextStyle), // value, max, style
-    Canvas(String, TextStyle),
+    Container(ContainerStyle),
+    Text(String, ContainerStyle),
+    Image(String, ContainerStyle),
+    Checkbox(bool, ContainerStyle),
+    Slider(f32, ContainerStyle),
+    Progress(f32, f32, ContainerStyle), // value, max, style
+    Canvas(String, ContainerStyle),
 }
 
 
@@ -260,7 +260,7 @@ pub struct Runtime<M, R> {
     model: M,
     measurer: R,
     ui: Ui,
-    default_style: TextStyle,
+    default_style: ContainerStyle,
     scroll_offsets: HashMap<NodeId, (f32, f32)>, // Persist scroll offsets
     cached_size: Size<AvailableSpace>,
     context: Context,
@@ -270,7 +270,7 @@ pub struct Runtime<M, R> {
 
 impl<M: Model, R: TextMeasurer> Runtime<M, R> {
     pub fn new(model: M, measurer: R) -> Self {
-         let default_style = TextStyle::default();
+         let default_style = ContainerStyle::default();
          let html = model.view();
          let validator = |s: &str| M::Message::from_str(s).is_ok();
          let ui = Ui::new(&html, &measurer, default_style.clone(), &validator).unwrap();
@@ -332,114 +332,74 @@ impl<M: Model, R: TextMeasurer> Runtime<M, R> {
         match event {
             InputEvent::Click { x, y } => {
                 if let Some(msg_str) = self.ui.hit_test(x, y) {
-                    if let Ok(msg) = M::Message::from_str(&msg_str) {
-                        {
-                            profile!("update");
-                            self.model.update(msg, &mut self.context);
-                        }
-                        let html = {
-                            profile!("view");
-                            self.model.view()
-                        };
-                        
-                        let mut dirty = false;
-                        
-                        // Optimization: Only rebuild UI if HTML changed
-                        if html != self.last_html {
-                            self.last_html = html.clone();
-                            // Recreate UI to reflect changes
-                            self.ui = {
-                                profile!("ui_new");
-                                let validator = |s: &str| M::Message::from_str(s).is_ok();
-                                Ui::new(&html, &self.measurer, self.default_style.clone(), &validator).unwrap()
-                            };
-                            {
-                                profile!("compute_layout");
-                                let _ = self.ui.compute_layout(self.cached_size);
-                            }
-                            Runtime::<M, R>::sync_canvases(&self.ui, &mut self.context);
-                            self.restore_scroll();
-                            dirty = true;
-                        }
-
-                        if !dirty {
-                            // Only trigger redraw if a *visible* canvas is dirty
-                            for cmd in &self.last_commands {
-                                if let DrawCommand::DrawCanvas { id, .. } = cmd {
-                                    if let Some(canvas) = self.context.canvases.get(id) {
-                                        if canvas.dirty {
-                                            dirty = true;
-                                            break; // We DO NOT reset canvas.dirty here!
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        return dirty;
-                    } else {
-                        log::error!("Failed to parse message: {}", msg_str);
-                    }
+                    return self.process_message_str(&msg_str);
                 }
                 return false; // Should return false if not handled or empty
             }
             InputEvent::Message(msg_str) => {
-                if let Ok(msg) = M::Message::from_str(&msg_str) {
-                    {
-                        profile!("update");
-                        self.model.update(msg, &mut self.context);
-                    }
-                    let html = {
-                        profile!("view");
-                        self.model.view()
-                    };
-
-                    let mut dirty = false;
-                    
-                    if html != self.last_html {
-                        self.last_html = html.clone();
-                        self.ui = {
-                             profile!("ui_new");
-                             let validator = |s: &str| M::Message::from_str(s).is_ok();
-                             Ui::new(&html, &self.measurer, self.default_style.clone(), &validator).unwrap()
-                        };
-                        {
-                            profile!("compute_layout");
-                            let _ = self.ui.compute_layout(self.cached_size);
-                        }
-                        Runtime::<M, R>::sync_canvases(&self.ui, &mut self.context);
-                        self.restore_scroll();
-                        dirty = true;
-                    }
-
-                    if !dirty {
-                        for cmd in &self.last_commands {
-                            if let DrawCommand::DrawCanvas { id, .. } = cmd {
-                                if let Some(canvas) = self.context.canvases.get(id) {
-                                    if canvas.dirty {
-                                        dirty = true;
-                                        break; // We DO NOT reset canvas.dirty here!
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    return dirty;
-                } else {
-                    log::error!("Failed to parse message: {}", msg_str);
-                }
+                self.process_message_str(&msg_str)
             }
-
             InputEvent::Scroll { x, y, delta_x, delta_y } => {
                 if self.ui.handle_scroll(x, y, delta_x, delta_y) {
                     self.scroll_offsets = self.ui.scroll_offsets.clone();
                     return true;
                 }
+                false
             }
-             _ => {}
+             _ => false
         }
-        false
+    }
+    
+    fn process_message_str(&mut self, msg_str: &str) -> bool {
+        if let Ok(msg) = M::Message::from_str(msg_str) {
+            {
+                profile!("update");
+                self.model.update(msg, &mut self.context);
+            }
+            let html = {
+                profile!("view");
+                self.model.view()
+            };
+            
+            let mut dirty = false;
+            
+            // Optimization: Only rebuild UI if HTML changed
+            if html != self.last_html {
+                self.last_html = html.clone();
+                // Recreate UI to reflect changes
+                self.ui = {
+                    profile!("ui_new");
+                    let validator = |s: &str| M::Message::from_str(s).is_ok();
+                    Ui::new(&html, &self.measurer, self.default_style.clone(), &validator).unwrap()
+                };
+                {
+                    profile!("compute_layout");
+                    let _ = self.ui.compute_layout(self.cached_size);
+                }
+                Runtime::<M, R>::sync_canvases(&self.ui, &mut self.context);
+                self.restore_scroll();
+                dirty = true;
+            }
+
+            if !dirty {
+                // Only trigger redraw if a *visible* canvas is dirty
+                for cmd in &self.last_commands {
+                    if let DrawCommand::DrawCanvas { id, .. } = cmd {
+                        if let Some(canvas) = self.context.canvases.get(id) {
+                            if canvas.dirty {
+                                dirty = true;
+                                break; // We DO NOT reset canvas.dirty here!
+                            }
+                        }
+                    }
+                }
+            }
+
+            dirty
+        } else {
+            log::error!("Failed to parse message: {}", msg_str);
+            false
+        }
     }
     
     pub fn render(&mut self, renderer: &mut impl Renderer) {
@@ -529,7 +489,7 @@ impl Ui {
     pub fn new(
         html: &str, 
         measurer: &impl TextMeasurer,
-        default_style: TextStyle,
+        default_style: ContainerStyle,
         message_validator: &impl Fn(&str) -> bool,
     ) -> Result<Self, TaffyError> {
         profile!("ui_new_internal");
@@ -709,7 +669,7 @@ fn dom_to_taffy(
     text_measurer: &impl TextMeasurer,
     render_data: &mut HashMap<NodeId, RenderData>,
     interactions: &mut HashMap<NodeId, Interaction>,
-    parent_style: TextStyle,
+    parent_style: ContainerStyle,
     message_validator: &impl Fn(&str) -> bool,
 ) -> Option<NodeId> {
     
@@ -743,12 +703,12 @@ fn dom_to_taffy(
             
             // 1. Apply default styles for the tag
             let defaults = defaults::get_default_style(tag, &current_style); 
-            layout_style = defaults.style;
-            current_style = defaults.text_style;
+            layout_style = defaults.taffy_style;
+            current_style = defaults.container_style;
             
             // We ensure background is cleared if it was copied from parent, although get_default_style should handle defaults.
             // Resetting here is safe to ensure no unexpected inheritance.
-            // (Note: defaults.text_style usually has the reset properties from input current_style, but get_default_style logic governs this)
+            // (Note: defaults.container_style usually has the reset properties from input current_style, but get_default_style logic governs this)
 
             let mut element_type = defaults::ElementType::Container; // Default to container if not overridden
             if defaults.element_type != defaults::ElementType::Container {
