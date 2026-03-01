@@ -7,7 +7,7 @@
         {% for track in tracks %}
         <div data-on-click="select_track:{{ track.id }}" data-on-hover="hover_track:{{ track.id }}"
             data-on-hover-out="unhover_track"
-            style="flex-direction: row; align-items: center; padding: 15px; margin: 5px 10px; background-color: {% if track.id == hovered_track %} rgba(255,255,255,0.1) {% else %} rgba(255,255,255,0.05) {% endif %}; border-radius: 12px; border: 1px solid {% if track.id == hovered_track %} rgba(255,255,255,0.2) {% else %} rgba(255,255,255,0.05) {% endif %}; flex-shrink: 0; cursor: pointer;">
+            style="flex-direction: row; align-items: center; padding: 15px; margin: 5px 10px; background-color: {% if track.id == hovered_track %} rgba(255,255,255,0.1) {% else if loop.index0 == active_list_index %} rgba(255,255,255,0.2) {% else %} rgba(255,255,255,0.05) {% endif %}; border-radius: 12px; border: 1px solid {% if track.id == hovered_track %} rgba(255,255,255,0.2) {% else if loop.index0 == active_list_index %} #1ed760 {% else %} rgba(255,255,255,0.05) {% endif %}; flex-shrink: 0; cursor: pointer;">
             <img src="{{ track.cover_url }}"
                 style="width: 56px; height: 56px; margin-right: 20px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.3);" />
             <div style="flex-direction: column; justify-content: center; flex-grow: 1;">
@@ -16,7 +16,7 @@
             </div>
             <p style="font-size: 14px; color: #888888; font-weight: 500;">{{ track.duration }}</p>
             <div style="margin-left: 20px; font-size: 20px; color: #1ed760;">
-                {% if track.id == hovered_track %}▶{% endif %}
+                {% if track.id == hovered_track %} |> {% else if loop.index0 == active_list_index %} |> {% endif %}
             </div>
         </div>
         {% endfor %}

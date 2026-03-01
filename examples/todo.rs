@@ -10,6 +10,7 @@ mod support;
 #[template(path = "todo_list.html")]
 struct TodoList<'a> {
     items: Vec<TodoItem<'a>>,
+    active_item: usize,
 }
 
 #[derive(Clone)]
@@ -21,6 +22,7 @@ struct TodoItem<'a> {
 #[derive(Debug, Clone)]
 enum TodoMsg {
     Toggle(usize),
+    KeyDown(String),
 }
 
 impl std::str::FromStr for TodoMsg {
@@ -30,6 +32,9 @@ impl std::str::FromStr for TodoMsg {
              if let Ok(index) = index_str.parse::<usize>() {
                  return Ok(TodoMsg::Toggle(index));
              }
+        }
+        if let Some(key) = s.strip_prefix("keydown:") {
+            return Ok(TodoMsg::KeyDown(key.to_string()));
         }
         Err(())
     }
@@ -42,11 +47,34 @@ impl<'a> Model for TodoList<'a> {
         self.render().unwrap()
     }
 
-    fn update(&mut self, msg: Self::Message, _context: &mut xerune::Context) {
+    fn update(&mut self, msg: Self::Message, context: &mut xerune::Context) {
         match msg {
             TodoMsg::Toggle(index) => {
                 if index < self.items.len() {
                     self.items[index].completed = !self.items[index].completed;
+                    self.active_item = index;
+                }
+            }
+            TodoMsg::KeyDown(key) => {
+                match key.as_str() {
+                    "ArrowUp" => {
+                        if self.active_item > 0 {
+                            self.active_item -= 1;
+                            context.scroll_into_view(&format!("toggle:{}", self.active_item));
+                        }
+                    }
+                    "ArrowDown" => {
+                        if self.active_item + 1 < self.items.len() {
+                            self.active_item += 1;
+                            context.scroll_into_view(&format!("toggle:{}", self.active_item));
+                        }
+                    }
+                    "Enter" | "Space" => {
+                        if self.active_item < self.items.len() {
+                            self.items[self.active_item].completed = !self.items[self.active_item].completed;
+                        }
+                    }
+                    _ => {}
                 }
             }
         }
@@ -71,7 +99,7 @@ fn main() -> anyhow::Result<()> {
         });
     }
 
-    let todo_list = TodoList { items };
+    let todo_list = TodoList { items, active_item: 0 };
 
     let measurer = TinySkiaMeasurer { fonts: fonts_ref };
     let runtime = Runtime::new(todo_list, measurer);

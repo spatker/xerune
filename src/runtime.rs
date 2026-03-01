@@ -148,6 +148,16 @@ impl<M: Model, R: TextMeasurer> Runtime<M, R> {
                 dirty = true;
             }
 
+            let commands: Vec<_> = self.context.commands.drain(..).collect();
+            for cmd in commands {
+                match cmd {
+                    crate::graphics::ContextCommand::ScrollIntoView(id) => {
+                        self.scroll_into_view(&id);
+                        dirty = true;
+                    }
+                }
+            }
+
             if !dirty {
                 // Only trigger redraw if a *visible* canvas is dirty
                 for cmd in &self.last_commands {
@@ -164,7 +174,7 @@ impl<M: Model, R: TextMeasurer> Runtime<M, R> {
 
             dirty
         } else {
-            log::error!("Failed to parse message: {}", msg_str);
+            log::debug!("Unhandled or failed to parse message: {}", msg_str);
             false
         }
     }

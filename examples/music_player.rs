@@ -52,6 +52,7 @@ struct MusicPlayerTemplate<'a> {
     list_x: f32,
     player_x: f32,
     hovered_track: String,
+    active_list_index: usize,
 }
 
 struct MusicPlayerModel {
@@ -63,6 +64,7 @@ struct MusicPlayerModel {
     visualizer_data: Vec<f32>,
     transition_progress: f32,
     hovered_track: String,
+    active_list_index: usize,
 }
 
 impl MusicPlayerModel {
@@ -82,6 +84,7 @@ impl MusicPlayerModel {
             visualizer_data: vec![10.0; 30], // 30 bars
             transition_progress: 0.0,
             hovered_track: String::new(),
+            active_list_index: 0,
         }
     }
 
@@ -103,6 +106,7 @@ enum Msg {
     Tick,
     HoverTrack(String),
     UnhoverTrack,
+    KeyDown(String),
 }
 
 impl std::str::FromStr for Msg {
@@ -113,6 +117,9 @@ impl std::str::FromStr for Msg {
          }
          if let Some(id_str) = s.strip_prefix("hover_track:") {
              return Ok(Msg::HoverTrack(id_str.to_string()));
+         }
+         if let Some(key) = s.strip_prefix("keydown:") {
+             return Ok(Msg::KeyDown(key.to_string()));
          }
          match s {
              "unhover_track" => Ok(Msg::UnhoverTrack),
@@ -149,6 +156,7 @@ impl Model for MusicPlayerModel {
             list_x: -t * 800.0,
             player_x: 800.0 - (t * 800.0),
             hovered_track: self.hovered_track.clone(),
+            active_list_index: self.active_list_index,
         };
         template.render().unwrap()
     }
@@ -202,6 +210,31 @@ impl Model for MusicPlayerModel {
              },
              Msg::UnhoverTrack => {
                  self.hovered_track.clear();
+             },
+             Msg::KeyDown(key) => {
+                 match key.as_str() {
+                     "ArrowUp" => {
+                         if self.active_list_index > 0 {
+                             self.active_list_index -= 1;
+                             context.scroll_into_view(&format!("select_track:{}", self.tracks[self.active_list_index].id));
+                         }
+                     }
+                     "ArrowDown" => {
+                         if self.active_list_index + 1 < self.tracks.len() {
+                             self.active_list_index += 1;
+                             context.scroll_into_view(&format!("select_track:{}", self.tracks[self.active_list_index].id));
+                         }
+                     }
+                     "Enter" | "Space" => {
+                         // Select the active track
+                         let id = self.tracks[self.active_list_index].id.clone();
+                         self.update(Msg::SelectTrack(id), context); // Re-dispatch
+                     }
+                     "Escape" => {
+                         self.update(Msg::Back, context);
+                     }
+                     _ => {}
+                 }
              },
              Msg::Tick => {
                  // Transition animation

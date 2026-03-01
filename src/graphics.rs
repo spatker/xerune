@@ -79,19 +79,29 @@ impl Canvas {
     }
 }
 
+pub enum ContextCommand {
+    ScrollIntoView(String),
+}
+
 pub struct Context {
     pub canvases: HashMap<String, Canvas>,
+    pub(crate) commands: Vec<ContextCommand>,
 }
 
 impl Context {
     pub fn new() -> Self {
         Self {
             canvases: HashMap::new(),
+            commands: Vec::new(),
         }
     }
     
     pub fn canvas_mut(&mut self, id: &str) -> Option<&mut Canvas> {
         self.canvases.get_mut(id)
+    }
+
+    pub fn scroll_into_view(&mut self, interaction_id: &str) {
+        self.commands.push(ContextCommand::ScrollIntoView(interaction_id.to_string()));
     }
 }
 

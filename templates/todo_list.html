@@ -1,6 +1,6 @@
 <div style="flex-direction: column; width: 800px; height: 600px; overflow: scroll;">
     {% for item in items %}
-    <div style="flex-direction: row; margin: 5px; padding: 5px; flex-shrink: 0;"
+    <div style="flex-direction: row; margin: 5px; padding: 5px; flex-shrink: 0; {% if loop.index0 == active_item %}background-color: #333333; border: 1px solid #555555; border-radius: 4px;{% endif %}"
         data-on-click="toggle:{{ loop.index0 }}">
         <input type="checkbox" {% if item.completed %}checked{% endif %}>
         <span style="margin: 0px 0px 0px 10px; font-size: 18px; {% if item.completed %}color: #b4b4b4;{% endif %}">{{
