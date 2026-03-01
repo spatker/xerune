@@ -18,9 +18,9 @@ use crate::ui::Ui;
 pub struct Runtime<M, R> {
     model: M,
     measurer: R,
-    ui: Ui,
+    pub(crate) ui: Ui,
     default_style: ContainerStyle,
-    scroll_offsets: HashMap<NodeId, (f32, f32)>, // Persist scroll offsets
+    pub(crate) scroll_offsets: HashMap<NodeId, (f32, f32)>, // Persist scroll offsets
     cached_size: Size<AvailableSpace>,
     context: Context,
     last_html: String,

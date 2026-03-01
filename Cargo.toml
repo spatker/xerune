@@ -28,6 +28,7 @@ env_logger = "0.11"
 # Embedded Linux dependencies
 linuxfb = { version = "0.2", optional = true }
 evdev = { version = "0.12", optional = true }
+simplecss = "0.2.2"
 
 [dev-dependencies]
 coarse-prof = "0.2.6"
