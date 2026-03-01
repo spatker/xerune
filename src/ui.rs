@@ -53,7 +53,7 @@ impl Ui {
             &mut interactions, 
             default_style,
             message_validator
-        ).ok_or(TaffyError::ChildIndexOutOfBounds { parent: NodeId::new(0), child_index: 0, child_count: 0 })?; // TODO: Better error
+        ).ok_or(TaffyError::ChildIndexOutOfBounds { parent: NodeId::new(0), child_index: 0, child_count: 0 })?; 
 
         Ok(Self {
             taffy,
@@ -66,9 +66,7 @@ impl Ui {
 
     pub fn handle_scroll(&mut self, x: f32, y: f32, delta_x: f32, delta_y: f32) -> bool {
         profile!("handle_scroll");
-        // Find node under x,y
-         if let Some(mut node) = hit_test_recursive(&self.taffy, self.root, &self.scroll_offsets, &self.render_data, x, y, 0.0, 0.0) {
-            // Walk up looking for scrollable
+        if let Some(mut node) = hit_test_recursive(&self.taffy, self.root, &self.scroll_offsets, &self.render_data, x, y, 0.0, 0.0) {
             loop {
                 if let Some(RenderData::Container(style)) = self.render_data.get(&node) {
                     if style.overflow == Overflow::Scroll {
@@ -76,7 +74,6 @@ impl Ui {
                          sx -= delta_x;
                          sy -= delta_y;
                          
-                         // Clamping Logic
                          if let Ok(layout) = self.taffy.layout(node) {
                              let container_width = layout.size.width;
                              let container_height = layout.size.height;
@@ -118,43 +115,16 @@ impl Ui {
     }
 
     pub fn scroll_into_view(&mut self, interaction_id: &str) {
-        // Find node key by interaction string
         let node_opt = self.interactions.iter().find(|(_, v)| *v == interaction_id).map(|(k, _)| *k);
         if let Some(node) = node_opt {
-             // Simplest impl: ensure specific node is visible in its scrollable parent.
-             // Walk up to find scrollable parent.
              let mut current = node;
              while let Some(parent) = self.taffy.parent(current) {
                  if let Some(RenderData::Container(style)) = self.render_data.get(&parent) {
                      if style.overflow == Overflow::Scroll {
-                         // Calculate new offset
-                         // Need layout of 'node' relative to 'parent'
-                         // Layouts are absolute? No, relative to parent location.
-                         // We need recursive position.
-                         // Actually Taffy layout.location is relative to parent.
-                         
-                         // Logic:
-                         // Node top relative to parent content box.
-                         // Parent scroll offset.
-                         // Parent size.
-                         
-                         // We must access layouts.
                          if let Ok(parent_layout) = self.taffy.layout(parent) {
                              if let Ok(node_layout) = self.taffy.layout(node) {
-                                  // This simple relative check only works for direct children.
-                                  // For nested, we need to accumulate.
-                                  // Let's assume direct children or simple nesting for now.
-                                  // Or just generic "scroll to top".
-                                  
-                                  // Update offset to 0 (top) for testing
-                                  // self.scroll_offsets.insert(parent, (0.0, 0.0));
-                                  
-                                  // Better: make it visible.
                                   let (ck, cy) = self.scroll_offsets.get(&parent).copied().unwrap_or((0.0, 0.0));
-                                  // Node relative y in parent content:
                                   let node_y = node_layout.location.y; 
-                                  // If node_y < cy, cy = node_y (scroll up)
-                                  // If node_y + h > cy + parent_h, cy = node_y + h - parent_h (scroll down)
                                   
                                   let mut new_y = cy;
                                   if node_y < cy {
@@ -204,7 +174,121 @@ impl Ui {
     }
 }
 
-// Private helpers
+// Struct to hold parsed attributes for easier passing
+struct ParsedAttributes {
+    element_type: defaults::ElementType,
+    slider_value: f32,
+    progress_value: f32,
+    progress_max: f32,
+    checkbox_checked: bool,
+    interaction_id: Option<String>,
+    image_src: String,
+    canvas_id: String,
+}
+
+impl ParsedAttributes {
+    fn new(element_type: defaults::ElementType) -> Self {
+        Self {
+            element_type,
+            slider_value: 0.0,
+            progress_value: 0.0,
+            progress_max: 1.0,
+            checkbox_checked: false,
+            interaction_id: None,
+            image_src: String::new(),
+            canvas_id: String::new(),
+        }
+    }
+}
+
+fn parse_attributes(
+    tag: &str,
+    attrs: &std::cell::Ref<Vec<markup5ever::Attribute>>,
+    current_style: &mut ContainerStyle,
+    layout_style: &mut Style,
+    parsed: &mut ParsedAttributes,
+    message_validator: &impl Fn(&str) -> bool,
+) {
+    for attr in attrs.iter() {
+        let name = attr.name.local.as_ref();
+        let value = &attr.value;
+        
+        match name {
+            "id" => parsed.canvas_id = value.to_string(),
+            "style" => css::parse_inline_style(value, current_style, layout_style),
+            "type" if tag == "input" => {
+                if value.as_ref() == "checkbox" {
+                    parsed.element_type = defaults::ElementType::Checkbox;
+                    layout_style.size = Size { width: length(20.0), height: length(20.0) };
+                    layout_style.margin = taffy::geometry::Rect { left: length(5.0), right: length(5.0), top: length(0.0), bottom: length(0.0) };
+                } else if value.as_ref() == "range" {
+                    parsed.element_type = defaults::ElementType::Slider;
+                    layout_style.size = Size { width: length(100.0), height: length(20.0) };
+                }
+            },
+            "value" => {
+                if let Ok(v) = value.parse::<f32>() {
+                    parsed.slider_value = v.clamp(0.0, 1.0);
+                    parsed.progress_value = v; 
+                }
+            },
+            "max" => {
+                if let Ok(v) = value.parse::<f32>() {
+                    parsed.progress_max = v;
+                }
+            },
+            "checked" => parsed.checkbox_checked = true,
+            "width" => {
+                 if let Ok(w) = value.parse::<f32>() {
+                     layout_style.size.width = length(w);
+                 }
+             },
+             "height" => {
+                 if let Ok(h) = value.parse::<f32>() {
+                     layout_style.size.height = length(h);
+                 }
+             },
+             "src" => parsed.image_src = value.to_string(),
+             "data-on-click" => {
+                 if !message_validator(value) {
+                     log::warn!("Invalid message in data-on-click: {}", value);
+                 }
+                 parsed.interaction_id = Some(value.to_string());
+             }
+             _ => {
+                 log::debug!("Ignoring attribute: {} on tag: {}", name, tag);
+             }
+        }
+    }
+}
+
+fn process_element_type(
+    id: NodeId,
+    parsed: &ParsedAttributes,
+    current_style: ContainerStyle,
+    render_data: &mut HashMap<NodeId, RenderData>,
+) {
+    match parsed.element_type {
+        defaults::ElementType::Image => {
+            render_data.insert(id, RenderData::Image(parsed.image_src.clone(), current_style));
+        },
+        defaults::ElementType::Checkbox => {
+            render_data.insert(id, RenderData::Checkbox(parsed.checkbox_checked, current_style));
+        },
+        defaults::ElementType::Slider => {
+            render_data.insert(id, RenderData::Slider(parsed.slider_value, current_style));
+        },
+        defaults::ElementType::Progress => {
+            render_data.insert(id, RenderData::Progress(parsed.progress_value, parsed.progress_max, current_style));
+        },
+        defaults::ElementType::Canvas => {
+            render_data.insert(id, RenderData::Canvas(parsed.canvas_id.clone(), current_style));
+        },
+        _ => {
+            render_data.insert(id, RenderData::Container(current_style));
+        }
+    }
+}
 
 fn dom_to_taffy(
     taffy: &mut TaffyTree,
@@ -216,7 +300,6 @@ fn dom_to_taffy(
     message_validator: &impl Fn(&str) -> bool,
 ) -> Option<NodeId> {
     
-    // Prepare styles: Inherit font-related properties, but reset box-model properties.
     let mut current_style = parent_style.clone();
     current_style.background_color = None;
     current_style.background_gradient = None;
@@ -225,18 +308,15 @@ fn dom_to_taffy(
     current_style.border_color = None;
     current_style.overflow = Overflow::Visible;
 
-    let mut layout_style = Style::default();
-
     match &handle.data {
         NodeData::Document => {
-            // Document just acts as a wrapper, process children
              let mut children = Vec::new();
              for child in handle.children.borrow().iter() {
                  if let Some(id) = dom_to_taffy(taffy, child, text_measurer, render_data, interactions, current_style.clone(), message_validator) {
                      children.push(id);
                  }
             }
-            let id = taffy.new_with_children(layout_style, &children).ok()?;
+            let id = taffy.new_with_children(Style::default(), &children).ok()?;
             render_data.insert(id, RenderData::Container(current_style));
             Some(id)
         },
@@ -244,92 +324,16 @@ fn dom_to_taffy(
         NodeData::Element { name, attrs, .. } => {
             let tag = name.local.as_ref();
             
-            // 1. Apply default styles for the tag
             let defaults = defaults::get_default_style(tag, &current_style); 
-            layout_style = defaults.taffy_style;
+            let mut layout_style = defaults.taffy_style;
             current_style = defaults.container_style;
             
-            // We ensure background is cleared if it was copied from parent, although get_default_style should handle defaults.
-            // Resetting here is safe to ensure no unexpected inheritance.
-            // (Note: defaults.container_style usually has the reset properties from input current_style, but get_default_style logic governs this)
-
-            let mut element_type = defaults::ElementType::Container; // Default to container if not overridden
-            if defaults.element_type != defaults::ElementType::Container {
-                element_type = defaults.element_type;
-            }
-
-            let mut slider_value = 0.0;
-            let mut progress_value = 0.0;
-            let mut progress_max = 1.0;
-            let mut checkbox_checked = false;
-            let mut interaction_id: Option<String> = None;
-            let mut image_src = String::new();
-            let mut canvas_id = String::new();
+            let mut parsed = ParsedAttributes::new(defaults.element_type);
             
-            // 2. Parse Attributes
-            for attr in attrs.borrow().iter() {
-                let name = attr.name.local.as_ref();
-                let value = &attr.value;
-                
-                match name {
-                    "id" => {
-                        canvas_id = value.to_string();
-                    },
-                    "style" => {
-                        css::parse_inline_style(value, &mut current_style, &mut layout_style);
-                    },
-                    "type" if tag == "input" => {
-                        if value.as_ref() == "checkbox" {
-                            element_type = defaults::ElementType::Checkbox;
-                            layout_style.size = Size { width: length(20.0), height: length(20.0) };
-                            layout_style.margin = taffy::geometry::Rect { left: length(5.0), right: length(5.0), top: length(0.0), bottom: length(0.0) };
-                        } else if value.as_ref() == "range" {
-                            element_type = defaults::ElementType::Slider;
-                            layout_style.size = Size { width: length(100.0), height: length(20.0) };
-                        }
-                    },
-
-                    "value" => {
-                        if let Ok(v) = value.parse::<f32>() {
-                            slider_value = v.clamp(0.0, 1.0);
-                            progress_value = v; 
-                        }
-                    },
-                    "max" => {
-                        if let Ok(v) = value.parse::<f32>() {
-                            progress_max = v;
-                        }
-                    },
-                    "checked" => checkbox_checked = true,
-                    "width" => {
-                         if let Ok(w) = value.parse::<f32>() {
-                             layout_style.size.width = length(w);
-                         }
-                     },
-                     "height" => {
-                         if let Ok(h) = value.parse::<f32>() {
-                             layout_style.size.height = length(h);
-                         }
-                     },
-                     "src" => {
-                         // Always capture src if present, mostly for images
-                         image_src = value.to_string();
-                     },
-                     "data-on-click" => {
-                         if !message_validator(value) {
-                             log::warn!("Invalid message in data-on-click: {}", value);
-                         }
-                         interaction_id = Some(value.to_string());
-                     }
-                     _ => {
-                         log::debug!("Ignoring attribute: {} on tag: {}", name, tag);
-                     }
-                }
-            }
+            parse_attributes(tag, &attrs.borrow(), &mut current_style, &mut layout_style, &mut parsed, message_validator);
             
-            // 3. Process Children (recurse if not a leaf element like img/input)
             let mut children = Vec::new();
-            if element_type != defaults::ElementType::Image && element_type != defaults::ElementType::Checkbox  && element_type != defaults::ElementType::Slider && element_type != defaults::ElementType::Progress && element_type != defaults::ElementType::Canvas {
+            if !matches!(parsed.element_type, defaults::ElementType::Image | defaults::ElementType::Checkbox | defaults::ElementType::Slider | defaults::ElementType::Progress | defaults::ElementType::Canvas) {
                 for child in handle.children.borrow().iter() {
                      if let Some(id) = dom_to_taffy(taffy, child, text_measurer, render_data, interactions, current_style.clone(), message_validator) {
                          children.push(id);
@@ -337,34 +341,11 @@ fn dom_to_taffy(
                 }
             }
 
-            // 4. Create Taffy Node
             let id = taffy.new_with_children(layout_style, &children).ok()?;
 
-            // 5. Store Render Data
-            match element_type {
-                defaults::ElementType::Image => {
-                    render_data.insert(id, RenderData::Image(image_src, current_style));
-                },
-                defaults::ElementType::Checkbox => {
-                    render_data.insert(id, RenderData::Checkbox(checkbox_checked, current_style));
-                },
-                defaults::ElementType::Slider => {
-                    render_data.insert(id, RenderData::Slider(slider_value, current_style));
-                },
-                defaults::ElementType::Progress => {
-                    render_data.insert(id, RenderData::Progress(progress_value, progress_max, current_style));
-                },
-                defaults::ElementType::Canvas => {
-                    render_data.insert(id, RenderData::Canvas(canvas_id, current_style));
-                },
-                _ => {
-                    render_data.insert(id, RenderData::Container(current_style));
-                }
+            process_element_type(id, &parsed, current_style, render_data);
 
-            }
-
-             // 6. Register Interaction
-            if let Some(interaction) = interaction_id {
+            if let Some(interaction) = parsed.interaction_id {
                 interactions.insert(id, interaction);
             }
 
@@ -373,8 +354,6 @@ fn dom_to_taffy(
         
         NodeData::Text { contents } => {
             let text = contents.borrow();
-            // Normalize whitespace: collapse all whitespace sequences to a single space
-            // and trim leading/trailing whitespace.
             let normalized = text.split_whitespace().collect::<Vec<&str>>().join(" ");
             
             if normalized.is_empty() {
@@ -397,7 +376,6 @@ fn dom_to_taffy(
         }
     }
 }
-
 
 fn layout_to_draw_commands(
     taffy: &TaffyTree,
@@ -435,7 +413,6 @@ fn traverse_layout(
     let rect = Rect { x, y, width, height };
 
     if let Some(data) = render_data.get(&root) {
-        // Shared background/border drawing logic for Containers and Text
         let maybe_style = match data {
             RenderData::Container(style) => Some(style),
             RenderData::Text(_, style) => Some(style),
@@ -456,7 +433,6 @@ fn traverse_layout(
             }
         }
 
-        // Content Specific Drawing
         match data {
             RenderData::Text(text, style) => {
                 commands.push(DrawCommand::DrawText {
@@ -502,16 +478,14 @@ fn traverse_layout(
                     rect,
                 });
             },
-            _ => {} // Container and others handled by shared logic or ignored
+            _ => {} 
         }
     }
 
-    // Handle Clipping for Overflow
     if overflow != Overflow::Visible {
         commands.push(DrawCommand::Clip { rect });
     }
 
-    // Calculate Child Offsets (Scroll Handling)
     let mut child_offset_x = x;
     let mut child_offset_y = y;
 
@@ -522,7 +496,6 @@ fn traverse_layout(
         }
     }
 
-    // Recurse to Children
     if let Ok(children) = taffy.children(root) {
         for child in children {
             traverse_layout(taffy, child, render_data, scroll_offsets, child_offset_x, child_offset_y, commands);
@@ -533,8 +506,6 @@ fn traverse_layout(
         commands.push(DrawCommand::PopClip);
     }
 }
-
-
 
 pub fn hit_test_recursive(
     taffy: &TaffyTree,
