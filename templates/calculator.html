@@ -1,0 +1,100 @@
+<div
+    style="flex-direction: column; width: 400px; height: 500px; background-color: #2c2c2e; padding: 20px; border-radius: 12px; font-family: 'Roboto'; box-shadow: 0px 4px 15px rgba(0, 0, 0, 0.5);">
+    <!-- Display -->
+    <div
+        style="height: 100px; background-color: #1c1c1e; border-radius: 8px; margin-bottom: 20px; justify-content: flex-end; align-items: flex-end; padding: 15px;">
+        <span style="color: white; font-size: 48px; font-weight: bold;">{{ display }}</span>
+    </div>
+
+    <!-- Keypad -->
+    <div style="flex-direction: column; flex-grow: 1; align-items: stretch; justify-content: space-between;">
+
+        <!-- Row 1 -->
+        <div style="flex-direction: row; justify-content: space-between; height: 60px;">
+            <div style="width: 80px; background-color: #ff9f0a; border-radius: 40px; justify-content: center; align-items: center; cursor: pointer; hover-bg-color: #ffb347;"
+                data-on-click="clear">
+                <span style="color: white; font-size: 24px; font-weight: bold;">C</span>
+            </div>
+            <div style="width: 80px; background-color: #ff9f0a; border-radius: 40px; justify-content: center; align-items: center; cursor: pointer; hover-bg-color: #ffb347;"
+                data-on-click="op:/">
+                <span style="color: white; font-size: 24px; font-weight: bold;">÷</span>
+            </div>
+        </div>
+
+        <!-- Row 2 -->
+        <div style="flex-direction: row; justify-content: space-between; height: 60px;">
+            <div style="width: 80px; background-color: #3a3a3c; border-radius: 40px; justify-content: center; align-items: center; cursor: pointer; hover-bg-color: #4c4c4e;"
+                data-on-click="digit:7">
+                <span style="color: white; font-size: 24px; font-weight: bold;">7</span>
+            </div>
+            <div style="width: 80px; background-color: #3a3a3c; border-radius: 40px; justify-content: center; align-items: center; cursor: pointer; hover-bg-color: #4c4c4e;"
+                data-on-click="digit:8">
+                <span style="color: white; font-size: 24px; font-weight: bold;">8</span>
+            </div>
+            <div style="width: 80px; background-color: #3a3a3c; border-radius: 40px; justify-content: center; align-items: center; cursor: pointer; hover-bg-color: #4c4c4e;"
+                data-on-click="digit:9">
+                <span style="color: white; font-size: 24px; font-weight: bold;">9</span>
+            </div>
+            <div style="width: 80px; background-color: #ff9f0a; border-radius: 40px; justify-content: center; align-items: center; cursor: pointer; hover-bg-color: #ffb347;"
+                data-on-click="op:*">
+                <span style="color: white; font-size: 24px; font-weight: bold;">×</span>
+            </div>
+        </div>
+
+        <!-- Row 3 -->
+        <div style="flex-direction: row; justify-content: space-between; height: 60px;">
+            <div style="width: 80px; background-color: #3a3a3c; border-radius: 40px; justify-content: center; align-items: center; cursor: pointer; hover-bg-color: #4c4c4e;"
+                data-on-click="digit:4">
+                <span style="color: white; font-size: 24px; font-weight: bold;">4</span>
+            </div>
+            <div style="width: 80px; background-color: #3a3a3c; border-radius: 40px; justify-content: center; align-items: center; cursor: pointer; hover-bg-color: #4c4c4e;"
+                data-on-click="digit:5">
+                <span style="color: white; font-size: 24px; font-weight: bold;">5</span>
+            </div>
+            <div style="width: 80px; background-color: #3a3a3c; border-radius: 40px; justify-content: center; align-items: center; cursor: pointer; hover-bg-color: #4c4c4e;"
+                data-on-click="digit:6">
+                <span style="color: white; font-size: 24px; font-weight: bold;">6</span>
+            </div>
+            <div style="width: 80px; background-color: #ff9f0a; border-radius: 40px; justify-content: center; align-items: center; cursor: pointer; hover-bg-color: #ffb347;"
+                data-on-click="op:-">
+                <span style="color: white; font-size: 24px; font-weight: bold;">-</span>
+            </div>
+        </div>
+
+        <!-- Row 4 -->
+        <div style="flex-direction: row; justify-content: space-between; height: 60px;">
+            <div style="width: 80px; background-color: #3a3a3c; border-radius: 40px; justify-content: center; align-items: center; cursor: pointer; hover-bg-color: #4c4c4e;"
+                data-on-click="digit:1">
+                <span style="color: white; font-size: 24px; font-weight: bold;">1</span>
+            </div>
+            <div style="width: 80px; background-color: #3a3a3c; border-radius: 40px; justify-content: center; align-items: center; cursor: pointer; hover-bg-color: #4c4c4e;"
+                data-on-click="digit:2">
+                <span style="color: white; font-size: 24px; font-weight: bold;">2</span>
+            </div>
+            <div style="width: 80px; background-color: #3a3a3c; border-radius: 40px; justify-content: center; align-items: center; cursor: pointer; hover-bg-color: #4c4c4e;"
+                data-on-click="digit:3">
+                <span style="color: white; font-size: 24px; font-weight: bold;">3</span>
+            </div>
+            <div style="width: 80px; background-color: #ff9f0a; border-radius: 40px; justify-content: center; align-items: center; cursor: pointer; hover-bg-color: #ffb347;"
+                data-on-click="op:+">
+                <span style="color: white; font-size: 24px; font-weight: bold;">+</span>
+            </div>
+        </div>
+
+        <!-- Row 5 -->
+        <div style="flex-direction: row; justify-content: space-between; height: 60px;">
+            <div style="width: 170px; background-color: #3a3a3c; border-radius: 40px; justify-content: center; align-items: center; cursor: pointer; hover-bg-color: #4c4c4e;"
+                data-on-click="digit:0">
+                <span style="color: white; font-size: 24px; font-weight: bold;">0</span>
+            </div>
+            <div style="width: 80px; background-color: #3a3a3c; border-radius: 40px; justify-content: center; align-items: center; cursor: pointer; hover-bg-color: #4c4c4e;"
+                data-on-click="digit:.">
+                <span style="color: white; font-size: 24px; font-weight: bold;">.</span>
+            </div>
+            <div style="width: 80px; background-color: #ff9f0a; border-radius: 40px; justify-content: center; align-items: center; cursor: pointer; hover-bg-color: #ffb347;"
+                data-on-click="equals">
+                <span style="color: white; font-size: 24px; font-weight: bold;">=</span>
+            </div>
+        </div>
+    </div>
+</div>
