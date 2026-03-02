@@ -13,4 +13,6 @@ pub enum InputEvent {
     KeyDown(String),
     KeyUp(String),
     Message(String),
+    TextInput { id: String, text: String },
+    Tick { render_time_ms: Option<f32> },
 }

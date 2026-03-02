@@ -148,27 +148,29 @@ impl Ui {
         self.taffy.compute_layout(self.root, available_space)
     }
 
-    pub fn build_commands(&self, canvases: &HashMap<String, Canvas>) -> Vec<DrawCommand> {
+    pub fn build_commands(&self, canvases: &HashMap<String, Canvas>, focused_id: Option<&str>) -> Vec<DrawCommand> {
         layout_to_draw_commands(
             &self.taffy, 
             self.root, 
             &self.render_data, 
             &self.scroll_offsets,
             0.0, 
-            0.0
+            0.0,
+            focused_id
         )
     }
 
-    pub fn hit_test(&self, x: f32, y: f32) -> Option<Interaction> {
+    pub fn hit_test(&self, x: f32, y: f32) -> Option<(Interaction, NodeId)> {
          profile!("hit_test");
          if let Some(clicked_node) = hit_test_recursive(&self.taffy, self.root, &self.scroll_offsets, &self.render_data, x, y, 0.0, 0.0) {
              let mut current = Some(clicked_node);
              while let Some(node) = current {
                  if let Some(act) = self.interactions.get(&node) {
-                     return Some(act.clone());
+                     return Some((act.clone(), clicked_node));
                  }
                  current = self.taffy.parent(node);
              }
+             return Some((String::new(), clicked_node)); // Return clicked node even without interaction
          }
          None
     }
@@ -184,6 +186,8 @@ struct ParsedAttributes {
     interaction_id: Option<String>,
     image_src: String,
     canvas_id: String,
+    element_id: Option<String>,
+    text_input_text: Option<String>,
 }
 
 impl ParsedAttributes {
@@ -197,6 +201,8 @@ impl ParsedAttributes {
             interaction_id: None,
             image_src: String::new(),
             canvas_id: String::new(),
+            element_id: None,
+            text_input_text: None,
         }
     }
 }
@@ -214,7 +220,10 @@ fn parse_attributes(
         let value = &attr.value;
         
         match name {
-            "id" => parsed.canvas_id = value.to_string(),
+            "id" => {
+                parsed.canvas_id = value.to_string();
+                parsed.element_id = Some(value.to_string());
+            },
             "style" => css::parse_inline_style(value, current_style, layout_style),
             "type" if tag == "input" => {
                 if value.as_ref() == "checkbox" {
@@ -224,6 +233,11 @@ fn parse_attributes(
                 } else if value.as_ref() == "range" {
                     parsed.element_type = defaults::ElementType::Slider;
                     layout_style.size = Size { width: length(100.0), height: length(20.0) };
+                } else if value.as_ref() == "text" {
+                    let text_defaults = defaults::get_default_style("input_text", current_style);
+                    parsed.element_type = text_defaults.element_type;
+                    *layout_style = text_defaults.taffy_style;
+                    *current_style = text_defaults.container_style;
                 }
             },
             "value" => {
@@ -231,6 +245,7 @@ fn parse_attributes(
                     parsed.slider_value = v.clamp(0.0, 1.0);
                     parsed.progress_value = v; 
                 }
+                parsed.text_input_text = Some(value.to_string());
             },
             "max" => {
                 if let Ok(v) = value.parse::<f32>() {
@@ -283,6 +298,9 @@ fn process_element_type(
         },
         defaults::ElementType::Canvas => {
             render_data.insert(id, RenderData::Canvas(parsed.canvas_id.clone(), current_style));
+        },
+        defaults::ElementType::TextInput => {
+            render_data.insert(id, RenderData::TextInput(parsed.element_id.clone().unwrap_or_default(), parsed.text_input_text.clone(), current_style));
         },
         _ => {
             render_data.insert(id, RenderData::Container(current_style));
@@ -384,9 +402,10 @@ fn layout_to_draw_commands(
     scroll_offsets: &HashMap<NodeId, (f32, f32)>,
     offset_x: f32,
     offset_y: f32,
+    focused_id: Option<&str>,
 ) -> Vec<DrawCommand> {
     let mut commands = Vec::new();
-    traverse_layout(taffy, root, render_data, scroll_offsets, offset_x, offset_y, &mut commands);
+    traverse_layout(taffy, root, render_data, scroll_offsets, offset_x, offset_y, &mut commands, focused_id);
     commands
 }
 
@@ -398,6 +417,7 @@ fn traverse_layout(
     offset_x: f32,
     offset_y: f32,
     commands: &mut Vec<DrawCommand>,
+    focused_id: Option<&str>,
 ) {
     let layout = match taffy.layout(root) {
         Ok(l) => l,
@@ -478,6 +498,41 @@ fn traverse_layout(
                     rect,
                 });
             },
+            RenderData::TextInput(id, text, style) => {
+                let is_focused = focused_id == Some(id.as_str()) && !id.is_empty();
+                
+                let focus_outline_width = if is_focused { 2.0 } else { 0.0 };
+                let focus_outline_color = if is_focused { Some(crate::Color::from_rgba8(0, 122, 255, 255)) } else { None };
+
+                // Draw background and focus ring
+                commands.push(DrawCommand::DrawRect {
+                    rect,
+                    color: style.background_color,
+                    gradient: style.background_gradient.clone(),
+                    border_radius: style.border_radius,
+                    border_width: if is_focused { focus_outline_width } else { style.border_width },
+                    border_color: if is_focused { focus_outline_color } else { style.border_color },
+                });
+
+                // Draw text if present
+                if let Some(t) = text {
+                    if !t.is_empty() {
+                        let text_rect = Rect {
+                            x: rect.x + 8.0, // basic padding
+                            y: rect.y + 5.0,
+                            width: rect.width - 16.0,
+                            height: rect.height - 10.0,
+                        };
+                        commands.push(DrawCommand::DrawText {
+                            text: t.clone(),
+                            rect: text_rect,
+                            color: style.color,
+                            font_size: style.font_size,
+                            weight: style.weight,
+                        });
+                    }
+                }
+            },
             _ => {} 
         }
     }
@@ -498,7 +553,7 @@ fn traverse_layout(
 
     if let Ok(children) = taffy.children(root) {
         for child in children {
-            traverse_layout(taffy, child, render_data, scroll_offsets, child_offset_x, child_offset_y, commands);
+            traverse_layout(taffy, child, render_data, scroll_offsets, child_offset_x, child_offset_y, commands, focused_id);
         }
     }
 

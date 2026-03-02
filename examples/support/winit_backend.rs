@@ -131,6 +131,18 @@ pub fn run_app<M: Model + 'static, TM: TextMeasurer + 'static>(
                     },
                     WindowEvent::KeyboardInput { event: kb_event, .. } => {
                         // For winit 0.29
+                        let mut redraw = false;
+                        if kb_event.state == ElementState::Pressed {
+                            if let Some(text) = &kb_event.text {
+                                if !text.is_empty() {
+                                    let text_event = InputEvent::TextInput { id: String::new(), text: text.to_string() };
+                                    if runtime.handle_event(text_event) {
+                                        redraw = true;
+                                    }
+                                }
+                            }
+                        }
+
                         if let winit::keyboard::PhysicalKey::Code(keycode) = kb_event.physical_key {
                             let key_name = format!("{:?}", keycode);
                             let input_event = if kb_event.state == ElementState::Pressed {
@@ -139,8 +151,12 @@ pub fn run_app<M: Model + 'static, TM: TextMeasurer + 'static>(
                                 InputEvent::KeyUp(key_name)
                             };
                             if runtime.handle_event(input_event) {
-                                window_clone.request_redraw();
+                                redraw = true;
                             }
+                        }
+
+                        if redraw {
+                            window_clone.request_redraw();
                         }
                     },
                     _ => {}

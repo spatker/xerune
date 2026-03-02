@@ -8,20 +8,24 @@ mod support;
 
 #[derive(Template)]
 #[template(path = "todo_list.html")]
-struct TodoList<'a> {
-    items: Vec<TodoItem<'a>>,
+struct TodoList {
+    items: Vec<TodoItem>,
     active_item: usize,
+    new_item_title: String,
 }
 
 #[derive(Clone)]
-struct TodoItem<'a> {
-    title: &'a str,
+struct TodoItem {
+    title: String,
     completed: bool,
 }
 
 #[derive(Debug, Clone)]
 enum TodoMsg {
     Toggle(usize),
+    Remove(usize),
+    Add,
+    TextInput(String, String),
     KeyDown(String),
 }
 
@@ -33,6 +37,17 @@ impl std::str::FromStr for TodoMsg {
                  return Ok(TodoMsg::Toggle(index));
              }
         }
+        if let Some(index_str) = s.strip_prefix("remove:") {
+             if let Ok(index) = index_str.parse::<usize>() {
+                 return Ok(TodoMsg::Remove(index));
+             }
+        }
+        if s == "add" {
+            return Ok(TodoMsg::Add);
+        }
+        if let Some(text_payload) = s.strip_prefix("todo_input:text:") {
+            return Ok(TodoMsg::TextInput("todo_input".to_string(), text_payload.to_string()));
+        }
         if let Some(key) = s.strip_prefix("keydown:") {
             return Ok(TodoMsg::KeyDown(key.to_string()));
         }
@@ -40,7 +55,7 @@ impl std::str::FromStr for TodoMsg {
     }
 }
 
-impl<'a> Model for TodoList<'a> {
+impl Model for TodoList {
     type Message = TodoMsg;
 
     fn view(&self) -> String {
@@ -55,8 +70,39 @@ impl<'a> Model for TodoList<'a> {
                     self.active_item = index;
                 }
             }
+            TodoMsg::Remove(index) => {
+                if index < self.items.len() {
+                    self.items.remove(index);
+                    if self.active_item >= self.items.len() && !self.items.is_empty() {
+                        self.active_item = self.items.len() - 1;
+                    }
+                }
+            }
+            TodoMsg::Add => {
+                if !self.new_item_title.trim().is_empty() {
+                    self.items.insert(0, TodoItem {
+                        title: self.new_item_title.trim().to_string(),
+                        completed: false,
+                    });
+                    self.new_item_title.clear();
+                }
+            }
+            TodoMsg::TextInput(id, text) => {
+                if id == "todo_input" {
+                    // Ignore control characters
+                    for c in text.chars() {
+                        if !c.is_control() {
+                            self.new_item_title.push(c);
+                        }
+                    }
+                }
+            }
             TodoMsg::KeyDown(key) => {
                 match key.as_str() {
+                    "Backspace" => {
+                        // pop a char from new_item_title if it has focus
+                        self.new_item_title.pop();
+                    }
                     "ArrowUp" => {
                         if self.active_item > 0 {
                             self.active_item -= 1;
@@ -64,15 +110,22 @@ impl<'a> Model for TodoList<'a> {
                         }
                     }
                     "ArrowDown" => {
-                        if self.active_item + 1 < self.items.len() {
+                        if self.items.len() > 0 && self.active_item + 1 < self.items.len() {
                             self.active_item += 1;
                             context.scroll_into_view(&format!("toggle:{}", self.active_item));
                         }
                     }
-                    "Enter" | "Space" => {
-                        if self.active_item < self.items.len() {
+                    "Enter" => {
+                        if !self.new_item_title.is_empty() {
+                            self.update(TodoMsg::Add, context);
+                        } else if self.active_item < self.items.len() {
                             self.items[self.active_item].completed = !self.items[self.active_item].completed;
                         }
+                    }
+                    "Space" => {
+                        // don't toggle if we're typing a space into the input box
+                        // (we handle space in TextInput instead for the input field, but we assume
+                        // space toggles item otherwise. For now, let's keep it simple.)
                     }
                     _ => {}
                 }
@@ -94,12 +147,12 @@ fn main() -> anyhow::Result<()> {
     let mut items = Vec::new();
     for i in 1..=20 {
         items.push(TodoItem {
-            title: Box::leak(format!("Todo Item {}", i).into_boxed_str()),
+            title: format!("Todo Item {}", i),
             completed: i % 3 == 0,
         });
     }
 
-    let todo_list = TodoList { items, active_item: 0 };
+    let todo_list = TodoList { items, active_item: 0, new_item_title: String::new() };
 
     let measurer = TinySkiaMeasurer { fonts: fonts_ref };
     let runtime = Runtime::new(todo_list, measurer);

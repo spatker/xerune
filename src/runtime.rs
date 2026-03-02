@@ -25,6 +25,7 @@ pub struct Runtime<M, R> {
     context: Context,
     last_html: String,
     last_commands: Vec<DrawCommand>,
+    pub focused_id: Option<String>,
 }
 
 impl<M: Model, R: TextMeasurer> Runtime<M, R> {
@@ -48,6 +49,7 @@ impl<M: Model, R: TextMeasurer> Runtime<M, R> {
              context,
              last_html: html,
              last_commands: Vec::new(),
+             focused_id: None,
          }
     }
 
@@ -90,10 +92,26 @@ impl<M: Model, R: TextMeasurer> Runtime<M, R> {
     pub fn handle_event(&mut self, event: InputEvent) -> bool {
         match event {
             InputEvent::Click { x, y } => {
-                if let Some(msg_str) = self.ui.hit_test(x, y) {
-                    return self.process_message_str(&msg_str);
+                if let Some((msg_str, clicked_node)) = self.ui.hit_test(x, y) {
+                    // Update focus if this node is an input
+                    if let Some(RenderData::TextInput(id, _, _)) = self.ui.render_data.get(&clicked_node) {
+                        if !id.is_empty() {
+                            self.focused_id = Some(id.clone());
+                        } else {
+                            self.focused_id = None;
+                        }
+                    } else {
+                        self.focused_id = None;
+                    }
+                    
+                    if !msg_str.is_empty() {
+                        return self.process_message_str(&msg_str) || self.focused_id.is_some();
+                    }
+                    return self.focused_id.is_some(); // True if focus changed (needs redraw)
                 }
-                return false; // Should return false if not handled or empty
+                
+                let old_focus = self.focused_id.take();
+                return old_focus.is_some(); // True if changed
             }
             InputEvent::Message(msg_str) => {
                 self.process_message_str(&msg_str)
@@ -112,6 +130,16 @@ impl<M: Model, R: TextMeasurer> Runtime<M, R> {
             InputEvent::KeyUp(key) => {
                 let msg_str = format!("keyup:{}", key);
                 self.process_message_str(&msg_str)
+            }
+            InputEvent::TextInput { id: event_id, text } => {
+                if let Some(ref focused) = self.focused_id {
+                    // If the event provides an explicit ID, it must match.
+                    if event_id.is_empty() || &event_id == focused {
+                        let msg_str = format!("{}:text:{}", focused, text);
+                        return self.process_message_str(&msg_str);
+                    }
+                }
+                false
             }
              _ => false
         }
@@ -181,7 +209,7 @@ impl<M: Model, R: TextMeasurer> Runtime<M, R> {
     
     pub fn render(&mut self, renderer: &mut impl Renderer) {
         profile!("render");
-        let commands = self.ui.build_commands(&self.context.canvases);
+        let commands = self.ui.build_commands(&self.context.canvases, self.focused_id.as_deref());
         
         let mut dirty_region: Option<Rect> = None;
 

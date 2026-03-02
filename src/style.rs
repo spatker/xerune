@@ -45,4 +45,5 @@ pub enum RenderData {
     Slider(f32, ContainerStyle),
     Progress(f32, f32, ContainerStyle), // value, max, style
     Canvas(String, ContainerStyle),
+    TextInput(String, Option<String>, ContainerStyle), // id, text value, style
 }

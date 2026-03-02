@@ -1,10 +1,31 @@
-<div style="flex-direction: column; width: 800px; height: 600px; overflow: scroll;">
-    {% for item in items %}
-    <div style="flex-direction: row; margin: 5px; padding: 5px; flex-shrink: 0; {% if loop.index0 == active_item %}background-color: #333333; border: 1px solid #555555; border-radius: 4px;{% endif %}"
-        data-on-click="toggle:{{ loop.index0 }}">
-        <input type="checkbox" {% if item.completed %}checked{% endif %}>
-        <span style="margin: 0px 0px 0px 10px; font-size: 18px; {% if item.completed %}color: #b4b4b4;{% endif %}">{{
-            item.title }}</span>
+<div style="flex-direction: column; width: 800px; height: 600px; background-color: #1e1e1e; padding: 20px;">
+    <!-- Title -->
+    <span style="font-size: 32px; color: white; margin-bottom: 20px;">Todo List</span>
+
+    <!-- Input Section -->
+    <div style="flex-direction: row; margin-bottom: 20px; align-items: center; flex-shrink: 0;">
+        <input type="text" id="todo_input" value="{{ new_item_title }}"
+            style="flex-grow: 1; margin-right: 10px; font-size: 18px; color: black; background-color: white;">
+        <div data-on-click="add"
+            style="background-color: #4CAF50; border-radius: 4px; padding: 10px 20px; justify-content: center; align-items: center; cursor: pointer;">
+            <span style="color: white; font-size: 16px;">Add</span>
+        </div>
     </div>
-    {% endfor %}
+
+    <!-- List -->
+    <div style="flex-direction: column; flex-grow: 1; overflow: scroll; min-height: 0;">
+        {% for item in items %}
+        <div style="flex-direction: row; margin: 5px 0; padding: 10px; flex-shrink: 0; align-items: center; {% if loop.index0 == active_item %}background-color: #333333; border: 1px solid #555555; border-radius: 4px;{% endif %}"
+            data-on-click="toggle:{{ loop.index0 }}">
+            <input type="checkbox" {% if item.completed %}checked{% endif %}>
+            <span
+                style="margin: 0px 10px; flex-grow: 1; font-size: 18px; {% if item.completed %}color: #888888;{% else %}color: white;{% endif %}">{{
+                item.title }}</span>
+            <div data-on-click="remove:{{ loop.index0 }}"
+                style="background-color: #f44336; border-radius: 4px; padding: 5px 10px; justify-content: center; align-items: center; cursor: pointer;">
+                <span style="color: white; font-size: 14px;">Remove</span>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
 </div>

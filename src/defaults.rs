@@ -9,6 +9,7 @@ pub enum ElementType {
     Slider,
     Progress,
     Canvas,
+    TextInput,
 }
 
 pub struct StyleBundle {
@@ -165,6 +166,23 @@ pub fn get_default_style(tag: &str, parent_style: &ContainerStyle) -> StyleBundl
         "progress" => {
              bundle.element_type = ElementType::Progress;
              bundle.taffy_style.size = Size { width: length(150.0), height: length(20.0) };
+        }
+        "input_text" => {
+            bundle.element_type = ElementType::TextInput;
+            bundle.taffy_style.size = Size { width: length(150.0), height: length(30.0) };
+            bundle.taffy_style.padding = taffy::geometry::Rect {
+                left: length(8.0), right: length(8.0),
+                top: length(5.0), bottom: length(5.0)
+            };
+            bundle.taffy_style.margin = taffy::geometry::Rect {
+                left: length(2.0), right: length(2.0),
+                top: length(2.0), bottom: length(2.0)
+            };
+            bundle.taffy_style.align_items = Some(AlignItems::Center);
+            bundle.container_style.background_color = Some(crate::Color::WHITE);
+            bundle.container_style.border_radius = 4.0;
+            bundle.container_style.border_width = 1.0;
+            bundle.container_style.border_color = Some(crate::Color::from_rgba8(200, 200, 200, 255));
         }
         "canvas" => {
             bundle.element_type = ElementType::Canvas;
