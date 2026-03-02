@@ -582,8 +582,14 @@ pub fn hit_test_recursive(
         let mut child_abs_x = left;
         let mut child_abs_y = top;
 
-        if let Some(RenderData::Container(style)) = render_data.get(&root) {
-            if style.overflow == Overflow::Scroll {
+        if let Some(data) = render_data.get(&root) {
+            let overflow = match data {
+                RenderData::Container(style) => style.overflow,
+                RenderData::TextInput(_, _, style) => style.overflow,
+                _ => Overflow::Visible,
+            };
+
+            if overflow == Overflow::Scroll {
                 if let Some((sx, sy)) = scroll_offsets.get(&root) {
                     child_abs_x -= sx;
                     child_abs_y -= sy;

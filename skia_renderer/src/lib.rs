@@ -378,7 +378,7 @@ impl<'a> Renderer for TinySkiaRenderer<'a> {
                             continue; 
                          }
                          let path = tiny_skia::PathBuilder::from_rect(r);
-                         self.pixmap.stroke_path(&path, &paint, &stroke, Transform::identity(), None);
+                         self.pixmap.stroke_path(&path, &paint, &stroke, Transform::identity(), self.current_mask.as_ref());
                          
                          if *checked {
                              let inset = 4.0;
