@@ -196,7 +196,7 @@ fn main() -> anyhow::Result<()> {
             600, 
             runtime, 
             fonts_ref, 
-            |_| {} // Linux backend handles its own loop for now
+            move |_tx| {}
         )
     }
 }

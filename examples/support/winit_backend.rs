@@ -38,6 +38,7 @@ pub fn run_app<M: Model + 'static, TM: TextMeasurer + 'static>(
 
     let mut image_cache = std::collections::HashMap::new();
     let mut gradient_cache = std::collections::HashMap::new();
+    let mut glyph_cache = std::collections::HashMap::new();
     let mut app_pixmap: Option<Pixmap> = None;
 
     event_loop.run(move |event, target| {
@@ -84,7 +85,7 @@ pub fn run_app<M: Model + 'static, TM: TextMeasurer + 'static>(
                         }
 
                         if let Some(pixmap) = app_pixmap.as_mut() {
-                            let mut renderer = TinySkiaRenderer::new(pixmap, fonts, &mut image_cache, &mut gradient_cache);
+                            let mut renderer = TinySkiaRenderer::new(pixmap.as_mut(), fonts, &mut image_cache, &mut gradient_cache, &mut glyph_cache);
                             // let start_render = Instant::now();
                             runtime.render(&mut renderer);
                             // let elapsed = start_render.elapsed().as_secs_f32() * 1000.0;

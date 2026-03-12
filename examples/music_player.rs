@@ -441,7 +441,14 @@ fn main() -> anyhow::Result<()> {
              480, 
              runtime, 
              fonts_ref, 
-             |_| {}
+             move |tx| {
+                //  std::thread::spawn(move || {
+                //      loop {
+                //          let _ = tx.send("tick".to_string());
+                //          std::thread::sleep(std::time::Duration::from_millis(33));
+                //      }
+                //  });
+             }
          )
     }
 }

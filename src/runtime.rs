@@ -141,73 +141,106 @@ impl<M: Model, R: TextMeasurer> Runtime<M, R> {
                 }
                 false
             }
-             _ => false
+            InputEvent::Tick { render_time_ms } => {
+                if let Ok(msg) = M::Message::from_str("tick") {
+                    self.model.update(msg, &mut self.context);
+                    // Also try to send render_time if supported
+                    if let Some(ms) = render_time_ms {
+                        if let Ok(msg) = M::Message::from_str(&format!("render_time_ms:{}", ms)) {
+                            self.model.update(msg, &mut self.context);
+                        }
+                    }
+                    return self.sync_view();
+                }
+                false
+            }
+            _ => false
         }
     }
+
+    pub fn handle_messages(&mut self, messages: impl IntoIterator<Item = String>) -> bool {
+        let mut any_update = false;
+        for msg_str in messages {
+            if let Ok(msg) = M::Message::from_str(&msg_str) {
+                profile!("update");
+                self.model.update(msg, &mut self.context);
+                any_update = true;
+            }
+        }
+        if any_update {
+            self.sync_view()
+        } else {
+            false
+        }
+    }
+
     
     fn process_message_str(&mut self, msg_str: &str) -> bool {
         if let Ok(msg) = M::Message::from_str(msg_str) {
-            {
-                profile!("update");
-                self.model.update(msg, &mut self.context);
-            }
-            let html = {
-                profile!("view");
-                self.model.view()
-            };
-            
-            let mut dirty = false;
-            
-            // Optimization: Only rebuild UI if HTML changed
-            if html != self.last_html {
-                self.last_html = html.clone();
-                // Recreate UI to reflect changes
-                self.ui = {
-                    profile!("ui_new");
-                    let validator = |s: &str| M::Message::from_str(s).is_ok();
-                    Ui::new(&html, &self.measurer, self.default_style.clone(), &validator).unwrap()
-                };
-                {
-                    profile!("compute_layout");
-                    let _ = self.ui.compute_layout(self.cached_size);
-                }
-                Runtime::<M, R>::sync_canvases(&self.ui, &mut self.context);
-                self.restore_scroll();
-                dirty = true;
-            }
-
-            let commands: Vec<_> = self.context.commands.drain(..).collect();
-            for cmd in commands {
-                match cmd {
-                    crate::graphics::ContextCommand::ScrollIntoView(id) => {
-                        self.scroll_into_view(&id);
-                        dirty = true;
-                    }
-                }
-            }
-
-            if !dirty {
-                // Only trigger redraw if a *visible* canvas is dirty
-                for cmd in &self.last_commands {
-                    if let DrawCommand::DrawCanvas { id, .. } = cmd {
-                        if let Some(canvas) = self.context.canvases.get(id) {
-                            if canvas.dirty {
-                                dirty = true;
-                                break; // We DO NOT reset canvas.dirty here!
-                            }
-                        }
-                    }
-                }
-            }
-
-            dirty
+            profile!("update");
+            self.model.update(msg, &mut self.context);
+            self.sync_view()
         } else {
             log::debug!("Unhandled or failed to parse message: {}", msg_str);
             false
         }
     }
+
+    pub fn sync_view(&mut self) -> bool {
+        let html = {
+            profile!("view");
+            self.model.view()
+        };
+        
+        let mut dirty = false;
+        
+        // Optimization: Only rebuild UI if HTML changed
+        if html != self.last_html {
+            self.last_html = html.clone();
+            // Recreate UI to reflect changes
+            self.ui = {
+                profile!("ui_new");
+                let validator = |s: &str| M::Message::from_str(s).is_ok();
+                Ui::new(&html, &self.measurer, self.default_style.clone(), &validator).unwrap()
+            };
+            {
+                profile!("compute_layout");
+                let _ = self.ui.compute_layout(self.cached_size);
+            }
+            Runtime::<M, R>::sync_canvases(&self.ui, &mut self.context);
+            self.restore_scroll();
+            dirty = true;
+        }
+
+        let commands: Vec<_> = self.context.commands.drain(..).collect();
+        for cmd in commands {
+            match cmd {
+                crate::graphics::ContextCommand::ScrollIntoView(id) => {
+                    self.scroll_into_view(&id);
+                    dirty = true;
+                }
+            }
+        }
+
+        if !dirty {
+            // Only trigger redraw if a *visible* canvas is dirty
+            for cmd in &self.last_commands {
+                if let DrawCommand::DrawCanvas { id, .. } = cmd {
+                    if let Some(canvas) = self.context.canvases.get(id) {
+                        if canvas.dirty {
+                            dirty = true;
+                            break; // We DO NOT reset canvas.dirty here!
+                        }
+                    }
+                }
+            }
+        }
+
+        dirty
+    }
+
     
-    pub fn render(&mut self, renderer: &mut impl Renderer) {
+    pub fn render(&mut self, renderer: &mut impl Renderer) -> Option<Rect> {
         profile!("render");
         let commands = self.ui.build_commands(&self.context.canvases, self.focused_id.as_deref());
         
@@ -261,6 +294,7 @@ impl<M: Model, R: TextMeasurer> Runtime<M, R> {
 
         renderer.render(&commands, &self.context.canvases, dirty_region);
         self.last_commands = commands;
+        dirty_region
     }
 
     pub fn set_size(&mut self, width: f32, height: f32) {
