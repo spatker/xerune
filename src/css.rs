@@ -1,4 +1,4 @@
-use crate::{Color, ContainerStyle, LinearGradient};
+use crate::{Color, ContainerStyle, LinearGradient, Display, TextAlign};
 use csscolorparser::parse as parse_color;
 use taffy::prelude::*;
 use taffy::style::Style;
@@ -12,6 +12,23 @@ pub fn parse_inline_style(style_str: &str, current_style: &mut ContainerStyle, t
 
 pub fn apply_declaration(prop: &str, val: &str, current_style: &mut ContainerStyle, taffy_style: &mut Style) {
     match prop {
+        "display" => {
+            match val {
+                "block" => current_style.display = Display::Block,
+                "inline-block" | "inline" => current_style.display = Display::InlineBlock,
+                "flex" => current_style.display = Display::Flex,
+                "none" => current_style.display = Display::None,
+                _ => {}
+            }
+        }
+        "text-align" => {
+            match val {
+                "left" => current_style.text_align = Some(TextAlign::Left),
+                "center" => current_style.text_align = Some(TextAlign::Center),
+                "right" => current_style.text_align = Some(TextAlign::Right),
+                _ => {}
+            }
+        }
         "color" => {
             if let Some(c) = parse_hex_color(val) {
                 current_style.color = c;

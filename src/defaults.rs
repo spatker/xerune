@@ -1,5 +1,5 @@
 use taffy::prelude::*;
-use crate::ContainerStyle;
+use crate::{ContainerStyle, Display};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ElementType {
@@ -32,10 +32,14 @@ pub fn get_default_style(tag: &str, parent_style: &ContainerStyle) -> StyleBundl
     let mut bundle = StyleBundle::default();
     bundle.container_style = parent_style.clone();
 
+    bundle.container_style.display = match tag {
+        "div" | "body" | "p" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "ul" | "li" | "table" | "tbody" | "thead" | "tfoot" | "tr" => Display::Block,
+        _ => Display::InlineBlock,
+    };
+
     match tag {
         "h1" => {
             bundle.container_style.font_size = 32.0;
-            bundle.taffy_style.flex_direction = FlexDirection::Column;
             bundle.taffy_style.margin = taffy::geometry::Rect {
                 left: length(0.0), right: length(0.0),
                 top: length(20.0), bottom: length(20.0)
@@ -43,35 +47,30 @@ pub fn get_default_style(tag: &str, parent_style: &ContainerStyle) -> StyleBundl
         }
         "h2" => {
             bundle.container_style.font_size = 24.0;
-            bundle.taffy_style.flex_direction = FlexDirection::Column;
             bundle.taffy_style.margin = taffy::geometry::Rect {
                 left: length(0.0), right: length(0.0),
                 top: length(15.0), bottom: length(15.0)
             };
         }
         "p" => {
-            bundle.taffy_style.flex_direction = FlexDirection::Column;
             bundle.taffy_style.margin = taffy::geometry::Rect {
                 left: length(0.0), right: length(0.0),
                 top: length(10.0), bottom: length(10.0)
             };
         }
         "ul" => {
-            bundle.taffy_style.flex_direction = FlexDirection::Column;
             bundle.taffy_style.padding = taffy::geometry::Rect {
                 left: length(20.0), right: length(0.0),
                 top: length(0.0), bottom: length(0.0)
             };
         }
         "li" => {
-            bundle.taffy_style.flex_direction = FlexDirection::Column;
             bundle.taffy_style.margin = taffy::geometry::Rect {
                 left: length(0.0), right: length(0.0),
                 top: length(2.0), bottom: length(2.0)
             };
         }
         "div" | "body" => {
-            bundle.taffy_style.flex_direction = FlexDirection::Column;
         }
         "img" => {
             bundle.element_type = ElementType::Image;
@@ -88,7 +87,6 @@ pub fn get_default_style(tag: &str, parent_style: &ContainerStyle) -> StyleBundl
         "h3" => {
             bundle.container_style.font_size = 20.0;
             bundle.container_style.weight = 1;
-            bundle.taffy_style.flex_direction = FlexDirection::Column;
             bundle.taffy_style.margin = taffy::geometry::Rect {
                 left: length(0.0), right: length(0.0),
                 top: length(12.0), bottom: length(12.0)
@@ -97,7 +95,6 @@ pub fn get_default_style(tag: &str, parent_style: &ContainerStyle) -> StyleBundl
         "h4" => {
             bundle.container_style.font_size = 18.0;
             bundle.container_style.weight = 1;
-            bundle.taffy_style.flex_direction = FlexDirection::Column;
             bundle.taffy_style.margin = taffy::geometry::Rect {
                 left: length(0.0), right: length(0.0),
                 top: length(10.0), bottom: length(10.0)
@@ -106,7 +103,6 @@ pub fn get_default_style(tag: &str, parent_style: &ContainerStyle) -> StyleBundl
         "h5" => {
             bundle.container_style.font_size = 16.0;
             bundle.container_style.weight = 1;
-            bundle.taffy_style.flex_direction = FlexDirection::Column;
             bundle.taffy_style.margin = taffy::geometry::Rect {
                 left: length(0.0), right: length(0.0),
                 top: length(8.0), bottom: length(8.0)
@@ -115,14 +111,12 @@ pub fn get_default_style(tag: &str, parent_style: &ContainerStyle) -> StyleBundl
         "h6" => {
             bundle.container_style.font_size = 14.0;
             bundle.container_style.weight = 1;
-            bundle.taffy_style.flex_direction = FlexDirection::Column;
             bundle.taffy_style.margin = taffy::geometry::Rect {
                 left: length(0.0), right: length(0.0),
                 top: length(6.0), bottom: length(6.0)
             };
         }
         "table" | "tbody" | "thead" | "tfoot" => {
-            bundle.taffy_style.flex_direction = FlexDirection::Column;
              bundle.taffy_style.padding = taffy::geometry::Rect {
                 left: length(2.0), right: length(2.0),
                 top: length(2.0), bottom: length(2.0)

@@ -15,7 +15,7 @@ macro_rules! profile {
 }
 
 use crate::graphics::{Canvas, DrawCommand, Rect, TextMeasurer};
-use crate::style::{ContainerStyle, Overflow, RenderData};
+use crate::style::{ContainerStyle, Overflow, RenderData, Display, TextAlign};
 use crate::css;
 use crate::defaults;
 
@@ -108,6 +108,7 @@ pub struct Ui {
     pub interactions: HashMap<NodeId, Interaction>,
     pub scroll_offsets: HashMap<NodeId, (f32, f32)>,
     pub root: NodeId,
+    pub node_to_handle: HashMap<NodeId, Handle>,
 }
 
 impl Ui {
@@ -121,6 +122,7 @@ impl Ui {
         let mut taffy = TaffyTree::new();
         let mut render_data = HashMap::new();
         let mut interactions = HashMap::new();
+        let mut node_to_handle = HashMap::new();
 
         let dom = parse_document(RcDom::default(), Default::default())
             .from_utf8()
@@ -140,6 +142,7 @@ impl Ui {
             default_style,
             message_validator,
             &stylesheet,
+            &mut node_to_handle,
         ).ok_or(TaffyError::ChildIndexOutOfBounds { parent: NodeId::new(0), child_index: 0, child_count: 0 })?;  
 
         Ok(Self {
@@ -148,6 +151,7 @@ impl Ui {
             interactions,
             scroll_offsets: HashMap::new(),
             root,
+            node_to_handle,
         })
     }
 
@@ -404,6 +408,7 @@ fn dom_to_taffy(
     parent_style: ContainerStyle,
     message_validator: &impl Fn(&str) -> bool,
     stylesheet: &simplecss::StyleSheet<'_>,
+    node_to_handle: &mut HashMap<NodeId, Handle>,
 ) -> Option<NodeId> {
     
     let mut current_style = parent_style.clone();
@@ -418,12 +423,13 @@ fn dom_to_taffy(
         NodeData::Document => {
              let mut children = Vec::new();
              for child in handle.children.borrow().iter() {
-                 if let Some(id) = dom_to_taffy(taffy, child, text_measurer, render_data, interactions, current_style.clone(), message_validator, stylesheet) {
+                 if let Some(id) = dom_to_taffy(taffy, child, text_measurer, render_data, interactions, current_style.clone(), message_validator, stylesheet, node_to_handle) {
                      children.push(id);
                  }
             }
             let id = taffy.new_with_children(Style::default(), &children).ok()?;
             render_data.insert(id, RenderData::Container(current_style));
+            node_to_handle.insert(id, handle.clone());
             Some(id)
         },
         
@@ -454,10 +460,50 @@ fn dom_to_taffy(
             let mut children = Vec::new();
             if !matches!(parsed.element_type, defaults::ElementType::Image | defaults::ElementType::Checkbox | defaults::ElementType::Slider | defaults::ElementType::Progress | defaults::ElementType::Canvas) {
                 for child in handle.children.borrow().iter() {
-                     if let Some(id) = dom_to_taffy(taffy, child, text_measurer, render_data, interactions, current_style.clone(), message_validator, stylesheet) {
+                     if let Some(id) = dom_to_taffy(taffy, child, text_measurer, render_data, interactions, current_style.clone(), message_validator, stylesheet, node_to_handle) {
                          children.push(id);
                      }
                 }
+            }
+
+            if current_style.display == Display::None {
+                layout_style.display = taffy::style::Display::None;
+            } else if current_style.display != Display::Flex {
+                let mut has_inline_child = false;
+                for child_id in &children {
+                    if let Some(child_data) = render_data.get(child_id) {
+                        match child_data {
+                            RenderData::Container(child_style) => {
+                                if child_style.display == Display::InlineBlock {
+                                    has_inline_child = true;
+                                    break;
+                                }
+                            }
+                            _ => {
+                                has_inline_child = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                if has_inline_child || tag == "tr" {
+                    layout_style.flex_direction = FlexDirection::Row;
+                    layout_style.flex_wrap = FlexWrap::Wrap;
+                    if let Some(align) = current_style.text_align {
+                        match align {
+                            TextAlign::Right => layout_style.justify_content = Some(JustifyContent::FlexEnd),
+                            TextAlign::Center => layout_style.justify_content = Some(JustifyContent::Center),
+                            TextAlign::Left => layout_style.justify_content = Some(JustifyContent::FlexStart),
+                        }
+                    }
+                } else {
+                    layout_style.flex_direction = FlexDirection::Column;
+                }
+            }
+
+            if current_style.display == Display::Block && layout_style.size.width.is_auto() {
+                layout_style.size.width = Dimension::percent(1.0);
             }
 
             let id = taffy.new_with_children(layout_style, &children).ok()?;
@@ -468,6 +514,7 @@ fn dom_to_taffy(
                 interactions.insert(id, interaction);
             }
 
+            node_to_handle.insert(id, handle.clone());
             Some(id)
         },
         
@@ -485,6 +532,7 @@ fn dom_to_taffy(
                 };
                 let id = taffy.new_leaf(text_layout_style).ok()?;
                 render_data.insert(id, RenderData::Text(normalized, current_style));
+                node_to_handle.insert(id, handle.clone());
                 Some(id)
             }
         },

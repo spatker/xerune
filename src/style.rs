@@ -1,5 +1,20 @@
 use crate::graphics::{Color, LinearGradient};
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Display {
+    Block,
+    InlineBlock,
+    Flex,
+    None,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TextAlign {
+    Left,
+    Center,
+    Right,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Overflow {
     Visible,
@@ -18,6 +33,8 @@ pub struct ContainerStyle {
     pub border_color: Option<Color>,
     pub background_gradient: Option<LinearGradient>,
     pub overflow: Overflow,
+    pub display: Display,
+    pub text_align: Option<TextAlign>,
 }
 
 impl Default for ContainerStyle {
@@ -33,6 +50,8 @@ impl Default for ContainerStyle {
             border_color: None,
             background_gradient: None,
             overflow: Overflow::Visible,
+            display: Display::Block,
+            text_align: None,
         }
     }
 }
