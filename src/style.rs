@@ -35,6 +35,7 @@ pub struct ContainerStyle {
     pub overflow: Overflow,
     pub display: Display,
     pub text_align: Option<TextAlign>,
+    pub order: i32,
 }
 
 impl Default for ContainerStyle {
@@ -52,6 +53,7 @@ impl Default for ContainerStyle {
             overflow: Overflow::Visible,
             display: Display::Block,
             text_align: None,
+            order: 0,
         }
     }
 }
@@ -65,4 +67,19 @@ pub enum RenderData {
     Progress(f32, f32, ContainerStyle), // value, max, style
     Canvas(String, ContainerStyle),
     TextInput(String, Option<String>, ContainerStyle), // id, text value, style
+}
+
+impl RenderData {
+    pub fn style(&self) -> &ContainerStyle {
+        match self {
+            RenderData::Container(style) => style,
+            RenderData::Text(_, style) => style,
+            RenderData::Image(_, style) => style,
+            RenderData::Checkbox(_, style) => style,
+            RenderData::Slider(_, style) => style,
+            RenderData::Progress(_, _, style) => style,
+            RenderData::Canvas(_, style) => style,
+            RenderData::TextInput(_, _, style) => style,
+        }
+    }
 }

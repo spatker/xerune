@@ -208,6 +208,11 @@ pub fn apply_declaration(prop: &str, val: &str, current_style: &mut ContainerSty
                 _ => {}
             }
         }
+        "order" => {
+            if let Ok(v) = val.trim().parse::<i32>() {
+                current_style.order = v;
+            }
+        }
         "position" => {
             match val {
                 "absolute" => taffy_style.position = Position::Absolute,
@@ -233,6 +238,13 @@ pub fn apply_declaration(prop: &str, val: &str, current_style: &mut ContainerSty
         "bottom" => {
             if let Some(v) = parse_length_percentage_auto(val) {
                 taffy_style.inset.bottom = v;
+            }
+        }
+        "float" => {
+            if val == "left" || val == "right" {
+                if current_style.display == Display::Block {
+                    current_style.display = Display::InlineBlock;
+                }
             }
         }
         _ => {

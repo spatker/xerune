@@ -239,7 +239,7 @@ impl Ui {
         self.taffy.compute_layout(self.root, available_space)
     }
 
-    pub fn build_commands(&self, canvases: &HashMap<String, Canvas>, focused_id: Option<&str>) -> Vec<DrawCommand> {
+    pub fn build_commands(&self, _canvases: &HashMap<String, Canvas>, focused_id: Option<&str>) -> Vec<DrawCommand> {
         layout_to_draw_commands(
             &self.taffy, 
             self.root, 
@@ -464,6 +464,12 @@ fn dom_to_taffy(
                          children.push(id);
                      }
                 }
+            }
+
+            if current_style.display == Display::Flex {
+                children.sort_by_key(|child_id| {
+                    render_data.get(child_id).map(|data| data.style().order).unwrap_or(0)
+                });
             }
 
             if current_style.display == Display::None {
