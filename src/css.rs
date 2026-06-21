@@ -6,219 +6,220 @@ use taffy::style::Style;
 pub fn parse_inline_style(style_str: &str, current_style: &mut ContainerStyle, taffy_style: &mut Style) {
     let tokenizer = simplecss::DeclarationTokenizer::from(style_str);
     for decl in tokenizer {
-        let prop = decl.name.to_lowercase();
-        let val = decl.value;
+        apply_declaration(&decl.name.to_lowercase(), decl.value, current_style, taffy_style);
+    }
+}
 
-        match prop.as_str() {
-            "color" => {
-                if let Some(c) = parse_hex_color(val) {
-                    current_style.color = c;
-                }
+pub fn apply_declaration(prop: &str, val: &str, current_style: &mut ContainerStyle, taffy_style: &mut Style) {
+    match prop {
+        "color" => {
+            if let Some(c) = parse_hex_color(val) {
+                current_style.color = c;
             }
-            "background-color" => {
-                if let Some(c) = parse_hex_color(val) {
-                    current_style.background_color = Some(c);
-                    current_style.background_gradient = None; // Color overrides gradient if set.
-                }
+        }
+        "background-color" => {
+            if let Some(c) = parse_hex_color(val) {
+                current_style.background_color = Some(c);
+                current_style.background_gradient = None; // Color overrides gradient if set.
             }
-             "background" => {
-                 if val.contains("linear-gradient") {
-                     if let Some(grad) = parse_linear_gradient(val) {
-                         current_style.background_gradient = Some(grad);
-                         current_style.background_color = None;
-                     }
-                 } else if let Some(c) = parse_hex_color(val) {
-                    current_style.background_color = Some(c);
-                     current_style.background_gradient = None;
-                }
+        }
+         "background" => {
+             if val.contains("linear-gradient") {
+                 if let Some(grad) = parse_linear_gradient(val) {
+                     current_style.background_gradient = Some(grad);
+                     current_style.background_color = None;
+                 }
+             } else if let Some(c) = parse_hex_color(val) {
+                current_style.background_color = Some(c);
+                 current_style.background_gradient = None;
             }
-            "font-size" => {
-                if let Some(size) = parse_px(val) {
-                    current_style.font_size = size;
-                }
+        }
+        "font-size" => {
+            if let Some(size) = parse_px(val) {
+                current_style.font_size = size;
             }
-            "font-weight" => {
-                if val == "bold" || val == "700" || val == "800" || val == "900" {
-                    current_style.weight = 1; // Bold
-                } else {
-                    current_style.weight = 0; // Regular
-                }
+        }
+        "font-weight" => {
+            if val == "bold" || val == "700" || val == "800" || val == "900" {
+                current_style.weight = 1; // Bold
+            } else {
+                current_style.weight = 0; // Regular
             }
-            "border-radius" => {
-                if let Some(r) = parse_px(val) {
-                    current_style.border_radius = r;
-                } else if val.ends_with("%") {
-                     // Hack implementation for 50% on circles
-                     if val.trim() == "50%" {
-                         current_style.border_radius = 9999.0; // Large radius
-                     }
-                }
+        }
+        "border-radius" => {
+            if let Some(r) = parse_px(val) {
+                current_style.border_radius = r;
+            } else if val.ends_with("%") {
+                 // Hack implementation for 50% on circles
+                 if val.trim() == "50%" {
+                     current_style.border_radius = 9999.0; // Large radius
+                 }
             }
-            "border-width" => {
-                if let Some(w) = parse_px(val) {
+        }
+        "border-width" => {
+            if let Some(w) = parse_px(val) {
+                current_style.border_width = w;
+            }
+        }
+        "border-color" => {
+            if let Some(c) = parse_hex_color(val) {
+                current_style.border_color = Some(c);
+            }
+        }
+        "border" => {
+            // Simplified: "1px solid #fff"
+            let parts: Vec<&str> = val.split_whitespace().collect();
+            for part in parts {
+                if let Some(w) = parse_px(part) {
                     current_style.border_width = w;
+                } else if let Some(c) = parse_hex_color(part) {
+                     current_style.border_color = Some(c);
                 }
             }
-            "border-color" => {
-                if let Some(c) = parse_hex_color(val) {
-                    current_style.border_color = Some(c);
-                }
+        }
+        "padding" => {
+            if let Some(p) = parse_padding(val) {
+                taffy_style.padding = p;
             }
-            "border" => {
-                // Simplified: "1px solid #fff"
-                let parts: Vec<&str> = val.split_whitespace().collect();
-                for part in parts {
-                    if let Some(w) = parse_px(part) {
-                        current_style.border_width = w;
-                    } else if let Some(c) = parse_hex_color(part) {
-                         current_style.border_color = Some(c);
-                    }
-                }
+        }
+        "padding-left" => {
+            if let Some(p) = parse_length_percentage(val) {
+                taffy_style.padding.left = p;
             }
-            "padding" => {
-                if let Some(p) = parse_padding(val) {
-                    taffy_style.padding = p;
-                }
+        }
+        "padding-right" => {
+            if let Some(p) = parse_length_percentage(val) {
+                taffy_style.padding.right = p;
             }
-            "padding-left" => {
-                if let Some(p) = parse_length_percentage(val) {
-                    taffy_style.padding.left = p;
-                }
+        }
+        "padding-top" => {
+            if let Some(p) = parse_length_percentage(val) {
+                taffy_style.padding.top = p;
             }
-            "padding-right" => {
-                if let Some(p) = parse_length_percentage(val) {
-                    taffy_style.padding.right = p;
-                }
+        }
+        "padding-bottom" => {
+            if let Some(p) = parse_length_percentage(val) {
+                taffy_style.padding.bottom = p;
             }
-            "padding-top" => {
-                if let Some(p) = parse_length_percentage(val) {
-                    taffy_style.padding.top = p;
-                }
+        }
+        "margin" => {
+            if let Some(m) = parse_margin(val) {
+                taffy_style.margin = m;
             }
-            "padding-bottom" => {
-                if let Some(p) = parse_length_percentage(val) {
-                    taffy_style.padding.bottom = p;
-                }
+        }
+        "margin-left" => {
+            if let Some(m) = parse_length_percentage_auto(val) {
+                taffy_style.margin.left = m;
             }
-            "margin" => {
-                if let Some(m) = parse_margin(val) {
-                    taffy_style.margin = m;
-                }
+        }
+        "margin-right" => {
+            if let Some(m) = parse_length_percentage_auto(val) {
+                taffy_style.margin.right = m;
             }
-            "margin-left" => {
-                if let Some(m) = parse_length_percentage_auto(val) {
-                    taffy_style.margin.left = m;
-                }
+        }
+        "margin-top" => {
+            if let Some(m) = parse_length_percentage_auto(val) {
+                taffy_style.margin.top = m;
             }
-            "margin-right" => {
-                if let Some(m) = parse_length_percentage_auto(val) {
-                    taffy_style.margin.right = m;
-                }
+        }
+        "margin-bottom" => {
+            if let Some(m) = parse_length_percentage_auto(val) {
+                taffy_style.margin.bottom = m;
             }
-            "margin-top" => {
-                if let Some(m) = parse_length_percentage_auto(val) {
-                    taffy_style.margin.top = m;
-                }
+        }
+        "width" => {
+            if let Some(d) = parse_dimension(val) {
+                taffy_style.size.width = d;
             }
-            "margin-bottom" => {
-                if let Some(m) = parse_length_percentage_auto(val) {
-                    taffy_style.margin.bottom = m;
-                }
+        }
+        "height" => {
+            if let Some(d) = parse_dimension(val) {
+                taffy_style.size.height = d;
             }
-            "width" => {
-                if let Some(d) = parse_dimension(val) {
-                    taffy_style.size.width = d;
-                }
+        }
+        "min-height" => {
+            if let Some(d) = parse_dimension(val) {
+                taffy_style.min_size.height = d;
             }
-            "height" => {
-                if let Some(d) = parse_dimension(val) {
-                    taffy_style.size.height = d;
-                }
+        }
+         "flex-direction" => {
+            match val {
+                "row" => taffy_style.flex_direction = FlexDirection::Row,
+                "column" => taffy_style.flex_direction = FlexDirection::Column,
+                "row-reverse" => taffy_style.flex_direction = FlexDirection::RowReverse,
+                "column-reverse" => taffy_style.flex_direction = FlexDirection::ColumnReverse,
+                _ => {}
             }
-            "min-height" => {
-                if let Some(d) = parse_dimension(val) {
-                    taffy_style.min_size.height = d;
-                }
+        }
+        "justify-content" => {
+             match val {
+                "flex-start" => taffy_style.justify_content = Some(JustifyContent::FlexStart),
+                "flex-end" => taffy_style.justify_content = Some(JustifyContent::FlexEnd),
+                "center" => taffy_style.justify_content = Some(JustifyContent::Center),
+                "space-between" => taffy_style.justify_content = Some(JustifyContent::SpaceBetween),
+                "space-around" => taffy_style.justify_content = Some(JustifyContent::SpaceAround),
+                "space-evenly" => taffy_style.justify_content = Some(JustifyContent::SpaceEvenly),
+                _ => {}
             }
-             "flex-direction" => {
-                match val {
-                    "row" => taffy_style.flex_direction = FlexDirection::Row,
-                    "column" => taffy_style.flex_direction = FlexDirection::Column,
-                    "row-reverse" => taffy_style.flex_direction = FlexDirection::RowReverse,
-                    "column-reverse" => taffy_style.flex_direction = FlexDirection::ColumnReverse,
-                    _ => {}
-                }
+        }
+         "align-items" => {
+             match val {
+                "flex-start" => taffy_style.align_items = Some(AlignItems::FlexStart),
+                "flex-end" => taffy_style.align_items = Some(AlignItems::FlexEnd),
+                "center" => taffy_style.align_items = Some(AlignItems::Center),
+                "baseline" => taffy_style.align_items = Some(AlignItems::Baseline),
+                "stretch" => taffy_style.align_items = Some(AlignItems::Stretch),
+                _ => {}
             }
-            "justify-content" => {
-                 match val {
-                    "flex-start" => taffy_style.justify_content = Some(JustifyContent::FlexStart),
-                    "flex-end" => taffy_style.justify_content = Some(JustifyContent::FlexEnd),
-                    "center" => taffy_style.justify_content = Some(JustifyContent::Center),
-                    "space-between" => taffy_style.justify_content = Some(JustifyContent::SpaceBetween),
-                    "space-around" => taffy_style.justify_content = Some(JustifyContent::SpaceAround),
-                    "space-evenly" => taffy_style.justify_content = Some(JustifyContent::SpaceEvenly),
-                    _ => {}
-                }
+        }
+         "flex-grow" => {
+             if let Ok(f) = val.parse::<f32>() {
+                 taffy_style.flex_grow = f;
+             }
+        }
+        "flex-shrink" => {
+             if let Ok(f) = val.parse::<f32>() {
+                 taffy_style.flex_shrink = f;
+             }
+        }
+        "overflow" => {
+            match val {
+                "hidden" => current_style.overflow = crate::Overflow::Hidden,
+                "scroll" => current_style.overflow = crate::Overflow::Scroll,
+                "auto" => current_style.overflow = crate::Overflow::Scroll, // Treat auto as scroll for now
+                "visible" => current_style.overflow = crate::Overflow::Visible,
+                _ => {}
             }
-             "align-items" => {
-                 match val {
-                    "flex-start" => taffy_style.align_items = Some(AlignItems::FlexStart),
-                    "flex-end" => taffy_style.align_items = Some(AlignItems::FlexEnd),
-                    "center" => taffy_style.align_items = Some(AlignItems::Center),
-                    "baseline" => taffy_style.align_items = Some(AlignItems::Baseline),
-                    "stretch" => taffy_style.align_items = Some(AlignItems::Stretch),
-                    _ => {}
-                }
+        }
+        "position" => {
+            match val {
+                "absolute" => taffy_style.position = Position::Absolute,
+                "relative" => taffy_style.position = Position::Relative,
+                _ => {}
             }
-             "flex-grow" => {
-                 if let Ok(f) = val.parse::<f32>() {
-                     taffy_style.flex_grow = f;
-                 }
+        }
+         "left" => {
+            if let Some(v) = parse_length_percentage_auto(val) {
+                taffy_style.inset.left = v;
             }
-            "flex-shrink" => {
-                 if let Ok(f) = val.parse::<f32>() {
-                     taffy_style.flex_shrink = f;
-                 }
+        }
+        "right" => {
+            if let Some(v) = parse_length_percentage_auto(val) {
+                taffy_style.inset.right = v;
             }
-            "overflow" => {
-                match val {
-                    "hidden" => current_style.overflow = crate::Overflow::Hidden,
-                    "scroll" => current_style.overflow = crate::Overflow::Scroll,
-                    "auto" => current_style.overflow = crate::Overflow::Scroll, // Treat auto as scroll for now
-                    "visible" => current_style.overflow = crate::Overflow::Visible,
-                    _ => {}
-                }
+        }
+        "top" => {
+            if let Some(v) = parse_length_percentage_auto(val) {
+                taffy_style.inset.top = v;
             }
-            "position" => {
-                match val {
-                    "absolute" => taffy_style.position = Position::Absolute,
-                    "relative" => taffy_style.position = Position::Relative,
-                    _ => {}
-                }
+        }
+        "bottom" => {
+            if let Some(v) = parse_length_percentage_auto(val) {
+                taffy_style.inset.bottom = v;
             }
-             "left" => {
-                if let Some(v) = parse_length_percentage_auto(val) {
-                    taffy_style.inset.left = v;
-                }
-            }
-            "right" => {
-                if let Some(v) = parse_length_percentage_auto(val) {
-                    taffy_style.inset.right = v;
-                }
-            }
-            "top" => {
-                if let Some(v) = parse_length_percentage_auto(val) {
-                    taffy_style.inset.top = v;
-                }
-            }
-            "bottom" => {
-                if let Some(v) = parse_length_percentage_auto(val) {
-                    taffy_style.inset.bottom = v;
-                }
-            }
-            _ => {
-                log::warn!("Unsupported CSS property: {}", prop);
-            }
+        }
+        _ => {
+            log::warn!("Unsupported CSS property: {}", prop);
         }
     }
 }

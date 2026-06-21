@@ -124,6 +124,82 @@ mod tests {
         
         let hit = runtime.ui.hit_test(10.0, 10.0);
         assert!(hit.is_some(), "Should hit child content after scrolling");
-        assert_eq!(hit.unwrap(), "test_interaction".to_string());
+        assert_eq!(hit.unwrap().0, "test_interaction".to_string());
+    }
+
+    struct SelectorMockModel;
+    impl Model for SelectorMockModel {
+        type Message = MockMsg;
+        fn view(&self) -> String {
+            r#"
+            <div>
+                <style>
+                    div {
+                        color: #ff0000;
+                        background-color: #00ff00;
+                    }
+                    .blue-text {
+                        color: #0000ff;
+                    }
+                    #my-id {
+                        font-size: 20px;
+                    }
+                </style>
+                <div class="blue-text" id="my-id">Styled Element</div>
+                <div class="blue-text" style="color: #ffffff;">Inline Override</div>
+            </div>
+            "#.to_string()
+        }
+        fn update(&mut self, _msg: Self::Message, _context: &mut Context) {}
+    }
+
+    #[test]
+    fn test_style_selector_matching() {
+        let model = SelectorMockModel;
+        let measurer = MockMeasurer;
+        let mut runtime = Runtime::new(model, measurer);
+        
+        runtime.compute_layout(taffy::geometry::Size::MAX_CONTENT);
+        
+        for (node_id, data) in &runtime.ui.render_data {
+            match data {
+                RenderData::Container(style) => {
+                    println!("Node {:?}: Container style: bg_color={:?}, color={:?}", node_id, style.background_color, style.color);
+                }
+                RenderData::Text(text, style) => {
+                    println!("Node {:?}: Text '{}' style: bg_color={:?}, color={:?}, size={}", node_id, text, style.background_color, style.color, style.font_size);
+                }
+                _ => {}
+            }
+        }
+        
+        let mut found_styled_element = false;
+        let mut found_inline_override = false;
+        let mut found_green_container = false;
+        
+        for data in runtime.ui.render_data.values() {
+            match data {
+                RenderData::Text(text, style) => {
+                    if text == "Styled Element" {
+                        found_styled_element = true;
+                        assert_eq!(style.color, Color::from_rgba8(0, 0, 255, 255));
+                        assert_eq!(style.font_size, 20.0);
+                    } else if text == "Inline Override" {
+                        found_inline_override = true;
+                        assert_eq!(style.color, Color::from_rgba8(255, 255, 255, 255));
+                    }
+                }
+                RenderData::Container(style) => {
+                    if style.background_color == Some(Color::from_rgba8(0, 255, 0, 255)) {
+                        found_green_container = true;
+                    }
+                }
+                _ => {}
+            }
+        }
+        
+        assert!(found_styled_element, "Should have parsed and found 'Styled Element' text");
+        assert!(found_inline_override, "Should have parsed and found 'Inline Override' text");
+        assert!(found_green_container, "Should have found container with green background color");
     }
 }

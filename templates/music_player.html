@@ -1,5 +1,14 @@
-<div
-    style="width: 800px; height: 480px; background: linear-gradient(135deg, #2a0845 0%, #6441a5 50%, #121212 100%); color: #ffffff; font-family: 'Roboto', sans-serif; position: relative; overflow: hidden;">
+<style>
+    .music-player-container {
+        width: 800px;
+        height: 480px;
+        background: linear-gradient(135deg, #2a0845 0%, #6441a5 50%, #121212 100%);
+        color: #ffffff;
+        position: relative;
+        overflow: hidden;
+    }
+</style>
+<div class="music-player-container">
     {% include "music_list.html" %}
     {% include "music_player_view.html" %}
 </div>

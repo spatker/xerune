@@ -1,63 +1,248 @@
-<div
-    style="width: 900px; height: 900px; background: linear-gradient(160deg, #0f2027 0%, #203a43 50%, #2c5364 100%); color: white; padding: 40px; font-family: 'Roboto', sans-serif;">
+<style>
+    .showcase-container {
+        width: 900px;
+        height: 900px;
+        background: linear-gradient(160deg, #0f2027 0%, #203a43 50%, #2c5364 100%);
+        color: white;
+        padding: 40px;
+        font-family: 'Roboto', sans-serif;
+    }
+    .header-row {
+        flex-direction: row;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 40px;
+    }
+    .header-title {
+        font-size: 36px;
+        margin: 0;
+        font-weight: bold;
+        color: #ffffff;
+    }
+    .header-version {
+        padding: 5px 15px;
+        background-color: rgba(255,255,255,0.1);
+        border-radius: 20px;
+        border: 1px solid rgba(255,255,255,0.2);
+    }
+    .header-version p {
+        margin: 0;
+        font-size: 14px;
+        font-weight: bold;
+    }
+    .status-cards-row {
+        flex-direction: row;
+        margin-bottom: 20px;
+    }
+    .status-card {
+        flex-grow: 1;
+        padding: 25px;
+        background-color: rgba(255,255,255,0.05);
+        border-radius: 16px;
+        border: 1px solid rgba(255,255,255,0.1);
+    }
+    .status-card.mr {
+        margin-right: 20px;
+    }
+    .status-card h2 {
+        font-size: 16px;
+        color: #aaaaaa;
+        margin: 0 0 15px 0;
+    }
+    .status-indicator-row {
+        flex-direction: row;
+        align-items: center;
+        margin-bottom: 10px;
+    }
+    .indicator-outer {
+        padding: 6px;
+        background-color: rgba(0,255,0,0.2);
+        border-radius: 50%;
+        margin-right: 12px;
+    }
+    .indicator-inner {
+        width: 10px;
+        height: 10px;
+        border-radius: 5px;
+        background-color: #00ff00;
+    }
+    .status-value {
+        font-size: 24px;
+        font-weight: bold;
+        width: 120px;
+    }
+    .status-progress {
+        height: 8px;
+        border-radius: 4px;
+        background-color: rgba(255,255,255,0.1);
+        color: #00ff00;
+        width: 100%;
+    }
+    .status-users-row {
+        flex-direction: row;
+        align-items: flex-end;
+    }
+    .status-users-val {
+        font-size: 48px;
+        font-weight: bold;
+        margin: 0;
+        line-height: 1;
+        width: 120px;
+    }
+    .status-users-change {
+        font-size: 16px;
+        color: #ea5455;
+        margin-left: 10px;
+        margin-bottom: 8px;
+    }
+    .main-grid {
+        flex-direction: row;
+        flex-grow: 1;
+    }
+    .list-panel {
+        flex-grow: 2;
+        padding: 25px;
+        background-color: rgba(255,255,255,0.05);
+        border-radius: 16px;
+        border: 1px solid rgba(255,255,255,0.1);
+        margin-right: 20px;
+    }
+    .list-panel h2 {
+        font-size: 18px;
+        margin: 0 0 20px 0;
+    }
+    .load-chart {
+        margin-bottom: 20px;
+        border-radius: 8px;
+        border: 1px solid rgba(255,255,255,0.1);
+    }
+    .process-table {
+        width: 100%;
+    }
+    .process-table tr.header-tr {
+        border-bottom-width: 1px;
+        border-color: rgba(255,255,255,0.1);
+    }
+    .process-table th {
+        text-align: left;
+        padding: 8px;
+        color: #aaa;
+    }
+    .process-table td {
+        padding: 8px;
+    }
+    .control-panel {
+        flex-grow: 1;
+        padding: 25px;
+        background-color: rgba(255,255,255,0.05);
+        border-radius: 16px;
+        border: 1px solid rgba(255,255,255,0.1);
+    }
+    .control-panel h2 {
+        font-size: 18px;
+        margin: 0 0 20px 0;
+    }
+    .control-panel h3 {
+        font-size: 14px;
+        color: #aaa;
+        margin: 0 0 10px 0;
+    }
+    .controls-container {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .btn-simulate {
+        padding: 15px;
+        background: linear-gradient(90deg, #ff8a00, #e52e71);
+        border-radius: 10px;
+        margin-bottom: 15px;
+        align-items: center;
+        border-width: 0px;
+        color: white;
+    }
+    .btn-simulate span {
+        font-weight: bold;
+    }
+    .btn-add-user {
+        padding: 15px;
+        background-color: rgba(255,255,255,0.05);
+        border-radius: 10px;
+        border: 1px solid rgba(255,255,255,0.2);
+        margin-bottom: 25px;
+        align-items: center;
+        border-width: 0px;
+        color: white;
+    }
+    .btn-add-user span {
+        font-weight: bold;
+    }
+    .config-checkbox-row {
+        flex-direction: row;
+        align-items: center;
+        margin-bottom: 15px;
+    }
+    .config-checkbox-row.last {
+        margin-bottom: 0px;
+    }
+    .config-checkbox-row span {
+        font-size: 14px;
+    }
+    .config-checkbox-row input {
+        margin-right: 12px;
+    }
+</style>
+
+<div class="showcase-container">
 
     <!-- Header -->
-    <div style="flex-direction: row; justify-content: space-between; align-items: center; margin-bottom: 40px;">
-        <h1 style="font-size: 36px; margin: 0; font-weight: bold; color: #ffffff;">Xerune Dashboard</h1>
-        <div
-            style="padding: 5px 15px; background-color: rgba(255,255,255,0.1); border-radius: 20px; border: 1px solid rgba(255,255,255,0.2);">
-            <p style="margin: 0; font-size: 14px; font-weight: bold;">v0.2.0</p>
+    <div class="header-row">
+        <h1 class="header-title">Xerune Dashboard</h1>
+        <div class="header-version">
+            <p>v0.2.0</p>
         </div>
     </div>
 
     <!-- Grid Row 1: Status Cards -->
-    <div style="flex-direction: row; margin-bottom: 20px;">
+    <div class="status-cards-row">
         <!-- System Status -->
-        <div
-            style="flex-grow: 1; padding: 25px; background-color: rgba(255,255,255,0.05); border-radius: 16px; border: 1px solid rgba(255,255,255,0.1); margin-right: 20px;">
-            <h2 style="font-size: 16px; color: #aaaaaa; margin: 0 0 15px 0;">SYSTEM STATUS</h2>
-            <div style="flex-direction: row; align-items: center; margin-bottom: 10px;">
-                <div style="padding: 6px; background-color: rgba(0,255,0,0.2); border-radius: 50%; margin-right: 12px;">
-                    <div style="width: 10px; height: 10px; border-radius: 5px; background-color: #00ff00;"></div>
+        <div class="status-card mr">
+            <h2>SYSTEM STATUS</h2>
+            <div class="status-indicator-row">
+                <div class="indicator-outer">
+                    <div class="indicator-inner"></div>
                 </div>
-                <span style="font-size: 24px; font-weight: bold; width: 120px;">
-                    {{ "{:.0}"|format(system_load_value) }}% Load</span>
+                <span class="status-value">{{ "{:.0}"|format(system_load_value) }}% Load</span>
             </div>
-            <progress value="{{ system_load_value }}" max="100.0"
-                style="height: 8px; border-radius: 4px; background-color: rgba(255,255,255,0.1); color: #00ff00; width: 100%;"></progress>
+            <progress value="{{ system_load_value }}" max="100.0" class="status-progress"></progress>
         </div>
 
         <!-- Active Users -->
-        <div
-            style="flex-grow: 1; padding: 25px; background-color: rgba(255,255,255,0.05); border-radius: 16px; border: 1px solid rgba(255,255,255,0.1);">
-            <h2 style="font-size: 16px; color: #aaaaaa; margin: 0 0 15px 0;">ACTIVE USERS</h2>
-            <div style="flex-direction: row; align-items: flex-end;">
-                <span style="font-size: 48px; font-weight: bold; margin: 0; line-height: 1; width: 120px;">
-                    {{ user_counter }}</span>
-                <span style="font-size: 16px; color: #ea5455; margin-left: 10px; margin-bottom: 8px;">+12%</span>
+        <div class="status-card">
+            <h2>ACTIVE USERS</h2>
+            <div class="status-users-row">
+                <span class="status-users-val">{{ user_counter }}</span>
+                <span class="status-users-change">+12%</span>
             </div>
         </div>
     </div>
 
     <!-- Grid Row 2: Main Content & Controls -->
-    <div style="flex-direction: row; flex-grow: 1;">
+    <div class="main-grid">
 
         <!-- List Panel -->
-        <div
-            style="flex-grow: 2; padding: 25px; background-color: rgba(255,255,255,0.05); border-radius: 16px; border: 1px solid rgba(255,255,255,0.1); margin-right: 20px;">
-            <h2 style="font-size: 18px; margin: 0 0 20px 0;">System Processes</h2>
+        <div class="list-panel">
+            <h2>System Processes</h2>
 
-            <canvas id="load_chart" width="400" height="200"
-                style="margin-bottom: 20px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);"></canvas>
+            <canvas id="load_chart" width="400" height="200" class="load-chart"></canvas>
 
-            <table style="width: 100%;">
-                <tr style="border-bottom-width: 1px; border-color: rgba(255,255,255,0.1);">
-                    <th style="width: 20%; text-align: left; padding: 8px; color: #aaa;">ID</th>
-                    <th style="width: 50%; text-align: left; padding: 8px; color: #aaa;">Name</th>
-                    <th style="width: 30%; text-align: right; padding: 8px; color: #aaa;">Status</th>
+            <table class="process-table">
+                <tr class="header-tr">
+                    <th style="width: 20%;">ID</th>
+                    <th style="width: 50%;">Name</th>
+                    <th style="width: 30%; text-align: right;">Status</th>
                 </tr>
                 {% for row in table_data %}
-                <tr style="padding: 8px;">
+                <tr>
                     <td style="width: 20%; color: #ddd; font-weight: bold;">{{ row.id }}</td>
                     <td style="width: 50%; color: #eee;">{{ row.name }}</td>
                     <td style="width: 30%; color: #4caf50; text-align: right;">{{ row.status }}</td>
@@ -67,29 +252,26 @@
         </div>
 
         <!-- Control Panel -->
-        <div
-            style="flex-grow: 1; padding: 25px; background-color: rgba(255,255,255,0.05); border-radius: 16px; border: 1px solid rgba(255,255,255,0.1);">
-            <h2 style="font-size: 18px; margin: 0 0 20px 0;">Quick Controls</h2>
+        <div class="control-panel">
+            <h2>Quick Controls</h2>
 
-            <div style="flex-direction: column; align-items: stretch;">
-                <button data-on-click="increment_progress"
-                    style="padding: 15px; background: linear-gradient(90deg, #ff8a00, #e52e71); border-radius: 10px; margin-bottom: 15px; align-items: center; border-width: 0px; color: white;">
-                    <span style="font-weight: bold;">Simulate Load (+10%)</span>
+            <div class="controls-container">
+                <button data-on-click="increment_progress" class="btn-simulate">
+                    <span>Simulate Load (+10%)</span>
                 </button>
 
-                <button data-on-click="increment_user_counter"
-                    style="padding: 15px; background-color: rgba(255,255,255,0.05); border-radius: 10px; border: 1px solid rgba(255,255,255,0.2); margin-bottom: 25px; align-items: center; border-width: 0px; color: white;">
-                    <span style="font-weight: bold;">Add User</span>
+                <button data-on-click="increment_user_counter" class="btn-add-user">
+                    <span>Add User</span>
                 </button>
 
-                <h3 style="font-size: 14px; color: #aaa; margin: 0 0 10px 0;">CONFIGURATIONS</h3>
-                <div style="flex-direction: row; align-items: center; margin-bottom: 15px;">
-                    <input type="checkbox" checked style="margin-right: 12px;">
-                    <span style="font-size: 14px;">Auto-Scaling</span>
+                <h3>CONFIGURATIONS</h3>
+                <div class="config-checkbox-row">
+                    <input type="checkbox" checked>
+                    <span>Auto-Scaling</span>
                 </div>
-                <div style="flex-direction: row; align-items: center;">
-                    <input type="checkbox" style="margin-right: 12px;">
-                    <span style="font-size: 14px;">Maintenance Mode</span>
+                <div class="config-checkbox-row last">
+                    <input type="checkbox">
+                    <span>Maintenance Mode</span>
                 </div>
             </div>
         </div>

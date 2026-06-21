@@ -4,6 +4,7 @@ use html5ever::parse_document;
 use html5ever::tendril::TendrilSink;
 use markup5ever_rcdom::{Handle, NodeData, RcDom};
 use std::collections::HashMap;
+use std::rc::Rc;
 
 #[cfg(feature = "profile")]
 use coarse_prof::profile;
@@ -19,6 +20,87 @@ use crate::css;
 use crate::defaults;
 
 pub type Interaction = String;
+
+struct ElementWrapper(Handle);
+
+impl simplecss::Element for ElementWrapper {
+    fn parent_element(&self) -> Option<Self> {
+        let parent_weak = self.0.parent.take();
+        let parent_opt = parent_weak.as_ref().and_then(|weak| weak.upgrade());
+        self.0.parent.set(parent_weak);
+        parent_opt.map(ElementWrapper)
+    }
+
+    fn prev_sibling_element(&self) -> Option<Self> {
+        let parent = self.parent_element()?;
+        let siblings = parent.0.children.borrow();
+        let index = siblings.iter().position(|child| Rc::ptr_eq(child, &self.0))?;
+        if index > 0 {
+            for i in (0..index).rev() {
+                let sibling = &siblings[i];
+                if matches!(sibling.data, NodeData::Element { .. }) {
+                    return Some(ElementWrapper(sibling.clone()));
+                }
+            }
+        }
+        None
+    }
+
+    fn has_local_name(&self, name: &str) -> bool {
+        if let NodeData::Element { name: ref element_name, .. } = self.0.data {
+            element_name.local.as_ref() == name
+        } else {
+            false
+        }
+    }
+
+    fn attribute_matches(&self, local_name: &str, operator: simplecss::AttributeOperator<'_>) -> bool {
+        if let NodeData::Element { ref attrs, .. } = self.0.data {
+            for attr in attrs.borrow().iter() {
+                if attr.name.local.as_ref() == local_name {
+                    return operator.matches(attr.value.as_ref());
+                }
+            }
+        }
+        false
+    }
+
+    fn pseudo_class_matches(&self, class: simplecss::PseudoClass<'_>) -> bool {
+        match class {
+            simplecss::PseudoClass::FirstChild => {
+                if let Some(parent) = self.parent_element() {
+                    let siblings = parent.0.children.borrow();
+                    for child in siblings.iter() {
+                        if matches!(child.data, NodeData::Element { .. }) {
+                            return Rc::ptr_eq(child, &self.0);
+                        }
+                    }
+                    false
+                } else {
+                    true
+                }
+            }
+            _ => false,
+        }
+    }
+}
+
+fn extract_styles(handle: &Handle, css_accumulator: &mut String) {
+    if let NodeData::Element { name, .. } = &handle.data {
+        if name.local.as_ref() == "style" {
+            for child in handle.children.borrow().iter() {
+                if let NodeData::Text { contents } = &child.data {
+                    css_accumulator.push_str(&contents.borrow());
+                    css_accumulator.push('\n');
+                }
+            }
+        }
+    }
+    for child in handle.children.borrow().iter() {
+        extract_styles(child, css_accumulator);
+    }
+}
+
 
 pub struct Ui {
     pub taffy: TaffyTree,
@@ -45,6 +127,10 @@ impl Ui {
             .read_from(&mut html.as_bytes())
             .unwrap();
 
+        let mut css_str = String::new();
+        extract_styles(&dom.document, &mut css_str);
+        let stylesheet = simplecss::StyleSheet::parse(&css_str);
+
         let root = dom_to_taffy(
             &mut taffy, 
             &dom.document, 
@@ -52,8 +138,9 @@ impl Ui {
             &mut render_data, 
             &mut interactions, 
             default_style,
-            message_validator
-        ).ok_or(TaffyError::ChildIndexOutOfBounds { parent: NodeId::new(0), child_index: 0, child_count: 0 })?; 
+            message_validator,
+            &stylesheet,
+        ).ok_or(TaffyError::ChildIndexOutOfBounds { parent: NodeId::new(0), child_index: 0, child_count: 0 })?;  
 
         Ok(Self {
             taffy,
@@ -316,6 +403,7 @@ fn dom_to_taffy(
     interactions: &mut HashMap<NodeId, Interaction>,
     parent_style: ContainerStyle,
     message_validator: &impl Fn(&str) -> bool,
+    stylesheet: &simplecss::StyleSheet<'_>,
 ) -> Option<NodeId> {
     
     let mut current_style = parent_style.clone();
@@ -330,7 +418,7 @@ fn dom_to_taffy(
         NodeData::Document => {
              let mut children = Vec::new();
              for child in handle.children.borrow().iter() {
-                 if let Some(id) = dom_to_taffy(taffy, child, text_measurer, render_data, interactions, current_style.clone(), message_validator) {
+                 if let Some(id) = dom_to_taffy(taffy, child, text_measurer, render_data, interactions, current_style.clone(), message_validator, stylesheet) {
                      children.push(id);
                  }
             }
@@ -341,6 +429,9 @@ fn dom_to_taffy(
         
         NodeData::Element { name, attrs, .. } => {
             let tag = name.local.as_ref();
+            if tag == "style" || tag == "script" || tag == "head" {
+                return None;
+            }
             
             let defaults = defaults::get_default_style(tag, &current_style); 
             let mut layout_style = defaults.taffy_style;
@@ -348,12 +439,22 @@ fn dom_to_taffy(
             
             let mut parsed = ParsedAttributes::new(defaults.element_type);
             
+            // Match CSS stylesheet rules
+            let el_wrapper = ElementWrapper(handle.clone());
+            for rule in &stylesheet.rules {
+                if rule.selector.matches(&el_wrapper) {
+                    for decl in &rule.declarations {
+                        css::apply_declaration(&decl.name.to_lowercase(), decl.value, &mut current_style, &mut layout_style);
+                    }
+                }
+            }
+
             parse_attributes(tag, &attrs.borrow(), &mut current_style, &mut layout_style, &mut parsed, message_validator);
             
             let mut children = Vec::new();
             if !matches!(parsed.element_type, defaults::ElementType::Image | defaults::ElementType::Checkbox | defaults::ElementType::Slider | defaults::ElementType::Progress | defaults::ElementType::Canvas) {
                 for child in handle.children.borrow().iter() {
-                     if let Some(id) = dom_to_taffy(taffy, child, text_measurer, render_data, interactions, current_style.clone(), message_validator) {
+                     if let Some(id) = dom_to_taffy(taffy, child, text_measurer, render_data, interactions, current_style.clone(), message_validator, stylesheet) {
                          children.push(id);
                      }
                 }
