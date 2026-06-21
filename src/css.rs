@@ -168,6 +168,29 @@ pub fn apply_declaration(prop: &str, val: &str, current_style: &mut ContainerSty
                 _ => {}
             }
         }
+        "flex-wrap" => {
+            match val {
+                "nowrap" => taffy_style.flex_wrap = FlexWrap::NoWrap,
+                "wrap" => taffy_style.flex_wrap = FlexWrap::Wrap,
+                "wrap-reverse" => taffy_style.flex_wrap = FlexWrap::WrapReverse,
+                _ => {}
+            }
+        }
+        "flex-flow" => {
+            let parts: Vec<&str> = val.split_whitespace().collect();
+            for part in parts {
+                match part {
+                    "row" => taffy_style.flex_direction = FlexDirection::Row,
+                    "column" => taffy_style.flex_direction = FlexDirection::Column,
+                    "row-reverse" => taffy_style.flex_direction = FlexDirection::RowReverse,
+                    "column-reverse" => taffy_style.flex_direction = FlexDirection::ColumnReverse,
+                    "nowrap" => taffy_style.flex_wrap = FlexWrap::NoWrap,
+                    "wrap" => taffy_style.flex_wrap = FlexWrap::Wrap,
+                    "wrap-reverse" => taffy_style.flex_wrap = FlexWrap::WrapReverse,
+                    _ => {}
+                }
+            }
+        }
         "justify-content" => {
              match val {
                 "flex-start" => taffy_style.justify_content = Some(JustifyContent::FlexStart),
