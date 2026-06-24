@@ -1,80 +1,89 @@
 <style>
+    body {
+        margin: 0;
+    }
     .todo-container {
+        display: flex;
         flex-direction: column;
-        width: 800px;
-        height: 600px;
+        width: 760px;
+        height: 560px;
         background-color: #1e1e1e;
         padding: 20px;
-    }
-    .todo-title {
-        font-size: 32px;
-        color: white;
-        margin-bottom: 20px;
-    }
-    .input-section {
-        flex-direction: row;
-        margin-bottom: 20px;
-        align-items: center;
-        flex-shrink: 0;
-    }
-    .todo-input {
-        flex-grow: 1;
-        margin-right: 10px;
-        font-size: 18px;
-        color: black;
-        background-color: white;
-    }
-    .add-btn {
-        background-color: #4CAF50;
-        border-radius: 4px;
-        padding: 10px 20px;
-        justify-content: center;
-        align-items: center;
-        cursor: pointer;
-    }
-    .add-btn span {
-        color: white;
-        font-size: 16px;
-    }
-    .todo-list {
-        flex-direction: column;
-        flex-grow: 1;
-        overflow: scroll;
-        min-height: 0;
-    }
-    .todo-item {
-        flex-direction: row;
-        margin: 5px 0;
-        padding: 10px;
-        flex-shrink: 0;
-        align-items: center;
-    }
-    .todo-item.active {
-        background-color: #333333;
-        border: 1px solid #555555;
-        border-radius: 4px;
-    }
-    .todo-text {
-        margin: 0px 10px;
-        flex-grow: 1;
-        font-size: 18px;
-        color: white;
-    }
-    .todo-text.completed {
-        color: #888888;
-    }
-    .remove-btn {
-        background-color: #f44336;
-        border-radius: 4px;
-        padding: 5px 10px;
-        justify-content: center;
-        align-items: center;
-        cursor: pointer;
-    }
-    .remove-btn span {
-        color: white;
-        font-size: 14px;
-    }
+     }
+     .todo-title {
+         font-size: 32px;
+         color: white;
+         margin-bottom: 20px;
+     }
+     .input-section {
+         display: flex;
+         flex-direction: row;
+         margin-bottom: 20px;
+         align-items: center;
+         flex-shrink: 0;
+     }
+     .todo-input {
+         flex-grow: 1;
+         margin-right: 10px;
+         font-size: 18px;
+         color: black;
+         background-color: white;
+     }
+     .add-btn {
+         display: flex;
+         background-color: #4CAF50;
+         border-radius: 4px;
+         padding: 10px 20px;
+         justify-content: center;
+         align-items: center;
+         cursor: pointer;
+     }
+     .add-btn span {
+         color: white;
+         font-size: 16px;
+     }
+     .todo-list {
+         display: flex;
+         flex-direction: column;
+         flex-grow: 1;
+         overflow: scroll;
+         min-height: 0;
+     }
+     .todo-item {
+         display: flex;
+         flex-direction: row;
+         margin: 5px 0;
+         padding: 10px;
+         flex-shrink: 0;
+         align-items: center;
+     }
+     .todo-item.active {
+         background-color: #333333;
+         border: 1px solid #555555;
+         border-radius: 4px;
+     }
+     .todo-text {
+         margin: 0px 10px;
+         flex-grow: 1;
+         font-size: 18px;
+         color: white;
+     }
+     .todo-text.completed {
+         color: #888888;
+     }
+     .remove-btn {
+         display: flex;
+         background-color: #f44336;
+         border-radius: 4px;
+         padding: 5px 10px;
+         justify-content: center;
+         align-items: center;
+         cursor: pointer;
+     }
+     .remove-btn span {
+         color: white;
+         font-size: 14px;
+     }
 </style>
 <div class="todo-container">
     <!-- Title -->

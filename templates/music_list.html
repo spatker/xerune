@@ -1,9 +1,10 @@
 <style>
     .music-list-container {
+        display: flex;
         position: absolute;
         top: 0;
-        width: 800px;
-        height: 480px;
+        width: 760px;
+        height: 440px;
         flex-direction: column;
         padding: 20px;
     }
@@ -14,12 +15,14 @@
         color: #1ed760;
     }
     .track-list {
+        display: flex;
         flex-direction: column;
         flex-grow: 1;
         overflow: scroll;
         min-height: 0;
     }
     .track-item {
+        display: flex;
         flex-direction: row;
         align-items: center;
         padding: 15px;
@@ -45,6 +48,7 @@
         border-radius: 8px;
     }
     .track-details {
+        display: flex;
         flex-direction: column;
         justify-content: center;
         flex-grow: 1;

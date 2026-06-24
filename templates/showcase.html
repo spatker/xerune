@@ -1,13 +1,19 @@
 <style>
+    body {
+        margin: 0;
+    }
     .showcase-container {
-        width: 900px;
-        height: 900px;
+        display: flex;
+        flex-direction: column;
+        width: 820px;
+        height: 820px;
         background: linear-gradient(160deg, #0f2027 0%, #203a43 50%, #2c5364 100%);
         color: white;
         padding: 40px;
         font-family: 'Roboto', sans-serif;
     }
     .header-row {
+        display: flex;
         flex-direction: row;
         justify-content: space-between;
         align-items: center;
@@ -31,6 +37,7 @@
         font-weight: bold;
     }
     .status-cards-row {
+        display: flex;
         flex-direction: row;
         margin-bottom: 20px;
     }
@@ -50,6 +57,7 @@
         margin: 0 0 15px 0;
     }
     .status-indicator-row {
+        display: flex;
         flex-direction: row;
         align-items: center;
         margin-bottom: 10px;
@@ -79,6 +87,7 @@
         width: 100%;
     }
     .status-users-row {
+        display: flex;
         flex-direction: row;
         align-items: flex-end;
     }
@@ -96,10 +105,13 @@
         margin-bottom: 8px;
     }
     .main-grid {
+        display: flex;
         flex-direction: row;
         flex-grow: 1;
     }
     .list-panel {
+        display: flex;
+        flex-direction: column;
         flex-grow: 2;
         padding: 25px;
         background-color: rgba(255,255,255,0.05);
@@ -132,6 +144,8 @@
         padding: 8px;
     }
     .control-panel {
+        display: flex;
+        flex-direction: column;
         flex-grow: 1;
         padding: 25px;
         background-color: rgba(255,255,255,0.05);
@@ -148,10 +162,12 @@
         margin: 0 0 10px 0;
     }
     .controls-container {
+        display: flex;
         flex-direction: column;
         align-items: stretch;
     }
     .btn-simulate {
+        display: flex;
         padding: 15px;
         background: linear-gradient(90deg, #ff8a00, #e52e71);
         border-radius: 10px;
@@ -164,6 +180,7 @@
         font-weight: bold;
     }
     .btn-add-user {
+        display: flex;
         padding: 15px;
         background-color: rgba(255,255,255,0.05);
         border-radius: 10px;
@@ -177,6 +194,7 @@
         font-weight: bold;
     }
     .config-checkbox-row {
+        display: flex;
         flex-direction: row;
         align-items: center;
         margin-bottom: 15px;
