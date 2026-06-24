@@ -15,7 +15,7 @@ macro_rules! profile {
 }
 
 use crate::graphics::{Canvas, DrawCommand, Rect, TextMeasurer};
-use crate::style::{ContainerStyle, Overflow, RenderData, Display, TextAlign};
+use crate::style::{ContainerStyle, Overflow, RenderData, Display, TextAlign, Direction, MyJustifyContent};
 use crate::css;
 use crate::defaults;
 
@@ -53,6 +53,8 @@ impl simplecss::Element for ElementWrapper {
             false
         }
     }
+
+
 
     fn attribute_matches(&self, local_name: &str, operator: simplecss::AttributeOperator<'_>) -> bool {
         if let NodeData::Element { ref attrs, .. } = self.0.data {
@@ -129,8 +131,17 @@ impl Ui {
             .read_from(&mut html.as_bytes())
             .unwrap();
 
+        preprocess_dom(&dom.document);
+
         let mut css_str = String::new();
         extract_styles(&dom.document, &mut css_str);
+        
+        let re_nth = regex::Regex::new(r":nth-child\(\s*(\d+)\s*\)").unwrap();
+        let css_str = re_nth.replace_all(&css_str, ".nth-child-$1").into_owned();
+        let css_str = css_str.replace(":last-child", ".last-child");
+        let re_slash = regex::Regex::new(r"/[\d\.]+").unwrap();
+        let css_str = re_slash.replace_all(&css_str, "").into_owned();
+        
         let stylesheet = simplecss::StyleSheet::parse(&css_str);
 
         let root = dom_to_taffy(
@@ -236,16 +247,17 @@ impl Ui {
 
     pub fn compute_layout(&mut self, available_space: Size<AvailableSpace>) -> Result<(), TaffyError> {
         profile!("taffy_layout");
-        self.taffy.compute_layout(self.root, available_space)
+        self.taffy.compute_layout(self.root, available_space)?;
+        Ok(())
     }
 
     pub fn build_commands(&self, _canvases: &HashMap<String, Canvas>, focused_id: Option<&str>) -> Vec<DrawCommand> {
         layout_to_draw_commands(
-            &self.taffy, 
-            self.root, 
-            &self.render_data, 
+            &self.taffy,
+            self.root,
+            &self.render_data,
             &self.scroll_offsets,
-            0.0, 
+            0.0,
             0.0,
             focused_id
         )
@@ -454,8 +466,240 @@ fn dom_to_taffy(
                     }
                 }
             }
-
             parse_attributes(tag, &attrs.borrow(), &mut current_style, &mut layout_style, &mut parsed, message_validator);
+
+            // Resolve logical properties (inline-size, block-size, etc.)
+            if let Some(d) = current_style.inline_size {
+                layout_style.size.width = d;
+                if d == taffy::style::Dimension::length(d.value()) {
+                    current_style.width = Some(d.value());
+                }
+            }
+            if let Some(d) = current_style.block_size {
+                layout_style.size.height = d;
+                if d == taffy::style::Dimension::length(d.value()) {
+                    current_style.height = Some(d.value());
+                }
+            }
+            if let Some(d) = current_style.min_inline_size {
+                layout_style.min_size.width = d;
+            }
+            if let Some(d) = current_style.max_inline_size {
+                layout_style.max_size.width = d;
+            }
+            if let Some(d) = current_style.min_block_size {
+                layout_style.min_size.height = d;
+            }
+            if let Some(d) = current_style.max_block_size {
+                layout_style.max_size.height = d;
+            }
+
+            // Convert content-box sizes to border-box for Taffy
+            let add_h = current_style.padding_left + current_style.padding_right + current_style.border_width * 2.0;
+            let add_v = current_style.padding_top + current_style.padding_bottom + current_style.border_width * 2.0;
+
+            layout_style.size.width = to_border_box(layout_style.size.width, add_h);
+            layout_style.size.height = to_border_box(layout_style.size.height, add_v);
+            layout_style.min_size.width = to_border_box(layout_style.min_size.width, add_h);
+            layout_style.min_size.height = to_border_box(layout_style.min_size.height, add_v);
+            layout_style.max_size.width = to_border_box(layout_style.max_size.width, add_h);
+            layout_style.max_size.height = to_border_box(layout_style.max_size.height, add_v);
+
+            if layout_style.position == Position::Absolute {
+                enum Alignment {
+                    Start,
+                    End,
+                    Center,
+                }
+
+                if layout_style.inset.left.is_auto() && layout_style.inset.right.is_auto() {
+                    let is_parent_row = parent_style.flex_direction == FlexDirection::Row || parent_style.flex_direction == FlexDirection::RowReverse;
+                    let h_align = if is_parent_row {
+                        let jc = parent_style.justify_content.unwrap_or(MyJustifyContent::FlexStart);
+                        match jc {
+                            MyJustifyContent::FlexStart => {
+                                if (parent_style.flex_direction == FlexDirection::Row) ^ (parent_style.direction == Direction::Rtl) {
+                                    Alignment::Start
+                                } else {
+                                    Alignment::End
+                                }
+                            }
+                            MyJustifyContent::FlexEnd => {
+                                if (parent_style.flex_direction == FlexDirection::Row) ^ (parent_style.direction == Direction::Rtl) {
+                                    Alignment::End
+                                } else {
+                                    Alignment::Start
+                                }
+                            }
+                            MyJustifyContent::Center | MyJustifyContent::SpaceAround | MyJustifyContent::SpaceEvenly => {
+                                Alignment::Center
+                            }
+                            MyJustifyContent::SpaceBetween => {
+                                if (parent_style.flex_direction == FlexDirection::Row) ^ (parent_style.direction == Direction::Rtl) {
+                                    Alignment::Start
+                                } else {
+                                    Alignment::End
+                                }
+                            }
+                            MyJustifyContent::Start => {
+                                if parent_style.direction == Direction::Rtl {
+                                    Alignment::End
+                                } else {
+                                    Alignment::Start
+                                }
+                            }
+                            MyJustifyContent::End => {
+                                if parent_style.direction == Direction::Rtl {
+                                    Alignment::Start
+                                } else {
+                                    Alignment::End
+                                }
+                            }
+                            MyJustifyContent::Left => {
+                                Alignment::Start
+                            }
+                            MyJustifyContent::Right => {
+                                Alignment::End
+                            }
+                        }
+                    } else {
+                        let align = layout_style.align_self.map(|s| match s {
+                            AlignSelf::FlexStart | AlignSelf::Start => AlignItems::FlexStart,
+                            AlignSelf::FlexEnd | AlignSelf::End => AlignItems::FlexEnd,
+                            AlignSelf::Center => AlignItems::Center,
+                            AlignSelf::Baseline => AlignItems::Baseline,
+                            AlignSelf::Stretch => AlignItems::Stretch,
+                        }).unwrap_or_else(|| parent_style.align_items.unwrap_or(AlignItems::Stretch));
+
+                        match align {
+                            AlignItems::FlexStart | AlignItems::Stretch | AlignItems::Baseline | AlignItems::Start => {
+                                if (parent_style.direction == Direction::Rtl) ^ (parent_style.flex_wrap == FlexWrap::WrapReverse) {
+                                    Alignment::End
+                                } else {
+                                    Alignment::Start
+                                }
+                            }
+                            AlignItems::FlexEnd | AlignItems::End => {
+                                if (parent_style.direction == Direction::Rtl) ^ (parent_style.flex_wrap == FlexWrap::WrapReverse) {
+                                    Alignment::Start
+                                } else {
+                                    Alignment::End
+                                }
+                            }
+                            AlignItems::Center => {
+                                Alignment::Center
+                            }
+                        }
+                    };
+
+                    match h_align {
+                        Alignment::Start => {
+                            layout_style.inset.left = length(parent_style.padding_left);
+                        }
+                        Alignment::End => {
+                            if let (Some(pw), Some(cw)) = (parent_style.width, current_style.width) {
+                                layout_style.inset.left = length(pw - cw + parent_style.padding_left);
+                            } else {
+                                layout_style.inset.right = length(parent_style.padding_right);
+                            }
+                        }
+                        Alignment::Center => {
+                            if let (Some(pw), Some(cw)) = (parent_style.width, current_style.width) {
+                                layout_style.inset.left = length((pw - cw) / 2.0 + parent_style.padding_left);
+                            } else {
+                                layout_style.inset.left = length(parent_style.padding_left);
+                            }
+                        }
+                    }
+                }
+
+                if layout_style.inset.top.is_auto() && layout_style.inset.bottom.is_auto() {
+                    let is_parent_row = parent_style.flex_direction == FlexDirection::Row || parent_style.flex_direction == FlexDirection::RowReverse;
+                    let v_align = if !is_parent_row {
+                        let jc = parent_style.justify_content.unwrap_or(MyJustifyContent::FlexStart);
+                        match jc {
+                            MyJustifyContent::FlexStart => {
+                                if parent_style.flex_direction == FlexDirection::Column {
+                                    Alignment::Start
+                                } else {
+                                    Alignment::End
+                                }
+                            }
+                            MyJustifyContent::FlexEnd => {
+                                if parent_style.flex_direction == FlexDirection::Column {
+                                    Alignment::End
+                                } else {
+                                    Alignment::Start
+                                }
+                            }
+                            MyJustifyContent::Center | MyJustifyContent::SpaceAround | MyJustifyContent::SpaceEvenly => {
+                                Alignment::Center
+                            }
+                            MyJustifyContent::SpaceBetween => {
+                                if parent_style.flex_direction == FlexDirection::Column {
+                                    Alignment::Start
+                                } else {
+                                    Alignment::End
+                                }
+                            }
+                            MyJustifyContent::Start | MyJustifyContent::Left | MyJustifyContent::Right => {
+                                Alignment::Start
+                            }
+                            MyJustifyContent::End => {
+                                Alignment::End
+                            }
+                        }
+                    } else {
+                        let align = layout_style.align_self.map(|s| match s {
+                            AlignSelf::FlexStart | AlignSelf::Start => AlignItems::FlexStart,
+                            AlignSelf::FlexEnd | AlignSelf::End => AlignItems::FlexEnd,
+                            AlignSelf::Center => AlignItems::Center,
+                            AlignSelf::Baseline => AlignItems::Baseline,
+                            AlignSelf::Stretch => AlignItems::Stretch,
+                        }).unwrap_or_else(|| parent_style.align_items.unwrap_or(AlignItems::Stretch));
+
+                        match align {
+                            AlignItems::FlexStart | AlignItems::Stretch | AlignItems::Baseline | AlignItems::Start => {
+                                if parent_style.flex_wrap == FlexWrap::WrapReverse {
+                                    Alignment::End
+                                } else {
+                                    Alignment::Start
+                                }
+                            }
+                            AlignItems::FlexEnd | AlignItems::End => {
+                                if parent_style.flex_wrap == FlexWrap::WrapReverse {
+                                    Alignment::Start
+                                } else {
+                                    Alignment::End
+                                }
+                            }
+                            AlignItems::Center => {
+                                Alignment::Center
+                            }
+                        }
+                    };
+
+                    match v_align {
+                        Alignment::Start => {
+                            layout_style.inset.top = length(parent_style.padding_top);
+                        }
+                        Alignment::End => {
+                            if let (Some(ph), Some(ch)) = (parent_style.height, current_style.height) {
+                                layout_style.inset.top = length(ph - ch + parent_style.padding_top);
+                            } else {
+                                layout_style.inset.bottom = length(parent_style.padding_bottom);
+                            }
+                        }
+                        Alignment::Center => {
+                            if let (Some(ph), Some(ch)) = (parent_style.height, current_style.height) {
+                                layout_style.inset.top = length((ph - ch) / 2.0 + parent_style.padding_top);
+                            } else {
+                                layout_style.inset.top = length(parent_style.padding_top);
+                            }
+                        }
+                    }
+                }
+            }
             
             let mut children = Vec::new();
             if !matches!(parsed.element_type, defaults::ElementType::Image | defaults::ElementType::Checkbox | defaults::ElementType::Slider | defaults::ElementType::Progress | defaults::ElementType::Canvas) {
@@ -508,9 +752,97 @@ fn dom_to_taffy(
                 }
             }
 
-            if current_style.display == Display::Block && layout_style.size.width.is_auto() {
-                layout_style.size.width = Dimension::percent(1.0);
+            if parent_style.display != Display::Flex && current_style.display == Display::Block {
+                if layout_style.size.width.is_auto() {
+                    layout_style.size.width = Dimension::percent(1.0);
+                }
             }
+
+            layout_style.border = taffy::geometry::Rect {
+                left: length(current_style.border_width),
+                right: length(current_style.border_width),
+                top: length(current_style.border_width),
+                bottom: length(current_style.border_width),
+            };
+
+            if current_style.direction == Direction::Rtl {
+                match layout_style.flex_direction {
+                    FlexDirection::Row | FlexDirection::RowReverse => {
+                        layout_style.flex_direction = match layout_style.flex_direction {
+                            FlexDirection::Row => FlexDirection::RowReverse,
+                            FlexDirection::RowReverse => FlexDirection::Row,
+                            other => other,
+                        };
+                        layout_style.justify_content = match layout_style.justify_content {
+                            Some(JustifyContent::FlexStart) | None => Some(JustifyContent::FlexEnd),
+                            Some(JustifyContent::FlexEnd) => Some(JustifyContent::FlexStart),
+                            other => other,
+                        };
+                    }
+                    FlexDirection::Column | FlexDirection::ColumnReverse => {
+                        layout_style.align_items = match layout_style.align_items {
+                            Some(AlignItems::FlexStart) | None => Some(AlignItems::FlexEnd),
+                            Some(AlignItems::FlexEnd) => Some(AlignItems::FlexStart),
+                            other => other,
+                        };
+                        layout_style.align_content = match layout_style.align_content {
+                            Some(AlignContent::FlexStart) | None => Some(AlignContent::FlexEnd),
+                            Some(AlignContent::FlexEnd) => Some(AlignContent::FlexStart),
+                            other => other,
+                        };
+                    }
+                }
+            }
+
+            // Taffy's min_size and max_size constraints are relative to the border-box,
+            // but CSS specifies them relative to the content-box. So we adjust them here.
+            if !layout_style.max_size.height.is_auto() {
+                let val = layout_style.max_size.height.value();
+                if layout_style.max_size.height == Dimension::length(val) {
+                    layout_style.max_size.height = Dimension::length(val + current_style.border_width * 2.0 + current_style.padding_top + current_style.padding_bottom);
+                }
+            }
+            if !layout_style.max_size.width.is_auto() {
+                let val = layout_style.max_size.width.value();
+                if layout_style.max_size.width == Dimension::length(val) {
+                    layout_style.max_size.width = Dimension::length(val + current_style.border_width * 2.0 + current_style.padding_left + current_style.padding_right);
+                }
+            }
+            if !layout_style.min_size.height.is_auto() {
+                let val = layout_style.min_size.height.value();
+                if layout_style.min_size.height == Dimension::length(val) {
+                    layout_style.min_size.height = Dimension::length(val + current_style.border_width * 2.0 + current_style.padding_top + current_style.padding_bottom);
+                }
+            }
+            if !layout_style.min_size.width.is_auto() {
+                let val = layout_style.min_size.width.value();
+                if layout_style.min_size.width == Dimension::length(val) {
+                    layout_style.min_size.width = Dimension::length(val + current_style.border_width * 2.0 + current_style.padding_left + current_style.padding_right);
+                }
+            }
+
+            let is_parent_flex = parent_style.display == Display::Flex;
+            if is_parent_flex {
+                let resolved_align = match layout_style.align_self {
+                    None => parent_style.align_items.unwrap_or(AlignItems::Stretch),
+                    Some(AlignSelf::FlexStart) => AlignItems::FlexStart,
+                    Some(AlignSelf::FlexEnd) => AlignItems::FlexEnd,
+                    Some(AlignSelf::Center) => AlignItems::Center,
+                    Some(AlignSelf::Baseline) => AlignItems::Baseline,
+                    Some(AlignSelf::Stretch) => AlignItems::Stretch,
+                    Some(AlignSelf::Start) => AlignItems::Start,
+                    Some(AlignSelf::End) => AlignItems::End,
+                };
+                if resolved_align == AlignItems::Baseline {
+                    let is_column = parent_style.flex_direction == FlexDirection::Column 
+                        || parent_style.flex_direction == FlexDirection::ColumnReverse;
+                    if is_column {
+                        layout_style.align_self = Some(AlignSelf::FlexStart);
+                    }
+                }
+            }
+
+
 
             let id = taffy.new_with_children(layout_style, &children).ok()?;
 
@@ -762,4 +1094,70 @@ pub fn hit_test_recursive(
         return Some(root);
     }
     None
+}
+
+fn preprocess_dom(handle: &Handle) {
+    if let NodeData::Element { .. } = handle.data {
+        // First, recursively process all child element nodes
+        let mut child_elements = Vec::new();
+        for child in handle.children.borrow().iter() {
+            if let NodeData::Element { .. } = child.data {
+                child_elements.push(child.clone());
+            }
+            preprocess_dom(child);
+        }
+        
+        // Add nth-child and last-child classes to each child element
+        let num_children = child_elements.len();
+        for (i, child) in child_elements.iter().enumerate() {
+            if let NodeData::Element { attrs: ref child_attrs, .. } = child.data {
+                let index_class = format!("nth-child-{}", i + 1);
+                let is_last = i + 1 == num_children;
+                
+                let mut attrs_borrow = child_attrs.borrow_mut();
+                let mut class_attr_opt = None;
+                for attr in attrs_borrow.iter_mut() {
+                    if attr.name.local.as_ref() == "class" {
+                        class_attr_opt = Some(attr);
+                        break;
+                    }
+                }
+                
+                if let Some(class_attr) = class_attr_opt {
+                    let mut val = class_attr.value.to_string();
+                    val.push_str(" ");
+                    val.push_str(&index_class);
+                    if is_last {
+                        val.push_str(" last-child");
+                    }
+                    class_attr.value = val.into();
+                } else {
+                    let mut class_val = index_class;
+                    if is_last {
+                        class_val.push_str(" last-child");
+                    }
+                    attrs_borrow.push(markup5ever::Attribute {
+                        name: markup5ever::QualName::new(
+                            None,
+                            markup5ever::ns!(),
+                            markup5ever::LocalName::from("class"),
+                        ),
+                        value: class_val.into(),
+                    });
+                }
+            }
+        }
+    } else if let NodeData::Document = handle.data {
+        for child in handle.children.borrow().iter() {
+            preprocess_dom(child);
+        }
+    }
+}
+
+fn to_border_box(dim: taffy::style::Dimension, add: f32) -> taffy::style::Dimension {
+    if dim == taffy::style::Dimension::length(dim.value()) {
+        taffy::style::Dimension::length(dim.value() + add)
+    } else {
+        dim
+    }
 }

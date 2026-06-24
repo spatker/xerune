@@ -32,6 +32,33 @@ pub fn get_default_style(tag: &str, parent_style: &ContainerStyle) -> StyleBundl
     let mut bundle = StyleBundle::default();
     bundle.container_style = parent_style.clone();
 
+    // Reset non-inherited CSS properties
+    bundle.container_style.background_color = None;
+    bundle.container_style.background_gradient = None;
+    bundle.container_style.border_radius = 0.0;
+    bundle.container_style.border_width = 0.0;
+    bundle.container_style.border_color = None;
+    bundle.container_style.overflow = crate::Overflow::Visible;
+    bundle.container_style.order = 0;
+    bundle.container_style.flex_direction = FlexDirection::Row;
+    bundle.container_style.flex_wrap = FlexWrap::NoWrap;
+    bundle.container_style.justify_content = None;
+    bundle.container_style.align_items = None;
+    bundle.container_style.width = None;
+    bundle.container_style.height = None;
+    bundle.container_style.padding_left = 0.0;
+    bundle.container_style.padding_right = 0.0;
+    bundle.container_style.padding_top = 0.0;
+    bundle.container_style.padding_bottom = 0.0;
+    bundle.container_style.inline_size = None;
+    bundle.container_style.block_size = None;
+    bundle.container_style.min_inline_size = None;
+    bundle.container_style.max_inline_size = None;
+    bundle.container_style.min_block_size = None;
+    bundle.container_style.max_block_size = None;
+    bundle.container_style.align_self = None;
+    bundle.container_style.position = crate::style::Position::Static;
+
     bundle.container_style.display = match tag {
         "div" | "body" | "p" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "ul" | "li" | "table" | "tbody" | "thead" | "tfoot" | "tr" => Display::Block,
         _ => Display::InlineBlock,
@@ -70,7 +97,13 @@ pub fn get_default_style(tag: &str, parent_style: &ContainerStyle) -> StyleBundl
                 top: length(2.0), bottom: length(2.0)
             };
         }
-        "div" | "body" => {
+        "div" => {
+        }
+        "body" => {
+            bundle.taffy_style.margin = taffy::geometry::Rect {
+                left: length(8.0), right: length(8.0),
+                top: length(8.0), bottom: length(8.0)
+            };
         }
         "img" => {
             bundle.element_type = ElementType::Image;
@@ -181,6 +214,10 @@ pub fn get_default_style(tag: &str, parent_style: &ContainerStyle) -> StyleBundl
         "canvas" => {
             bundle.element_type = ElementType::Canvas;
             bundle.taffy_style.size = Size { width: length(200.0), height: length(200.0) };
+        }
+        "br" => {
+            bundle.taffy_style.size.width = Dimension::percent(1.0);
+            bundle.taffy_style.size.height = Dimension::length(0.0);
         }
         _ => {
             log::warn!("Unsupported tag encountered: {}", tag);

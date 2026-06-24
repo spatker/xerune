@@ -12,7 +12,7 @@ use regex::Regex;
 use tiny_skia::Pixmap;
 
 use taffy::prelude::NodeId;
-use xerune::{Context, Model, Runtime, Ui};
+use xerune::{Context, Model, Runtime, Ui, RenderData};
 use skia_renderer::{TinySkiaMeasurer, TinySkiaRenderer};
 
 const WIDTH: u32 = 800;
@@ -105,6 +105,36 @@ fn render_html_to_pixmap(html: &str, fonts: &'static [fontdue::Font]) -> Result<
         );
         
         runtime.render(&mut renderer);
+
+        // Debug printing of the layout tree
+        println!("=== Layout Tree ===");
+        fn print_tree(node_id: NodeId, ui: &Ui, depth: usize) {
+            if let Ok(layout) = ui.taffy.layout(node_id) {
+                let handle = ui.node_to_handle.get(&node_id);
+                let tag = handle.map(|h| {
+                    if let markup5ever_rcdom::NodeData::Element { ref name, .. } = h.data {
+                        name.local.as_ref().to_string()
+                    } else {
+                        "text/unknown".to_string()
+                    }
+                }).unwrap_or_else(|| "none".to_string());
+                println!(
+                    "{:indent$}- [{}] location={:?} size={:?}",
+                    "",
+                    tag,
+                    layout.location,
+                    layout.size,
+                    indent = depth * 2
+                );
+            }
+            if let Ok(children) = ui.taffy.children(node_id) {
+                for child in children {
+                    print_tree(child, ui, depth + 1);
+                }
+            }
+        }
+        print_tree(runtime.ui.root, &runtime.ui, 0);
+        println!("===================");
     }));
 
     match res {
@@ -161,6 +191,97 @@ fn create_diff_pixmap(p1: &Pixmap, p2: &Pixmap) -> Pixmap {
     diff
 }
 
+fn is_offset_parent(ui: &Ui, node_id: NodeId) -> bool {
+    let handle = match ui.node_to_handle.get(&node_id) {
+        Some(h) => h,
+        None => return false,
+    };
+    if let markup5ever_rcdom::NodeData::Element { ref name, .. } = handle.data {
+        let tag = name.local.as_ref();
+        if tag == "body" || tag == "html" || tag == "table" || tag == "td" || tag == "th" {
+            return true;
+        }
+    }
+    if let Some(RenderData::Container(style)) = ui.render_data.get(&node_id) {
+        if style.position == xerune::style::Position::Relative || style.position == xerune::style::Position::Absolute {
+            return true;
+        }
+    }
+    false
+}
+
+fn get_offset_left(ui: &Ui, node_id: NodeId) -> f32 {
+    let mut offset = 0.0;
+    let mut current = node_id;
+    loop {
+        let layout = match ui.taffy.layout(current) {
+            Ok(l) => l,
+            Err(_) => break,
+        };
+        offset += layout.location.x;
+        let parent = match ui.taffy.parent(current) {
+            Some(p) => p,
+            None => break,
+        };
+        if is_offset_parent(ui, parent) {
+            let handle = ui.node_to_handle.get(&parent);
+            let tag = handle.and_then(|h| {
+                if let markup5ever_rcdom::NodeData::Element { ref name, .. } = h.data {
+                    Some(name.local.as_ref())
+                } else {
+                    None
+                }
+            });
+            if tag == Some("body") || tag == Some("html") {
+                current = parent;
+                continue;
+            }
+            if let Ok(parent_layout) = ui.taffy.layout(parent) {
+                offset -= parent_layout.border.left;
+            }
+            break;
+        }
+        current = parent;
+    }
+    offset
+}
+
+fn get_offset_top(ui: &Ui, node_id: NodeId) -> f32 {
+    let mut offset = 0.0;
+    let mut current = node_id;
+    loop {
+        let layout = match ui.taffy.layout(current) {
+            Ok(l) => l,
+            Err(_) => break,
+        };
+        offset += layout.location.y;
+        let parent = match ui.taffy.parent(current) {
+            Some(p) => p,
+            None => break,
+        };
+        if is_offset_parent(ui, parent) {
+            let handle = ui.node_to_handle.get(&parent);
+            let tag = handle.and_then(|h| {
+                if let markup5ever_rcdom::NodeData::Element { ref name, .. } = h.data {
+                    Some(name.local.as_ref())
+                } else {
+                    None
+                }
+            });
+            if tag == Some("body") || tag == Some("html") {
+                current = parent;
+                continue;
+            }
+            if let Ok(parent_layout) = ui.taffy.layout(parent) {
+                offset -= parent_layout.border.top;
+            }
+            break;
+        }
+        current = parent;
+    }
+    offset
+}
+
 fn check_node_layout(node_id: NodeId, ui: &Ui, errors: &mut Vec<String>) {
     let layout = match ui.taffy.layout(node_id) {
         Ok(l) => l,
@@ -176,15 +297,6 @@ fn check_node_layout(node_id: NodeId, ui: &Ui, errors: &mut Vec<String>) {
             let name = attr.name.local.as_ref();
             let value = &attr.value;
             
-            let mut parent_border_left = 0.0;
-            let mut parent_border_top = 0.0;
-            if let Some(parent_id) = ui.taffy.parent(node_id) {
-                if let Ok(parent_layout) = ui.taffy.layout(parent_id) {
-                    parent_border_left = parent_layout.border.left;
-                    parent_border_top = parent_layout.border.top;
-                }
-            }
-
             let result = match name {
                 "data-expected-width" => check_attr(name, value, layout.size.width),
                 "data-expected-height" => check_attr(name, value, layout.size.height),
@@ -196,8 +308,8 @@ fn check_node_layout(node_id: NodeId, ui: &Ui, errors: &mut Vec<String>) {
                 "data-expected-margin-bottom" => check_attr(name, value, layout.margin.bottom),
                 "data-expected-margin-left" => check_attr(name, value, layout.margin.left),
                 "data-expected-margin-right" => check_attr(name, value, layout.margin.right),
-                "data-offset-x" => check_attr(name, value, layout.location.x - parent_border_left),
-                "data-offset-y" => check_attr(name, value, layout.location.y - parent_border_top),
+                "data-offset-x" => check_attr(name, value, get_offset_left(ui, node_id)),
+                "data-offset-y" => check_attr(name, value, get_offset_top(ui, node_id)),
                 _ => Ok(()),
             };
             if let Err(e) = result {
@@ -241,6 +353,35 @@ fn run_attribute_test(html: &str, fonts: &'static [fontdue::Font]) -> Result<Vec
         let mut runtime = Runtime::new(model, measurer);
         runtime.set_size(WIDTH as f32, HEIGHT as f32);
         
+        println!("=== Layout Tree (Attribute Test) ===");
+        fn print_tree(node_id: NodeId, ui: &Ui, depth: usize) {
+            if let Ok(layout) = ui.taffy.layout(node_id) {
+                let handle = ui.node_to_handle.get(&node_id);
+                let tag = handle.map(|h| {
+                    if let markup5ever_rcdom::NodeData::Element { ref name, .. } = h.data {
+                        name.local.as_ref().to_string()
+                    } else {
+                        "text/unknown".to_string()
+                    }
+                }).unwrap_or_else(|| "none".to_string());
+                println!(
+                    "{:indent$}- [{}] location={:?} size={:?}",
+                    "",
+                    tag,
+                    layout.location,
+                    layout.size,
+                    indent = depth * 2
+                );
+            }
+            if let Ok(children) = ui.taffy.children(node_id) {
+                for child in children {
+                    print_tree(child, ui, depth + 1);
+                }
+            }
+        }
+        print_tree(runtime.ui.root, &runtime.ui, 0);
+        println!("===================");
+
         let mut errors = Vec::new();
         check_all_nodes(runtime.ui.root, &runtime.ui, &mut errors);
         errors

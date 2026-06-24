@@ -15,11 +15,46 @@ pub enum TextAlign {
     Right,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Direction {
+    Ltr,
+    Rtl,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Overflow {
     Visible,
     Hidden,
     Scroll,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WritingMode {
+    HorizontalTb,
+}
+
+
+pub use taffy::prelude::{FlexDirection, FlexWrap, AlignContent, AlignItems, AlignSelf};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Position {
+    Static,
+    Relative,
+    Absolute,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MyJustifyContent {
+    FlexStart,
+    FlexEnd,
+    Center,
+    SpaceBetween,
+    SpaceAround,
+    SpaceEvenly,
+    Start,
+    End,
+    Left,
+    Right,
 }
 
 #[derive(Debug, Clone)]
@@ -36,6 +71,26 @@ pub struct ContainerStyle {
     pub display: Display,
     pub text_align: Option<TextAlign>,
     pub order: i32,
+    pub direction: Direction,
+    pub writing_mode: WritingMode,
+    pub flex_direction: FlexDirection,
+    pub flex_wrap: FlexWrap,
+    pub justify_content: Option<MyJustifyContent>,
+    pub align_items: Option<AlignItems>,
+    pub width: Option<f32>,
+    pub height: Option<f32>,
+    pub padding_left: f32,
+    pub padding_right: f32,
+    pub padding_top: f32,
+    pub padding_bottom: f32,
+    pub inline_size: Option<taffy::style::Dimension>,
+    pub block_size: Option<taffy::style::Dimension>,
+    pub min_inline_size: Option<taffy::style::Dimension>,
+    pub max_inline_size: Option<taffy::style::Dimension>,
+    pub min_block_size: Option<taffy::style::Dimension>,
+    pub max_block_size: Option<taffy::style::Dimension>,
+    pub align_self: Option<AlignSelf>,
+    pub position: Position,
 }
 
 impl Default for ContainerStyle {
@@ -54,6 +109,26 @@ impl Default for ContainerStyle {
             display: Display::Block,
             text_align: None,
             order: 0,
+            direction: Direction::Ltr,
+            writing_mode: WritingMode::HorizontalTb,
+            flex_direction: FlexDirection::Row,
+            flex_wrap: FlexWrap::NoWrap,
+            justify_content: None,
+            align_items: None,
+            width: None,
+            height: None,
+            padding_left: 0.0,
+            padding_right: 0.0,
+            padding_top: 0.0,
+            padding_bottom: 0.0,
+            inline_size: None,
+            block_size: None,
+            min_inline_size: None,
+            max_inline_size: None,
+            min_block_size: None,
+            max_block_size: None,
+            align_self: None,
+            position: Position::Static,
         }
     }
 }
