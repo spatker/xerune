@@ -2,7 +2,9 @@ use crate::graphics::Context;
 
 pub trait Model {
     type Message: std::str::FromStr + Send + Sync + 'static;
-    fn view(&self) -> String;
+    fn view(&self) -> String {
+        String::new()
+    }
     fn update(&mut self, msg: Self::Message, context: &mut Context);
 }
 

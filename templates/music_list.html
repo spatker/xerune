@@ -84,7 +84,7 @@
         {% for track in tracks %}
         <div data-on-click="select_track:{{ track.id }}" data-on-hover="hover_track:{{ track.id }}"
             data-on-hover-out="unhover_track"
-            class="track-item{% if track.id == hovered_track %} hovered{% else if loop.index0 == active_list_index %} active{% endif %}">
+            class="track-item {% if track.id == hovered_track %}hovered{% else if loop.index0 == active_list_index %}active{% endif %}">
             <img src="{{ track.cover_url }}" class="track-cover" />
             <div class="track-details">
                 <p class="track-title">{{ track.title }}</p>

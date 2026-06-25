@@ -37,6 +37,149 @@ impl Model for RawHtmlModel {
     fn update(&mut self, _msg: Self::Message, _context: &mut Context) {}
 }
 
+impl xerune::ui::TemplateLayout for RawHtmlModel {
+    fn stylesheet(&self) -> &'static str {
+        use html5ever::parse_document;
+        use html5ever::tendril::TendrilSink;
+        use markup5ever_rcdom::{Handle, NodeData, RcDom};
+
+        let dom = parse_document(RcDom::default(), Default::default())
+            .from_utf8()
+            .read_from(&mut self.html.as_bytes())
+            .unwrap();
+        
+        fn extract_styles_local(handle: &Handle, css_accumulator: &mut String) {
+            if let NodeData::Element { name, .. } = &handle.data {
+                if name.local.as_ref() == "style" {
+                    for child in handle.children.borrow().iter() {
+                        if let NodeData::Text { contents } = &child.data {
+                            css_accumulator.push_str(&contents.borrow());
+                            css_accumulator.push('\n');
+                        }
+                    }
+                }
+            }
+            for child in handle.children.borrow().iter() {
+                extract_styles_local(child, css_accumulator);
+            }
+        }
+        let mut css_str = String::new();
+        extract_styles_local(&dom.document, &mut css_str);
+        Box::leak(css_str.into_boxed_str())
+    }
+
+    fn build_ui(&self, builder: &mut xerune::ui::UiBuilder) -> taffy::NodeId {
+        use html5ever::parse_document;
+        use html5ever::tendril::TendrilSink;
+        use markup5ever_rcdom::{Handle, NodeData, RcDom};
+
+        let dom = parse_document(RcDom::default(), Default::default())
+            .from_utf8()
+            .read_from(&mut self.html.as_bytes())
+            .unwrap();
+
+        fn build_recursive(
+            handle: &Handle,
+            builder: &mut xerune::ui::UiBuilder,
+        ) -> Option<taffy::NodeId> {
+            match &handle.data {
+                NodeData::Document => {
+                    let root = builder.create_element("body", &[]);
+                    builder.node_to_handle.insert(root, handle.clone());
+                    for child in handle.children.borrow().iter() {
+                        if let Some(child_id) = build_recursive(child, builder) {
+                            builder.append_child(root, child_id);
+                        }
+                    }
+                    Some(root)
+                }
+                NodeData::Element { name, attrs, .. } => {
+                    let tag = name.local.as_ref();
+                    if tag == "style" || tag == "script" || tag == "head" {
+                        return None;
+                    }
+                    
+                    let mut tag_attrs = Vec::new();
+                    let mut type_attr = None;
+                    let mut value_attr = None;
+                    let mut checked_attr = None;
+                    let mut max_attr = None;
+                    let mut src_attr = None;
+                    let mut id_attr = None;
+
+                    for attr in attrs.borrow().iter() {
+                        let key = attr.name.local.as_ref();
+                        let val = attr.value.as_ref();
+                        tag_attrs.push((key.to_string(), val.to_string()));
+                        match key {
+                            "type" => type_attr = Some(val.to_string()),
+                            "value" => value_attr = Some(val.to_string()),
+                            "checked" => checked_attr = Some(val.to_string()),
+                            "max" => max_attr = Some(val.to_string()),
+                            "src" => src_attr = Some(val.to_string()),
+                            "id" => id_attr = Some(val.to_string()),
+                            _ => {}
+                        }
+                    }
+
+                    let is_input = tag == "input";
+                    let node = if is_input && type_attr.as_deref() == Some("checkbox") {
+                        let checked = checked_attr.is_some() && checked_attr.as_deref() != Some("false");
+                        builder.create_checkbox(checked, &[])
+                    } else if is_input && type_attr.as_deref() == Some("range") {
+                        let val = value_attr.as_deref().and_then(|v| v.parse::<f32>().ok()).unwrap_or(0.0);
+                        builder.create_slider(val, &[])
+                    } else if is_input && (type_attr.as_deref() == Some("text") || type_attr.is_none()) {
+                        let val = value_attr.as_deref().unwrap_or("");
+                        builder.create_input_text(val, &[])
+                    } else if tag == "progress" {
+                        let val = value_attr.as_deref().and_then(|v| v.parse::<f32>().ok()).unwrap_or(0.0);
+                        let max = max_attr.as_deref().and_then(|m| m.parse::<f32>().ok()).unwrap_or(1.0);
+                        builder.create_progress(val, max, &[])
+                    } else if tag == "img" {
+                        let src = src_attr.as_deref().unwrap_or("");
+                        builder.create_image(src, &[])
+                    } else if tag == "canvas" {
+                        let id_val = id_attr.unwrap_or_default();
+                        builder.create_canvas(&id_val, &[])
+                    } else {
+                        builder.create_element(tag, &[])
+                    };
+
+                    builder.node_to_handle.insert(node, handle.clone());
+                    if let Some(meta) = builder.node_metadata.get_mut(&node) {
+                        meta.attrs = tag_attrs;
+                    }
+
+                    for child in handle.children.borrow().iter() {
+                        if let Some(child_id) = build_recursive(child, builder) {
+                            builder.append_child(node, child_id);
+                        }
+                    }
+                    Some(node)
+                }
+                NodeData::Text { contents } => {
+                    let text = contents.borrow();
+                    let trimmed = text.trim();
+                    if trimmed.is_empty() {
+                        return None;
+                    }
+                    let node = builder.create_text(&text, &[]);
+                    builder.node_to_handle.insert(node, handle.clone());
+                    Some(node)
+                }
+                _ => None,
+            }
+        }
+
+        build_recursive(&dom.document, builder).unwrap_or_else(|| {
+            let root = builder.create_element("body", &[]);
+            builder.node_to_handle.insert(root, dom.document.clone());
+            root
+        })
+    }
+}
+
 fn load_fonts(wpt_dir: &Path) -> &'static [fontdue::Font] {
     let mut fonts = Vec::new();
     

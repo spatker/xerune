@@ -15,7 +15,7 @@ use fast_renderer::FastRenderer;
 
 use fontdue::Font;
 
-pub fn run_app<M: Model + 'static, TM: TextMeasurer + 'static>(
+pub fn run_app<M: Model + xerune::ui::TemplateLayout + 'static, TM: TextMeasurer + 'static>(
     title: &str,
     width: u32,
     height: u32,

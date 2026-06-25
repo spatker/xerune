@@ -1,11 +1,11 @@
-use askama::Template;
+// Force rebuild 3
 use fontdue::Font;
 use serde::Deserialize;
 use std::fs;
 use std::time::{Duration, Instant};
 
 // Import from the library and renderer
-use xerune::{Model, Runtime};
+use xerune::{Model, Runtime, XeruneTemplate};
 
 #[cfg(not(feature = "fast-renderer"))]
 use skia_renderer::TinySkiaMeasurer;
@@ -45,21 +45,8 @@ impl Track {
     }
 }
 
-#[derive(Template)]
+#[derive(XeruneTemplate)]
 #[template(path = "music_player.html")]
-struct MusicPlayerTemplate<'a> {
-    tracks: &'a [Track],
-    current_track: &'a Track,
-    is_playing: bool,
-    elapsed_time: String,
-    total_time: String,
-    progress: f32,
-    list_x: f32,
-    player_x: f32,
-    hovered_track: String,
-    active_list_index: usize,
-}
-
 struct MusicPlayerModel {
     tracks: Vec<Track>,
     current_track_index: Option<usize>,
@@ -70,6 +57,12 @@ struct MusicPlayerModel {
     transition_progress: f32,
     hovered_track: String,
     active_list_index: usize,
+    current_track: Track,
+    elapsed_time: String,
+    total_time: String,
+    progress: f32,
+    list_x: f32,
+    player_x: f32,
 }
 
 impl MusicPlayerModel {
@@ -80,6 +73,7 @@ impl MusicPlayerModel {
         let tracks: Vec<Track> = serde_json::from_str(&json_content)
             .expect("Failed to parse music.json");
 
+        let dummy_track = tracks[0].clone();
         Self {
             tracks,
             current_track_index: None,
@@ -90,6 +84,12 @@ impl MusicPlayerModel {
             transition_progress: 0.0,
             hovered_track: String::new(),
             active_list_index: 0,
+            current_track: dummy_track.clone(),
+            elapsed_time: "0:00".to_string(),
+            total_time: dummy_track.duration.clone(),
+            progress: 0.0,
+            list_x: 0.0,
+            player_x: 800.0,
         }
     }
 
@@ -97,6 +97,22 @@ impl MusicPlayerModel {
         let min = seconds / 60;
         let sec = seconds % 60;
         format!("{}:{:02}", min, sec)
+    }
+
+    fn update_derived_fields(&mut self) {
+        let dummy_track = self.tracks[0].clone();
+        let current = self.current_track_index.map(|i| &self.tracks[i]).unwrap_or(&dummy_track);
+        self.current_track = current.clone();
+        let duration = current.duration_seconds();
+        
+        let p = self.transition_progress;
+        let t = p * p * (3.0 - 2.0 * p);
+        
+        self.elapsed_time = Self::format_time(self.elapsed_seconds);
+        self.total_time = current.duration.clone();
+        self.progress = if duration > 0 { self.elapsed_seconds as f32 / duration as f32 } else { 0.0 };
+        self.list_x = -t * 800.0;
+        self.player_x = 800.0 - (t * 800.0);
     }
 }
 
@@ -141,30 +157,6 @@ impl std::str::FromStr for Msg {
 
 impl Model for MusicPlayerModel {
     type Message = Msg;
-
-    fn view(&self) -> String {
-        let dummy_track = &self.tracks[0]; 
-        let current = self.current_track_index.map(|i| &self.tracks[i]).unwrap_or(dummy_track);
-        let duration = current.duration_seconds();
-        
-        // Easing function: smoothstep
-        let p = self.transition_progress;
-        let t = p * p * (3.0 - 2.0 * p);
-        
-        let template = MusicPlayerTemplate {
-            tracks: &self.tracks,
-            current_track: current,
-            is_playing: self.is_playing,
-            elapsed_time: Self::format_time(self.elapsed_seconds),
-            total_time: current.duration.clone(),
-            progress: if duration > 0 { self.elapsed_seconds as f32 / duration as f32 } else { 0.0 },
-            list_x: -t * 800.0,
-            player_x: 800.0 - (t * 800.0),
-            hovered_track: self.hovered_track.clone(),
-            active_list_index: self.active_list_index,
-        };
-        template.render().unwrap()
-    }
 
     fn update(&mut self, msg: Self::Message, context: &mut xerune::Context) {
          match msg {
@@ -336,6 +328,7 @@ impl Model for MusicPlayerModel {
                  }
              }
          }
+         self.update_derived_fields();
     }
 }
 

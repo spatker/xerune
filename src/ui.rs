@@ -1,9 +1,18 @@
 use taffy::prelude::*;
 use taffy::TaffyError;
+
+#[cfg(feature = "dynamic-parser")]
 use html5ever::parse_document;
+#[cfg(feature = "dynamic-parser")]
 use html5ever::tendril::TendrilSink;
+#[cfg(feature = "dynamic-parser")]
 use markup5ever_rcdom::{Handle, NodeData, RcDom};
+
+#[cfg(not(feature = "dynamic-parser"))]
+pub type Handle = ();
+
 use std::collections::HashMap;
+#[cfg(feature = "dynamic-parser")]
 use std::rc::Rc;
 
 #[cfg(feature = "profile")]
@@ -21,8 +30,10 @@ use crate::defaults;
 
 pub type Interaction = String;
 
+#[cfg(feature = "dynamic-parser")]
 struct ElementWrapper(Handle);
 
+#[cfg(feature = "dynamic-parser")]
 impl simplecss::Element for ElementWrapper {
     fn parent_element(&self) -> Option<Self> {
         let parent_weak = self.0.parent.take();
@@ -87,6 +98,7 @@ impl simplecss::Element for ElementWrapper {
     }
 }
 
+#[cfg(feature = "dynamic-parser")]
 fn extract_styles(handle: &Handle, css_accumulator: &mut String) {
     if let NodeData::Element { name, .. } = &handle.data {
         if name.local.as_ref() == "style" {
@@ -103,6 +115,270 @@ fn extract_styles(handle: &Handle, css_accumulator: &mut String) {
     }
 }
 
+pub trait TemplateLayout {
+    fn stylesheet(&self) -> &'static str;
+    fn build_ui(&self, builder: &mut UiBuilder) -> NodeId;
+}
+
+#[derive(Clone, Debug)]
+pub struct NodeMetadata {
+    pub tag: String,
+    pub attrs: Vec<(String, String)>,
+    pub text: Option<String>,
+    pub checked: Option<bool>,
+    pub slider_value: Option<f32>,
+    pub progress_value: Option<f32>,
+    pub progress_max: Option<f32>,
+    pub image_src: Option<String>,
+    pub canvas_id: Option<String>,
+    pub input_text: Option<String>,
+}
+
+pub struct UiBuilder {
+    pub taffy: TaffyTree,
+    pub node_metadata: HashMap<NodeId, NodeMetadata>,
+    pub render_data: HashMap<NodeId, RenderData>,
+    pub interactions: HashMap<NodeId, Interaction>,
+    pub node_to_handle: HashMap<NodeId, Handle>,
+}
+
+impl UiBuilder {
+    pub fn new() -> Self {
+        Self {
+            taffy: TaffyTree::new(),
+            node_metadata: HashMap::new(),
+            render_data: HashMap::new(),
+            interactions: HashMap::new(),
+            node_to_handle: HashMap::new(),
+        }
+    }
+
+    pub fn create_element(&mut self, tag: &str, attrs: &[(&str, &str)]) -> NodeId {
+        let id = self.taffy.new_leaf(Style::default()).unwrap();
+        let metadata = NodeMetadata {
+            tag: tag.to_string(),
+            attrs: attrs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(),
+            text: None,
+            checked: None,
+            slider_value: None,
+            progress_value: None,
+            progress_max: None,
+            image_src: None,
+            canvas_id: None,
+            input_text: None,
+        };
+        self.node_metadata.insert(id, metadata);
+        id
+    }
+
+    pub fn create_text(&mut self, text: &str, attrs: &[(&str, &str)]) -> NodeId {
+        let id = self.taffy.new_leaf(Style::default()).unwrap();
+        let metadata = NodeMetadata {
+            tag: "#text".to_string(),
+            attrs: attrs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(),
+            text: Some(text.to_string()),
+            checked: None,
+            slider_value: None,
+            progress_value: None,
+            progress_max: None,
+            image_src: None,
+            canvas_id: None,
+            input_text: None,
+        };
+        self.node_metadata.insert(id, metadata);
+        id
+    }
+
+    pub fn create_checkbox(&mut self, checked: bool, attrs: &[(&str, &str)]) -> NodeId {
+        let id = self.taffy.new_leaf(Style::default()).unwrap();
+        let metadata = NodeMetadata {
+            tag: "input".to_string(),
+            attrs: attrs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(),
+            text: None,
+            checked: Some(checked),
+            slider_value: None,
+            progress_value: None,
+            progress_max: None,
+            image_src: None,
+            canvas_id: None,
+            input_text: None,
+        };
+        self.node_metadata.insert(id, metadata);
+        id
+    }
+
+    pub fn create_slider(&mut self, value: f32, attrs: &[(&str, &str)]) -> NodeId {
+        let id = self.taffy.new_leaf(Style::default()).unwrap();
+        let metadata = NodeMetadata {
+            tag: "input".to_string(),
+            attrs: attrs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(),
+            text: None,
+            checked: None,
+            slider_value: Some(value),
+            progress_value: None,
+            progress_max: None,
+            image_src: None,
+            canvas_id: None,
+            input_text: None,
+        };
+        self.node_metadata.insert(id, metadata);
+        id
+    }
+
+    pub fn create_input_text(&mut self, value: &str, attrs: &[(&str, &str)]) -> NodeId {
+        let id = self.taffy.new_leaf(Style::default()).unwrap();
+        let metadata = NodeMetadata {
+            tag: "input".to_string(),
+            attrs: attrs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(),
+            text: None,
+            checked: None,
+            slider_value: None,
+            progress_value: None,
+            progress_max: None,
+            image_src: None,
+            canvas_id: None,
+            input_text: Some(value.to_string()),
+        };
+        self.node_metadata.insert(id, metadata);
+        id
+    }
+
+    pub fn create_progress(&mut self, value: f32, max: f32, attrs: &[(&str, &str)]) -> NodeId {
+        let id = self.taffy.new_leaf(Style::default()).unwrap();
+        let metadata = NodeMetadata {
+            tag: "progress".to_string(),
+            attrs: attrs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(),
+            text: None,
+            checked: None,
+            slider_value: None,
+            progress_value: Some(value),
+            progress_max: Some(max),
+            image_src: None,
+            canvas_id: None,
+            input_text: None,
+        };
+        self.node_metadata.insert(id, metadata);
+        id
+    }
+
+    pub fn create_image(&mut self, src: &str, attrs: &[(&str, &str)]) -> NodeId {
+        let id = self.taffy.new_leaf(Style::default()).unwrap();
+        let metadata = NodeMetadata {
+            tag: "img".to_string(),
+            attrs: attrs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(),
+            text: None,
+            checked: None,
+            slider_value: None,
+            progress_value: None,
+            progress_max: None,
+            image_src: Some(src.to_string()),
+            canvas_id: None,
+            input_text: None,
+        };
+        self.node_metadata.insert(id, metadata);
+        id
+    }
+
+    pub fn create_canvas(&mut self, canvas_id: &str, attrs: &[(&str, &str)]) -> NodeId {
+        let id = self.taffy.new_leaf(Style::default()).unwrap();
+        let metadata = NodeMetadata {
+            tag: "canvas".to_string(),
+            attrs: attrs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(),
+            text: None,
+            checked: None,
+            slider_value: None,
+            progress_value: None,
+            progress_max: None,
+            image_src: None,
+            canvas_id: Some(canvas_id.to_string()),
+            input_text: None,
+        };
+        self.node_metadata.insert(id, metadata);
+        id
+    }
+
+    pub fn append_child(&mut self, parent: NodeId, child: NodeId) {
+        let _ = self.taffy.add_child(parent, child);
+    }
+}
+
+struct TaffyElementWrapper<'a> {
+    node: NodeId,
+    taffy: &'a TaffyTree,
+    metadata: &'a HashMap<NodeId, NodeMetadata>,
+}
+
+impl<'a> simplecss::Element for TaffyElementWrapper<'a> {
+    fn parent_element(&self) -> Option<Self> {
+        let mut curr = self.node;
+        while let Some(parent) = self.taffy.parent(curr) {
+            if self.metadata.contains_key(&parent) {
+                return Some(TaffyElementWrapper {
+                    node: parent,
+                    taffy: self.taffy,
+                    metadata: self.metadata,
+                });
+            }
+            curr = parent;
+        }
+        None
+    }
+
+    fn prev_sibling_element(&self) -> Option<Self> {
+        let parent = self.taffy.parent(self.node)?;
+        let siblings = self.taffy.children(parent).ok()?;
+        let idx = siblings.iter().position(|&x| x == self.node)?;
+        if idx > 0 {
+            for &sibling in siblings[..idx].iter().rev() {
+                if self.metadata.contains_key(&sibling) {
+                    return Some(TaffyElementWrapper {
+                        node: sibling,
+                        taffy: self.taffy,
+                        metadata: self.metadata,
+                    });
+                }
+            }
+        }
+        None
+    }
+
+    fn has_local_name(&self, name: &str) -> bool {
+        if let Some(meta) = self.metadata.get(&self.node) {
+            meta.tag == name
+        } else {
+            false
+        }
+    }
+
+    fn attribute_matches(&self, local_name: &str, operator: simplecss::AttributeOperator<'_>) -> bool {
+        if let Some(meta) = self.metadata.get(&self.node) {
+            for (k, v) in &meta.attrs {
+                if k == local_name {
+                    return operator.matches(v);
+                }
+            }
+        }
+        false
+    }
+
+    fn pseudo_class_matches(&self, class: simplecss::PseudoClass<'_>) -> bool {
+        match class {
+            simplecss::PseudoClass::FirstChild => {
+                if let Some(parent) = self.taffy.parent(self.node) {
+                    if let Ok(siblings) = self.taffy.children(parent) {
+                        for &sibling in &siblings {
+                            if self.metadata.contains_key(&sibling) {
+                                return sibling == self.node;
+                            }
+                        }
+                    }
+                }
+                true
+            }
+            _ => false,
+        }
+    }
+}
 
 pub struct Ui {
     pub taffy: TaffyTree,
@@ -116,6 +392,7 @@ pub struct Ui {
 }
 
 impl Ui {
+    #[cfg(feature = "dynamic-parser")]
     pub fn new(
         html: &str, 
         measurer: &impl TextMeasurer,
@@ -169,6 +446,111 @@ impl Ui {
             scroll_offsets: HashMap::new(),
             root,
             node_to_handle,
+            base_styles,
+            keyframes,
+        })
+    }
+
+    fn preprocess_compiled_tree(
+        taffy: &taffy::TaffyTree,
+        node_metadata: &mut HashMap<NodeId, NodeMetadata>,
+        node: NodeId,
+    ) {
+        if let Some(meta) = node_metadata.get(&node) {
+            if meta.tag == "#text" {
+                return;
+            }
+        } else {
+            return;
+        }
+
+        if let Ok(children) = taffy.children(node) {
+            let mut child_elements = Vec::new();
+            for &child in &children {
+                if let Some(child_meta) = node_metadata.get(&child) {
+                    if child_meta.tag != "#text" {
+                        child_elements.push(child);
+                    }
+                }
+                Self::preprocess_compiled_tree(taffy, node_metadata, child);
+            }
+
+            let num_children = child_elements.len();
+            for (i, child) in child_elements.iter().enumerate() {
+                if let Some(child_meta) = node_metadata.get_mut(child) {
+                    let index_class = format!("nth-child-{}", i + 1);
+                    let is_last = i + 1 == num_children;
+                    
+                    let mut found_class = false;
+                    for (k, v) in &mut child_meta.attrs {
+                        if k == "class" {
+                            v.push(' ');
+                            v.push_str(&index_class);
+                            if is_last {
+                                v.push_str(" last-child");
+                            }
+                            found_class = true;
+                            break;
+                        }
+                    }
+                    if !found_class {
+                        let mut class_val = index_class;
+                        if is_last {
+                            class_val.push_str(" last-child");
+                        }
+                        child_meta.attrs.push(("class".to_string(), class_val));
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn new_compiled(
+        model: &impl TemplateLayout,
+        measurer: &impl TextMeasurer,
+        default_style: ContainerStyle,
+        message_validator: &impl Fn(&str) -> bool,
+    ) -> Result<Self, TaffyError> {
+        profile!("ui_new_compiled");
+        let mut builder = UiBuilder::new();
+        let root = model.build_ui(&mut builder);
+
+        let stylesheet_str = model.stylesheet();
+        let keyframes = css::parse_keyframes(stylesheet_str);
+        
+        let re_nth = regex::Regex::new(r":nth-child\(\s*(\d+)\s*\)").unwrap();
+        let css_str = re_nth.replace_all(stylesheet_str, ".nth-child-$1").into_owned();
+        let css_str = css_str.replace(":last-child", ".last-child");
+        let re_slash = regex::Regex::new(r"/[\d\.]+").unwrap();
+        let css_str = re_slash.replace_all(&css_str, "").into_owned();
+        
+        let stylesheet = simplecss::StyleSheet::parse(&css_str);
+
+        // Preprocess the compiled tree to add nth-child and last-child classes before resolving styles
+        Self::preprocess_compiled_tree(&builder.taffy, &mut builder.node_metadata, root);
+
+        let mut base_styles = HashMap::new();
+        
+        resolve_styles(
+            &mut builder.taffy,
+            root,
+            measurer,
+            &mut builder.render_data,
+            &mut builder.interactions,
+            default_style,
+            message_validator,
+            &stylesheet,
+            &builder.node_metadata,
+            &mut base_styles,
+        );
+
+        Ok(Self {
+            taffy: builder.taffy,
+            render_data: builder.render_data,
+            interactions: builder.interactions,
+            scroll_offsets: HashMap::new(),
+            root,
+            node_to_handle: builder.node_to_handle,
             base_styles,
             keyframes,
         })
@@ -318,18 +700,15 @@ impl ParsedAttributes {
     }
 }
 
-fn parse_attributes(
+fn parse_attributes_generic<'a>(
     tag: &str,
-    attrs: &std::cell::Ref<Vec<markup5ever::Attribute>>,
+    attrs: impl IntoIterator<Item = (&'a str, &'a str)>,
     current_style: &mut ContainerStyle,
     layout_style: &mut Style,
     parsed: &mut ParsedAttributes,
     message_validator: &impl Fn(&str) -> bool,
 ) {
-    for attr in attrs.iter() {
-        let name = attr.name.local.as_ref();
-        let value = &attr.value;
-        
+    for (name, value) in attrs {
         match name {
             "id" => {
                 parsed.canvas_id = value.to_string();
@@ -337,14 +716,14 @@ fn parse_attributes(
             },
             "style" => css::parse_inline_style(value, current_style, layout_style),
             "type" if tag == "input" => {
-                if value.as_ref() == "checkbox" {
+                if value == "checkbox" {
                     parsed.element_type = defaults::ElementType::Checkbox;
                     layout_style.size = Size { width: length(20.0), height: length(20.0) };
                     layout_style.margin = taffy::geometry::Rect { left: length(5.0), right: length(5.0), top: length(0.0), bottom: length(0.0) };
-                } else if value.as_ref() == "range" {
+                } else if value == "range" {
                     parsed.element_type = defaults::ElementType::Slider;
                     layout_style.size = Size { width: length(100.0), height: length(20.0) };
-                } else if value.as_ref() == "text" {
+                } else if value == "text" {
                     let text_defaults = defaults::get_default_style("input_text", current_style);
                     parsed.element_type = text_defaults.element_type;
                     *layout_style = text_defaults.taffy_style;
@@ -363,7 +742,13 @@ fn parse_attributes(
                     parsed.progress_max = v;
                 }
             },
-            "checked" => parsed.checkbox_checked = true,
+            "checked" => {
+                if value == "false" {
+                    parsed.checkbox_checked = false;
+                } else {
+                    parsed.checkbox_checked = true;
+                }
+            },
             "width" => {
                  if let Ok(w) = value.parse::<f32>() {
                      layout_style.size.width = length(w);
@@ -386,6 +771,25 @@ fn parse_attributes(
              }
         }
     }
+}
+
+#[cfg(feature = "dynamic-parser")]
+fn parse_attributes(
+    tag: &str,
+    attrs: &std::cell::Ref<Vec<markup5ever::Attribute>>,
+    current_style: &mut ContainerStyle,
+    layout_style: &mut Style,
+    parsed: &mut ParsedAttributes,
+    message_validator: &impl Fn(&str) -> bool,
+) {
+    parse_attributes_generic(
+        tag,
+        attrs.iter().map(|attr| (attr.name.local.as_ref(), attr.value.as_ref())),
+        current_style,
+        layout_style,
+        parsed,
+        message_validator,
+    );
 }
 
 fn process_element_type(
@@ -419,6 +823,7 @@ fn process_element_type(
     }
 }
 
+#[cfg(feature = "dynamic-parser")]
 fn dom_to_taffy(
     taffy: &mut TaffyTree,
     handle: &Handle,
@@ -1117,6 +1522,504 @@ pub fn hit_test_recursive(
     None
 }
 
+pub(crate) fn resolve_styles(
+    taffy: &mut TaffyTree,
+    node: NodeId,
+    text_measurer: &impl TextMeasurer,
+    render_data: &mut HashMap<NodeId, RenderData>,
+    interactions: &mut HashMap<NodeId, Interaction>,
+    parent_style: ContainerStyle,
+    message_validator: &impl Fn(&str) -> bool,
+    stylesheet: &simplecss::StyleSheet<'_>,
+    node_metadata: &HashMap<NodeId, NodeMetadata>,
+    base_styles: &mut HashMap<NodeId, (Style, ContainerStyle)>,
+) {
+    let mut current_style = parent_style.clone();
+    current_style.background_color = None;
+    current_style.background_gradient = None;
+    current_style.border_width = 0.0;
+    current_style.border_radius = 0.0;
+    current_style.border_color = None;
+    current_style.overflow = Overflow::Visible;
+    current_style.animation_name = None;
+    current_style.animation_duration = 0.0;
+    current_style.animation_timing_function = "ease".to_string();
+    current_style.animation_delay = 0.0;
+    current_style.animation_iteration_count = crate::style::AnimationIterationCount::Count(1.0);
+    current_style.animation_direction = "normal".to_string();
+    current_style.animation_fill_mode = "none".to_string();
+    current_style.animation_play_state = "running".to_string();
+
+    let meta = match node_metadata.get(&node) {
+        Some(m) => m,
+        None => return,
+    };
+
+    if meta.tag == "#text" {
+        if let Some(ref text) = meta.text {
+            let normalized = text.split_whitespace().collect::<Vec<&str>>().join(" ");
+            if !normalized.is_empty() {
+                let (width, height) = text_measurer.measure_text(&normalized, current_style.font_size, current_style.weight);
+                let text_layout_style = Style {
+                    size: Size { width: length(width), height: length(height) },
+                    ..Style::default()
+                };
+                let _ = taffy.set_style(node, text_layout_style.clone());
+                render_data.insert(node, RenderData::Text(normalized, current_style.clone()));
+                base_styles.insert(node, (text_layout_style, current_style));
+            }
+        }
+        return;
+    }
+
+    let tag = &meta.tag;
+    let defaults = defaults::get_default_style(tag, &current_style);
+    let mut layout_style = defaults.taffy_style;
+    current_style = defaults.container_style;
+
+    let mut parsed = ParsedAttributes::new(defaults.element_type);
+
+    if let Some(checked) = meta.checked {
+        parsed.checkbox_checked = checked;
+    }
+    if let Some(slider_value) = meta.slider_value {
+        parsed.slider_value = slider_value;
+    }
+    if let Some(progress_value) = meta.progress_value {
+        parsed.progress_value = progress_value;
+    }
+    if let Some(progress_max) = meta.progress_max {
+        parsed.progress_max = progress_max;
+    }
+    if let Some(ref image_src) = meta.image_src {
+        parsed.image_src = image_src.clone();
+    }
+    if let Some(ref canvas_id) = meta.canvas_id {
+        parsed.canvas_id = canvas_id.clone();
+    }
+    if let Some(ref input_text) = meta.input_text {
+        parsed.text_input_text = Some(input_text.clone());
+    }
+
+    let el_wrapper = TaffyElementWrapper {
+        node,
+        taffy,
+        metadata: node_metadata,
+    };
+    for rule in &stylesheet.rules {
+        if rule.selector.matches(&el_wrapper) {
+            for decl in &rule.declarations {
+                css::apply_declaration(&decl.name.to_lowercase(), decl.value, &mut current_style, &mut layout_style);
+            }
+        }
+    }
+
+    parse_attributes_generic(
+        tag,
+        meta.attrs.iter().map(|(k, v)| (k.as_str(), v.as_str())),
+        &mut current_style,
+        &mut layout_style,
+        &mut parsed,
+        message_validator,
+    );
+
+    if let Some(d) = current_style.inline_size {
+        layout_style.size.width = d;
+        if d == taffy::style::Dimension::length(d.value()) {
+            current_style.width = Some(d.value());
+        }
+    }
+    if let Some(d) = current_style.block_size {
+        layout_style.size.height = d;
+        if d == taffy::style::Dimension::length(d.value()) {
+            current_style.height = Some(d.value());
+        }
+    }
+    if let Some(d) = current_style.min_inline_size {
+        layout_style.min_size.width = d;
+    }
+    if let Some(d) = current_style.max_inline_size {
+        layout_style.max_size.width = d;
+    }
+    if let Some(d) = current_style.min_block_size {
+        layout_style.min_size.height = d;
+    }
+    if let Some(d) = current_style.max_block_size {
+        layout_style.max_size.height = d;
+    }
+
+    let add_h = current_style.padding_left + current_style.padding_right + current_style.border_width * 2.0;
+    let add_v = current_style.padding_top + current_style.padding_bottom + current_style.border_width * 2.0;
+
+    if current_style.box_sizing == BoxSizing::ContentBox {
+        layout_style.size.width = to_border_box(layout_style.size.width, add_h);
+        layout_style.size.height = to_border_box(layout_style.size.height, add_v);
+    } else {
+        layout_style.min_size.width = to_content_box(layout_style.min_size.width, add_h);
+        layout_style.min_size.height = to_content_box(layout_style.min_size.height, add_v);
+        layout_style.max_size.width = to_content_box(layout_style.max_size.width, add_h);
+        layout_style.max_size.height = to_content_box(layout_style.max_size.height, add_v);
+    }
+
+    if layout_style.position == Position::Absolute {
+        enum Alignment {
+            Start,
+            End,
+            Center,
+        }
+
+        if layout_style.inset.left.is_auto() && layout_style.inset.right.is_auto() {
+            let is_parent_row = parent_style.flex_direction == FlexDirection::Row || parent_style.flex_direction == FlexDirection::RowReverse;
+            let h_align = if is_parent_row {
+                let jc = parent_style.justify_content.unwrap_or(MyJustifyContent::FlexStart);
+                match jc {
+                    MyJustifyContent::FlexStart => {
+                        if (parent_style.flex_direction == FlexDirection::Row) ^ (parent_style.direction == Direction::Rtl) {
+                            Alignment::Start
+                        } else {
+                            Alignment::End
+                        }
+                    }
+                    MyJustifyContent::FlexEnd => {
+                        if (parent_style.flex_direction == FlexDirection::Row) ^ (parent_style.direction == Direction::Rtl) {
+                            Alignment::End
+                        } else {
+                            Alignment::Start
+                        }
+                    }
+                    MyJustifyContent::Center | MyJustifyContent::SpaceAround | MyJustifyContent::SpaceEvenly => {
+                        Alignment::Center
+                    }
+                    MyJustifyContent::SpaceBetween => {
+                        if (parent_style.flex_direction == FlexDirection::Row) ^ (parent_style.direction == Direction::Rtl) {
+                            Alignment::Start
+                        } else {
+                            Alignment::End
+                        }
+                    }
+                    MyJustifyContent::Start => {
+                        if parent_style.direction == Direction::Rtl {
+                            Alignment::End
+                        } else {
+                            Alignment::Start
+                        }
+                    }
+                    MyJustifyContent::End => {
+                        if parent_style.direction == Direction::Rtl {
+                            Alignment::Start
+                        } else {
+                            Alignment::End
+                        }
+                    }
+                    MyJustifyContent::Left => {
+                        Alignment::Start
+                    }
+                    MyJustifyContent::Right => {
+                        Alignment::End
+                    }
+                }
+            } else {
+                let align = layout_style.align_self.map(|s| match s {
+                    AlignSelf::FlexStart | AlignSelf::Start => AlignItems::FlexStart,
+                    AlignSelf::FlexEnd | AlignSelf::End => AlignItems::FlexEnd,
+                    AlignSelf::Center => AlignItems::Center,
+                    AlignSelf::Baseline => AlignItems::Baseline,
+                    AlignSelf::Stretch => AlignItems::Stretch,
+                }).unwrap_or_else(|| parent_style.align_items.unwrap_or(AlignItems::Stretch));
+
+                match align {
+                    AlignItems::FlexStart | AlignItems::Stretch | AlignItems::Baseline | AlignItems::Start => {
+                        if (parent_style.direction == Direction::Rtl) ^ (parent_style.flex_wrap == FlexWrap::WrapReverse) {
+                            Alignment::End
+                        } else {
+                            Alignment::Start
+                        }
+                    }
+                    AlignItems::FlexEnd | AlignItems::End => {
+                        if (parent_style.direction == Direction::Rtl) ^ (parent_style.flex_wrap == FlexWrap::WrapReverse) {
+                            Alignment::Start
+                        } else {
+                            Alignment::End
+                        }
+                    }
+                    AlignItems::Center => {
+                        Alignment::Center
+                    }
+                }
+            };
+
+            match h_align {
+                Alignment::Start => {
+                    layout_style.inset.left = length(parent_style.padding_left);
+                }
+                Alignment::End => {
+                    if let (Some(pw), Some(cw)) = (parent_style.width, current_style.width) {
+                        layout_style.inset.left = length(pw - cw + parent_style.padding_left);
+                    } else {
+                        layout_style.inset.right = length(parent_style.padding_right);
+                    }
+                }
+                Alignment::Center => {
+                    if let (Some(pw), Some(cw)) = (parent_style.width, current_style.width) {
+                        layout_style.inset.left = length((pw - cw) / 2.0 + parent_style.padding_left);
+                    } else {
+                        layout_style.inset.left = length(parent_style.padding_left);
+                    }
+                }
+            }
+        }
+
+        if layout_style.inset.top.is_auto() && layout_style.inset.bottom.is_auto() {
+            let is_parent_row = parent_style.flex_direction == FlexDirection::Row || parent_style.flex_direction == FlexDirection::RowReverse;
+            let v_align = if !is_parent_row {
+                let jc = parent_style.justify_content.unwrap_or(MyJustifyContent::FlexStart);
+                match jc {
+                    MyJustifyContent::FlexStart => {
+                        if parent_style.flex_direction == FlexDirection::Column {
+                            Alignment::Start
+                        } else {
+                            Alignment::End
+                        }
+                    }
+                    MyJustifyContent::FlexEnd => {
+                        if parent_style.flex_direction == FlexDirection::Column {
+                            Alignment::End
+                        } else {
+                            Alignment::Start
+                        }
+                    }
+                    MyJustifyContent::Center | MyJustifyContent::SpaceAround | MyJustifyContent::SpaceEvenly => {
+                        Alignment::Center
+                    }
+                    MyJustifyContent::SpaceBetween => {
+                        if parent_style.flex_direction == FlexDirection::Column {
+                            Alignment::Start
+                        } else {
+                            Alignment::End
+                        }
+                    }
+                    MyJustifyContent::Start | MyJustifyContent::Left | MyJustifyContent::Right => {
+                        Alignment::Start
+                    }
+                    MyJustifyContent::End => {
+                        Alignment::End
+                    }
+                }
+            } else {
+                let align = layout_style.align_self.map(|s| match s {
+                    AlignSelf::FlexStart | AlignSelf::Start => AlignItems::FlexStart,
+                    AlignSelf::FlexEnd | AlignSelf::End => AlignItems::FlexEnd,
+                    AlignSelf::Center => AlignItems::Center,
+                    AlignSelf::Baseline => AlignItems::Baseline,
+                    AlignSelf::Stretch => AlignItems::Stretch,
+                }).unwrap_or_else(|| parent_style.align_items.unwrap_or(AlignItems::Stretch));
+
+                match align {
+                    AlignItems::FlexStart | AlignItems::Stretch | AlignItems::Baseline | AlignItems::Start => {
+                        if parent_style.flex_wrap == FlexWrap::WrapReverse {
+                            Alignment::End
+                        } else {
+                            Alignment::Start
+                        }
+                    }
+                    AlignItems::FlexEnd | AlignItems::End => {
+                        if parent_style.flex_wrap == FlexWrap::WrapReverse {
+                            Alignment::Start
+                        } else {
+                            Alignment::End
+                        }
+                    }
+                    AlignItems::Center => {
+                        Alignment::Center
+                    }
+                }
+            };
+
+            match v_align {
+                Alignment::Start => {
+                    layout_style.inset.top = length(parent_style.padding_top);
+                }
+                Alignment::End => {
+                    if let (Some(ph), Some(ch)) = (parent_style.height, current_style.height) {
+                        layout_style.inset.top = length(ph - ch + parent_style.padding_top);
+                    } else {
+                        layout_style.inset.bottom = length(parent_style.padding_bottom);
+                    }
+                }
+                Alignment::Center => {
+                    if let (Some(ph), Some(ch)) = (parent_style.height, current_style.height) {
+                        layout_style.inset.top = length((ph - ch) / 2.0 + parent_style.padding_top);
+                    } else {
+                        layout_style.inset.top = length(parent_style.padding_top);
+                    }
+                }
+            }
+        }
+    }
+
+    let children = taffy.children(node).unwrap_or_default();
+    for &child in &children {
+        resolve_styles(
+            taffy,
+            child,
+            text_measurer,
+            render_data,
+            interactions,
+            current_style.clone(),
+            message_validator,
+            stylesheet,
+            node_metadata,
+            base_styles,
+        );
+    }
+
+    if current_style.display == Display::Flex {
+        if let Ok(mut chs) = taffy.children(node) {
+            chs.sort_by_key(|child_id| {
+                render_data.get(child_id).map(|data| data.style().order).unwrap_or(0)
+            });
+            let _ = taffy.set_children(node, &chs);
+        }
+    }
+
+    if current_style.display == Display::None {
+        layout_style.display = taffy::style::Display::None;
+    } else if current_style.display != Display::Flex {
+        let mut has_inline_child = false;
+        if let Ok(chs) = taffy.children(node) {
+            for child_id in &chs {
+                if let Some(child_data) = render_data.get(child_id) {
+                    match child_data {
+                        RenderData::Container(child_style) => {
+                            if child_style.display == Display::InlineBlock || child_style.is_floated {
+                                has_inline_child = true;
+                                break;
+                            }
+                        }
+                        _ => {
+                            has_inline_child = true;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        if has_inline_child || tag == "tr" {
+            layout_style.flex_direction = FlexDirection::Row;
+            layout_style.flex_wrap = FlexWrap::Wrap;
+            if let Some(align) = current_style.text_align {
+                match align {
+                    TextAlign::Right => layout_style.justify_content = Some(JustifyContent::FlexEnd),
+                    TextAlign::Center => layout_style.justify_content = Some(JustifyContent::Center),
+                    TextAlign::Left => layout_style.justify_content = Some(JustifyContent::FlexStart),
+                }
+            }
+        } else {
+            layout_style.flex_direction = FlexDirection::Column;
+        }
+    }
+
+    if parent_style.display != Display::Flex && current_style.display == Display::Block {
+        if layout_style.size.width.is_auto() {
+            layout_style.size.width = Dimension::percent(1.0);
+        }
+    }
+
+    layout_style.border = taffy::geometry::Rect {
+        left: length(current_style.border_width),
+        right: length(current_style.border_width),
+        top: length(current_style.border_width),
+        bottom: length(current_style.border_width),
+    };
+
+    if current_style.direction == Direction::Rtl {
+        match layout_style.flex_direction {
+            FlexDirection::Row | FlexDirection::RowReverse => {
+                layout_style.flex_direction = match layout_style.flex_direction {
+                    FlexDirection::Row => FlexDirection::RowReverse,
+                    FlexDirection::RowReverse => FlexDirection::Row,
+                    other => other,
+                };
+                layout_style.justify_content = match layout_style.justify_content {
+                    Some(JustifyContent::FlexStart) | None => Some(JustifyContent::FlexEnd),
+                    Some(JustifyContent::FlexEnd) => Some(JustifyContent::FlexStart),
+                    other => other,
+                };
+            }
+            FlexDirection::Column | FlexDirection::ColumnReverse => {
+                layout_style.align_items = match layout_style.align_items {
+                    Some(AlignItems::FlexStart) | None => Some(AlignItems::FlexEnd),
+                    Some(AlignItems::FlexEnd) => Some(AlignItems::FlexStart),
+                    other => other,
+                };
+                layout_style.align_content = match layout_style.align_content {
+                    Some(AlignContent::FlexStart) | None => Some(AlignContent::FlexEnd),
+                    Some(AlignContent::FlexEnd) => Some(AlignContent::FlexStart),
+                    other => other,
+                };
+            }
+        }
+    }
+
+    if !layout_style.max_size.height.is_auto() {
+        let val = layout_style.max_size.height.value();
+        if layout_style.max_size.height == Dimension::length(val) {
+            layout_style.max_size.height = Dimension::length(val + current_style.border_width * 2.0 + current_style.padding_top + current_style.padding_bottom);
+        }
+    }
+    if !layout_style.max_size.width.is_auto() {
+        let val = layout_style.max_size.width.value();
+        if layout_style.max_size.width == Dimension::length(val) {
+            layout_style.max_size.width = Dimension::length(val + current_style.border_width * 2.0 + current_style.padding_left + current_style.padding_right);
+        }
+    }
+    if !layout_style.min_size.height.is_auto() {
+        let val = layout_style.min_size.height.value();
+        if layout_style.min_size.height == Dimension::length(val) {
+            layout_style.min_size.height = Dimension::length(val + current_style.border_width * 2.0 + current_style.padding_top + current_style.padding_bottom);
+        }
+    }
+    if !layout_style.min_size.width.is_auto() {
+        let val = layout_style.min_size.width.value();
+        if layout_style.min_size.width == Dimension::length(val) {
+            layout_style.min_size.width = Dimension::length(val + current_style.border_width * 2.0 + current_style.padding_left + current_style.padding_right);
+        }
+    }
+
+    let is_parent_flex = parent_style.display == Display::Flex;
+    if is_parent_flex {
+        let resolved_align = match layout_style.align_self {
+            None => parent_style.align_items.unwrap_or(AlignItems::Stretch),
+            Some(AlignSelf::FlexStart) => AlignItems::FlexStart,
+            Some(AlignSelf::FlexEnd) => AlignItems::FlexEnd,
+            Some(AlignSelf::Center) => AlignItems::Center,
+            Some(AlignSelf::Baseline) => AlignItems::Baseline,
+            Some(AlignSelf::Stretch) => AlignItems::Stretch,
+            Some(AlignSelf::Start) => AlignItems::Start,
+            Some(AlignSelf::End) => AlignItems::End,
+        };
+        if resolved_align == AlignItems::Baseline {
+            let is_column = parent_style.flex_direction == FlexDirection::Column 
+                || parent_style.flex_direction == FlexDirection::ColumnReverse;
+            if is_column {
+                layout_style.align_self = Some(AlignSelf::FlexStart);
+            }
+        }
+    }
+
+    let _ = taffy.set_style(node, layout_style.clone());
+
+    process_element_type(node, &parsed, current_style.clone(), render_data);
+
+    if let Some(interaction) = parsed.interaction_id {
+        interactions.insert(node, interaction);
+    }
+
+    base_styles.insert(node, (layout_style, current_style));
+}
+
+#[cfg(feature = "dynamic-parser")]
 fn preprocess_dom(handle: &Handle) {
     if let NodeData::Element { .. } = handle.data {
         // First, recursively process all child element nodes

@@ -1,18 +1,12 @@
-use askama::Template;
 use fontdue::Font;
-
-use xerune::{Model, Runtime};
+use xerune::{Model, Runtime, XeruneTemplate};
 use skia_renderer::TinySkiaMeasurer;
 
 #[path = "support/mod.rs"]
 mod support;
 
-#[derive(Template)]
+#[derive(XeruneTemplate)]
 #[template(path = "calculator.html")]
-struct CalculatorTemplate<'a> {
-    display: &'a str,
-}
-
 struct CalculatorModel {
     display: String,
     previous_value: Option<f64>,
@@ -122,13 +116,6 @@ impl std::str::FromStr for Msg {
 
 impl Model for CalculatorModel {
     type Message = Msg;
-
-    fn view(&self) -> String {
-        let template = CalculatorTemplate {
-            display: &self.display,
-        };
-        template.render().unwrap()
-    }
 
     fn update(&mut self, msg: Self::Message, _context: &mut xerune::Context) {
         match msg {

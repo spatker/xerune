@@ -15,7 +15,7 @@ use {
     std::thread,
 };
 
-pub fn run_app<M: Model + 'static, TM: TextMeasurer + 'static>(
+pub fn run_app<M: Model + xerune::ui::TemplateLayout + 'static, TM: TextMeasurer + 'static>(
     _title: &str, // Unused in FB
     _width: u32,
     _height: u32,
@@ -214,7 +214,7 @@ pub fn run_app<M: Model + 'static, TM: TextMeasurer + 'static>(
 }
 
 #[cfg(all(target_os = "linux", feature = "linuxfb", feature = "evdev"))]
-fn render_16bit_fallback<M: Model, TM: TextMeasurer>(
+fn render_16bit_fallback<M: Model + xerune::ui::TemplateLayout, TM: TextMeasurer>(
     runtime: &mut Runtime<M, TM>,
     w: u32,
     h: u32,

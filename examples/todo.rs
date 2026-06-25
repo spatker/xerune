@@ -1,4 +1,5 @@
-use askama::Template;
+// Force rebuild 2
+use xerune::XeruneTemplate;
 use fontdue::Font;
 use xerune::{Runtime, Model};
 
@@ -10,7 +11,7 @@ use fast_renderer::FastMeasurer;
 #[path = "support/mod.rs"]
 mod support;
 
-#[derive(Template)]
+#[derive(XeruneTemplate)]
 #[template(path = "todo_list.html")]
 struct TodoList {
     items: Vec<TodoItem>,
@@ -61,10 +62,6 @@ impl std::str::FromStr for TodoMsg {
 
 impl Model for TodoList {
     type Message = TodoMsg;
-
-    fn view(&self) -> String {
-        self.render().unwrap()
-    }
 
     fn update(&mut self, msg: Self::Message, context: &mut xerune::Context) {
         match msg {

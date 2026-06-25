@@ -1,9 +1,8 @@
-use askama::Template;
 use fontdue::Font;
 use std::collections::HashSet;
 use std::time::Instant;
 
-use xerune::{Model, Runtime};
+use xerune::{Model, Runtime, XeruneTemplate};
 use skia_renderer::TinySkiaMeasurer;
 use std::f32::consts::PI;
 
@@ -47,6 +46,8 @@ struct Particle {
     color: String,
 }
 
+#[derive(XeruneTemplate)]
+#[template(path = "breakout.html")]
 struct BreakoutModel {
     paddle_x: f32,
     ball_x: f32,
@@ -59,26 +60,14 @@ struct BreakoutModel {
     last_tick: Instant,
     game_over: bool,
     won: bool,
-}
-
-#[derive(Template)]
-#[template(path = "breakout.html")]
-struct BreakoutTemplate<'a> {
-    paddle_x: f32,
     paddle_y: f32,
     paddle_w: f32,
     paddle_h: f32,
-    ball_x: f32,
-    ball_y: f32,
     ball_s: f32,
-    blocks: &'a [Block],
     block_w: f32,
     block_h: f32,
-    particles: &'a [Particle],
     game_width: f32,
     game_height: f32,
-    game_over: bool,
-    won: bool,
 }
 
 impl BreakoutModel {
@@ -109,6 +98,14 @@ impl BreakoutModel {
             last_tick: Instant::now(),
             game_over: false,
             won: false,
+            paddle_y: PADDLE_Y,
+            paddle_w: PADDLE_WIDTH,
+            paddle_h: PADDLE_HEIGHT,
+            ball_s: BALL_SIZE,
+            block_w: BLOCK_WIDTH,
+            block_h: BLOCK_HEIGHT,
+            game_width: GAME_WIDTH,
+            game_height: GAME_HEIGHT,
         }
     }
 }
@@ -138,27 +135,6 @@ impl std::str::FromStr for Msg {
 
 impl Model for BreakoutModel {
     type Message = Msg;
-
-    fn view(&self) -> String {
-        let template = BreakoutTemplate {
-            paddle_x: self.paddle_x,
-            paddle_y: PADDLE_Y,
-            paddle_w: PADDLE_WIDTH,
-            paddle_h: PADDLE_HEIGHT,
-            ball_x: self.ball_x,
-            ball_y: self.ball_y,
-            ball_s: BALL_SIZE,
-            blocks: &self.blocks,
-            block_w: BLOCK_WIDTH,
-            block_h: BLOCK_HEIGHT,
-            particles: &self.particles,
-            game_width: GAME_WIDTH,
-            game_height: GAME_HEIGHT,
-            game_over: self.game_over,
-            won: self.won,
-        };
-        template.render().unwrap()
-    }
 
     fn update(&mut self, msg: Self::Message, _context: &mut xerune::Context) {
         match msg {

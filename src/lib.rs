@@ -10,12 +10,14 @@ pub mod defaults;
 pub use graphics::{Color, LinearGradient, Rect, Canvas, Context, DrawCommand, TextMeasurer, Renderer};
 pub use style::{Overflow, ContainerStyle, RenderData, Display, TextAlign, Direction, WritingMode, FlexDirection, FlexWrap, AlignContent, AlignItems, MyJustifyContent, Position, BoxSizing};
 pub use model::{Model, InputEvent};
-pub use ui::{Interaction, Ui};
+pub use ui::{Interaction, Ui, TemplateLayout, UiBuilder};
 pub use runtime::Runtime;
+pub use xerune_derive::XeruneTemplate;
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    extern crate self as xerune;
     use taffy::prelude::TaffyMaxContent;
 
     struct MockModel;
@@ -35,16 +37,21 @@ mod tests {
 
     impl Model for MockModel {
         type Message = MockMsg;
-        
-        fn view(&self) -> String {
-            // Use simple structure to ensure deterministic NodeIds
-            r#"
-            <div style="height: 100px; overflow: scroll;">
-                <div style="height: 200px; flex-shrink: 0;" data-on-click="test_interaction">Content</div>
-            </div>
-            "#.to_string()
-        }
         fn update(&mut self, _msg: Self::Message, _context: &mut Context) {}
+    }
+
+    impl TemplateLayout for MockModel {
+        fn stylesheet(&self) -> &'static str {
+            ""
+        }
+        fn build_ui(&self, builder: &mut UiBuilder) -> taffy::NodeId {
+            let parent = builder.create_element("div", &[("style", "height: 100px; overflow: scroll;")]);
+            let child = builder.create_element("div", &[("style", "height: 200px; flex-shrink: 0;"), ("data-on-click", "test_interaction")]);
+            let text = builder.create_text("Content", &[]);
+            builder.append_child(child, text);
+            builder.append_child(parent, child);
+            parent
+        }
     }
 
     struct MockMeasurer;
@@ -130,27 +137,39 @@ mod tests {
     struct SelectorMockModel;
     impl Model for SelectorMockModel {
         type Message = MockMsg;
-        fn view(&self) -> String {
-            r#"
-            <div>
-                <style>
-                    div {
-                        color: #ff0000;
-                        background-color: #00ff00;
-                    }
-                    .blue-text {
-                        color: #0000ff;
-                    }
-                    #my-id {
-                        font-size: 20px;
-                    }
-                </style>
-                <div class="blue-text" id="my-id">Styled Element</div>
-                <div class="blue-text" style="color: #ffffff;">Inline Override</div>
-            </div>
-            "#.to_string()
-        }
         fn update(&mut self, _msg: Self::Message, _context: &mut Context) {}
+    }
+
+    impl TemplateLayout for SelectorMockModel {
+        fn stylesheet(&self) -> &'static str {
+            r#"
+            div {
+                color: #ff0000;
+                background-color: #00ff00;
+            }
+            .blue-text {
+                color: #0000ff;
+            }
+            #my-id {
+                font-size: 20px;
+            }
+            "#
+        }
+        fn build_ui(&self, builder: &mut UiBuilder) -> taffy::NodeId {
+            let parent = builder.create_element("div", &[]);
+            
+            let child1 = builder.create_element("div", &[("class", "blue-text"), ("id", "my-id")]);
+            let text1 = builder.create_text("Styled Element", &[]);
+            builder.append_child(child1, text1);
+            builder.append_child(parent, child1);
+
+            let child2 = builder.create_element("div", &[("class", "blue-text"), ("style", "color: #ffffff;")]);
+            let text2 = builder.create_text("Inline Override", &[]);
+            builder.append_child(child2, text2);
+            builder.append_child(parent, child2);
+
+            parent
+        }
     }
 
     #[test]
@@ -202,4 +221,148 @@ mod tests {
         assert!(found_inline_override, "Should have parsed and found 'Inline Override' text");
         assert!(found_green_container, "Should have found container with green background color");
     }
+
+    #[derive(XeruneTemplate)]
+    #[template(path = "test_template.html")]
+    struct TestMacroModel {
+        value: String,
+        items: Vec<String>,
+    }
+
+    impl Model for TestMacroModel {
+        type Message = MockMsg;
+        fn update(&mut self, _msg: Self::Message, _context: &mut Context) {}
+    }
+
+    #[test]
+    fn test_macro_layout_generation() {
+        let model = TestMacroModel {
+            value: "Hello Macro".to_string(),
+            items: vec!["A".to_string(), "B".to_string()],
+        };
+        let measurer = MockMeasurer;
+        let mut runtime = Runtime::new(model, measurer);
+        
+        runtime.compute_layout(taffy::geometry::Size::MAX_CONTENT);
+
+        let mut found_hello_macro = false;
+        let mut found_a = false;
+        let mut found_b = false;
+        
+        for data in runtime.ui.render_data.values() {
+            match data {
+                RenderData::Text(text, style) => {
+                    if text == "Hello Macro" {
+                        found_hello_macro = true;
+                        assert_eq!(style.color, Color::from_rgba8(0, 0, 255, 255));
+                    } else if text == "A" {
+                        found_a = true;
+                        assert_eq!(style.color, Color::from_rgba8(255, 0, 0, 255));
+                    } else if text == "B" {
+                        found_b = true;
+                        assert_eq!(style.color, Color::from_rgba8(255, 0, 0, 255));
+                    }
+                }
+                _ => {}
+            }
+        }
+        
+        assert!(found_hello_macro, "Should find 'Hello Macro' with class style applied");
+        assert!(found_a, "Should find item 'A' within compiled loop");
+        assert!(found_b, "Should find item 'B' within compiled loop");
+    }
+
+    #[derive(Clone)]
+    struct TodoItem {
+        title: String,
+        completed: bool,
+    }
+
+    #[derive(XeruneTemplate)]
+    #[template(path = "todo_list.html")]
+    struct TestTodoModel {
+        items: Vec<TodoItem>,
+        active_item: usize,
+        new_item_title: String,
+    }
+
+    impl Model for TestTodoModel {
+        type Message = MockMsg;
+        fn update(&mut self, _msg: Self::Message, _context: &mut Context) {}
+    }
+
+    fn print_layout_tree(
+        taffy: &taffy::TaffyTree,
+        node: taffy::NodeId,
+        metadata: &std::collections::HashMap<taffy::NodeId, ui::NodeMetadata>,
+        render_data: &std::collections::HashMap<taffy::NodeId, RenderData>,
+        interactions: &std::collections::HashMap<taffy::NodeId, String>,
+        indent: usize,
+    ) {
+        let prefix = "  ".repeat(indent);
+        let tag = metadata.get(&node).map(|m| m.tag.as_str()).unwrap_or("unknown");
+        let layout = taffy.layout(node).unwrap();
+        let class = metadata.get(&node).and_then(|m| m.attrs.iter().find(|(k,_)| k == "class").map(|(_,v)| v.as_str())).unwrap_or("");
+        let interaction = interactions.get(&node).map(|s| s.as_str()).unwrap_or("");
+        let text = metadata.get(&node).and_then(|m| m.text.as_ref().map(|t| t.as_str())).unwrap_or("");
+        println!("{}{} [class='{}'] layout={:?} interaction='{}' text='{}'", prefix, tag, class, layout, interaction, text);
+        if let Ok(children) = taffy.children(node) {
+            for child in children {
+                print_layout_tree(taffy, child, metadata, render_data, interactions, indent + 1);
+            }
+        }
+    }
+
+    #[test]
+    fn test_todo_layout_comparison() {
+        let model = TestTodoModel {
+            items: vec![
+                TodoItem { title: "Item 1".to_string(), completed: false },
+                TodoItem { title: "Item 2".to_string(), completed: true },
+            ],
+            active_item: 0,
+            new_item_title: "abc".to_string(),
+        };
+        let measurer = MockMeasurer;
+        let mut builder = ui::UiBuilder::new();
+        let root = model.build_ui(&mut builder);
+
+        let stylesheet_str = model.stylesheet();
+        let stylesheet = simplecss::StyleSheet::parse(stylesheet_str);
+        let mut base_styles = std::collections::HashMap::new();
+
+        ui::resolve_styles(
+            &mut builder.taffy,
+            root,
+            &measurer,
+            &mut builder.render_data,
+            &mut builder.interactions,
+            ContainerStyle::default(),
+            &|_| true,
+            &stylesheet,
+            &builder.node_metadata,
+            &mut base_styles,
+        );
+
+        let mut ui = ui::Ui {
+            taffy: builder.taffy,
+            render_data: builder.render_data,
+            interactions: builder.interactions,
+            scroll_offsets: std::collections::HashMap::new(),
+            root,
+            node_to_handle: std::collections::HashMap::new(),
+            base_styles,
+            keyframes: std::collections::HashMap::new(),
+        };
+
+        ui.compute_layout(taffy::geometry::Size {
+            width: taffy::prelude::AvailableSpace::Definite(800.0),
+            height: taffy::prelude::AvailableSpace::Definite(600.0),
+        }).unwrap();
+
+        println!("--- COMPILED LAYOUT TREE ---");
+        print_layout_tree(&ui.taffy, ui.root, &builder.node_metadata, &ui.render_data, &ui.interactions, 0);
+        println!("----------------------------");
+    }
 }
+

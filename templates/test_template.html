@@ -1,0 +1,15 @@
+<style>
+    div {
+        color: #ff0000;
+        background-color: #00ff00;
+    }
+    .blue-text {
+        color: #0000ff;
+    }
+</style>
+<div>
+    <span class="blue-text">{{ value }}</span>
+    {% for item in items %}
+        <span>{{ item }}</span>
+    {% endfor %}
+</div>

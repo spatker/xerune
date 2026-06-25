@@ -1,7 +1,6 @@
-use askama::Template;
 use fontdue::Font;
 use std::time::Instant;
-use xerune::{Model, Runtime};
+use xerune::{Model, Runtime, XeruneTemplate};
 use skia_renderer::TinySkiaMeasurer;
 
 #[path = "support/mod.rs"]
@@ -40,21 +39,16 @@ struct Item {
     text: String,
 }
 
-#[derive(Template)]
+#[derive(XeruneTemplate)]
 #[template(path = "animation.html")]
-struct AnimationTemplate<'a> {
-    items: &'a [Item],
-    fps: u32,
-    item_count: usize,
-    render_time_ms: String,
-}
-
 struct AnimationModel {
     items: Vec<Item>,
     last_frame: Instant,
     frame_count: u32,
     fps: u32,
     render_time: Option<f32>,
+    item_count: usize,
+    render_time_ms: String,
 }
 
 impl AnimationModel {
@@ -82,6 +76,8 @@ impl AnimationModel {
             frame_count: 0,
             fps: 0,
             render_time: None,
+            item_count: count,
+            render_time_ms: "0.00".to_string(),
         }
     }
 }
@@ -110,20 +106,11 @@ impl std::str::FromStr for AnimationMsg {
 impl Model for AnimationModel {
     type Message = AnimationMsg;
 
-    fn view(&self) -> String {
-        let template = AnimationTemplate {
-            items: &self.items,
-            fps: self.fps,
-            item_count: self.items.len(),
-            render_time_ms: self.render_time.map(|t| format!("{:.2}", t)).unwrap_or_else(|| "0.00".to_string()),
-        };
-        template.render().unwrap()
-    }
-
     fn update(&mut self, msg: Self::Message, _context: &mut xerune::Context) {
         match msg {
             AnimationMsg::RenderTime(ms) => {
                 self.render_time = Some(ms);
+                self.render_time_ms = format!("{:.2}", ms);
             },
             AnimationMsg::Tick => {
                 // Update items

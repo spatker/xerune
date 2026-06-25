@@ -1,24 +1,16 @@
-use askama::Template;
 use fontdue::Font;
-use xerune::{Model, Runtime};
+use xerune::{Model, Runtime, XeruneTemplate};
 use skia_renderer::TinySkiaMeasurer;
 
 #[path = "support/mod.rs"]
 mod support;
 
-struct ShowcaseModel;
-
-#[derive(Template)]
+#[derive(XeruneTemplate)]
 #[template(path = "animation_css.html")]
-struct ShowcaseTemplate;
+struct ShowcaseModel;
 
 impl Model for ShowcaseModel {
     type Message = String;
-
-    fn view(&self) -> String {
-        let template = ShowcaseTemplate;
-        template.render().unwrap()
-    }
 
     fn update(&mut self, _msg: Self::Message, _context: &mut xerune::Context) {}
 }

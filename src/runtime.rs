@@ -53,7 +53,6 @@ pub struct Runtime<M, R> {
     pub(crate) scroll_offsets: HashMap<NodeId, (f32, f32)>, // Persist scroll offsets
     cached_size: Size<AvailableSpace>,
     context: Context,
-    last_html: String,
     last_commands: Vec<DrawCommand>,
     pub focused_id: Option<String>,
     pub target_fps: u32,
@@ -63,12 +62,11 @@ pub struct Runtime<M, R> {
     last_tick_time: std::time::Instant,
 }
 
-impl<M: Model, R: TextMeasurer> Runtime<M, R> {
+impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
     pub fn new(model: M, measurer: R) -> Self {
          let default_style = ContainerStyle::default();
-         let html = model.view();
          let validator = |s: &str| M::Message::from_str(s).is_ok();
-         let ui = Ui::new(&html, &measurer, default_style.clone(), &validator).unwrap();
+         let ui = Ui::new_compiled(&model, &measurer, default_style.clone(), &validator).unwrap();
          
          let mut context = Context::new();
          // Initial sync of canvases
@@ -82,7 +80,6 @@ impl<M: Model, R: TextMeasurer> Runtime<M, R> {
              scroll_offsets: HashMap::new(),
              cached_size: Size::MAX_CONTENT,
              context,
-             last_html: html,
              last_commands: Vec::new(),
              focused_id: None,
              target_fps: 60,
@@ -214,30 +211,20 @@ impl<M: Model, R: TextMeasurer> Runtime<M, R> {
     }
 
     pub fn sync_view(&mut self) -> bool {
-        let html = {
-            profile!("view");
-            self.model.view()
-        };
-        
         let mut dirty = false;
         
-        // Optimization: Only rebuild UI if HTML changed
-        if html != self.last_html {
-            self.last_html = html.clone();
-            // Recreate UI to reflect changes
-            self.ui = {
-                profile!("ui_new");
-                let validator = |s: &str| M::Message::from_str(s).is_ok();
-                Ui::new(&html, &self.measurer, self.default_style.clone(), &validator).unwrap()
-            };
-            {
-                profile!("compute_layout");
-                let _ = self.ui.compute_layout(self.cached_size);
-            }
-            Runtime::<M, R>::sync_canvases(&self.ui, &mut self.context);
-            self.restore_scroll();
-            dirty = true;
+        self.ui = {
+            profile!("ui_new_compiled");
+            let validator = |s: &str| M::Message::from_str(s).is_ok();
+            Ui::new_compiled(&self.model, &self.measurer, self.default_style.clone(), &validator).unwrap()
+        };
+        {
+            profile!("compute_layout");
+            let _ = self.ui.compute_layout(self.cached_size);
         }
+        Runtime::<M, R>::sync_canvases(&self.ui, &mut self.context);
+        self.restore_scroll();
+        dirty = true;
 
         let commands: Vec<_> = self.context.commands.drain(..).collect();
         for cmd in commands {

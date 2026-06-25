@@ -100,10 +100,10 @@
     <!-- List -->
     <div class="todo-list">
         {% for item in items %}
-        <div class="todo-item{% if loop.index0 == active_item %} active{% endif %}"
+        <div class="todo-item {% if loop.index0 == active_item %}active{% endif %}"
             data-on-click="toggle:{{ loop.index0 }}">
             <input type="checkbox" {% if item.completed %}checked{% endif %}>
-            <span class="todo-text{% if item.completed %} completed{% endif %}">{{ item.title }}</span>
+            <span class="todo-text {% if item.completed %}completed{% endif %}">{{ item.title }}</span>
             <div data-on-click="remove:{{ loop.index0 }}" class="remove-btn">
                 <span>Remove</span>
             </div>

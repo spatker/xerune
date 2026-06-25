@@ -1,6 +1,5 @@
-use xerune::{Model, Runtime};
+use xerune::{Model, Runtime, XeruneTemplate};
 use fontdue::Font;
-use askama::Template;
 use tiny_skia::{PixmapMut, Paint, Color, Transform, Rect};
 use rand::Rng;
 
@@ -18,14 +17,8 @@ struct RowData {
     status: String,
 }
 
-#[derive(Template)]
+#[derive(XeruneTemplate)]
 #[template(path = "showcase.html")]
-struct ShowcaseTemplate<'a> {
-    system_load_value: f32,
-    table_data: &'a [RowData],
-    user_counter: i32,
-}
-
 struct ShowcaseModel {
     system_load_value: f32,
     table_data: Vec<RowData>,
@@ -54,15 +47,6 @@ impl std::str::FromStr for ShowcaseMsg {
 
 impl Model for ShowcaseModel {
     type Message = ShowcaseMsg;
-
-    fn view(&self) -> String {
-        let template = ShowcaseTemplate {
-            system_load_value: self.system_load_value,
-            table_data: &self.table_data,
-            user_counter: self.user_counter,
-        };
-        template.render().unwrap()
-    }
 
     fn update(&mut self, msg: Self::Message, context: &mut xerune::Context) {
         match msg {
