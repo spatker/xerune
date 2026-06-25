@@ -57,6 +57,8 @@ pub enum MyJustifyContent {
     Right,
 }
 
+pub use taffy::BoxSizing;
+
 #[derive(Debug, Clone)]
 pub struct ContainerStyle {
     pub color: Color,
@@ -91,6 +93,8 @@ pub struct ContainerStyle {
     pub max_block_size: Option<taffy::style::Dimension>,
     pub align_self: Option<AlignSelf>,
     pub position: Position,
+    pub is_floated: bool,
+    pub box_sizing: BoxSizing,
 }
 
 impl Default for ContainerStyle {
@@ -129,6 +133,8 @@ impl Default for ContainerStyle {
             max_block_size: None,
             align_self: None,
             position: Position::Static,
+            is_floated: false,
+            box_sizing: BoxSizing::ContentBox,
         }
     }
 }

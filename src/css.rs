@@ -1,4 +1,4 @@
-use crate::{Color, ContainerStyle, LinearGradient, Display, TextAlign, Direction, WritingMode, FlexDirection, FlexWrap, AlignContent, AlignItems, MyJustifyContent};
+use crate::{Color, ContainerStyle, LinearGradient, Display, TextAlign, Direction, WritingMode, FlexDirection, FlexWrap, AlignContent, AlignItems, MyJustifyContent, BoxSizing};
 use csscolorparser::parse as parse_color;
 use taffy::prelude::*;
 use taffy::style::Style;
@@ -501,9 +501,47 @@ pub fn apply_declaration(prop: &str, val: &str, current_style: &mut ContainerSty
         }
         "float" => {
             if val == "left" || val == "right" {
+                current_style.is_floated = true;
                 if current_style.display == Display::Block {
                     current_style.display = Display::InlineBlock;
                 }
+            }
+        }
+        "box-sizing" => {
+            match val {
+                "border-box" => current_style.box_sizing = BoxSizing::BorderBox,
+                "content-box" => current_style.box_sizing = BoxSizing::ContentBox,
+                _ => {}
+            }
+        }
+        "row-gap" => {
+            if let Some(lp) = parse_length_percentage(val) {
+                taffy_style.gap.height = lp;
+            }
+        }
+        "column-gap" => {
+            if let Some(lp) = parse_length_percentage(val) {
+                taffy_style.gap.width = lp;
+            }
+        }
+        "gap" => {
+            let parts: Vec<&str> = val.split_whitespace().collect();
+            match parts.len() {
+                1 => {
+                    if let Some(lp) = parse_length_percentage(parts[0]) {
+                        taffy_style.gap.width = lp;
+                        taffy_style.gap.height = lp;
+                    }
+                }
+                2 => {
+                    if let Some(lp_y) = parse_length_percentage(parts[0]) {
+                        taffy_style.gap.height = lp_y;
+                    }
+                    if let Some(lp_x) = parse_length_percentage(parts[1]) {
+                        taffy_style.gap.width = lp_x;
+                    }
+                }
+                _ => {}
             }
         }
         "direction" => {

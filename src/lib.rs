@@ -8,7 +8,7 @@ pub mod css;
 pub mod defaults;
 
 pub use graphics::{Color, LinearGradient, Rect, Canvas, Context, DrawCommand, TextMeasurer, Renderer};
-pub use style::{Overflow, ContainerStyle, RenderData, Display, TextAlign, Direction, WritingMode, FlexDirection, FlexWrap, AlignContent, AlignItems, MyJustifyContent, Position};
+pub use style::{Overflow, ContainerStyle, RenderData, Display, TextAlign, Direction, WritingMode, FlexDirection, FlexWrap, AlignContent, AlignItems, MyJustifyContent, Position, BoxSizing};
 pub use model::{Model, InputEvent};
 pub use ui::{Interaction, Ui};
 pub use runtime::Runtime;

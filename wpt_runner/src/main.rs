@@ -393,6 +393,42 @@ fn run_attribute_test(html: &str, fonts: &'static [fontdue::Font]) -> Result<Vec
     }
 }
 
+fn inline_stylesheets(html: &str, test_file_path: &Path, wpt_dir: &Path) -> String {
+    let link_re = Regex::new(r#"(?i)<link\s+([^>]+)>"#).unwrap();
+    let rel_re = Regex::new(r#"(?i)rel\s*=\s*['"]stylesheet['"]"#).unwrap();
+    let href_re = Regex::new(r#"(?i)href\s*=\s*['"]([^'"]+)['"]"#).unwrap();
+    
+    let mut inlined_css = String::new();
+    
+    for cap in link_re.captures_iter(html) {
+        let attrs = &cap[1];
+        if rel_re.is_match(attrs) {
+            if let Some(href_cap) = href_re.captures(attrs) {
+                let href = href_cap.get(1).unwrap().as_str();
+                let css_path = if href.starts_with('/') {
+                    wpt_dir.join(href.trim_start_matches('/'))
+                } else {
+                    if let Some(parent) = test_file_path.parent() {
+                        parent.join(href)
+                    } else {
+                        wpt_dir.join(href)
+                    }
+                };
+                if let Ok(css_content) = fs::read_to_string(&css_path) {
+                    inlined_css.push_str(&css_content);
+                    inlined_css.push('\n');
+                }
+            }
+        }
+    }
+    
+    if !inlined_css.is_empty() {
+        format!("{}\n<style>\n{}\n</style>\n", html, inlined_css)
+    } else {
+        html.to_string()
+    }
+}
+
 fn filter_path(p: &Path) -> bool {
     let path_str = p.to_string_lossy();
     let is_ref = path_str.ends_with("-ref.html")
@@ -460,13 +496,14 @@ fn main() {
 
     paths.par_iter().for_each(|path| {
         let relative_path = path.strip_prefix(wpt_dir).unwrap_or(path);
-        let html_content = match fs::read_to_string(path) {
+        let mut html_content = match fs::read_to_string(path) {
             Ok(c) => c,
             Err(_) => {
                 skipped.fetch_add(1, Ordering::Relaxed);
                 return;
             }
         };
+        html_content = inline_stylesheets(&html_content, path, wpt_dir);
 
         // Determine test type
         let requirement = if let Some(caps) = reftest_re.captures(&html_content) {
@@ -500,6 +537,7 @@ fn main() {
                         return;
                     }
                 };
+                let ref_html = inline_stylesheets(&ref_html, &ref_abs_path, wpt_dir);
 
                 let test_pixmap = match render_html_to_pixmap(&html_content, fonts) {
                     Ok(p) => p,
@@ -547,6 +585,7 @@ fn main() {
                         return;
                     }
                 };
+                let ref_html = inline_stylesheets(&ref_html, &ref_abs_path, wpt_dir);
 
                 let test_pixmap = match render_html_to_pixmap(&html_content, fonts) {
                     Ok(p) => p,

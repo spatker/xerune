@@ -15,7 +15,7 @@ macro_rules! profile {
 }
 
 use crate::graphics::{Canvas, DrawCommand, Rect, TextMeasurer};
-use crate::style::{ContainerStyle, Overflow, RenderData, Display, TextAlign, Direction, MyJustifyContent};
+use crate::style::{ContainerStyle, Overflow, RenderData, Display, TextAlign, Direction, MyJustifyContent, BoxSizing};
 use crate::css;
 use crate::defaults;
 
@@ -468,6 +468,10 @@ fn dom_to_taffy(
             }
             parse_attributes(tag, &attrs.borrow(), &mut current_style, &mut layout_style, &mut parsed, message_validator);
 
+
+
+
+
             // Resolve logical properties (inline-size, block-size, etc.)
             if let Some(d) = current_style.inline_size {
                 layout_style.size.width = d;
@@ -494,16 +498,21 @@ fn dom_to_taffy(
                 layout_style.max_size.height = d;
             }
 
-            // Convert content-box sizes to border-box for Taffy
+            // Convert box sizes to match Taffy's expected box model:
+            // - Taffy expects Style::size to be border-box.
+            // - Taffy expects Style::min_size and Style::max_size to be content-box.
             let add_h = current_style.padding_left + current_style.padding_right + current_style.border_width * 2.0;
             let add_v = current_style.padding_top + current_style.padding_bottom + current_style.border_width * 2.0;
 
-            layout_style.size.width = to_border_box(layout_style.size.width, add_h);
-            layout_style.size.height = to_border_box(layout_style.size.height, add_v);
-            layout_style.min_size.width = to_border_box(layout_style.min_size.width, add_h);
-            layout_style.min_size.height = to_border_box(layout_style.min_size.height, add_v);
-            layout_style.max_size.width = to_border_box(layout_style.max_size.width, add_h);
-            layout_style.max_size.height = to_border_box(layout_style.max_size.height, add_v);
+            if current_style.box_sizing == BoxSizing::ContentBox {
+                layout_style.size.width = to_border_box(layout_style.size.width, add_h);
+                layout_style.size.height = to_border_box(layout_style.size.height, add_v);
+            } else {
+                layout_style.min_size.width = to_content_box(layout_style.min_size.width, add_h);
+                layout_style.min_size.height = to_content_box(layout_style.min_size.height, add_v);
+                layout_style.max_size.width = to_content_box(layout_style.max_size.width, add_h);
+                layout_style.max_size.height = to_content_box(layout_style.max_size.height, add_v);
+            }
 
             if layout_style.position == Position::Absolute {
                 enum Alignment {
@@ -724,7 +733,7 @@ fn dom_to_taffy(
                     if let Some(child_data) = render_data.get(child_id) {
                         match child_data {
                             RenderData::Container(child_style) => {
-                                if child_style.display == Display::InlineBlock {
+                                if child_style.display == Display::InlineBlock || child_style.is_floated {
                                     has_inline_child = true;
                                     break;
                                 }
@@ -1157,6 +1166,14 @@ fn preprocess_dom(handle: &Handle) {
 fn to_border_box(dim: taffy::style::Dimension, add: f32) -> taffy::style::Dimension {
     if dim == taffy::style::Dimension::length(dim.value()) {
         taffy::style::Dimension::length(dim.value() + add)
+    } else {
+        dim
+    }
+}
+
+fn to_content_box(dim: taffy::style::Dimension, sub: f32) -> taffy::style::Dimension {
+    if dim == taffy::style::Dimension::length(dim.value()) {
+        taffy::style::Dimension::length((dim.value() - sub).max(0.0))
     } else {
         dim
     }

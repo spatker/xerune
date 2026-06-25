@@ -273,8 +273,11 @@ impl<'a> Renderer for TinySkiaRenderer<'a> {
                     profile!("text_rasterize");
                     for glyph in self.layout.glyphs() {
                         let sub_px = (glyph.key.px * 16.0) as u32; // cache at subpixel alignment or just int
-                        let cache_key = (glyph.font_index, glyph.key.glyph_index, sub_px, 
-                                         [color_skia.red() as u8, color_skia.green() as u8, color_skia.blue() as u8, color_skia.alpha() as u8]);
+                        let r_u8 = (color_skia.red() * 255.0).round() as u8;
+                        let g_u8 = (color_skia.green() * 255.0).round() as u8;
+                        let b_u8 = (color_skia.blue() * 255.0).round() as u8;
+                        let a_u8 = (color_skia.alpha() * 255.0).round() as u8;
+                        let cache_key = (glyph.font_index, glyph.key.glyph_index, sub_px, [r_u8, g_u8, b_u8, a_u8]);
 
                         if !self.glyph_cache.contains_key(&cache_key) {
                             let (metrics, bitmap) = self.fonts[glyph.font_index].rasterize_indexed(glyph.key.glyph_index, glyph.key.px);
