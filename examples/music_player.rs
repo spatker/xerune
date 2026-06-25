@@ -412,7 +412,8 @@ fn main() -> anyhow::Result<()> {
 
     let measurer = TinySkiaMeasurer { fonts: fonts_ref };
     let model = MusicPlayerModel::new();
-    let runtime = Runtime::new(model, measurer);
+    let mut runtime = Runtime::new(model, measurer);
+    runtime.set_interval("tick".to_string(), 33);
     
     #[cfg(not(all(target_os = "linux", feature = "linuxfb", feature = "evdev")))]
     {
@@ -422,14 +423,7 @@ fn main() -> anyhow::Result<()> {
             480, 
             runtime, 
             fonts_ref, 
-            move |proxy| {
-                std::thread::spawn(move || {
-                     loop {
-                         let _ = proxy.send_event("tick".to_string());
-                         std::thread::sleep(std::time::Duration::from_millis(33));
-                     }
-                });
-            }
+            move |_proxy| {}
         )
     }
 
@@ -441,14 +435,7 @@ fn main() -> anyhow::Result<()> {
              480, 
              runtime, 
              fonts_ref, 
-             move |tx| {
-                //  std::thread::spawn(move || {
-                //      loop {
-                //          let _ = tx.send("tick".to_string());
-                //          std::thread::sleep(std::time::Duration::from_millis(33));
-                //      }
-                //  });
-             }
+             move |_tx| {}
          )
     }
 }

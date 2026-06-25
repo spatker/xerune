@@ -111,6 +111,8 @@ pub struct Ui {
     pub scroll_offsets: HashMap<NodeId, (f32, f32)>,
     pub root: NodeId,
     pub node_to_handle: HashMap<NodeId, Handle>,
+    pub base_styles: HashMap<NodeId, (Style, ContainerStyle)>,
+    pub keyframes: HashMap<String, css::KeyframesAnimation>,
 }
 
 impl Ui {
@@ -125,6 +127,7 @@ impl Ui {
         let mut render_data = HashMap::new();
         let mut interactions = HashMap::new();
         let mut node_to_handle = HashMap::new();
+        let mut base_styles = HashMap::new();
 
         let dom = parse_document(RcDom::default(), Default::default())
             .from_utf8()
@@ -135,6 +138,8 @@ impl Ui {
 
         let mut css_str = String::new();
         extract_styles(&dom.document, &mut css_str);
+        
+        let keyframes = css::parse_keyframes(&css_str);
         
         let re_nth = regex::Regex::new(r":nth-child\(\s*(\d+)\s*\)").unwrap();
         let css_str = re_nth.replace_all(&css_str, ".nth-child-$1").into_owned();
@@ -154,6 +159,7 @@ impl Ui {
             message_validator,
             &stylesheet,
             &mut node_to_handle,
+            &mut base_styles,
         ).ok_or(TaffyError::ChildIndexOutOfBounds { parent: NodeId::new(0), child_index: 0, child_count: 0 })?;  
 
         Ok(Self {
@@ -163,6 +169,8 @@ impl Ui {
             scroll_offsets: HashMap::new(),
             root,
             node_to_handle,
+            base_styles,
+            keyframes,
         })
     }
 
@@ -421,6 +429,7 @@ fn dom_to_taffy(
     message_validator: &impl Fn(&str) -> bool,
     stylesheet: &simplecss::StyleSheet<'_>,
     node_to_handle: &mut HashMap<NodeId, Handle>,
+    base_styles: &mut HashMap<NodeId, (Style, ContainerStyle)>,
 ) -> Option<NodeId> {
     
     let mut current_style = parent_style.clone();
@@ -435,12 +444,13 @@ fn dom_to_taffy(
         NodeData::Document => {
              let mut children = Vec::new();
              for child in handle.children.borrow().iter() {
-                 if let Some(id) = dom_to_taffy(taffy, child, text_measurer, render_data, interactions, current_style.clone(), message_validator, stylesheet, node_to_handle) {
+                 if let Some(id) = dom_to_taffy(taffy, child, text_measurer, render_data, interactions, current_style.clone(), message_validator, stylesheet, node_to_handle, base_styles) {
                      children.push(id);
                  }
             }
             let id = taffy.new_with_children(Style::default(), &children).ok()?;
-            render_data.insert(id, RenderData::Container(current_style));
+            render_data.insert(id, RenderData::Container(current_style.clone()));
+            base_styles.insert(id, (Style::default(), current_style));
             node_to_handle.insert(id, handle.clone());
             Some(id)
         },
@@ -713,7 +723,7 @@ fn dom_to_taffy(
             let mut children = Vec::new();
             if !matches!(parsed.element_type, defaults::ElementType::Image | defaults::ElementType::Checkbox | defaults::ElementType::Slider | defaults::ElementType::Progress | defaults::ElementType::Canvas) {
                 for child in handle.children.borrow().iter() {
-                     if let Some(id) = dom_to_taffy(taffy, child, text_measurer, render_data, interactions, current_style.clone(), message_validator, stylesheet, node_to_handle) {
+                     if let Some(id) = dom_to_taffy(taffy, child, text_measurer, render_data, interactions, current_style.clone(), message_validator, stylesheet, node_to_handle, base_styles) {
                          children.push(id);
                      }
                 }
@@ -853,14 +863,15 @@ fn dom_to_taffy(
 
 
 
-            let id = taffy.new_with_children(layout_style, &children).ok()?;
+            let id = taffy.new_with_children(layout_style.clone(), &children).ok()?;
 
-            process_element_type(id, &parsed, current_style, render_data);
+            process_element_type(id, &parsed, current_style.clone(), render_data);
 
             if let Some(interaction) = parsed.interaction_id {
                 interactions.insert(id, interaction);
             }
 
+            base_styles.insert(id, (layout_style, current_style));
             node_to_handle.insert(id, handle.clone());
             Some(id)
         },
@@ -877,8 +888,9 @@ fn dom_to_taffy(
                     size: Size { width: length(width), height: length(height) },
                     ..Style::default()
                 };
-                let id = taffy.new_leaf(text_layout_style).ok()?;
-                render_data.insert(id, RenderData::Text(normalized, current_style));
+                let id = taffy.new_leaf(text_layout_style.clone()).ok()?;
+                render_data.insert(id, RenderData::Text(normalized, current_style.clone()));
+                base_styles.insert(id, (text_layout_style, current_style));
                 node_to_handle.insert(id, handle.clone());
                 Some(id)
             }

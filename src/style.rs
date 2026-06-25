@@ -59,6 +59,12 @@ pub enum MyJustifyContent {
 
 pub use taffy::BoxSizing;
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum AnimationIterationCount {
+    Infinite,
+    Count(f32),
+}
+
 #[derive(Debug, Clone)]
 pub struct ContainerStyle {
     pub color: Color,
@@ -95,6 +101,15 @@ pub struct ContainerStyle {
     pub position: Position,
     pub is_floated: bool,
     pub box_sizing: BoxSizing,
+    // Animation properties
+    pub animation_name: Option<String>,
+    pub animation_duration: f32, // in seconds
+    pub animation_timing_function: String,
+    pub animation_delay: f32, // in seconds
+    pub animation_iteration_count: AnimationIterationCount,
+    pub animation_direction: String,
+    pub animation_fill_mode: String,
+    pub animation_play_state: String,
 }
 
 impl Default for ContainerStyle {
@@ -135,6 +150,14 @@ impl Default for ContainerStyle {
             position: Position::Static,
             is_floated: false,
             box_sizing: BoxSizing::ContentBox,
+            animation_name: None,
+            animation_duration: 0.0,
+            animation_timing_function: "ease".to_string(),
+            animation_delay: 0.0,
+            animation_iteration_count: AnimationIterationCount::Count(1.0),
+            animation_direction: "normal".to_string(),
+            animation_fill_mode: "none".to_string(),
+            animation_play_state: "running".to_string(),
         }
     }
 }

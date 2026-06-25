@@ -42,9 +42,15 @@ pub fn run_app<M: Model + 'static, TM: TextMeasurer + 'static>(
     let mut app_pixmap: Option<Pixmap> = None;
 
     event_loop.run(move |event, target| {
-         target.set_control_flow(ControlFlow::Wait);
-
         match event {
+            Event::AboutToWait => {
+                let res = runtime.tick();
+                if res.needs_redraw {
+                    window_clone.request_redraw();
+                }
+                let next_trigger = std::time::Instant::now() + res.next_tick_in;
+                target.set_control_flow(ControlFlow::WaitUntil(next_trigger));
+            }
             Event::UserEvent(msg) => {
                 if runtime.handle_event(InputEvent::Message(msg)) {
                     window_clone.request_redraw();

@@ -1,0 +1,144 @@
+<style>
+    body {
+        margin: 0;
+        background-color: #121212;
+        color: #e0e0e0;
+        font-family: 'Roboto', sans-serif;
+    }
+    .container {
+        width: 800px;
+        height: 600px;
+        padding: 20px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-around;
+        align-items: center;
+        background-color: #1a1a1a;
+    }
+    .header {
+        font-size: 24px;
+        font-weight: bold;
+        color: #1ed760;
+    }
+    .row {
+        display: flex;
+        flex-direction: row;
+        justify-content: space-around;
+        width: 100%;
+        margin-top: 20px;
+    }
+    .box {
+        width: 100px;
+        height: 100px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        border-radius: 8px;
+        font-size: 14px;
+        font-weight: bold;
+        color: white;
+    }
+    
+    /* Animation 1: Color Shift */
+    @keyframes color-shift {
+        0% {
+            background-color: #ff5555;
+        }
+        50% {
+            background-color: #55ff55;
+        }
+        100% {
+            background-color: #5555ff;
+        }
+    }
+    .box-color {
+        animation: color-shift 3s ease-in-out infinite alternate;
+    }
+
+    /* Animation 2: Bouncing Size */
+    @keyframes bounce-size {
+        0% {
+            width: 80px;
+            height: 80px;
+            border-radius: 8px;
+            background-color: #ffaa00;
+        }
+        50% {
+            width: 120px;
+            height: 120px;
+            border-radius: 50px;
+            background-color: #aa00ff;
+        }
+        100% {
+            width: 80px;
+            height: 80px;
+            border-radius: 8px;
+            background-color: #ffaa00;
+        }
+    }
+    .box-size {
+        animation: bounce-size 2s ease-in-out infinite;
+    }
+
+    /* Animation 3: Position Slider (using margin or left/top) */
+    @keyframes slide-offset {
+        from {
+            margin-top: 0px;
+            background-color: #00bcd4;
+        }
+        to {
+            margin-top: 50px;
+            background-color: #e91e63;
+        }
+    }
+    .box-slide {
+        animation: slide-offset 1.5s ease-in-out infinite alternate;
+    }
+
+    /* Animation 4: Border Wave */
+    @keyframes border-wave {
+        0% {
+            border-width: 2px;
+            border-color: #ffffff;
+            border-radius: 4px;
+            background-color: #333333;
+        }
+        50% {
+            border-width: 10px;
+            border-color: #1ed760;
+            border-radius: 20px;
+            background-color: #222222;
+        }
+        100% {
+            border-width: 2px;
+            border-color: #ffffff;
+            border-radius: 4px;
+            background-color: #333333;
+        }
+    }
+    .box-border {
+        border-style: solid;
+        animation: border-wave 2.5s linear infinite;
+    }
+
+    .footer {
+        font-size: 12px;
+        color: #888888;
+        margin-top: 20px;
+    }
+</style>
+
+<div class="container">
+    <div class="header">Native CSS Animation Engine Demo</div>
+    
+    <div class="row">
+        <div class="box box-color">Color</div>
+        <div class="box box-size">Size</div>
+        <div class="box box-slide">Slide</div>
+        <div class="box box-border">Border</div>
+    </div>
+    
+    <div class="footer">
+        Powered by Xerune Animation Scheduler • Zero CPU Overhead when idle
+    </div>
+</div>

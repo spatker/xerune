@@ -2,6 +2,7 @@ use crate::{Color, ContainerStyle, LinearGradient, Display, TextAlign, Direction
 use csscolorparser::parse as parse_color;
 use taffy::prelude::*;
 use taffy::style::Style;
+use std::collections::HashMap;
 
 pub fn parse_inline_style(style_str: &str, current_style: &mut ContainerStyle, taffy_style: &mut Style) {
     let tokenizer = simplecss::DeclarationTokenizer::from(style_str);
@@ -557,13 +558,44 @@ pub fn apply_declaration(prop: &str, val: &str, current_style: &mut ContainerSty
                 _ => {}
             }
         }
+        "animation-name" => {
+            current_style.animation_name = Some(val.trim().to_string());
+        }
+        "animation-duration" => {
+            current_style.animation_duration = parse_duration_sec(val);
+        }
+        "animation-timing-function" => {
+            current_style.animation_timing_function = val.trim().to_string();
+        }
+        "animation-delay" => {
+            current_style.animation_delay = parse_duration_sec(val);
+        }
+        "animation-iteration-count" => {
+            current_style.animation_iteration_count = if val.trim() == "infinite" {
+                crate::style::AnimationIterationCount::Infinite
+            } else {
+                crate::style::AnimationIterationCount::Count(val.trim().parse::<f32>().unwrap_or(1.0))
+            };
+        }
+        "animation-direction" => {
+            current_style.animation_direction = val.trim().to_lowercase();
+        }
+        "animation-fill-mode" => {
+            current_style.animation_fill_mode = val.trim().to_lowercase();
+        }
+        "animation-play-state" => {
+            current_style.animation_play_state = val.trim().to_lowercase();
+        }
+        "animation" => {
+            parse_animation_shorthand(val, current_style);
+        }
         _ => {
             log::warn!("Unsupported CSS property: {}", prop);
         }
     }
 }
 
-fn parse_hex_color(val: &str) -> Option<Color> {
+pub(crate) fn parse_hex_color(val: &str) -> Option<Color> {
     parse_color(val).ok().map(|c| {
         Color::from_rgba8(
             (c.r * 255.0) as u8,
@@ -620,13 +652,13 @@ fn parse_linear_gradient(val: &str) -> Option<LinearGradient> {
              };
              
              stops.push((color, pos));
-        }
+         }
     }
     
     Some(LinearGradient { angle, stops })
 }
 
-fn parse_px(val: &str) -> Option<f32> {
+pub(crate) fn parse_px(val: &str) -> Option<f32> {
     if let Some(stripped) = val.strip_suffix("px") {
         stripped.parse::<f32>().ok()
     } else {
@@ -634,7 +666,7 @@ fn parse_px(val: &str) -> Option<f32> {
     }
 }
 
-fn parse_dimension(val: &str) -> Option<Dimension> {
+pub(crate) fn parse_dimension(val: &str) -> Option<Dimension> {
     if val.ends_with("%") {
         if let Ok(p) = val.trim_end_matches('%').parse::<f32>() {
             return Some(Dimension::percent(p / 100.0));
@@ -645,7 +677,7 @@ fn parse_dimension(val: &str) -> Option<Dimension> {
     None
 }
 
-fn parse_length_percentage(val: &str) -> Option<LengthPercentage> {
+pub(crate) fn parse_length_percentage(val: &str) -> Option<LengthPercentage> {
     if val.ends_with("%") {
         if let Ok(p) = val.trim_end_matches('%').parse::<f32>() {
             return Some(LengthPercentage::percent(p / 100.0));
@@ -656,7 +688,7 @@ fn parse_length_percentage(val: &str) -> Option<LengthPercentage> {
     None
 }
 
-fn parse_length_percentage_auto(val: &str) -> Option<LengthPercentageAuto> {
+pub(crate) fn parse_length_percentage_auto(val: &str) -> Option<LengthPercentageAuto> {
     if val == "auto" {
         return Some(LengthPercentageAuto::auto());
     }
@@ -752,3 +784,200 @@ fn parse_margin(val: &str) -> Option<taffy::geometry::Rect<LengthPercentageAuto>
         _ => None
     }
 }
+
+#[derive(Clone, Debug)]
+pub struct Keyframe {
+    pub percentage: f32, // 0.0 to 1.0
+    pub declarations: Vec<(String, String)>,
+}
+
+#[derive(Clone, Debug)]
+pub struct KeyframesAnimation {
+    pub name: String,
+    pub keyframes: Vec<Keyframe>,
+}
+
+pub fn parse_duration_sec(val: &str) -> f32 {
+    let val = val.trim().to_lowercase();
+    if let Some(stripped) = val.strip_suffix("ms") {
+        stripped.parse::<f32>().unwrap_or(0.0) / 1000.0
+    } else if let Some(stripped) = val.strip_suffix("s") {
+        stripped.parse::<f32>().unwrap_or(0.0)
+    } else {
+        val.parse::<f32>().unwrap_or(0.0)
+    }
+}
+
+pub fn parse_animation_shorthand(val: &str, current_style: &mut ContainerStyle) {
+    let parts: Vec<&str> = val.split_whitespace().collect();
+    let mut durations_found = 0;
+    
+    for part in parts {
+        let part_lower = part.to_lowercase();
+        // Check if it's a duration (ends with s or ms or is a number with duration suffix)
+        if part_lower.ends_with("s") || part_lower.ends_with("ms") {
+            let duration = parse_duration_sec(part);
+            if durations_found == 0 {
+                current_style.animation_duration = duration;
+            } else if durations_found == 1 {
+                current_style.animation_delay = duration;
+            }
+            durations_found += 1;
+            continue;
+        }
+        
+        // Check iteration count
+        if part_lower == "infinite" {
+            current_style.animation_iteration_count = crate::style::AnimationIterationCount::Infinite;
+            continue;
+        }
+        
+        // Check timing functions
+        if ["linear", "ease", "ease-in", "ease-out", "ease-in-out"].contains(&part_lower.as_str()) || part_lower.starts_with("cubic-bezier(") {
+            current_style.animation_timing_function = part.to_string();
+            continue;
+        }
+        
+        // Check directions
+        if ["normal", "reverse", "alternate", "alternate-reverse"].contains(&part_lower.as_str()) {
+            current_style.animation_direction = part_lower;
+            continue;
+        }
+        
+        // Check fill modes
+        if ["none", "forwards", "backwards", "both"].contains(&part_lower.as_str()) {
+            current_style.animation_fill_mode = part_lower;
+            continue;
+        }
+        
+        // Check play states
+        if ["running", "paused"].contains(&part_lower.as_str()) {
+            current_style.animation_play_state = part_lower;
+            continue;
+        }
+        
+        // If it's a number, it could be a duration or iteration count
+        if let Ok(num) = part_lower.parse::<f32>() {
+            // If it's a raw number without unit, and we haven't found duration, let's treat it as iteration count
+            // since raw numbers are not valid CSS durations.
+            current_style.animation_iteration_count = crate::style::AnimationIterationCount::Count(num);
+            continue;
+        }
+        
+        // Otherwise, it's the animation name!
+        current_style.animation_name = Some(part.to_string());
+    }
+}
+
+pub fn strip_css_comments(css: &str) -> String {
+    let mut result = String::new();
+    let mut chars = css.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '/' && chars.peek() == Some(&'*') {
+            chars.next(); // consume '*'
+            while let Some(c2) = chars.next() {
+                if c2 == '*' && chars.peek() == Some(&'/') {
+                    chars.next(); // consume '/'
+                    break;
+                }
+            }
+        } else {
+            result.push(c);
+        }
+    }
+    result
+}
+
+pub fn parse_keyframes(css: &str) -> HashMap<String, KeyframesAnimation> {
+    let css = strip_css_comments(css);
+    let mut animations = HashMap::new();
+    
+    let mut pos = 0;
+    while let Some(start_idx) = css[pos..].find("@keyframes") {
+        let abs_start = pos + start_idx;
+        let rest = &css[abs_start + 10..]; // skip "@keyframes"
+        
+        if let Some(brace_idx) = rest.find('{') {
+            let name = rest[..brace_idx].trim().to_string();
+            let block_content_start = abs_start + 10 + brace_idx + 1;
+            let mut brace_count = 1;
+            let mut end_idx = None;
+            for (idx, c) in css[block_content_start..].char_indices() {
+                if c == '{' {
+                    brace_count += 1;
+                } else if c == '}' {
+                    brace_count -= 1;
+                    if brace_count == 0 {
+                        end_idx = Some(block_content_start + idx);
+                        break;
+                    }
+                }
+            }
+            
+            if let Some(abs_end) = end_idx {
+                let block_content = &css[block_content_start..abs_end];
+                let keyframes = parse_keyframe_blocks(block_content);
+                animations.insert(name.clone(), KeyframesAnimation {
+                    name,
+                    keyframes,
+                });
+                pos = abs_end + 1;
+            } else {
+                break;
+            }
+        } else {
+            break;
+        }
+    }
+    animations
+}
+
+fn parse_keyframe_blocks(content: &str) -> Vec<Keyframe> {
+    let mut keyframes = Vec::new();
+    let mut pos = 0;
+    while pos < content.len() {
+        let rest = &content[pos..];
+        if let Some(brace_idx) = rest.find('{') {
+            let selector = rest[..brace_idx].trim();
+            let decl_start = pos + brace_idx + 1;
+            if let Some(end_brace_idx) = content[decl_start..].find('}') {
+                let decl_content = &content[decl_start..decl_start + end_brace_idx];
+                let declarations = parse_declarations(decl_content);
+                
+                for sel in selector.split(',') {
+                    let sel = sel.trim();
+                    let percentage = if sel.eq_ignore_ascii_case("from") {
+                        0.0
+                    } else if sel.eq_ignore_ascii_case("to") {
+                        1.0
+                    } else if sel.ends_with('%') {
+                        sel.trim_end_matches('%').parse::<f32>().unwrap_or(0.0) / 100.0
+                    } else {
+                        continue;
+                    };
+                    keyframes.push(Keyframe {
+                        percentage,
+                        declarations: declarations.clone(),
+                    });
+                }
+                pos = decl_start + end_brace_idx + 1;
+            } else {
+                break;
+            }
+        } else {
+            break;
+        }
+    }
+    keyframes.sort_by(|a, b| a.percentage.partial_cmp(&b.percentage).unwrap_or(std::cmp::Ordering::Equal));
+    keyframes
+}
+
+fn parse_declarations(content: &str) -> Vec<(String, String)> {
+    let mut decls = Vec::new();
+    let tokenizer = simplecss::DeclarationTokenizer::from(content);
+    for decl in tokenizer {
+        decls.push((decl.name.to_lowercase(), decl.value.to_string()));
+    }
+    decls
+}
+

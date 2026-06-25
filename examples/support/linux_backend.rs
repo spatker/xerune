@@ -109,12 +109,16 @@ pub fn run_app<M: Model + 'static, TM: TextMeasurer + 'static>(
                 messages.push(msg);
                 if messages.len() > 300 { break; } // Safety limit
             }
+            if let Some(ms) = prev_render_time_ms {
+                messages.push(format!("render_time_ms:{:.2}", ms));
+            }
             if !messages.is_empty() {
                 dirty |= runtime.handle_messages(messages);
             }
 
             // Update
-            dirty |= runtime.handle_event(InputEvent::Tick { render_time_ms: prev_render_time_ms });
+            let tick_res = runtime.tick();
+            dirty |= tick_res.needs_redraw;
             
             // Draw
             if dirty {
@@ -165,11 +169,11 @@ pub fn run_app<M: Model + 'static, TM: TextMeasurer + 'static>(
                 prev_render_time_ms = None;
             }
             
-            // Frame limiting (60 FPS target)
+            // Frame limiting and dynamic sleeping
             let elapsed = frame_start.elapsed();
-            let target_duration = std::time::Duration::from_millis(16);
-            if elapsed < target_duration {
-                std::thread::sleep(target_duration - elapsed);
+            let sleep_duration = tick_res.next_tick_in.saturating_sub(elapsed);
+            if !sleep_duration.is_zero() {
+                std::thread::sleep(sleep_duration);
             }
         }
     }

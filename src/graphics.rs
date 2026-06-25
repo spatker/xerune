@@ -86,6 +86,7 @@ pub enum ContextCommand {
 pub struct Context {
     pub canvases: HashMap<String, Canvas>,
     pub(crate) commands: Vec<ContextCommand>,
+    pub(crate) pending_timers: Vec<crate::runtime::Timer>,
 }
 
 impl Context {
@@ -93,6 +94,7 @@ impl Context {
         Self {
             canvases: HashMap::new(),
             commands: Vec::new(),
+            pending_timers: Vec::new(),
         }
     }
     
@@ -102,6 +104,28 @@ impl Context {
 
     pub fn scroll_into_view(&mut self, interaction_id: &str) {
         self.commands.push(ContextCommand::ScrollIntoView(interaction_id.to_string()));
+    }
+
+    pub fn set_interval(&mut self, message: String, millis: u32) {
+        let duration = std::time::Duration::from_millis(millis as u64);
+        self.pending_timers.push(crate::runtime::Timer {
+            id: 0,
+            message,
+            interval: duration,
+            next_trigger: std::time::Instant::now() + duration,
+            is_recurring: true,
+        });
+    }
+
+    pub fn set_timeout(&mut self, message: String, millis: u32) {
+        let duration = std::time::Duration::from_millis(millis as u64);
+        self.pending_timers.push(crate::runtime::Timer {
+            id: 0,
+            message,
+            interval: duration,
+            next_trigger: std::time::Instant::now() + duration,
+            is_recurring: false,
+        });
     }
 }
 

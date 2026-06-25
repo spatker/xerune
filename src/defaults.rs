@@ -58,6 +58,14 @@ pub fn get_default_style(tag: &str, parent_style: &ContainerStyle) -> StyleBundl
     bundle.container_style.max_block_size = None;
     bundle.container_style.align_self = None;
     bundle.container_style.position = crate::style::Position::Static;
+    bundle.container_style.animation_name = None;
+    bundle.container_style.animation_duration = 0.0;
+    bundle.container_style.animation_timing_function = "ease".to_string();
+    bundle.container_style.animation_delay = 0.0;
+    bundle.container_style.animation_iteration_count = crate::style::AnimationIterationCount::Count(1.0);
+    bundle.container_style.animation_direction = "normal".to_string();
+    bundle.container_style.animation_fill_mode = "none".to_string();
+    bundle.container_style.animation_play_state = "running".to_string();
 
     bundle.container_style.display = match tag {
         "div" | "body" | "p" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "ul" | "li" | "table" | "tbody" | "thead" | "tfoot" | "tr" => Display::Block,

@@ -179,7 +179,8 @@ fn main() -> anyhow::Result<()> {
         user_counter: 1234,
     };
 
-    let runtime = Runtime::new(model, measurer);
+    let mut runtime = Runtime::new(model, measurer);
+    runtime.set_interval("tick".to_string(), 300);
 
     support::winit_backend::run_app(
         "Xerune Showcase",
@@ -187,14 +188,7 @@ fn main() -> anyhow::Result<()> {
         900,
         runtime,
         fonts_ref,
-        move |proxy| {
-            std::thread::spawn(move || {
-                loop {
-                    let _ = proxy.send_event("tick".to_string());
-                    std::thread::sleep(std::time::Duration::from_millis(300));
-                }
-            });
-        }
+        move |_proxy| {}
     )?;
 
     Ok(())

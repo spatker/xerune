@@ -1,7 +1,7 @@
 use askama::Template;
 use fontdue::Font;
 use std::collections::HashSet;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use xerune::{Model, Runtime};
 use skia_renderer::TinySkiaMeasurer;
@@ -307,7 +307,8 @@ fn main() -> anyhow::Result<()> {
 
     let measurer = TinySkiaMeasurer { fonts: fonts_ref };
     let model = BreakoutModel::new();
-    let runtime = Runtime::new(model, measurer);
+    let mut runtime = Runtime::new(model, measurer);
+    runtime.set_interval("tick".to_string(), 16);
     
     #[cfg(not(all(target_os = "linux", feature = "linuxfb", feature = "evdev")))]
     {
@@ -317,14 +318,7 @@ fn main() -> anyhow::Result<()> {
             GAME_HEIGHT as u32, 
             runtime, 
             fonts_ref, 
-            move |proxy| {
-                std::thread::spawn(move || {
-                     loop {
-                         let _ = proxy.send_event("tick".to_string());
-                         std::thread::sleep(std::time::Duration::from_millis(16)); // ~60fps
-                     }
-                });
-            }
+            move |_proxy| {}
         )
     }
 

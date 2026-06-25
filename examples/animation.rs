@@ -167,7 +167,8 @@ fn main() -> anyhow::Result<()> {
     
     // Create 100 items for benchmark
     let model = AnimationModel::new(100);
-    let runtime = Runtime::new(model, measurer);
+    let mut runtime = Runtime::new(model, measurer);
+    runtime.set_interval("tick".to_string(), 16);
     
     #[cfg(not(all(target_os = "linux", feature = "linuxfb", feature = "evdev")))]
     {
@@ -177,14 +178,7 @@ fn main() -> anyhow::Result<()> {
             600, 
             runtime, 
             fonts_ref, 
-            move |proxy| {
-                std::thread::spawn(move || {
-                    loop {
-                        let _ = proxy.send_event("tick".to_string());
-                        std::thread::sleep(std::time::Duration::from_millis(16));
-                    }
-                });
-            }
+            move |_proxy| {}
         )
     }
     
