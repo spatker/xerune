@@ -6,7 +6,12 @@ use std::time::{Duration, Instant};
 
 // Import from the library and renderer
 use xerune::{Model, Runtime};
+
+#[cfg(not(feature = "fast-renderer"))]
 use skia_renderer::TinySkiaMeasurer;
+#[cfg(feature = "fast-renderer")]
+use fast_renderer::FastMeasurer;
+
 use tiny_skia::{PixmapMut, Color, Paint, Rect, Transform, PathBuilder, FillRule};
 use rand::Rng;
 
@@ -410,7 +415,11 @@ fn main() -> anyhow::Result<()> {
     let fonts = vec![roboto_regular, roboto_bold];
     let fonts_ref: &'static [Font] = Box::leak(fonts.into_boxed_slice());
 
+    #[cfg(not(feature = "fast-renderer"))]
     let measurer = TinySkiaMeasurer { fonts: fonts_ref };
+    #[cfg(feature = "fast-renderer")]
+    let measurer = FastMeasurer { fonts: fonts_ref };
+
     let model = MusicPlayerModel::new();
     let mut runtime = Runtime::new(model, measurer);
     runtime.set_interval("tick".to_string(), 33);

@@ -4,9 +4,15 @@ use winit::window::WindowBuilder;
 use std::rc::Rc;
 
 use std::num::NonZeroU32;
-use tiny_skia::{Pixmap, Color};
 use xerune::{Model, InputEvent, Runtime, TextMeasurer};
+
+#[cfg(not(feature = "fast-renderer"))]
 use skia_renderer::TinySkiaRenderer;
+#[cfg(not(feature = "fast-renderer"))]
+use tiny_skia::Color;
+#[cfg(feature = "fast-renderer")]
+use fast_renderer::FastRenderer;
+
 use fontdue::Font;
 
 pub fn run_app<M: Model + 'static, TM: TextMeasurer + 'static>(
@@ -36,10 +42,23 @@ pub fn run_app<M: Model + 'static, TM: TextMeasurer + 'static>(
     
 
 
+    #[cfg(not(feature = "fast-renderer"))]
     let mut image_cache = std::collections::HashMap::new();
+    #[cfg(feature = "fast-renderer")]
+    let mut image_cache = std::collections::HashMap::new();
+
+    #[cfg(not(feature = "fast-renderer"))]
     let mut gradient_cache = std::collections::HashMap::new();
+
+    #[cfg(not(feature = "fast-renderer"))]
     let mut glyph_cache = std::collections::HashMap::new();
-    let mut app_pixmap: Option<Pixmap> = None;
+    #[cfg(feature = "fast-renderer")]
+    let mut glyph_cache = std::collections::HashMap::new();
+
+    #[cfg(not(feature = "fast-renderer"))]
+    let mut app_pixmap: Option<tiny_skia::Pixmap> = None;
+    #[cfg(feature = "fast-renderer")]
+    let mut app_buffer: Option<Vec<u32>> = None;
 
     event_loop.run(move |event, target| {
         match event {
@@ -83,31 +102,44 @@ pub fn run_app<M: Model + 'static, TM: TextMeasurer + 'static>(
                         
                         runtime.set_size(width as f32, height as f32);
 
-                        if app_pixmap.is_none() || app_pixmap.as_ref().unwrap().width() != width || app_pixmap.as_ref().unwrap().height() != height {
-                            app_pixmap = Pixmap::new(width, height);
-                            if let Some(p) = app_pixmap.as_mut() {
-                                p.fill(Color::from_rgba8(34, 34, 34, 255));
+                        #[cfg(not(feature = "fast-renderer"))]
+                        {
+                            if app_pixmap.is_none() || app_pixmap.as_ref().unwrap().width() != width || app_pixmap.as_ref().unwrap().height() != height {
+                                app_pixmap = tiny_skia::Pixmap::new(width, height);
+                                if let Some(p) = app_pixmap.as_mut() {
+                                    p.fill(Color::from_rgba8(34, 34, 34, 255));
+                                }
+                            }
+
+                            if let Some(pixmap) = app_pixmap.as_mut() {
+                                let mut renderer = TinySkiaRenderer::new(pixmap.as_mut(), fonts, &mut image_cache, &mut gradient_cache, &mut glyph_cache);
+                                runtime.render(&mut renderer);
+
+                                let data = pixmap.data();
+                                for (i, chunk) in data.chunks_exact(4).enumerate() {
+                                    let r = chunk[0] as u32;
+                                    let g = chunk[1] as u32;
+                                    let b = chunk[2] as u32;
+                                    buffer[i] = (r << 16) | (g << 8) | b;
+                                }
+                                buffer.present().unwrap();
                             }
                         }
 
-                        if let Some(pixmap) = app_pixmap.as_mut() {
-                            let mut renderer = TinySkiaRenderer::new(pixmap.as_mut(), fonts, &mut image_cache, &mut gradient_cache, &mut glyph_cache);
-                            // let start_render = Instant::now();
-                            runtime.render(&mut renderer);
-                            // let elapsed = start_render.elapsed().as_secs_f32() * 1000.0;
-                            // last_render_time = Some(elapsed);
-
-
-                            let data = pixmap.data();
-                            for (i, chunk) in data.chunks_exact(4).enumerate() {
-                                let r = chunk[0] as u32;
-                                let g = chunk[1] as u32;
-                                let b = chunk[2] as u32;
-                                // 0RGB format for softbuffer
-                                buffer[i] = (r << 16) | (g << 8) | b;
+                        #[cfg(feature = "fast-renderer")]
+                        {
+                            let buffer_len = (width * height) as usize;
+                            if app_buffer.is_none() || app_buffer.as_ref().unwrap().len() != buffer_len {
+                                app_buffer = Some(vec![0xFF222222; buffer_len]);
                             }
-                            
-                            buffer.present().unwrap();
+
+                            if let Some(ref mut app_buf) = app_buffer {
+                                let mut renderer = FastRenderer::new(app_buf, width, height, fonts, &mut image_cache, &mut glyph_cache);
+                                runtime.render(&mut renderer);
+
+                                buffer.copy_from_slice(app_buf);
+                                buffer.present().unwrap();
+                            }
                         }
                     },
                     WindowEvent::CloseRequested => {

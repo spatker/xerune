@@ -1,7 +1,11 @@
 use askama::Template;
 use fontdue::Font;
 use xerune::{Runtime, Model};
+
+#[cfg(not(feature = "fast-renderer"))]
 use skia_renderer::TinySkiaMeasurer;
+#[cfg(feature = "fast-renderer")]
+use fast_renderer::FastMeasurer;
 
 #[path = "support/mod.rs"]
 mod support;
@@ -154,7 +158,11 @@ fn main() -> anyhow::Result<()> {
 
     let todo_list = TodoList { items, active_item: 0, new_item_title: String::new() };
 
+    #[cfg(not(feature = "fast-renderer"))]
     let measurer = TinySkiaMeasurer { fonts: fonts_ref };
+    #[cfg(feature = "fast-renderer")]
+    let measurer = FastMeasurer { fonts: fonts_ref };
+    
     let runtime = Runtime::new(todo_list, measurer);
     
     #[cfg(not(all(target_os = "linux", feature = "linuxfb", feature = "evdev")))]

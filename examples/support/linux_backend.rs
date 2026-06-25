@@ -1,5 +1,8 @@
 use xerune::{Model, InputEvent, Runtime, TextMeasurer};
+#[cfg(not(feature = "fast-renderer"))]
 use skia_renderer::TinySkiaRenderer;
+#[cfg(feature = "fast-renderer")]
+use fast_renderer::FastRenderer;
 use fontdue::Font;
 use tiny_skia::Pixmap;
 use std::time::Instant;
@@ -63,8 +66,17 @@ pub fn run_app<M: Model + 'static, TM: TextMeasurer + 'static>(
         
         let _ = fb.set_offset(0, 0); // Ensure no panning is applied
         
+        #[cfg(not(feature = "fast-renderer"))]
         let mut image_cache = std::collections::HashMap::new();
+        #[cfg(feature = "fast-renderer")]
+        let mut image_cache = std::collections::HashMap::new();
+
+        #[cfg(not(feature = "fast-renderer"))]
         let mut gradient_cache = std::collections::HashMap::new();
+
+        #[cfg(not(feature = "fast-renderer"))]
+        let mut glyph_cache = std::collections::HashMap::new();
+        #[cfg(feature = "fast-renderer")]
         let mut glyph_cache = std::collections::HashMap::new();
 
         let mut mouse_x = 0.0;
@@ -142,14 +154,30 @@ pub fn run_app<M: Model + 'static, TM: TextMeasurer + 'static>(
                         &mut fb_mmap[0..page_size]
                     };
 
-                    // Render directly to the off-screen VRAM virtual page!
-                    if let Some(fb_pixmap) = tiny_skia::PixmapMut::from_bytes(draw_slice, fb_w, fb_h) {
-                         let mut renderer = TinySkiaRenderer::new(fb_pixmap, fonts, &mut image_cache, &mut gradient_cache, &mut glyph_cache);
-                         renderer.swap_rb = true; // FB is BGRA
-                         if rotate {
-                             renderer.transform = tiny_skia::Transform::from_rotate(90.0).post_translate(fb_w as f32, 0.0);
-                         }
-                         runtime.render(&mut renderer);
+                    #[cfg(not(feature = "fast-renderer"))]
+                    {
+                        if let Some(fb_pixmap) = tiny_skia::PixmapMut::from_bytes(draw_slice, fb_w, fb_h) {
+                             let mut renderer = TinySkiaRenderer::new(fb_pixmap, fonts, &mut image_cache, &mut gradient_cache, &mut glyph_cache);
+                             renderer.swap_rb = true; // FB is BGRA
+                             if rotate {
+                                 renderer.transform = tiny_skia::Transform::from_rotate(90.0).post_translate(fb_w as f32, 0.0);
+                             }
+                             runtime.render(&mut renderer);
+                        }
+                    }
+
+                    #[cfg(feature = "fast-renderer")]
+                    {
+                        let ptr = draw_slice.as_mut_ptr() as *mut u32;
+                        let len = draw_slice.len() / 4;
+                        let raw_buf = unsafe { std::slice::from_raw_parts_mut(ptr, len) };
+                        
+                        let mut renderer = FastRenderer::new(raw_buf, w, h, fonts, &mut image_cache, &mut glyph_cache);
+                        renderer.swap_rb = true; // FB is BGRA
+                        renderer.rotate = rotate;
+                        renderer.physical_width = fb_w;
+                        renderer.physical_height = fb_h;
+                        runtime.render(&mut renderer);
                     }
                     
                     // Flip the display registers to instantly show the newly drawn virtual offset!

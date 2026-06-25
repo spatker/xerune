@@ -1,5 +1,5 @@
 [workspace]
-members = ["skia_renderer", "wpt_runner"]
+members = ["skia_renderer", "wpt_runner", "fast_renderer"]
 
 [package]
 name = "xerune"
@@ -13,6 +13,7 @@ path = "src/lib.rs"
 
 [features]
 profile = ["dep:coarse-prof"]
+fast-renderer = []
 
 [dependencies]
 askama = "0.14.0"
@@ -38,6 +39,7 @@ softbuffer = "0.4.1"
 tiny-skia = "0.12.0"
 fontdue = "0.9.3"
 skia_renderer = { path = "skia_renderer", features = ["profile"] }
+fast_renderer = { path = "fast_renderer", features = ["profile"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 # For the embedded backend in examples

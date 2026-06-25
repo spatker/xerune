@@ -4,6 +4,11 @@ use askama::Template;
 use tiny_skia::{PixmapMut, Paint, Color, Transform, Rect};
 use rand::Rng;
 
+#[cfg(not(feature = "fast-renderer"))]
+use skia_renderer::TinySkiaMeasurer;
+#[cfg(feature = "fast-renderer")]
+use fast_renderer::FastMeasurer;
+
 mod support;
 
 #[derive(Debug, Clone)]
@@ -165,7 +170,10 @@ fn main() -> anyhow::Result<()> {
     let fonts = vec![roboto_regular, roboto_bold];
     let fonts_ref: &'static [Font] = Box::leak(fonts.into_boxed_slice());
 
-    let measurer = skia_renderer::TinySkiaMeasurer { fonts: fonts_ref };
+    #[cfg(not(feature = "fast-renderer"))]
+    let measurer = TinySkiaMeasurer { fonts: fonts_ref };
+    #[cfg(feature = "fast-renderer")]
+    let measurer = FastMeasurer { fonts: fonts_ref };
 
     let model = ShowcaseModel {
         system_load_value: 30.0,

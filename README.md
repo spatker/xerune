@@ -36,9 +36,10 @@ This modular separation makes it very easy to create custom components simply by
 - [x] Dirty region handling
 - [x] Performance improvements
 - [ ] ARM Linux as first class citizen
-- [ ] Animations
+- [x] Animations
 - [x] Performance and resource optimization (CPU, RAM, storage)
-- [ ] More CSS and HTML tags
+- [x] More CSS and HTML tags
+- [x] WPT test running support
 
 ## Dependencies
 
