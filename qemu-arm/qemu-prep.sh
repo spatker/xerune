@@ -12,7 +12,7 @@ qemu-system-aarch64 \
     -cpu cortex-a53 -smp cores=4 \
     -nographic \
     -M virt -m 4096 \
-    -bios /usr/share/edk2/aarch64/QEMU_CODE.fd \
+    -bios /usr/share/edk2/aarch64/QEMU_EFI.fd \
     -drive format=qcow2,file="$QCOW2_IMAGE" \
     -device ramfb \
     -cdrom "$ISO_PATH" \

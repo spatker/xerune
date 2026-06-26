@@ -4,6 +4,7 @@ use skia_renderer::TinySkiaRenderer;
 #[cfg(feature = "fast-renderer")]
 use fast_renderer::FastRenderer;
 use fontdue::Font;
+#[allow(unused_imports)]
 use tiny_skia::Pixmap;
 use std::time::Instant;
 
@@ -11,7 +12,7 @@ use std::time::Instant;
 use {
     linuxfb::Framebuffer,
     evdev::{Device, AbsoluteAxisType, InputEventKind, Key},
-    std::sync::mpsc::{channel, Receiver, Sender},
+    std::sync::mpsc::{channel, Receiver},
     std::thread,
 };
 
@@ -24,6 +25,7 @@ pub fn run_app<M: Model + xerune::ui::TemplateLayout + 'static, TM: TextMeasurer
     setup: impl FnOnce(std::sync::mpsc::Sender<String>),
 ) -> anyhow::Result<()> {
     #[cfg(feature = "profile")]
+    #[allow(unused_imports)]
     use coarse_prof::profile;
     #[cfg(not(feature = "profile"))]
     macro_rules! profile { ($($tt:tt)*) => {}; }
@@ -85,8 +87,11 @@ pub fn run_app<M: Model + xerune::ui::TemplateLayout + 'static, TM: TextMeasurer
         let mut touch_y = 0.0;
         
         let mut force_redraw = true;
-        let mut prev_render_time_ms: Option<f32> = None;
+        // let mut prev_render_time_ms: Option<f32> = None;
         let mut active_page = 0;
+
+        #[cfg(feature = "fast-renderer")]
+        let mut back_buffer = vec![0u32; (fb_w * fb_h) as usize];
 
         loop {
             let frame_start = Instant::now();
@@ -121,9 +126,9 @@ pub fn run_app<M: Model + xerune::ui::TemplateLayout + 'static, TM: TextMeasurer
                 messages.push(msg);
                 if messages.len() > 300 { break; } // Safety limit
             }
-            if let Some(ms) = prev_render_time_ms {
-                messages.push(format!("render_time_ms:{:.2}", ms));
-            }
+            // if let Some(ms) = prev_render_time_ms {
+            //     messages.push(format!("render_time_ms:{:.2}", ms));
+            // }
             if !messages.is_empty() {
                 dirty |= runtime.handle_messages(messages);
             }
@@ -134,7 +139,7 @@ pub fn run_app<M: Model + xerune::ui::TemplateLayout + 'static, TM: TextMeasurer
             
             // Draw
             if dirty {
-                let render_start = Instant::now();
+                // let render_start = Instant::now();
                 
                 if bytes_per_pixel == 4 {
                     let page_size = (fb_w * fb_h * 4) as usize;
@@ -168,16 +173,19 @@ pub fn run_app<M: Model + xerune::ui::TemplateLayout + 'static, TM: TextMeasurer
 
                     #[cfg(feature = "fast-renderer")]
                     {
-                        let ptr = draw_slice.as_mut_ptr() as *mut u32;
-                        let len = draw_slice.len() / 4;
-                        let raw_buf = unsafe { std::slice::from_raw_parts_mut(ptr, len) };
-                        
-                        let mut renderer = FastRenderer::new(raw_buf, w, h, fonts, &mut image_cache, &mut glyph_cache);
+                        let mut renderer = FastRenderer::new(&mut back_buffer, w, h, fonts, &mut image_cache, &mut glyph_cache);
                         renderer.swap_rb = true; // FB is BGRA
                         renderer.rotate = rotate;
                         renderer.physical_width = fb_w;
                         renderer.physical_height = fb_h;
                         runtime.render(&mut renderer);
+
+                        // Copy completed frame from local double-buffer to framebuffer
+                        let ptr_src = back_buffer.as_ptr() as *const u8;
+                        let ptr_dst = draw_slice.as_mut_ptr();
+                        unsafe {
+                            std::ptr::copy_nonoverlapping(ptr_src, ptr_dst, page_size);
+                        }
                     }
                     
                     // Flip the display registers to instantly show the newly drawn virtual offset!
@@ -190,11 +198,14 @@ pub fn run_app<M: Model + xerune::ui::TemplateLayout + 'static, TM: TextMeasurer
                     }
                 } else if bytes_per_pixel == 2 {
                     // Fallback: draw to local (RGBA) and convert to RGB565 during blit
+                    #[cfg(not(feature = "fast-renderer"))]
                     render_16bit_fallback(&mut runtime, w, h, rotate, fb_w, fb_mmap.as_mut(), fonts, &mut image_cache, &mut gradient_cache, &mut glyph_cache)?;
+                    #[cfg(feature = "fast-renderer")]
+                    render_16bit_fallback(&mut runtime, w, h, rotate, fb_w, fb_mmap.as_mut(), fonts, &mut image_cache, &mut glyph_cache)?;
                 }
-                prev_render_time_ms = Some(render_start.elapsed().as_secs_f32() * 1000.0);
+                // prev_render_time_ms = Some(render_start.elapsed().as_secs_f32() * 1000.0);
             } else {
-                prev_render_time_ms = None;
+                // prev_render_time_ms = None;
             }
             
             // Frame limiting and dynamic sleeping
@@ -214,6 +225,7 @@ pub fn run_app<M: Model + xerune::ui::TemplateLayout + 'static, TM: TextMeasurer
 }
 
 #[cfg(all(target_os = "linux", feature = "linuxfb", feature = "evdev"))]
+#[cfg(not(feature = "fast-renderer"))]
 fn render_16bit_fallback<M: Model + xerune::ui::TemplateLayout, TM: TextMeasurer>(
     runtime: &mut Runtime<M, TM>,
     w: u32,
@@ -260,6 +272,64 @@ fn render_16bit_fallback<M: Model + xerune::ui::TemplateLayout, TM: TextMeasurer
                     let r = *src_ptr.add(src_idx) as u16;
                     let g = *src_ptr.add(src_idx + 1) as u16;
                     let b = *src_ptr.add(src_idx + 2) as u16;
+                    let rgb565 = ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3);
+                    let fb_idx = (dest_y * fb_w + dest_x) as usize * 2;
+                    let d = dest_ptr.add(fb_idx) as *mut u16;
+                    d.write_unaligned(rgb565);
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+#[cfg(all(target_os = "linux", feature = "linuxfb", feature = "evdev"))]
+#[cfg(feature = "fast-renderer")]
+fn render_16bit_fallback<M: Model + xerune::ui::TemplateLayout, TM: TextMeasurer>(
+    runtime: &mut Runtime<M, TM>,
+    w: u32,
+    h: u32,
+    rotate: bool,
+    fb_w: u32,
+    fb_mmap: &mut [u8],
+    fonts: &[Font],
+    image_cache: &mut std::collections::HashMap<String, (u32, u32, Vec<u32>)>,
+    glyph_cache: &mut std::collections::HashMap<(usize, u16, u32), fast_renderer::CachedGlyph>,
+) -> anyhow::Result<()> {
+    #[cfg(feature = "profile")]
+    use coarse_prof::profile;
+    #[cfg(not(feature = "profile"))]
+    macro_rules! profile { ($($tt:tt)*) => {}; }
+
+    let mut buffer = vec![0u32; (w * h) as usize];
+    let mut renderer = FastRenderer::new(&mut buffer, w, h, fonts, image_cache, glyph_cache);
+    renderer.rotate = false;
+    let dirty_region = runtime.render(&mut renderer);
+    
+    profile!("blit_16bit");
+    let (dx, dy, dw, dh) = if let Some(r) = dirty_region {
+        let x1 = (r.x.floor() as i32).max(0).min(w as i32) as u32;
+        let y1 = (r.y.floor() as i32).max(0).min(h as i32) as u32;
+        let x2 = ((r.x + r.width).ceil() as i32).max(0).min(w as i32) as u32;
+        let y2 = ((r.y + r.height).ceil() as i32).max(0).min(h as i32) as u32;
+        (x1, y1, x2 - x1, y2 - y1)
+    } else {
+        (0, 0, w, h)
+    };
+
+    if dw > 0 && dh > 0 {
+        let dest_ptr = fb_mmap.as_mut_ptr();
+        for y in dy..(dy + dh) {
+            for x in dx..(dx + dw) {
+                let src_idx = (y * w + x) as usize;
+                let dest_x = if rotate { fb_w - 1 - y } else { x };
+                let dest_y = if rotate { x } else { y };
+                
+                unsafe {
+                    let pixel = buffer[src_idx];
+                    let r = ((pixel >> 16) & 0xFF) as u16;
+                    let g = ((pixel >> 8) & 0xFF) as u16;
+                    let b = (pixel & 0xFF) as u16;
                     let rgb565 = ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3);
                     let fb_idx = (dest_y * fb_w + dest_x) as usize * 2;
                     let d = dest_ptr.add(fb_idx) as *mut u16;
