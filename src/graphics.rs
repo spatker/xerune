@@ -24,7 +24,7 @@ impl Color {
 #[derive(Debug, Clone, PartialEq)]
 pub struct LinearGradient {
     pub angle: f32, // in degrees
-    pub stops: Vec<(Color, f32)>, // Color and position (0.0 to 1.0)
+    pub stops: std::sync::Arc<[(Color, f32)]>, // Color and position (0.0 to 1.0)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

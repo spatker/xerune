@@ -195,6 +195,9 @@ pub fn run_app<M: Model + xerune::ui::TemplateLayout + 'static, TM: TextMeasurer
                         } else {
                             active_page = if active_page == 0 { 1 } else { 0 };
                         }
+                    } else {
+                        // Force flush for single-buffered display to avoid deferred I/O delay (crucial for QEMU/virtio-gpu)
+                        let _ = fb.set_offset(0, 0);
                     }
                 } else if bytes_per_pixel == 2 {
                     // Fallback: draw to local (RGBA) and convert to RGB565 during blit
@@ -202,6 +205,9 @@ pub fn run_app<M: Model + xerune::ui::TemplateLayout + 'static, TM: TextMeasurer
                     render_16bit_fallback(&mut runtime, w, h, rotate, fb_w, fb_mmap.as_mut(), fonts, &mut image_cache, &mut gradient_cache, &mut glyph_cache)?;
                     #[cfg(feature = "fast-renderer")]
                     render_16bit_fallback(&mut runtime, w, h, rotate, fb_w, fb_mmap.as_mut(), fonts, &mut image_cache, &mut glyph_cache)?;
+                    
+                    // Force flush for single-buffered display
+                    let _ = fb.set_offset(0, 0);
                 }
                 // prev_render_time_ms = Some(render_start.elapsed().as_secs_f32() * 1000.0);
             } else {
@@ -210,7 +216,14 @@ pub fn run_app<M: Model + xerune::ui::TemplateLayout + 'static, TM: TextMeasurer
             
             // Frame limiting and dynamic sleeping
             let elapsed = frame_start.elapsed();
-            let sleep_duration = tick_res.next_tick_in.saturating_sub(elapsed);
+            let mut sleep_duration = tick_res.next_tick_in.saturating_sub(elapsed);
+            if dirty {
+                let target_duration = std::time::Duration::from_nanos((1_000_000_000.0 / runtime.target_fps as f64) as u64);
+                let min_sleep = target_duration.saturating_sub(elapsed);
+                if min_sleep > sleep_duration {
+                    sleep_duration = min_sleep;
+                }
+            }
             if !sleep_duration.is_zero() {
                 std::thread::sleep(sleep_duration);
             }

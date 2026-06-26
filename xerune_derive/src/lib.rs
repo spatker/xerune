@@ -338,12 +338,36 @@ fn preprocess_nodes<'a>(
 
 // Generate code for Askama nodes within attribute string interpolation
 fn generate_attr_string_code(nodes: &[Node<'_>], local_vars: &HashSet<String>) -> proc_macro2::TokenStream {
+    let has_complex = nodes.iter().any(|node| !matches!(node, Node::Lit(_) | Node::Expr(_, _)));
+    if !has_complex && !nodes.is_empty() {
+        let mut format_str = String::new();
+        let mut format_args = Vec::new();
+        for node in nodes {
+            match node {
+                Node::Lit(lit) => {
+                    let val = format!("{}{}{}", lit.lws, lit.val, lit.rws);
+                    let escaped = val.replace("{", "{{").replace("}", "}}");
+                    format_str.push_str(&escaped);
+                }
+                Node::Expr(_, expr) => {
+                    let expr_str = format_expr(&**expr, local_vars);
+                    let expr_tokens: proc_macro2::TokenStream = expr_str.parse().unwrap();
+                    format_str.push_str("{}");
+                    format_args.push(expr_tokens);
+                }
+                _ => unreachable!(),
+            }
+        }
+        return quote! {
+            format!(#format_str, #(#format_args),*)
+        };
+    }
+
     let mut parts = Vec::new();
     for node in nodes {
         match node {
             Node::Lit(lit) => {
                 let val = format!("{}{}{}", lit.lws, lit.val, lit.rws);
-                println!("LIT VALUE: {:?}", val);
                 parts.push(quote! { #val });
             }
             Node::Expr(_, expr) => {
@@ -433,7 +457,10 @@ fn compile_dom_node<'a>(
                     let expr_str = format_expr(expr, local_vars);
                     let expr_tokens: proc_macro2::TokenStream = expr_str.parse().unwrap();
                     return quote! {
-                        let node = builder.create_text(&format!("{}", #expr_tokens), &[]);
+                        let node = {
+                            use xerune::ui::ToDisplayString;
+                            builder.create_text(&#expr_tokens.to_display_string(), &[])
+                        };
                         builder.append_child(parent, node);
                     };
                 }

@@ -300,7 +300,7 @@ mod tests {
         indent: usize,
     ) {
         let prefix = "  ".repeat(indent);
-        let tag = metadata.get(&node).map(|m| m.tag.as_str()).unwrap_or("unknown");
+        let tag = metadata.get(&node).map(|m| m.tag.as_ref()).unwrap_or("unknown");
         let layout = taffy.layout(node).unwrap();
         let class = metadata.get(&node).and_then(|m| m.attrs.iter().find(|(k,_)| k == "class").map(|(_,v)| v.as_str())).unwrap_or("");
         let interaction = interactions.get(&node).map(|s| s.as_str()).unwrap_or("");

@@ -102,14 +102,14 @@ pub struct ContainerStyle {
     pub is_floated: bool,
     pub box_sizing: BoxSizing,
     // Animation properties
-    pub animation_name: Option<String>,
+    pub animation_name: Option<std::sync::Arc<str>>,
     pub animation_duration: f32, // in seconds
-    pub animation_timing_function: String,
+    pub animation_timing_function: std::sync::Arc<str>,
     pub animation_delay: f32, // in seconds
     pub animation_iteration_count: AnimationIterationCount,
-    pub animation_direction: String,
-    pub animation_fill_mode: String,
-    pub animation_play_state: String,
+    pub animation_direction: std::sync::Arc<str>,
+    pub animation_fill_mode: std::sync::Arc<str>,
+    pub animation_play_state: std::sync::Arc<str>,
 }
 
 impl Default for ContainerStyle {
@@ -152,12 +152,12 @@ impl Default for ContainerStyle {
             box_sizing: BoxSizing::ContentBox,
             animation_name: None,
             animation_duration: 0.0,
-            animation_timing_function: "ease".to_string(),
+            animation_timing_function: std::sync::Arc::from("ease"),
             animation_delay: 0.0,
             animation_iteration_count: AnimationIterationCount::Count(1.0),
-            animation_direction: "normal".to_string(),
-            animation_fill_mode: "none".to_string(),
-            animation_play_state: "running".to_string(),
+            animation_direction: std::sync::Arc::from("normal"),
+            animation_fill_mode: std::sync::Arc::from("none"),
+            animation_play_state: std::sync::Arc::from("running"),
         }
     }
 }

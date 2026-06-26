@@ -30,6 +30,26 @@ impl<'a> TextMeasurer for FastMeasurer<'a> {
             return (0.0, 0.0);
         }
 
+        thread_local! {
+            static MEASURE_CACHE: std::cell::RefCell<HashMap<String, Vec<(u32, u16, f32, f32)>>> = std::cell::RefCell::new(HashMap::with_capacity(256));
+        }
+
+        let font_size_bits = font_size.to_bits();
+        let cached = MEASURE_CACHE.with(|cache| {
+            if let Some(entries) = cache.borrow().get(text) {
+                for &(sz, wt, w, h) in entries {
+                    if sz == font_size_bits && wt == weight {
+                        return Some((w, h));
+                    }
+                }
+            }
+            None
+        });
+
+        if let Some(dims) = cached {
+            return dims;
+        }
+
         let font_index = if weight > 0 && self.fonts.len() > 1 { 1 } else { 0 };
 
         let mut layout = fontdue::layout::Layout::new(fontdue::layout::CoordinateSystem::PositiveYDown);
@@ -61,7 +81,15 @@ impl<'a> TextMeasurer for FastMeasurer<'a> {
             if max_y > min_y { max_y - min_y } else { 20.0 }
         };
 
-        (width, height)
+        let result = (width, height);
+        MEASURE_CACHE.with(|cache| {
+            cache.borrow_mut()
+                .entry(text.to_string())
+                .or_insert_with(Vec::new)
+                .push((font_size_bits, weight, width, height));
+        });
+
+        result
     }
 }
 

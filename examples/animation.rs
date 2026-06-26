@@ -155,7 +155,7 @@ fn main() -> anyhow::Result<()> {
     // Create 100 items for benchmark
     let model = AnimationModel::new(100);
     let mut runtime = Runtime::new(model, measurer);
-    runtime.set_interval("tick".to_string(), 16);
+    runtime.set_interval("tick".to_string(), 33);
     
     #[cfg(not(all(target_os = "linux", feature = "linuxfb", feature = "evdev")))]
     {

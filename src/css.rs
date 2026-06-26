@@ -7,7 +7,14 @@ use std::collections::HashMap;
 pub fn parse_inline_style(style_str: &str, current_style: &mut ContainerStyle, taffy_style: &mut Style) {
     let tokenizer = simplecss::DeclarationTokenizer::from(style_str);
     for decl in tokenizer {
-        apply_declaration(&decl.name.to_lowercase(), decl.value, current_style, taffy_style);
+        let name_lower;
+        let name = if decl.name.chars().any(|c| c.is_ascii_uppercase()) {
+            name_lower = decl.name.to_lowercase();
+            &name_lower
+        } else {
+            decl.name
+        };
+        apply_declaration(name, decl.value, current_style, taffy_style);
     }
 }
 
@@ -559,13 +566,13 @@ pub fn apply_declaration(prop: &str, val: &str, current_style: &mut ContainerSty
             }
         }
         "animation-name" => {
-            current_style.animation_name = Some(val.trim().to_string());
+            current_style.animation_name = Some(std::sync::Arc::from(val.trim()));
         }
         "animation-duration" => {
             current_style.animation_duration = parse_duration_sec(val);
         }
         "animation-timing-function" => {
-            current_style.animation_timing_function = val.trim().to_string();
+            current_style.animation_timing_function = std::sync::Arc::from(val.trim());
         }
         "animation-delay" => {
             current_style.animation_delay = parse_duration_sec(val);
@@ -578,13 +585,13 @@ pub fn apply_declaration(prop: &str, val: &str, current_style: &mut ContainerSty
             };
         }
         "animation-direction" => {
-            current_style.animation_direction = val.trim().to_lowercase();
+            current_style.animation_direction = std::sync::Arc::from(val.trim().to_lowercase());
         }
         "animation-fill-mode" => {
-            current_style.animation_fill_mode = val.trim().to_lowercase();
+            current_style.animation_fill_mode = std::sync::Arc::from(val.trim().to_lowercase());
         }
         "animation-play-state" => {
-            current_style.animation_play_state = val.trim().to_lowercase();
+            current_style.animation_play_state = std::sync::Arc::from(val.trim().to_lowercase());
         }
         "animation" => {
             parse_animation_shorthand(val, current_style);
@@ -595,15 +602,28 @@ pub fn apply_declaration(prop: &str, val: &str, current_style: &mut ContainerSty
     }
 }
 
+thread_local! {
+    static COLOR_CACHE: std::cell::RefCell<HashMap<String, Color>> = std::cell::RefCell::new(HashMap::with_capacity(256));
+}
+
 pub(crate) fn parse_hex_color(val: &str) -> Option<Color> {
-    parse_color(val).ok().map(|c| {
+    if let Some(color) = COLOR_CACHE.with(|cache| cache.borrow().get(val).copied()) {
+        return Some(color);
+    }
+    let color = parse_color(val).ok().map(|c| {
         Color::from_rgba8(
             (c.r * 255.0) as u8,
             (c.g * 255.0) as u8,
             (c.b * 255.0) as u8,
             (c.a * 255.0) as u8,
         )
-    })
+    });
+    if let Some(c) = color {
+        COLOR_CACHE.with(|cache| {
+            cache.borrow_mut().insert(val.to_string(), c);
+        });
+    }
+    color
 }
 
 fn parse_linear_gradient(val: &str) -> Option<LinearGradient> {
@@ -655,7 +675,7 @@ fn parse_linear_gradient(val: &str) -> Option<LinearGradient> {
          }
     }
     
-    Some(LinearGradient { angle, stops })
+    Some(LinearGradient { angle, stops: stops.into() })
 }
 
 pub(crate) fn parse_px(val: &str) -> Option<f32> {
@@ -834,25 +854,25 @@ pub fn parse_animation_shorthand(val: &str, current_style: &mut ContainerStyle) 
         
         // Check timing functions
         if ["linear", "ease", "ease-in", "ease-out", "ease-in-out"].contains(&part_lower.as_str()) || part_lower.starts_with("cubic-bezier(") {
-            current_style.animation_timing_function = part.to_string();
+            current_style.animation_timing_function = std::sync::Arc::from(part);
             continue;
         }
         
         // Check directions
         if ["normal", "reverse", "alternate", "alternate-reverse"].contains(&part_lower.as_str()) {
-            current_style.animation_direction = part_lower;
+            current_style.animation_direction = std::sync::Arc::from(part_lower);
             continue;
         }
         
         // Check fill modes
         if ["none", "forwards", "backwards", "both"].contains(&part_lower.as_str()) {
-            current_style.animation_fill_mode = part_lower;
+            current_style.animation_fill_mode = std::sync::Arc::from(part_lower);
             continue;
         }
         
         // Check play states
         if ["running", "paused"].contains(&part_lower.as_str()) {
-            current_style.animation_play_state = part_lower;
+            current_style.animation_play_state = std::sync::Arc::from(part_lower);
             continue;
         }
         
@@ -865,7 +885,7 @@ pub fn parse_animation_shorthand(val: &str, current_style: &mut ContainerStyle) 
         }
         
         // Otherwise, it's the animation name!
-        current_style.animation_name = Some(part.to_string());
+        current_style.animation_name = Some(std::sync::Arc::from(part));
     }
 }
 

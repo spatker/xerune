@@ -122,7 +122,7 @@ pub trait TemplateLayout {
 
 #[derive(Clone, Debug)]
 pub struct NodeMetadata {
-    pub tag: String,
+    pub tag: std::borrow::Cow<'static, str>,
     pub attrs: Vec<(String, String)>,
     pub text: Option<String>,
     pub checked: Option<bool>,
@@ -132,6 +132,26 @@ pub struct NodeMetadata {
     pub image_src: Option<String>,
     pub canvas_id: Option<String>,
     pub input_text: Option<String>,
+    pub class: Option<std::borrow::Cow<'static, str>>,
+    pub id: Option<std::borrow::Cow<'static, str>>,
+    pub style: Option<String>,
+    pub other_attrs: Option<Vec<(String, String)>>,
+}
+
+fn intern_string(s: &str) -> &'static str {
+    thread_local! {
+        static CACHE: std::cell::RefCell<std::collections::HashSet<&'static str>> = std::cell::RefCell::new(std::collections::HashSet::new());
+    }
+    CACHE.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        if let Some(&interned) = cache.get(s) {
+            interned
+        } else {
+            let interned: &'static str = Box::leak(s.to_string().into_boxed_str());
+            cache.insert(interned);
+            interned
+        }
+    })
 }
 
 pub struct UiBuilder {
@@ -144,20 +164,45 @@ pub struct UiBuilder {
 
 impl UiBuilder {
     pub fn new() -> Self {
+        Self::with_capacity(128)
+    }
+
+    pub fn with_capacity(capacity: usize) -> Self {
         Self {
             taffy: TaffyTree::new(),
-            node_metadata: HashMap::new(),
-            render_data: HashMap::new(),
-            interactions: HashMap::new(),
-            node_to_handle: HashMap::new(),
+            node_metadata: HashMap::with_capacity(capacity),
+            render_data: HashMap::with_capacity(capacity),
+            interactions: HashMap::with_capacity(capacity),
+            node_to_handle: HashMap::with_capacity(capacity),
         }
+    }
+
+    fn parse_attrs(attrs: &[(&str, &str)]) -> (Option<std::borrow::Cow<'static, str>>, Option<std::borrow::Cow<'static, str>>, Option<String>, Option<Vec<(String, String)>>) {
+        let mut class = None;
+        let mut id = None;
+        let mut style = None;
+        let mut other_attrs = None;
+
+        for &(k, v) in attrs {
+            match k {
+                "class" => class = Some(std::borrow::Cow::Borrowed(intern_string(v))),
+                "id" => id = Some(std::borrow::Cow::Borrowed(intern_string(v))),
+                "style" => style = Some(v.to_string()),
+                _ => {
+                    let vec = other_attrs.get_or_insert_with(Vec::new);
+                    vec.push((k.to_string(), v.to_string()));
+                }
+            }
+        }
+        (class, id, style, other_attrs)
     }
 
     pub fn create_element(&mut self, tag: &str, attrs: &[(&str, &str)]) -> NodeId {
         let id = self.taffy.new_leaf(Style::default()).unwrap();
+        let (class, id_val, style, other_attrs) = Self::parse_attrs(attrs);
         let metadata = NodeMetadata {
-            tag: tag.to_string(),
-            attrs: attrs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(),
+            tag: std::borrow::Cow::Borrowed(intern_string(tag)),
+            attrs: Vec::new(),
             text: None,
             checked: None,
             slider_value: None,
@@ -166,6 +211,10 @@ impl UiBuilder {
             image_src: None,
             canvas_id: None,
             input_text: None,
+            class,
+            id: id_val,
+            style,
+            other_attrs,
         };
         self.node_metadata.insert(id, metadata);
         id
@@ -173,9 +222,10 @@ impl UiBuilder {
 
     pub fn create_text(&mut self, text: &str, attrs: &[(&str, &str)]) -> NodeId {
         let id = self.taffy.new_leaf(Style::default()).unwrap();
+        let (class, id_val, style, other_attrs) = Self::parse_attrs(attrs);
         let metadata = NodeMetadata {
-            tag: "#text".to_string(),
-            attrs: attrs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(),
+            tag: std::borrow::Cow::Borrowed("#text"),
+            attrs: Vec::new(),
             text: Some(text.to_string()),
             checked: None,
             slider_value: None,
@@ -184,6 +234,10 @@ impl UiBuilder {
             image_src: None,
             canvas_id: None,
             input_text: None,
+            class,
+            id: id_val,
+            style,
+            other_attrs,
         };
         self.node_metadata.insert(id, metadata);
         id
@@ -191,9 +245,10 @@ impl UiBuilder {
 
     pub fn create_checkbox(&mut self, checked: bool, attrs: &[(&str, &str)]) -> NodeId {
         let id = self.taffy.new_leaf(Style::default()).unwrap();
+        let (class, id_val, style, other_attrs) = Self::parse_attrs(attrs);
         let metadata = NodeMetadata {
-            tag: "input".to_string(),
-            attrs: attrs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(),
+            tag: std::borrow::Cow::Borrowed("input"),
+            attrs: Vec::new(),
             text: None,
             checked: Some(checked),
             slider_value: None,
@@ -202,6 +257,10 @@ impl UiBuilder {
             image_src: None,
             canvas_id: None,
             input_text: None,
+            class,
+            id: id_val,
+            style,
+            other_attrs,
         };
         self.node_metadata.insert(id, metadata);
         id
@@ -209,9 +268,10 @@ impl UiBuilder {
 
     pub fn create_slider(&mut self, value: f32, attrs: &[(&str, &str)]) -> NodeId {
         let id = self.taffy.new_leaf(Style::default()).unwrap();
+        let (class, id_val, style, other_attrs) = Self::parse_attrs(attrs);
         let metadata = NodeMetadata {
-            tag: "input".to_string(),
-            attrs: attrs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(),
+            tag: std::borrow::Cow::Borrowed("input"),
+            attrs: Vec::new(),
             text: None,
             checked: None,
             slider_value: Some(value),
@@ -220,6 +280,10 @@ impl UiBuilder {
             image_src: None,
             canvas_id: None,
             input_text: None,
+            class,
+            id: id_val,
+            style,
+            other_attrs,
         };
         self.node_metadata.insert(id, metadata);
         id
@@ -227,9 +291,10 @@ impl UiBuilder {
 
     pub fn create_input_text(&mut self, value: &str, attrs: &[(&str, &str)]) -> NodeId {
         let id = self.taffy.new_leaf(Style::default()).unwrap();
+        let (class, id_val, style, other_attrs) = Self::parse_attrs(attrs);
         let metadata = NodeMetadata {
-            tag: "input".to_string(),
-            attrs: attrs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(),
+            tag: std::borrow::Cow::Borrowed("input"),
+            attrs: Vec::new(),
             text: None,
             checked: None,
             slider_value: None,
@@ -238,6 +303,10 @@ impl UiBuilder {
             image_src: None,
             canvas_id: None,
             input_text: Some(value.to_string()),
+            class,
+            id: id_val,
+            style,
+            other_attrs,
         };
         self.node_metadata.insert(id, metadata);
         id
@@ -245,9 +314,10 @@ impl UiBuilder {
 
     pub fn create_progress(&mut self, value: f32, max: f32, attrs: &[(&str, &str)]) -> NodeId {
         let id = self.taffy.new_leaf(Style::default()).unwrap();
+        let (class, id_val, style, other_attrs) = Self::parse_attrs(attrs);
         let metadata = NodeMetadata {
-            tag: "progress".to_string(),
-            attrs: attrs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(),
+            tag: std::borrow::Cow::Borrowed("progress"),
+            attrs: Vec::new(),
             text: None,
             checked: None,
             slider_value: None,
@@ -256,6 +326,10 @@ impl UiBuilder {
             image_src: None,
             canvas_id: None,
             input_text: None,
+            class,
+            id: id_val,
+            style,
+            other_attrs,
         };
         self.node_metadata.insert(id, metadata);
         id
@@ -263,9 +337,10 @@ impl UiBuilder {
 
     pub fn create_image(&mut self, src: &str, attrs: &[(&str, &str)]) -> NodeId {
         let id = self.taffy.new_leaf(Style::default()).unwrap();
+        let (class, id_val, style, other_attrs) = Self::parse_attrs(attrs);
         let metadata = NodeMetadata {
-            tag: "img".to_string(),
-            attrs: attrs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(),
+            tag: std::borrow::Cow::Borrowed("img"),
+            attrs: Vec::new(),
             text: None,
             checked: None,
             slider_value: None,
@@ -274,6 +349,10 @@ impl UiBuilder {
             image_src: Some(src.to_string()),
             canvas_id: None,
             input_text: None,
+            class,
+            id: id_val,
+            style,
+            other_attrs,
         };
         self.node_metadata.insert(id, metadata);
         id
@@ -281,9 +360,10 @@ impl UiBuilder {
 
     pub fn create_canvas(&mut self, canvas_id: &str, attrs: &[(&str, &str)]) -> NodeId {
         let id = self.taffy.new_leaf(Style::default()).unwrap();
+        let (class, id_val, style, other_attrs) = Self::parse_attrs(attrs);
         let metadata = NodeMetadata {
-            tag: "canvas".to_string(),
-            attrs: attrs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(),
+            tag: std::borrow::Cow::Borrowed("canvas"),
+            attrs: Vec::new(),
             text: None,
             checked: None,
             slider_value: None,
@@ -292,6 +372,10 @@ impl UiBuilder {
             image_src: None,
             canvas_id: Some(canvas_id.to_string()),
             input_text: None,
+            class,
+            id: id_val,
+            style,
+            other_attrs,
         };
         self.node_metadata.insert(id, metadata);
         id
@@ -352,6 +436,22 @@ impl<'a> simplecss::Element for TaffyElementWrapper<'a> {
 
     fn attribute_matches(&self, local_name: &str, operator: simplecss::AttributeOperator<'_>) -> bool {
         if let Some(meta) = self.metadata.get(&self.node) {
+            if local_name == "class" {
+                if let Some(ref class) = meta.class {
+                    return operator.matches(class);
+                }
+            } else if local_name == "id" {
+                if let Some(ref id) = meta.id {
+                    return operator.matches(id);
+                }
+            }
+            if let Some(ref other) = meta.other_attrs {
+                for (k, v) in other {
+                    if k == local_name {
+                        return operator.matches(v);
+                    }
+                }
+            }
             for (k, v) in &meta.attrs {
                 if k == local_name {
                     return operator.matches(v);
@@ -379,6 +479,14 @@ impl<'a> simplecss::Element for TaffyElementWrapper<'a> {
         }
     }
 }
+
+struct CachedStyles {
+    stylesheet: simplecss::StyleSheet<'static>,
+    keyframes: HashMap<String, css::KeyframesAnimation>,
+    has_nth_or_last_child: bool,
+}
+
+static STYLESHEET_CACHE: std::sync::OnceLock<std::sync::Mutex<HashMap<&'static str, &'static CachedStyles>>> = std::sync::OnceLock::new();
 
 pub struct Ui {
     pub taffy: TaffyTree,
@@ -481,6 +589,23 @@ impl Ui {
                     let index_class = format!("nth-child-{}", i + 1);
                     let is_last = i + 1 == num_children;
                     
+                    // 1. Mutate optimized class field
+                    if let Some(ref mut class) = child_meta.class {
+                        let class_str = class.to_mut();
+                        class_str.push(' ');
+                        class_str.push_str(&index_class);
+                        if is_last {
+                            class_str.push_str(" last-child");
+                        }
+                    } else {
+                        let mut class_val = index_class.clone();
+                        if is_last {
+                            class_val.push_str(" last-child");
+                        }
+                        child_meta.class = Some(std::borrow::Cow::Owned(class_val));
+                    }
+
+                    // 2. Mutate backward-compatible attrs field
                     let mut found_class = false;
                     for (k, v) in &mut child_meta.attrs {
                         if k == "class" {
@@ -493,7 +618,7 @@ impl Ui {
                             break;
                         }
                     }
-                    if !found_class {
+                    if !found_class && !child_meta.attrs.is_empty() {
                         let mut class_val = index_class;
                         if is_last {
                             class_val.push_str(" last-child");
@@ -513,36 +638,63 @@ impl Ui {
     ) -> Result<Self, TaffyError> {
         profile!("ui_new_compiled");
         let mut builder = UiBuilder::new();
-        let root = model.build_ui(&mut builder);
+        let root = {
+            profile!("build_ui");
+            model.build_ui(&mut builder)
+        };
 
         let stylesheet_str = model.stylesheet();
-        let keyframes = css::parse_keyframes(stylesheet_str);
         
-        let re_nth = regex::Regex::new(r":nth-child\(\s*(\d+)\s*\)").unwrap();
-        let css_str = re_nth.replace_all(stylesheet_str, ".nth-child-$1").into_owned();
-        let css_str = css_str.replace(":last-child", ".last-child");
-        let re_slash = regex::Regex::new(r"/[\d\.]+").unwrap();
-        let css_str = re_slash.replace_all(&css_str, "").into_owned();
-        
-        let stylesheet = simplecss::StyleSheet::parse(&css_str);
+        let cache = STYLESHEET_CACHE.get_or_init(|| std::sync::Mutex::new(HashMap::new()));
+        let mut cache_guard = cache.lock().unwrap();
+        let cached = if let Some(&c) = cache_guard.get(stylesheet_str) {
+            c
+        } else {
+            let has_nth_or_last_child = stylesheet_str.contains(":nth-child") || stylesheet_str.contains(":last-child");
+            let keyframes = css::parse_keyframes(stylesheet_str);
+            
+            let re_nth = regex::Regex::new(r":nth-child\(\s*(\d+)\s*\)").unwrap();
+            let css_str = re_nth.replace_all(stylesheet_str, ".nth-child-$1").into_owned();
+            let css_str = css_str.replace(":last-child", ".last-child");
+            let re_slash = regex::Regex::new(r"/[\d\.]+").unwrap();
+            let css_str = re_slash.replace_all(&css_str, "").into_owned();
+            
+            let static_css_str: &'static str = Box::leak(css_str.into_boxed_str());
+            let stylesheet = simplecss::StyleSheet::parse(static_css_str);
+            
+            let cached_val: &'static CachedStyles = Box::leak(Box::new(CachedStyles {
+                stylesheet,
+                keyframes,
+                has_nth_or_last_child,
+            }));
+            cache_guard.insert(stylesheet_str, cached_val);
+            cached_val
+        };
+        // Drop cache_guard before resolving styles to prevent deadlocks and free up lock
+        drop(cache_guard);
 
         // Preprocess the compiled tree to add nth-child and last-child classes before resolving styles
-        Self::preprocess_compiled_tree(&builder.taffy, &mut builder.node_metadata, root);
+        if cached.has_nth_or_last_child {
+            Self::preprocess_compiled_tree(&builder.taffy, &mut builder.node_metadata, root);
+        }
 
-        let mut base_styles = HashMap::new();
+        let mut base_styles = HashMap::with_capacity(128);
         
-        resolve_styles(
-            &mut builder.taffy,
-            root,
-            measurer,
-            &mut builder.render_data,
-            &mut builder.interactions,
-            default_style,
-            message_validator,
-            &stylesheet,
-            &builder.node_metadata,
-            &mut base_styles,
-        );
+        {
+            profile!("resolve_styles");
+            resolve_styles(
+                &mut builder.taffy,
+                root,
+                measurer,
+                &mut builder.render_data,
+                &mut builder.interactions,
+                default_style,
+                message_validator,
+                &cached.stylesheet,
+                &builder.node_metadata,
+                &mut base_styles,
+            );
+        }
 
         Ok(Self {
             taffy: builder.taffy,
@@ -552,7 +704,7 @@ impl Ui {
             root,
             node_to_handle: builder.node_to_handle,
             base_styles,
-            keyframes,
+            keyframes: cached.keyframes.clone(),
         })
     }
 
@@ -877,7 +1029,14 @@ fn dom_to_taffy(
             for rule in &stylesheet.rules {
                 if rule.selector.matches(&el_wrapper) {
                     for decl in &rule.declarations {
-                        css::apply_declaration(&decl.name.to_lowercase(), decl.value, &mut current_style, &mut layout_style);
+                        let name_lower;
+                        let name = if decl.name.chars().any(|c| c.is_ascii_uppercase()) {
+                            name_lower = decl.name.to_lowercase();
+                            &name_lower
+                        } else {
+                            decl.name
+                        };
+                        css::apply_declaration(name, decl.value, &mut current_style, &mut layout_style);
                     }
                 }
             }
@@ -1283,7 +1442,7 @@ fn dom_to_taffy(
         
         NodeData::Text { contents } => {
             let text = contents.borrow();
-            let normalized = text.split_whitespace().collect::<Vec<&str>>().join(" ");
+            let normalized = normalize_text(&text);
             
             if normalized.is_empty() {
                 None
@@ -1294,7 +1453,7 @@ fn dom_to_taffy(
                     ..Style::default()
                 };
                 let id = taffy.new_leaf(text_layout_style.clone()).ok()?;
-                render_data.insert(id, RenderData::Text(normalized, current_style.clone()));
+                render_data.insert(id, RenderData::Text(normalized.into_owned(), current_style.clone()));
                 base_styles.insert(id, (text_layout_style, current_style));
                 node_to_handle.insert(id, handle.clone());
                 Some(id)
@@ -1522,6 +1681,90 @@ pub fn hit_test_recursive(
     None
 }
 
+fn normalize_text(text: &str) -> std::borrow::Cow<'_, str> {
+    let mut needs_normalization = false;
+    let mut last_was_space = false;
+    let mut is_first = true;
+    for c in text.chars() {
+        if c.is_whitespace() {
+            if is_first || last_was_space || c != ' ' {
+                needs_normalization = true;
+                break;
+            }
+            last_was_space = true;
+        } else {
+            last_was_space = false;
+        }
+        is_first = false;
+    }
+    if last_was_space && !text.is_empty() {
+        needs_normalization = true;
+    }
+    if needs_normalization {
+        std::borrow::Cow::Owned(text.split_whitespace().collect::<Vec<&str>>().join(" "))
+    } else {
+        std::borrow::Cow::Borrowed(text)
+    }
+}
+
+pub trait ToDisplayString {
+    fn to_display_string(&self) -> std::borrow::Cow<'_, str>;
+}
+
+impl ToDisplayString for str {
+    fn to_display_string(&self) -> std::borrow::Cow<'_, str> {
+        std::borrow::Cow::Borrowed(self)
+    }
+}
+
+impl ToDisplayString for String {
+    fn to_display_string(&self) -> std::borrow::Cow<'_, str> {
+        std::borrow::Cow::Borrowed(self.as_str())
+    }
+}
+
+impl<T: ToDisplayString + ?Sized> ToDisplayString for &T {
+    fn to_display_string(&self) -> std::borrow::Cow<'_, str> {
+        (*self).to_display_string()
+    }
+}
+
+impl ToDisplayString for f32 {
+    fn to_display_string(&self) -> std::borrow::Cow<'_, str> {
+        std::borrow::Cow::Owned(self.to_string())
+    }
+}
+
+impl ToDisplayString for f64 {
+    fn to_display_string(&self) -> std::borrow::Cow<'_, str> {
+        std::borrow::Cow::Owned(self.to_string())
+    }
+}
+
+impl ToDisplayString for i32 {
+    fn to_display_string(&self) -> std::borrow::Cow<'_, str> {
+        std::borrow::Cow::Owned(self.to_string())
+    }
+}
+
+impl ToDisplayString for u32 {
+    fn to_display_string(&self) -> std::borrow::Cow<'_, str> {
+        std::borrow::Cow::Owned(self.to_string())
+    }
+}
+
+impl ToDisplayString for usize {
+    fn to_display_string(&self) -> std::borrow::Cow<'_, str> {
+        std::borrow::Cow::Owned(self.to_string())
+    }
+}
+
+impl ToDisplayString for bool {
+    fn to_display_string(&self) -> std::borrow::Cow<'_, str> {
+        std::borrow::Cow::Borrowed(if *self { "true" } else { "false" })
+    }
+}
+
 pub(crate) fn resolve_styles(
     taffy: &mut TaffyTree,
     node: NodeId,
@@ -1534,30 +1777,30 @@ pub(crate) fn resolve_styles(
     node_metadata: &HashMap<NodeId, NodeMetadata>,
     base_styles: &mut HashMap<NodeId, (Style, ContainerStyle)>,
 ) {
-    let mut current_style = parent_style.clone();
-    current_style.background_color = None;
-    current_style.background_gradient = None;
-    current_style.border_width = 0.0;
-    current_style.border_radius = 0.0;
-    current_style.border_color = None;
-    current_style.overflow = Overflow::Visible;
-    current_style.animation_name = None;
-    current_style.animation_duration = 0.0;
-    current_style.animation_timing_function = "ease".to_string();
-    current_style.animation_delay = 0.0;
-    current_style.animation_iteration_count = crate::style::AnimationIterationCount::Count(1.0);
-    current_style.animation_direction = "normal".to_string();
-    current_style.animation_fill_mode = "none".to_string();
-    current_style.animation_play_state = "running".to_string();
-
     let meta = match node_metadata.get(&node) {
         Some(m) => m,
         None => return,
     };
 
     if meta.tag == "#text" {
+        let mut current_style = parent_style;
+        current_style.background_color = None;
+        current_style.background_gradient = None;
+        current_style.border_width = 0.0;
+        current_style.border_radius = 0.0;
+        current_style.border_color = None;
+        current_style.overflow = Overflow::Visible;
+        current_style.animation_name = None;
+        current_style.animation_duration = 0.0;
+        current_style.animation_timing_function = std::sync::Arc::from("ease");
+        current_style.animation_delay = 0.0;
+        current_style.animation_iteration_count = crate::style::AnimationIterationCount::Count(1.0);
+        current_style.animation_direction = std::sync::Arc::from("normal");
+        current_style.animation_fill_mode = std::sync::Arc::from("none");
+        current_style.animation_play_state = std::sync::Arc::from("running");
+
         if let Some(ref text) = meta.text {
-            let normalized = text.split_whitespace().collect::<Vec<&str>>().join(" ");
+            let normalized = normalize_text(text);
             if !normalized.is_empty() {
                 let (width, height) = text_measurer.measure_text(&normalized, current_style.font_size, current_style.weight);
                 let text_layout_style = Style {
@@ -1565,7 +1808,7 @@ pub(crate) fn resolve_styles(
                     ..Style::default()
                 };
                 let _ = taffy.set_style(node, text_layout_style.clone());
-                render_data.insert(node, RenderData::Text(normalized, current_style.clone()));
+                render_data.insert(node, RenderData::Text(normalized.into_owned(), current_style.clone()));
                 base_styles.insert(node, (text_layout_style, current_style));
             }
         }
@@ -1573,9 +1816,9 @@ pub(crate) fn resolve_styles(
     }
 
     let tag = &meta.tag;
-    let defaults = defaults::get_default_style(tag, &current_style);
+    let defaults = defaults::get_default_style(tag, &parent_style);
     let mut layout_style = defaults.taffy_style;
-    current_style = defaults.container_style;
+    let mut current_style = defaults.container_style;
 
     let mut parsed = ParsedAttributes::new(defaults.element_type);
 
@@ -1609,19 +1852,67 @@ pub(crate) fn resolve_styles(
     for rule in &stylesheet.rules {
         if rule.selector.matches(&el_wrapper) {
             for decl in &rule.declarations {
-                css::apply_declaration(&decl.name.to_lowercase(), decl.value, &mut current_style, &mut layout_style);
+                let name_lower;
+                let name = if decl.name.chars().any(|c| c.is_ascii_uppercase()) {
+                    name_lower = decl.name.to_lowercase();
+                    &name_lower
+                } else {
+                    decl.name
+                };
+                css::apply_declaration(name, decl.value, &mut current_style, &mut layout_style);
             }
         }
     }
 
-    parse_attributes_generic(
-        tag,
-        meta.attrs.iter().map(|(k, v)| (k.as_str(), v.as_str())),
-        &mut current_style,
-        &mut layout_style,
-        &mut parsed,
-        message_validator,
-    );
+    // 1. Process id attribute
+    let id_str = meta.id.as_deref().or_else(|| {
+        for (k, v) in &meta.attrs {
+            if k == "id" {
+                return Some(v.as_str());
+            }
+        }
+        None
+    });
+    if let Some(id_str) = id_str {
+        parsed.canvas_id = id_str.to_string();
+        parsed.element_id = Some(id_str.to_string());
+    }
+
+    // 2. Process inline styles
+    let style_str = meta.style.as_deref().or_else(|| {
+        for (k, v) in &meta.attrs {
+            if k == "style" {
+                return Some(v.as_str());
+            }
+        }
+        None
+    });
+    if let Some(style_str) = style_str {
+        css::parse_inline_style(style_str, &mut current_style, &mut layout_style);
+    }
+
+    // 3. Process other attributes using generic parser
+    if let Some(ref other) = meta.other_attrs {
+        parse_attributes_generic(
+            tag,
+            other.iter().map(|(k, v)| (k.as_str(), v.as_str())),
+            &mut current_style,
+            &mut layout_style,
+            &mut parsed,
+            message_validator,
+        );
+    } else {
+        // Fallback for when attributes are directly populated in meta.attrs (e.g., in WPT runner)
+        // We filter out "class" and "style" since they are already processed / matched.
+        parse_attributes_generic(
+            tag,
+            meta.attrs.iter().filter(|(k, _)| k != "style" && k != "class" && k != "id").map(|(k, v)| (k.as_str(), v.as_str())),
+            &mut current_style,
+            &mut layout_style,
+            &mut parsed,
+            message_validator,
+        );
+    }
 
     if let Some(d) = current_style.inline_size {
         layout_style.size.width = d;

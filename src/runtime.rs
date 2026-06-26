@@ -27,14 +27,14 @@ pub struct Timer {
 #[derive(Clone, Debug)]
 pub struct ActiveAnimation {
     pub node_id: NodeId,
-    pub name: String,
+    pub name: std::sync::Arc<str>,
     pub duration: f32, // in seconds
-    pub timing_function: String,
+    pub timing_function: std::sync::Arc<str>,
     pub delay: f32, // in seconds
     pub iteration_count: crate::style::AnimationIterationCount,
-    pub direction: String,
-    pub fill_mode: String,
-    pub play_state: String,
+    pub direction: std::sync::Arc<str>,
+    pub fill_mode: std::sync::Arc<str>,
+    pub play_state: std::sync::Arc<str>,
     pub elapsed: std::time::Duration,
     pub is_finished: bool,
 }
@@ -211,8 +211,6 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
     }
 
     pub fn sync_view(&mut self) -> bool {
-        let mut dirty = false;
-        
         self.ui = {
             profile!("ui_new_compiled");
             let validator = |s: &str| M::Message::from_str(s).is_ok();
@@ -224,7 +222,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
         }
         Runtime::<M, R>::sync_canvases(&self.ui, &mut self.context);
         self.restore_scroll();
-        dirty = true;
+        let mut dirty = true;
 
         let commands: Vec<_> = self.context.commands.drain(..).collect();
         for cmd in commands {
@@ -386,24 +384,43 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
         let dt = now.duration_since(self.last_tick_time);
         self.last_tick_time = now;
 
-        // Sync declared animations
-        let mut declared_animations = HashMap::new();
-        for (&node_id, render_data) in &self.ui.render_data {
-            let style = render_data.style();
-            if let Some(ref name) = style.animation_name {
-                declared_animations.insert(node_id, (name.clone(), style));
+        if !self.ui.keyframes.is_empty() || !self.active_animations.is_empty() {
+            // Sync declared animations
+            let mut declared_animations = HashMap::new();
+            for (&node_id, render_data) in &self.ui.render_data {
+                let style = render_data.style();
+                if let Some(ref name) = style.animation_name {
+                    declared_animations.insert(node_id, (name.clone(), style));
+                }
             }
-        }
 
-        let mut animated_properties_changed = false;
+            let mut animated_properties_changed = false;
 
-        // Add or update active animations
-        for (node_id, (name, style)) in &declared_animations {
-            let play_state = style.animation_play_state.clone();
-            
-            if let Some(active) = self.active_animations.get_mut(node_id) {
-                if active.name != *name {
-                    *active = ActiveAnimation {
+            // Add or update active animations
+            for (node_id, (name, style)) in &declared_animations {
+                let play_state = style.animation_play_state.clone();
+                
+                if let Some(active) = self.active_animations.get_mut(node_id) {
+                    if active.name != *name {
+                        *active = ActiveAnimation {
+                            node_id: *node_id,
+                            name: name.clone(),
+                            duration: style.animation_duration,
+                            timing_function: style.animation_timing_function.clone(),
+                            delay: style.animation_delay,
+                            iteration_count: style.animation_iteration_count,
+                            direction: style.animation_direction.clone(),
+                            fill_mode: style.animation_fill_mode.clone(),
+                            play_state: play_state.clone(),
+                            elapsed: std::time::Duration::ZERO,
+                            is_finished: false,
+                        };
+                        animated_properties_changed = true;
+                    } else {
+                        active.play_state = play_state;
+                    }
+                } else {
+                    self.active_animations.insert(*node_id, ActiveAnimation {
                         node_id: *node_id,
                         name: name.clone(),
                         duration: style.animation_duration,
@@ -415,150 +432,130 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
                         play_state: play_state.clone(),
                         elapsed: std::time::Duration::ZERO,
                         is_finished: false,
-                    };
+                    });
                     animated_properties_changed = true;
+                }
+            }
+
+            // Clean up animations that are no longer declared, and restore base styles
+            let mut nodes_to_restore = Vec::new();
+            self.active_animations.retain(|node_id, _| {
+                let keep = declared_animations.contains_key(node_id);
+                if !keep {
+                    nodes_to_restore.push(*node_id);
+                    animated_properties_changed = true;
+                }
+                keep
+            });
+
+            for node_id in nodes_to_restore {
+                if let Some((base_layout, base_container)) = self.ui.base_styles.get(&node_id) {
+                    let _ = self.ui.taffy.set_style(node_id, base_layout.clone());
+                    if let Some(render_data) = self.ui.render_data.get_mut(&node_id) {
+                        match render_data {
+                            RenderData::Container(style) => *style = base_container.clone(),
+                            RenderData::Text(_, style) => *style = base_container.clone(),
+                            RenderData::Image(_, style) => *style = base_container.clone(),
+                            RenderData::Checkbox(_, style) => *style = base_container.clone(),
+                            RenderData::Slider(_, style) => *style = base_container.clone(),
+                            RenderData::Progress(_, _, style) => *style = base_container.clone(),
+                            RenderData::Canvas(_, style) => *style = base_container.clone(),
+                            RenderData::TextInput(_, _, style) => *style = base_container.clone(),
+                        }
+                    }
+                }
+            }
+
+            let mut layout_affected = false;
+
+            // Execute active animations
+            for (node_id, active) in &mut self.active_animations {
+                if active.is_finished {
+                    continue;
+                }
+
+                if &*active.play_state != "paused" {
+                    active.elapsed += dt;
+                }
+
+                let elapsed_sec = active.elapsed.as_secs_f32() - active.delay;
+                let duration = active.duration.max(0.001);
+                let raw_progress = elapsed_sec / duration;
+
+                let finished = match active.iteration_count {
+                    AnimationIterationCount::Infinite => false,
+                    AnimationIterationCount::Count(count) => raw_progress >= count,
+                };
+
+                // Determine easing progress t
+                let mut apply_kf = true;
+                let progress = if finished {
+                    active.is_finished = true;
+                    if &*active.fill_mode == "forwards" || &*active.fill_mode == "both" {
+                        // Lock progress to final state
+                        let final_raw = match active.iteration_count {
+                            AnimationIterationCount::Infinite => 0.0,
+                            AnimationIterationCount::Count(c) => c,
+                        };
+                        let final_iter = (final_raw.max(0.001) - 0.0001).floor() as u32;
+                        let mut final_p = final_raw % 1.0;
+                        if final_p == 0.0 && final_raw > 0.0 {
+                            final_p = 1.0;
+                        }
+                        let is_rev = match &*active.direction {
+                            "reverse" => true,
+                            "alternate" => final_iter % 2 == 1,
+                            "alternate-reverse" => final_iter % 2 == 0,
+                            _ => false,
+                        };
+                        if is_rev { 1.0 - final_p } else { final_p }
+                    } else {
+                        apply_kf = false;
+                        0.0
+                    }
+                } else if elapsed_sec < 0.0 {
+                    // Delay phase
+                    if &*active.fill_mode == "backwards" || &*active.fill_mode == "both" {
+                        let is_rev = &*active.direction == "reverse" || &*active.direction == "alternate-reverse";
+                        if is_rev { 1.0 } else { 0.0 }
+                    } else {
+                        apply_kf = false;
+                        0.0
+                    }
                 } else {
-                    active.play_state = play_state;
-                }
-            } else {
-                self.active_animations.insert(*node_id, ActiveAnimation {
-                    node_id: *node_id,
-                    name: name.clone(),
-                    duration: style.animation_duration,
-                    timing_function: style.animation_timing_function.clone(),
-                    delay: style.animation_delay,
-                    iteration_count: style.animation_iteration_count,
-                    direction: style.animation_direction.clone(),
-                    fill_mode: style.animation_fill_mode.clone(),
-                    play_state: play_state.clone(),
-                    elapsed: std::time::Duration::ZERO,
-                    is_finished: false,
-                });
-                animated_properties_changed = true;
-            }
-        }
-
-        // Clean up animations that are no longer declared, and restore base styles
-        let mut nodes_to_restore = Vec::new();
-        self.active_animations.retain(|node_id, _| {
-            let keep = declared_animations.contains_key(node_id);
-            if !keep {
-                nodes_to_restore.push(*node_id);
-                animated_properties_changed = true;
-            }
-            keep
-        });
-
-        for node_id in nodes_to_restore {
-            if let Some((base_layout, base_container)) = self.ui.base_styles.get(&node_id) {
-                let _ = self.ui.taffy.set_style(node_id, base_layout.clone());
-                if let Some(render_data) = self.ui.render_data.get_mut(&node_id) {
-                    match render_data {
-                        RenderData::Container(style) => *style = base_container.clone(),
-                        RenderData::Text(_, style) => *style = base_container.clone(),
-                        RenderData::Image(_, style) => *style = base_container.clone(),
-                        RenderData::Checkbox(_, style) => *style = base_container.clone(),
-                        RenderData::Slider(_, style) => *style = base_container.clone(),
-                        RenderData::Progress(_, _, style) => *style = base_container.clone(),
-                        RenderData::Canvas(_, style) => *style = base_container.clone(),
-                        RenderData::TextInput(_, _, style) => *style = base_container.clone(),
-                    }
-                }
-            }
-        }
-
-        let mut layout_affected = false;
-
-        // Execute active animations
-        for (node_id, active) in &mut self.active_animations {
-            if active.is_finished {
-                continue;
-            }
-
-            if active.play_state != "paused" {
-                active.elapsed += dt;
-            }
-
-            let elapsed_sec = active.elapsed.as_secs_f32() - active.delay;
-            let duration = active.duration.max(0.001);
-            let raw_progress = elapsed_sec / duration;
-
-            let finished = match active.iteration_count {
-                AnimationIterationCount::Infinite => false,
-                AnimationIterationCount::Count(count) => raw_progress >= count,
-            };
-
-            // Determine easing progress t
-            let mut apply_kf = true;
-            let progress = if finished {
-                active.is_finished = true;
-                if active.fill_mode == "forwards" || active.fill_mode == "both" {
-                    // Lock progress to final state
-                    let final_raw = match active.iteration_count {
-                        AnimationIterationCount::Infinite => 0.0,
-                        AnimationIterationCount::Count(c) => c,
-                    };
-                    let final_iter = (final_raw.max(0.001) - 0.0001).floor() as u32;
-                    let mut final_p = final_raw % 1.0;
-                    if final_p == 0.0 && final_raw > 0.0 {
-                        final_p = 1.0;
-                    }
-                    let is_rev = match active.direction.as_str() {
+                    let progress = raw_progress % 1.0;
+                    let iteration = raw_progress.floor() as u32;
+                    let is_rev = match &*active.direction {
                         "reverse" => true,
-                        "alternate" => final_iter % 2 == 1,
-                        "alternate-reverse" => final_iter % 2 == 0,
+                        "alternate" => iteration % 2 == 1,
+                        "alternate-reverse" => iteration % 2 == 0,
                         _ => false,
                     };
-                    if is_rev { 1.0 - final_p } else { final_p }
-                } else {
-                    apply_kf = false;
-                    0.0
-                }
-            } else if elapsed_sec < 0.0 {
-                // Delay phase
-                if active.fill_mode == "backwards" || active.fill_mode == "both" {
-                    let is_rev = active.direction == "reverse" || active.direction == "alternate-reverse";
-                    if is_rev { 1.0 } else { 0.0 }
-                } else {
-                    apply_kf = false;
-                    0.0
-                }
-            } else {
-                let progress = raw_progress % 1.0;
-                let iteration = raw_progress.floor() as u32;
-                let is_rev = match active.direction.as_str() {
-                    "reverse" => true,
-                    "alternate" => iteration % 2 == 1,
-                    "alternate-reverse" => iteration % 2 == 0,
-                    _ => false,
+                    if is_rev { 1.0 - progress } else { progress }
                 };
-                if is_rev { 1.0 - progress } else { progress }
-            };
 
-            let eased = if apply_kf {
-                ease(progress, &active.timing_function)
-            } else {
-                0.0
-            };
+                let eased = if apply_kf {
+                    ease(progress, &active.timing_function)
+                } else {
+                    0.0
+                };
 
-            if let Some((base_layout, base_container)) = self.ui.base_styles.get(node_id) {
-                let mut current_layout = base_layout.clone();
-                let mut current_container = base_container.clone();
+                if let Some((base_layout, base_container)) = self.ui.base_styles.get(node_id) {
+                    let mut current_layout = base_layout.clone();
+                    let mut current_container = base_container.clone();
 
-                if apply_kf {
-                    if let Some(keyframes_anim) = self.ui.keyframes.get(&active.name) {
-                        let mut animated_properties = std::collections::HashSet::new();
-                        for kf in &keyframes_anim.keyframes {
-                            for (prop, _) in &kf.declarations {
-                                animated_properties.insert(prop.clone());
+                    if apply_kf {
+                        if let Some(keyframes_anim) = self.ui.keyframes.get(&*active.name) {
+                            let mut animated_properties = std::collections::HashSet::new();
+                            for kf in &keyframes_anim.keyframes {
+                                for (prop, _) in &kf.declarations {
+                                    animated_properties.insert(prop.clone());
+                                }
                             }
-                        }
 
-                        for prop in animated_properties {
-                            // Find bracketing keyframes
+                            // Find bracketing keyframes once per node instead of inside the prop loop
                             let mut kf1: Option<&crate::css::Keyframe> = None;
                             let mut kf2: Option<&crate::css::Keyframe> = None;
-
                             for kf in &keyframes_anim.keyframes {
                                 if kf.percentage <= eased {
                                     kf1 = Some(kf);
@@ -570,54 +567,54 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
 
                             let p1 = kf1.map(|k| k.percentage).unwrap_or(0.0);
                             let p2 = kf2.map(|k| k.percentage).unwrap_or(1.0);
+                            let segment_t = if p2 > p1 {
+                                (eased - p1) / (p2 - p1)
+                            } else {
+                                1.0
+                            };
 
-                            let val1 = get_prop_val(kf1, &prop, base_container, base_layout);
-                            let val2 = get_prop_val(kf2, &prop, base_container, base_layout);
+                            for prop in animated_properties {
+                                let val1 = get_prop_val(kf1, &prop, base_container, base_layout);
+                                let val2 = get_prop_val(kf2, &prop, base_container, base_layout);
 
-                            if let (Some(v1), Some(v2)) = (val1, val2) {
-                                let segment_t = if p2 > p1 {
-                                    (eased - p1) / (p2 - p1)
-                                } else {
-                                    1.0
-                                };
-                                
-                                // Layout-affecting check
-                                if ["width", "height", "left", "right", "top", "bottom", "margin-left", "margin-right", "margin-top", "margin-bottom", "padding-left", "padding-right", "padding-top", "padding-bottom"].contains(&prop.as_str()) {
-                                    layout_affected = true;
+                                if let (Some(v1), Some(v2)) = (val1, val2) {
+                                    // Layout-affecting check
+                                    if ["width", "height", "left", "right", "top", "bottom", "margin-left", "margin-right", "margin-top", "margin-bottom", "padding-left", "padding-right", "padding-top", "padding-bottom"].contains(&prop.as_str()) {
+                                        layout_affected = true;
+                                    }
+
+                                    interpolate_property(&prop, &v1, &v2, segment_t, &mut current_container, &mut current_layout);
                                 }
-
-                                interpolate_property(&prop, &v1, &v2, segment_t, &mut current_container, &mut current_layout);
                             }
                         }
                     }
-                }
 
-                // Write styles back
-                let _ = self.ui.taffy.set_style(*node_id, current_layout);
-                if let Some(render_data) = self.ui.render_data.get_mut(node_id) {
-                    match render_data {
-                        RenderData::Container(style) => *style = current_container,
-                        RenderData::Text(_, style) => *style = current_container,
-                        RenderData::Image(_, style) => *style = current_container,
-                        RenderData::Checkbox(_, style) => *style = current_container,
-                        RenderData::Slider(_, style) => *style = current_container,
-                        RenderData::Progress(_, _, style) => *style = current_container,
-                        RenderData::Canvas(_, style) => *style = current_container,
-                        RenderData::TextInput(_, _, style) => *style = current_container,
+                    let _ = self.ui.taffy.set_style(*node_id, current_layout);
+                    if let Some(render_data) = self.ui.render_data.get_mut(node_id) {
+                        match render_data {
+                            RenderData::Container(style) => *style = current_container,
+                            RenderData::Text(_, style) => *style = current_container,
+                            RenderData::Image(_, style) => *style = current_container,
+                            RenderData::Checkbox(_, style) => *style = current_container,
+                            RenderData::Slider(_, style) => *style = current_container,
+                            RenderData::Progress(_, _, style) => *style = current_container,
+                            RenderData::Canvas(_, style) => *style = current_container,
+                            RenderData::TextInput(_, _, style) => *style = current_container,
+                        }
                     }
+                    needs_redraw = true;
                 }
-                needs_redraw = true;
             }
-        }
 
-        if layout_affected {
-            let _ = self.ui.compute_layout(self.cached_size);
+            if layout_affected {
+                let _ = self.ui.compute_layout(self.cached_size);
+            }
         }
 
         // 3. Compute Sleep Time
         let target_frame_duration = std::time::Duration::from_nanos((1_000_000_000.0 / self.target_fps as f64) as u64);
         
-        let mut min_sleep = if self.active_animations.values().any(|a| !a.is_finished && a.play_state != "paused") {
+        let mut min_sleep = if self.active_animations.values().any(|a| !a.is_finished && &*a.play_state != "paused") {
             target_frame_duration
         } else {
             std::time::Duration::from_secs(3600 * 24)
