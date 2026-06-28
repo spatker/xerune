@@ -459,7 +459,7 @@ fn compile_dom_node<'a>(
                     return quote! {
                         let node = {
                             use xerune::ui::ToDisplayString;
-                            builder.create_text(&#expr_tokens.to_display_string(), &[])
+                            builder.create_text_cow(#expr_tokens.to_display_string().into_owned().into(), &[])
                         };
                         builder.append_child(parent, node);
                     };
@@ -590,9 +590,9 @@ fn compile_dom_node<'a>(
                     dynamic_vars.push(quote! {
                         let #var_name: String = #val_tokens;
                     });
-                    dynamic_attrs.push(quote! { (#key, #var_name.as_str()) });
+                    dynamic_attrs.push(quote! { (std::borrow::Cow::Borrowed(#key), std::borrow::Cow::Owned(#var_name)) });
                 } else {
-                    static_attrs.push(quote! { (#key, #val) });
+                    static_attrs.push(quote! { (std::borrow::Cow::Borrowed(#key), std::borrow::Cow::Borrowed(#val)) });
                 }
             }
 
@@ -632,23 +632,23 @@ fn compile_dom_node<'a>(
                 } else {
                     quote! { false }
                 };
-                quote! { builder.create_checkbox(#checked_tokens, &attrs_slice) }
+                quote! { builder.create_checkbox_cow(#checked_tokens, &attrs_slice) }
             } else if is_input && type_attr.as_deref() == Some("range") {
                 let val = value_attr.as_deref().and_then(|v| v.parse::<f32>().ok()).unwrap_or(0.0);
-                quote! { builder.create_slider(#val, &attrs_slice) }
+                quote! { builder.create_slider_cow(#val, &attrs_slice) }
             } else if is_input && (type_attr.as_deref() == Some("text") || type_attr.is_none()) {
                 let val_tokens = if let Some(ref val) = value_attr {
                     if val.contains("{%") || val.contains("{{") {
                         let val_ast = Ast::from_str(val, None, &Syntax::default()).unwrap();
                         let attr_code = generate_attr_string_code(val_ast.nodes(), local_vars);
-                        quote! { &#attr_code }
+                        quote! { std::borrow::Cow::Owned(#attr_code) }
                     } else {
-                        quote! { #val }
+                        quote! { std::borrow::Cow::Borrowed(#val) }
                     }
                 } else {
-                    quote! { "" }
+                    quote! { std::borrow::Cow::Borrowed("") }
                 };
-                quote! { builder.create_input_text(#val_tokens, &attrs_slice) }
+                quote! { builder.create_input_text_cow(#val_tokens, &attrs_slice) }
             } else if tag == "progress" {
                 let val_tokens = if let Some(ref val) = value_attr {
                     if val.contains("{{") {
@@ -668,25 +668,25 @@ fn compile_dom_node<'a>(
                     quote! { 0.0 }
                 };
                 let max_val = max_attr.as_deref().and_then(|m| m.parse::<f32>().ok()).unwrap_or(1.0);
-                quote! { builder.create_progress(#val_tokens, #max_val, &attrs_slice) }
+                quote! { builder.create_progress_cow(#val_tokens, #max_val, &attrs_slice) }
             } else if tag == "img" {
                 let src_tokens = if let Some(ref val) = src_attr {
                     if val.contains("{%") || val.contains("{{") {
                         let val_ast = Ast::from_str(val, None, &Syntax::default()).unwrap();
                         let attr_code = generate_attr_string_code(val_ast.nodes(), local_vars);
-                        quote! { &#attr_code }
+                        quote! { std::borrow::Cow::Owned(#attr_code) }
                     } else {
-                        quote! { #val }
+                        quote! { std::borrow::Cow::Borrowed(#val) }
                     }
                 } else {
-                    quote! { "" }
+                    quote! { std::borrow::Cow::Borrowed("") }
                 };
-                quote! { builder.create_image(#src_tokens, &attrs_slice) }
+                quote! { builder.create_image_cow(#src_tokens, &attrs_slice) }
             } else if tag == "canvas" {
                 let id_val = id_attr.unwrap_or_default();
-                quote! { builder.create_canvas(#id_val, &attrs_slice) }
+                quote! { builder.create_canvas_cow(std::borrow::Cow::Borrowed(#id_val), &attrs_slice) }
             } else {
-                quote! { builder.create_element(#tag, &attrs_slice) }
+                quote! { builder.create_element_cow(std::borrow::Cow::Borrowed(#tag), &attrs_slice) }
             };
 
             quote! {
@@ -712,7 +712,7 @@ fn compile_dom_node<'a>(
                 return quote! {};
             }
             quote! {
-                let node = builder.create_text(#trimmed, &[]);
+                let node = builder.create_text_cow(std::borrow::Cow::Borrowed(#trimmed), &[]);
                 builder.append_child(parent, node);
             }
         }
@@ -859,7 +859,7 @@ pub fn derive_xerune_template(input: TokenStream) -> TokenStream {
             }
 
             fn build_ui(&self, builder: &mut xerune::ui::UiBuilder) -> taffy::NodeId {
-                let parent = builder.create_element("body", &[]);
+                let parent = builder.create_element_cow(std::borrow::Cow::Borrowed("body"), &[]);
                 #body_compilation
                 parent
             }

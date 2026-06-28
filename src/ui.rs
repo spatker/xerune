@@ -177,6 +177,210 @@ impl UiBuilder {
         }
     }
 
+    fn parse_attrs_cow(attrs: &[(std::borrow::Cow<'static, str>, std::borrow::Cow<'static, str>)]) -> (Option<std::borrow::Cow<'static, str>>, Option<std::borrow::Cow<'static, str>>, Option<String>, Option<Vec<(String, String)>>) {
+        let mut class = None;
+        let mut id = None;
+        let mut style = None;
+        let mut other_attrs = None;
+
+        for (k, v) in attrs {
+            match k.as_ref() {
+                "class" => class = Some(v.clone()),
+                "id" => id = Some(v.clone()),
+                "style" => style = Some(v.to_string()),
+                _ => {
+                    let vec = other_attrs.get_or_insert_with(Vec::new);
+                    vec.push((k.to_string(), v.to_string()));
+                }
+            }
+        }
+        (class, id, style, other_attrs)
+    }
+
+    pub fn create_element_cow(&mut self, tag: std::borrow::Cow<'static, str>, attrs: &[(std::borrow::Cow<'static, str>, std::borrow::Cow<'static, str>)]) -> NodeId {
+        let id = self.taffy.new_leaf(Style::default()).unwrap();
+        let (class, id_val, style, other_attrs) = Self::parse_attrs_cow(attrs);
+        let metadata = NodeMetadata {
+            tag,
+            attrs: Vec::new(),
+            text: None,
+            checked: None,
+            slider_value: None,
+            progress_value: None,
+            progress_max: None,
+            image_src: None,
+            canvas_id: None,
+            input_text: None,
+            class,
+            id: id_val,
+            style,
+            other_attrs,
+        };
+        self.node_metadata.insert(id, metadata);
+        id
+    }
+
+    pub fn create_text_cow(&mut self, text: std::borrow::Cow<'static, str>, attrs: &[(std::borrow::Cow<'static, str>, std::borrow::Cow<'static, str>)]) -> NodeId {
+        let id = self.taffy.new_leaf(Style::default()).unwrap();
+        let (class, id_val, style, other_attrs) = Self::parse_attrs_cow(attrs);
+        let metadata = NodeMetadata {
+            tag: std::borrow::Cow::Borrowed("#text"),
+            attrs: Vec::new(),
+            text: Some(text.into_owned()),
+            checked: None,
+            slider_value: None,
+            progress_value: None,
+            progress_max: None,
+            image_src: None,
+            canvas_id: None,
+            input_text: None,
+            class,
+            id: id_val,
+            style,
+            other_attrs,
+        };
+        self.node_metadata.insert(id, metadata);
+        id
+    }
+
+    pub fn create_checkbox_cow(&mut self, checked: bool, attrs: &[(std::borrow::Cow<'static, str>, std::borrow::Cow<'static, str>)]) -> NodeId {
+        let id = self.taffy.new_leaf(Style::default()).unwrap();
+        let (class, id_val, style, other_attrs) = Self::parse_attrs_cow(attrs);
+        let metadata = NodeMetadata {
+            tag: std::borrow::Cow::Borrowed("input"),
+            attrs: Vec::new(),
+            text: None,
+            checked: Some(checked),
+            slider_value: None,
+            progress_value: None,
+            progress_max: None,
+            image_src: None,
+            canvas_id: None,
+            input_text: None,
+            class,
+            id: id_val,
+            style,
+            other_attrs,
+        };
+        self.node_metadata.insert(id, metadata);
+        id
+    }
+
+    pub fn create_slider_cow(&mut self, value: f32, attrs: &[(std::borrow::Cow<'static, str>, std::borrow::Cow<'static, str>)]) -> NodeId {
+        let id = self.taffy.new_leaf(Style::default()).unwrap();
+        let (class, id_val, style, other_attrs) = Self::parse_attrs_cow(attrs);
+        let metadata = NodeMetadata {
+            tag: std::borrow::Cow::Borrowed("input"),
+            attrs: Vec::new(),
+            text: None,
+            checked: None,
+            slider_value: Some(value),
+            progress_value: None,
+            progress_max: None,
+            image_src: None,
+            canvas_id: None,
+            input_text: None,
+            class,
+            id: id_val,
+            style,
+            other_attrs,
+        };
+        self.node_metadata.insert(id, metadata);
+        id
+    }
+
+    pub fn create_input_text_cow(&mut self, value: std::borrow::Cow<'static, str>, attrs: &[(std::borrow::Cow<'static, str>, std::borrow::Cow<'static, str>)]) -> NodeId {
+        let id = self.taffy.new_leaf(Style::default()).unwrap();
+        let (class, id_val, style, other_attrs) = Self::parse_attrs_cow(attrs);
+        let metadata = NodeMetadata {
+            tag: std::borrow::Cow::Borrowed("input"),
+            attrs: Vec::new(),
+            text: None,
+            checked: None,
+            slider_value: None,
+            progress_value: None,
+            progress_max: None,
+            image_src: None,
+            canvas_id: None,
+            input_text: Some(value.into_owned()),
+            class,
+            id: id_val,
+            style,
+            other_attrs,
+        };
+        self.node_metadata.insert(id, metadata);
+        id
+    }
+
+    pub fn create_progress_cow(&mut self, value: f32, max: f32, attrs: &[(std::borrow::Cow<'static, str>, std::borrow::Cow<'static, str>)]) -> NodeId {
+        let id = self.taffy.new_leaf(Style::default()).unwrap();
+        let (class, id_val, style, other_attrs) = Self::parse_attrs_cow(attrs);
+        let metadata = NodeMetadata {
+            tag: std::borrow::Cow::Borrowed("progress"),
+            attrs: Vec::new(),
+            text: None,
+            checked: None,
+            slider_value: None,
+            progress_value: Some(value),
+            progress_max: Some(max),
+            image_src: None,
+            canvas_id: None,
+            input_text: None,
+            class,
+            id: id_val,
+            style,
+            other_attrs,
+        };
+        self.node_metadata.insert(id, metadata);
+        id
+    }
+
+    pub fn create_image_cow(&mut self, src: std::borrow::Cow<'static, str>, attrs: &[(std::borrow::Cow<'static, str>, std::borrow::Cow<'static, str>)]) -> NodeId {
+        let id = self.taffy.new_leaf(Style::default()).unwrap();
+        let (class, id_val, style, other_attrs) = Self::parse_attrs_cow(attrs);
+        let metadata = NodeMetadata {
+            tag: std::borrow::Cow::Borrowed("img"),
+            attrs: Vec::new(),
+            text: None,
+            checked: None,
+            slider_value: None,
+            progress_value: None,
+            progress_max: None,
+            image_src: Some(src.into_owned()),
+            canvas_id: None,
+            input_text: None,
+            class,
+            id: id_val,
+            style,
+            other_attrs,
+        };
+        self.node_metadata.insert(id, metadata);
+        id
+    }
+
+    pub fn create_canvas_cow(&mut self, canvas_id: std::borrow::Cow<'static, str>, attrs: &[(std::borrow::Cow<'static, str>, std::borrow::Cow<'static, str>)]) -> NodeId {
+        let id = self.taffy.new_leaf(Style::default()).unwrap();
+        let (class, id_val, style, other_attrs) = Self::parse_attrs_cow(attrs);
+        let metadata = NodeMetadata {
+            tag: std::borrow::Cow::Borrowed("canvas"),
+            attrs: Vec::new(),
+            text: None,
+            checked: None,
+            slider_value: None,
+            progress_value: None,
+            progress_max: None,
+            image_src: None,
+            canvas_id: Some(canvas_id.into_owned()),
+            input_text: None,
+            class,
+            id: id_val,
+            style,
+            other_attrs,
+        };
+        self.node_metadata.insert(id, metadata);
+        id
+    }
+
     fn parse_attrs(attrs: &[(&str, &str)]) -> (Option<std::borrow::Cow<'static, str>>, Option<std::borrow::Cow<'static, str>>, Option<String>, Option<Vec<(String, String)>>) {
         let mut class = None;
         let mut id = None;
@@ -390,17 +594,19 @@ struct TaffyElementWrapper<'a> {
     node: NodeId,
     taffy: &'a TaffyTree,
     metadata: &'a HashMap<NodeId, NodeMetadata>,
+    meta: &'a NodeMetadata,
 }
 
 impl<'a> simplecss::Element for TaffyElementWrapper<'a> {
     fn parent_element(&self) -> Option<Self> {
         let mut curr = self.node;
         while let Some(parent) = self.taffy.parent(curr) {
-            if self.metadata.contains_key(&parent) {
+            if let Some(parent_meta) = self.metadata.get(&parent) {
                 return Some(TaffyElementWrapper {
                     node: parent,
                     taffy: self.taffy,
                     metadata: self.metadata,
+                    meta: parent_meta,
                 });
             }
             curr = parent;
@@ -414,11 +620,12 @@ impl<'a> simplecss::Element for TaffyElementWrapper<'a> {
         let idx = siblings.iter().position(|&x| x == self.node)?;
         if idx > 0 {
             for &sibling in siblings[..idx].iter().rev() {
-                if self.metadata.contains_key(&sibling) {
+                if let Some(sibling_meta) = self.metadata.get(&sibling) {
                     return Some(TaffyElementWrapper {
                         node: sibling,
                         taffy: self.taffy,
                         metadata: self.metadata,
+                        meta: sibling_meta,
                     });
                 }
             }
@@ -427,35 +634,29 @@ impl<'a> simplecss::Element for TaffyElementWrapper<'a> {
     }
 
     fn has_local_name(&self, name: &str) -> bool {
-        if let Some(meta) = self.metadata.get(&self.node) {
-            meta.tag == name
-        } else {
-            false
-        }
+        self.meta.tag == name
     }
 
     fn attribute_matches(&self, local_name: &str, operator: simplecss::AttributeOperator<'_>) -> bool {
-        if let Some(meta) = self.metadata.get(&self.node) {
-            if local_name == "class" {
-                if let Some(ref class) = meta.class {
-                    return operator.matches(class);
-                }
-            } else if local_name == "id" {
-                if let Some(ref id) = meta.id {
-                    return operator.matches(id);
-                }
+        if local_name == "class" {
+            if let Some(ref class) = self.meta.class {
+                return operator.matches(class);
             }
-            if let Some(ref other) = meta.other_attrs {
-                for (k, v) in other {
-                    if k == local_name {
-                        return operator.matches(v);
-                    }
-                }
+        } else if local_name == "id" {
+            if let Some(ref id) = self.meta.id {
+                return operator.matches(id);
             }
-            for (k, v) in &meta.attrs {
+        }
+        if let Some(ref other) = self.meta.other_attrs {
+            for (k, v) in other {
                 if k == local_name {
                     return operator.matches(v);
                 }
+            }
+        }
+        for (k, v) in &self.meta.attrs {
+            if k == local_name {
+                return operator.matches(v);
             }
         }
         false
@@ -1848,6 +2049,7 @@ pub(crate) fn resolve_styles(
         node,
         taffy,
         metadata: node_metadata,
+        meta,
     };
     for rule in &stylesheet.rules {
         if rule.selector.matches(&el_wrapper) {

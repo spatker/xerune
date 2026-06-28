@@ -120,7 +120,32 @@ pub fn draw_rounded_rect(
         (0, 0, logical_w as i32, logical_h as i32)
     };
 
-    for &(x1, y1, x2, y2, cx, cy) in &corners {
+    let r_min = r_f32 - 0.5;
+    let r_max = r_f32 + 0.5;
+    let r_min_sq = if r_min > 0.0 { r_min * r_min } else { 0.0 };
+    let r_max_sq = r_max * r_max;
+
+    let use_table = r_i32 <= 64;
+    let mut corner_cov = [0.0f32; 64 * 64];
+    if use_table {
+        for dy_idx in 0..r_i32 {
+            for dx_idx in 0..r_i32 {
+                let dx = dx_idx as f32 + 0.5 - r_f32;
+                let dy = dy_idx as f32 + 0.5 - r_f32;
+                let d2 = dx * dx + dy * dy;
+                let coverage = if d2 >= r_max_sq {
+                    0.0
+                } else if d2 <= r_min_sq {
+                    1.0
+                } else {
+                    (r_f32 + 0.5 - d2.sqrt()).clamp(0.0, 1.0)
+                };
+                corner_cov[(dy_idx * 64 + dx_idx) as usize] = coverage;
+            }
+        }
+    }
+
+    for (corner_idx, &(x1, y1, x2, y2, cx, cy)) in corners.iter().enumerate() {
         let start_x = x1.max(clip_x1);
         let start_y = y1.max(clip_y1);
         let end_x = x2.min(clip_x2);
@@ -128,10 +153,34 @@ pub fn draw_rounded_rect(
 
         for py in start_y..end_y {
             for px in start_x..end_x {
-                let dx = px as f32 + 0.5 - cx;
-                let dy = py as f32 + 0.5 - cy;
-                let d = (dx * dx + dy * dy).sqrt();
-                let coverage = (r_f32 + 0.5 - d).clamp(0.0, 1.0);
+                let coverage = if use_table {
+                    let dx_idx = match corner_idx {
+                        0 | 2 => px - rect_x,
+                        1 | 3 => rect_x + rect_w - 1 - px,
+                        _ => 0,
+                    };
+                    let dy_idx = match corner_idx {
+                        0 | 1 => py - rect_y,
+                        2 | 3 => rect_y + rect_h - 1 - py,
+                        _ => 0,
+                    };
+                    if dx_idx >= 0 && dx_idx < 64 && dy_idx >= 0 && dy_idx < 64 {
+                        corner_cov[(dy_idx * 64 + dx_idx) as usize]
+                    } else {
+                        0.0
+                    }
+                } else {
+                    let dx = px as f32 + 0.5 - cx;
+                    let dy = py as f32 + 0.5 - cy;
+                    let d2 = dx * dx + dy * dy;
+                    if d2 >= r_max_sq {
+                        0.0
+                    } else if d2 <= r_min_sq {
+                        1.0
+                    } else {
+                        (r_f32 + 0.5 - d2.sqrt()).clamp(0.0, 1.0)
+                    }
+                };
                 
                 if coverage > 0.0 {
                     let src_color = if let Some(grad) = gradient {
@@ -273,9 +322,41 @@ pub fn draw_rounded_border(
         (0, 0, logical_w as i32, logical_h as i32)
     };
 
-    let r_in = (r_f32 - bw_f32).max(0.0);
+    let r_min = r_f32 - 0.5;
+    let r_max = r_f32 + 0.5;
+    let r_min_sq = if r_min > 0.0 { r_min * r_min } else { 0.0 };
+    let r_max_sq = r_max * r_max;
 
-    for &(x1, y1, x2, y2, cx, cy) in &corners {
+    let r_in = (r_f32 - bw_f32).max(0.0);
+    let r_in_min = r_in - 0.5;
+    let r_in_max = r_in + 0.5;
+    let r_in_min_sq = if r_in_min > 0.0 { r_in_min * r_in_min } else { 0.0 };
+    let r_in_max_sq = r_in_max * r_in_max;
+
+    let use_table = r_i32 <= 64;
+    let mut corner_cov = [0.0f32; 64 * 64];
+    if use_table {
+        for dy_idx in 0..r_i32 {
+            for dx_idx in 0..r_i32 {
+                let dx = dx_idx as f32 + 0.5 - r_f32;
+                let dy = dy_idx as f32 + 0.5 - r_f32;
+                let d2 = dx * dx + dy * dy;
+                let coverage = if d2 >= r_max_sq || d2 <= r_in_min_sq {
+                    0.0
+                } else if d2 <= r_min_sq && d2 >= r_in_max_sq {
+                    1.0
+                } else {
+                    let d = d2.sqrt();
+                    let cov_out = (r_f32 + 0.5 - d).clamp(0.0, 1.0);
+                    let cov_in = (d - r_in + 0.5).clamp(0.0, 1.0);
+                    cov_out * cov_in
+                };
+                corner_cov[(dy_idx * 64 + dx_idx) as usize] = coverage;
+            }
+        }
+    }
+
+    for (corner_idx, &(x1, y1, x2, y2, cx, cy)) in corners.iter().enumerate() {
         let start_x = x1.max(clip_x1);
         let start_y = y1.max(clip_y1);
         let end_x = x2.min(clip_x2);
@@ -283,14 +364,38 @@ pub fn draw_rounded_border(
 
         for py in start_y..end_y {
             for px in start_x..end_x {
-                let dx = px as f32 + 0.5 - cx;
-                let dy = py as f32 + 0.5 - cy;
-                let d = (dx * dx + dy * dy).sqrt();
-                
-                let cov_out = (r_f32 + 0.5 - d).clamp(0.0, 1.0);
-                let cov_in = (d - r_in + 0.5).clamp(0.0, 1.0);
-                let coverage = cov_out * cov_in;
-                
+                let coverage = if use_table {
+                    let dx_idx = match corner_idx {
+                        0 | 2 => px - rect_x,
+                        1 | 3 => rect_x + rect_w - 1 - px,
+                        _ => 0,
+                    };
+                    let dy_idx = match corner_idx {
+                        0 | 1 => py - rect_y,
+                        2 | 3 => rect_y + rect_h - 1 - py,
+                        _ => 0,
+                    };
+                    if dx_idx >= 0 && dx_idx < 64 && dy_idx >= 0 && dy_idx < 64 {
+                        corner_cov[(dy_idx * 64 + dx_idx) as usize]
+                    } else {
+                        0.0
+                    }
+                } else {
+                    let dx = px as f32 + 0.5 - cx;
+                    let dy = py as f32 + 0.5 - cy;
+                    let d2 = dx * dx + dy * dy;
+                    if d2 >= r_max_sq || d2 <= r_in_min_sq {
+                        0.0
+                    } else if d2 <= r_min_sq && d2 >= r_in_max_sq {
+                        1.0
+                    } else {
+                        let d = d2.sqrt();
+                        let cov_out = (r_f32 + 0.5 - d).clamp(0.0, 1.0);
+                        let cov_in = (d - r_in + 0.5).clamp(0.0, 1.0);
+                        cov_out * cov_in
+                    }
+                };
+
                 if coverage > 0.0 {
                     let alpha = ((packed_border >> 24) & 0xff) as f32 * coverage;
                     let packed_col = (packed_border & 0x00ffffff) | ((alpha.round() as u32) << 24);

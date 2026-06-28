@@ -60,14 +60,19 @@ pub fn run_app<M: Model + xerune::ui::TemplateLayout + 'static, TM: TextMeasurer
     #[cfg(feature = "fast-renderer")]
     let mut app_buffer: Option<Vec<u32>> = None;
 
+    let mut next_trigger = std::time::Instant::now();
+
     event_loop.run(move |event, target| {
         match event {
             Event::AboutToWait => {
-                let res = runtime.tick();
-                if res.needs_redraw {
-                    window_clone.request_redraw();
+                let now = std::time::Instant::now();
+                if now >= next_trigger {
+                    let res = runtime.tick();
+                    if res.needs_redraw {
+                        window_clone.request_redraw();
+                    }
+                    next_trigger = std::time::Instant::now() + res.next_tick_in;
                 }
-                let next_trigger = std::time::Instant::now() + res.next_tick_in;
                 target.set_control_flow(ControlFlow::WaitUntil(next_trigger));
             }
             Event::UserEvent(msg) => {

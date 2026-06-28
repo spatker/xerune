@@ -5,16 +5,24 @@ use taffy::style::Style;
 use std::collections::HashMap;
 
 pub fn parse_inline_style(style_str: &str, current_style: &mut ContainerStyle, taffy_style: &mut Style) {
-    let tokenizer = simplecss::DeclarationTokenizer::from(style_str);
-    for decl in tokenizer {
-        let name_lower;
-        let name = if decl.name.chars().any(|c| c.is_ascii_uppercase()) {
-            name_lower = decl.name.to_lowercase();
-            &name_lower
+    let mut rest = style_str;
+    while !rest.is_empty() {
+        let decl;
+        if let Some(semi_idx) = rest.find(';') {
+            decl = &rest[..semi_idx];
+            rest = &rest[semi_idx + 1..];
         } else {
-            decl.name
-        };
-        apply_declaration(name, decl.value, current_style, taffy_style);
+            decl = rest;
+            rest = "";
+        }
+        
+        if let Some(colon_idx) = decl.find(':') {
+            let key = decl[..colon_idx].trim();
+            let val = decl[colon_idx + 1..].trim();
+            if !key.is_empty() && !val.is_empty() {
+                apply_declaration(key, val, current_style, taffy_style);
+            }
+        }
     }
 }
 
@@ -607,23 +615,68 @@ thread_local! {
 }
 
 pub(crate) fn parse_hex_color(val: &str) -> Option<Color> {
-    if let Some(color) = COLOR_CACHE.with(|cache| cache.borrow().get(val).copied()) {
+    let trimmed = val.trim();
+    if let Some(color) = COLOR_CACHE.with(|cache| cache.borrow().get(trimmed).copied()) {
         return Some(color);
     }
-    let color = parse_color(val).ok().map(|c| {
-        Color::from_rgba8(
-            (c.r * 255.0) as u8,
-            (c.g * 255.0) as u8,
-            (c.b * 255.0) as u8,
-            (c.a * 255.0) as u8,
-        )
+    
+    let color = parse_color_fast(trimmed).or_else(|| {
+        parse_color(trimmed).ok().map(|c| {
+            Color::from_rgba8(
+                (c.r * 255.0) as u8,
+                (c.g * 255.0) as u8,
+                (c.b * 255.0) as u8,
+                (c.a * 255.0) as u8,
+            )
+        })
     });
+    
     if let Some(c) = color {
         COLOR_CACHE.with(|cache| {
-            cache.borrow_mut().insert(val.to_string(), c);
+            cache.borrow_mut().insert(trimmed.to_string(), c);
         });
     }
     color
+}
+
+fn parse_color_fast(s: &str) -> Option<Color> {
+    if s.starts_with('#') {
+        let hex = &s[1..];
+        if hex.len() == 6 {
+            let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
+            let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
+            let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
+            return Some(Color::from_rgba8(r, g, b, 255));
+        } else if hex.len() == 3 {
+            let r = u8::from_str_radix(&hex[0..1], 16).ok()?;
+            let g = u8::from_str_radix(&hex[1..2], 16).ok()?;
+            let b = u8::from_str_radix(&hex[2..3], 16).ok()?;
+            return Some(Color::from_rgba8(r * 17, g * 17, b * 17, 255));
+        } else if hex.len() == 8 {
+            let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
+            let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
+            let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
+            let a = u8::from_str_radix(&hex[6..8], 16).ok()?;
+            return Some(Color::from_rgba8(r, g, b, a));
+        }
+    } else if s.starts_with("rgba(") && s.ends_with(')') {
+        let content = &s[5..s.len() - 1];
+        let mut parts = content.split(',');
+        let r = parts.next()?.trim().parse::<u8>().ok()?;
+        let g = parts.next()?.trim().parse::<u8>().ok()?;
+        let b = parts.next()?.trim().parse::<u8>().ok()?;
+        let a_str = parts.next()?.trim();
+        let a = (a_str.parse::<f32>().ok()? * 255.0) as u8;
+        return Some(Color::from_rgba8(r, g, b, a));
+    } else if s.starts_with("rgb(") && s.ends_with(')') {
+        let content = &s[4..s.len() - 1];
+        let mut parts = content.split(',');
+        let r = parts.next()?.trim().parse::<u8>().ok()?;
+        let g = parts.next()?.trim().parse::<u8>().ok()?;
+        let b = parts.next()?.trim().parse::<u8>().ok()?;
+        return Some(Color::from_rgba8(r, g, b, 255));
+    }
+    None
 }
 
 fn parse_linear_gradient(val: &str) -> Option<LinearGradient> {

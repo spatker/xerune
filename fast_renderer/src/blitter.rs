@@ -49,24 +49,20 @@ pub fn blend_solid_span(dst: &mut [u32], color: u32) {
     if a == 255 {
         dst.fill(color);
     } else if a > 0 {
-        let r = (color >> 16) & 0xff;
-        let g = (color >> 8) & 0xff;
-        let b = color & 0xff;
         let inv_a = 255 - a;
+        
+        let src_ag = ((color & 0xFF00FF00) >> 8) * a;
+        let src_rb = (color & 0x00FF00FF) * a;
         
         for pixel in dst.iter_mut() {
             let d = *pixel;
-            let dst_a = (d >> 24) & 0xff;
-            let dst_r = (d >> 16) & 0xff;
-            let dst_g = (d >> 8) & 0xff;
-            let dst_b = d & 0xff;
+            let ag = ((d & 0xFF00FF00) >> 8) * inv_a + src_ag;
+            let rb = (d & 0x00FF00FF) * inv_a + src_rb;
             
-            let res_r = div_255(r * a + dst_r * inv_a);
-            let res_g = div_255(g * a + dst_g * inv_a);
-            let res_b = div_255(b * a + dst_b * inv_a);
-            let res_a = a + div_255(dst_a * inv_a);
+            let temp_ag = ag + ((ag >> 8) & 0x00FF00FF) + 0x00010001;
+            let temp_rb = rb + ((rb >> 8) & 0x00FF00FF) + 0x00010001;
             
-            *pixel = (res_a << 24) | (res_r << 16) | (res_g << 8) | res_b;
+            *pixel = (temp_ag & 0xFF00FF00) | ((temp_rb >> 8) & 0x00FF00FF);
         }
     }
 }
@@ -128,9 +124,6 @@ pub fn blend_glyph_span(dst: &mut [u32], coverage: &[u8], color: u32) {
     if color_a == 0 {
         return;
     }
-    let r = (color >> 16) & 0xff;
-    let g = (color >> 8) & 0xff;
-    let b = color & 0xff;
 
     for (pixel, &cov) in dst.iter_mut().zip(coverage.iter()) {
         if cov > 0 {
@@ -139,18 +132,18 @@ pub fn blend_glyph_span(dst: &mut [u32], coverage: &[u8], color: u32) {
                 *pixel = color;
             } else if a > 0 {
                 let d = *pixel;
-                let dst_a = (d >> 24) & 0xff;
-                let dst_r = (d >> 16) & 0xff;
-                let dst_g = (d >> 8) & 0xff;
-                let dst_b = d & 0xff;
                 let inv_a = 255 - a;
                 
-                let res_r = div_255(r * a + dst_r * inv_a);
-                let res_g = div_255(g * a + dst_g * inv_a);
-                let res_b = div_255(b * a + dst_b * inv_a);
-                let res_a = a + div_255(dst_a * inv_a);
+                let src_ag = ((color & 0xFF00FF00) >> 8) * a;
+                let src_rb = (color & 0x00FF00FF) * a;
                 
-                *pixel = (res_a << 24) | (res_r << 16) | (res_g << 8) | res_b;
+                let ag = ((d & 0xFF00FF00) >> 8) * inv_a + src_ag;
+                let rb = (d & 0x00FF00FF) * inv_a + src_rb;
+                
+                let temp_ag = ag + ((ag >> 8) & 0x00FF00FF) + 0x00010001;
+                let temp_rb = rb + ((rb >> 8) & 0x00FF00FF) + 0x00010001;
+                
+                *pixel = (temp_ag & 0xFF00FF00) | ((temp_rb >> 8) & 0x00FF00FF);
             }
         }
     }

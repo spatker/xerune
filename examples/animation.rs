@@ -158,9 +158,11 @@ fn main() -> anyhow::Result<()> {
     runtime.set_interval("tick".to_string(), 33);
     
     if std::env::var("HEADLESS").is_ok() {
-        let mut app_buffer = vec![0xFF222222; 800 * 600];
         let mut image_cache = std::collections::HashMap::new();
         let mut glyph_cache = std::collections::HashMap::new();
+        
+        #[cfg(feature = "fast-renderer")]
+        let mut app_buffer = vec![0xFF222222; 800 * 600];
         
         let start = std::time::Instant::now();
         for _ in 0..500 {
@@ -181,11 +183,12 @@ fn main() -> anyhow::Result<()> {
             #[cfg(not(feature = "fast-renderer"))]
             {
                 let mut pixmap = tiny_skia::Pixmap::new(800, 600).unwrap();
+                let mut gradient_cache = std::collections::HashMap::new();
                 let mut renderer = skia_renderer::TinySkiaRenderer::new(
                     pixmap.as_mut(),
                     fonts_ref,
                     &mut image_cache,
-                    &mut std::collections::HashMap::new(),
+                    &mut gradient_cache,
                     &mut glyph_cache,
                 );
                 runtime.render(&mut renderer);
