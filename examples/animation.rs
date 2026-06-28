@@ -157,6 +157,47 @@ fn main() -> anyhow::Result<()> {
     let mut runtime = Runtime::new(model, measurer);
     runtime.set_interval("tick".to_string(), 33);
     
+    if std::env::var("HEADLESS").is_ok() {
+        let mut app_buffer = vec![0xFF222222; 800 * 600];
+        let mut image_cache = std::collections::HashMap::new();
+        let mut glyph_cache = std::collections::HashMap::new();
+        
+        let start = std::time::Instant::now();
+        for _ in 0..500 {
+            let _ = runtime.tick();
+            
+            #[cfg(feature = "fast-renderer")]
+            {
+                let mut renderer = fast_renderer::FastRenderer::new(
+                    &mut app_buffer,
+                    800,
+                    600,
+                    fonts_ref,
+                    &mut image_cache,
+                    &mut glyph_cache,
+                );
+                runtime.render(&mut renderer);
+            }
+            #[cfg(not(feature = "fast-renderer"))]
+            {
+                let mut pixmap = tiny_skia::Pixmap::new(800, 600).unwrap();
+                let mut renderer = skia_renderer::TinySkiaRenderer::new(
+                    pixmap.as_mut(),
+                    fonts_ref,
+                    &mut image_cache,
+                    &mut std::collections::HashMap::new(),
+                    &mut glyph_cache,
+                );
+                runtime.render(&mut renderer);
+            }
+        }
+        let elapsed = start.elapsed();
+        println!("Headless benchmark finished: 500 frames in {:?}", elapsed);
+        coarse_prof::write(&mut std::io::stdout()).unwrap();
+        return Ok(());
+    }
+
+    
     #[cfg(not(all(target_os = "linux", feature = "linuxfb", feature = "evdev")))]
     {
         support::winit_backend::run_app(
