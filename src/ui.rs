@@ -138,6 +138,17 @@ pub struct NodeMetadata {
     pub other_attrs: Option<Vec<(String, String)>>,
 }
 
+#[derive(Hash, PartialEq, Eq, Clone)]
+pub struct StyleCacheKey {
+    pub tag: std::borrow::Cow<'static, str>,
+    pub class: Option<std::borrow::Cow<'static, str>>,
+    pub id: Option<std::borrow::Cow<'static, str>>,
+    pub other_attrs: Option<Vec<(String, String)>>,
+    pub parent_font_size_bits: u32,
+    pub parent_weight: u16,
+    pub parent_color_u32: u32,
+}
+
 fn intern_string(s: &str) -> &'static str {
     thread_local! {
         static CACHE: std::cell::RefCell<std::collections::HashSet<&'static str>> = std::cell::RefCell::new(std::collections::HashSet::new());
@@ -880,6 +891,7 @@ impl Ui {
         }
 
         let mut base_styles = HashMap::with_capacity(128);
+        let mut style_cache = HashMap::with_capacity(64);
         
         {
             profile!("resolve_styles");
@@ -894,6 +906,7 @@ impl Ui {
                 &cached.stylesheet,
                 &builder.node_metadata,
                 &mut base_styles,
+                &mut style_cache,
             );
         }
 
@@ -1977,6 +1990,7 @@ pub(crate) fn resolve_styles(
     stylesheet: &simplecss::StyleSheet<'_>,
     node_metadata: &HashMap<NodeId, NodeMetadata>,
     base_styles: &mut HashMap<NodeId, (Style, ContainerStyle)>,
+    style_cache: &mut HashMap<StyleCacheKey, (Style, ContainerStyle)>,
 ) {
     let meta = match node_metadata.get(&node) {
         Some(m) => m,
@@ -2017,11 +2031,8 @@ pub(crate) fn resolve_styles(
     }
 
     let tag = &meta.tag;
-    let defaults = defaults::get_default_style(tag, &parent_style);
-    let mut layout_style = defaults.taffy_style;
-    let mut current_style = defaults.container_style;
-
-    let mut parsed = ParsedAttributes::new(defaults.element_type);
+    let element_type = defaults::get_default_style(tag, &ContainerStyle::default()).element_type;
+    let mut parsed = ParsedAttributes::new(element_type);
 
     if let Some(checked) = meta.checked {
         parsed.checkbox_checked = checked;
@@ -2045,26 +2056,49 @@ pub(crate) fn resolve_styles(
         parsed.text_input_text = Some(input_text.clone());
     }
 
-    let el_wrapper = TaffyElementWrapper {
-        node,
-        taffy,
-        metadata: node_metadata,
-        meta,
+    let c = parent_style.color;
+    let parent_color_u32 = ((c.r as u32) << 24) | ((c.g as u32) << 16) | ((c.b as u32) << 8) | (c.a as u32);
+    let cache_key = StyleCacheKey {
+        tag: meta.tag.clone(),
+        class: meta.class.clone(),
+        id: meta.id.clone(),
+        other_attrs: meta.other_attrs.clone(),
+        parent_font_size_bits: parent_style.font_size.to_bits(),
+        parent_weight: parent_style.weight,
+        parent_color_u32,
     };
-    for rule in &stylesheet.rules {
-        if rule.selector.matches(&el_wrapper) {
-            for decl in &rule.declarations {
-                let name_lower;
-                let name = if decl.name.chars().any(|c| c.is_ascii_uppercase()) {
-                    name_lower = decl.name.to_lowercase();
-                    &name_lower
-                } else {
-                    decl.name
-                };
-                css::apply_declaration(name, decl.value, &mut current_style, &mut layout_style);
+
+    let (mut layout_style, mut current_style) = if let Some(cached_styles) = style_cache.get(&cache_key) {
+        cached_styles.clone()
+    } else {
+        let defaults = defaults::get_default_style(tag, &parent_style);
+        let mut l_style = defaults.taffy_style;
+        let mut c_style = defaults.container_style;
+
+        let el_wrapper = TaffyElementWrapper {
+            node,
+            taffy,
+            metadata: node_metadata,
+            meta,
+        };
+        for rule in &stylesheet.rules {
+            if rule.selector.matches(&el_wrapper) {
+                for decl in &rule.declarations {
+                    let name_lower;
+                    let name = if decl.name.chars().any(|c| c.is_ascii_uppercase()) {
+                        name_lower = decl.name.to_lowercase();
+                        &name_lower
+                    } else {
+                        decl.name
+                    };
+                    css::apply_declaration(name, decl.value, &mut c_style, &mut l_style);
+                }
             }
         }
-    }
+        let pair = (l_style, c_style);
+        style_cache.insert(cache_key, pair.clone());
+        pair
+    };
 
     // 1. Process id attribute
     let id_str = meta.id.as_deref().or_else(|| {
@@ -2363,6 +2397,7 @@ pub(crate) fn resolve_styles(
             stylesheet,
             node_metadata,
             base_styles,
+            style_cache,
         );
     }
 

@@ -4,7 +4,96 @@ use taffy::prelude::*;
 use taffy::style::Style;
 use std::collections::HashMap;
 
+struct FastLayoutStyle {
+    left: f32,
+    top: f32,
+    width: f32,
+    height: f32,
+    bg_color: Color,
+}
+
+fn parse_layout_style_fast(s: &str) -> Option<FastLayoutStyle> {
+    let bytes = s.as_bytes();
+    let mut i = 0;
+    
+    if !s[i..].starts_with("left:") { return None; }
+    i += 5;
+    while i < bytes.len() && (bytes[i] == b' ' || bytes[i] == b'\t') { i += 1; }
+    
+    let start_left = i;
+    while i < bytes.len() && (bytes[i].is_ascii_digit() || bytes[i] == b'.' || bytes[i] == b'-') { i += 1; }
+    let left = std::str::from_utf8(&bytes[start_left..i]).ok()?.parse::<f32>().ok()?;
+    
+    if !s[i..].starts_with("px;") { return None; }
+    i += 3;
+    while i < bytes.len() && (bytes[i] == b' ' || bytes[i] == b'\t') { i += 1; }
+    
+    if !s[i..].starts_with("top:") { return None; }
+    i += 4;
+    while i < bytes.len() && (bytes[i] == b' ' || bytes[i] == b'\t') { i += 1; }
+    
+    let start_top = i;
+    while i < bytes.len() && (bytes[i].is_ascii_digit() || bytes[i] == b'.' || bytes[i] == b'-') { i += 1; }
+    let top = std::str::from_utf8(&bytes[start_top..i]).ok()?.parse::<f32>().ok()?;
+    
+    if !s[i..].starts_with("px;") { return None; }
+    i += 3;
+    while i < bytes.len() && (bytes[i] == b' ' || bytes[i] == b'\t') { i += 1; }
+    
+    if !s[i..].starts_with("width:") { return None; }
+    i += 6;
+    while i < bytes.len() && (bytes[i] == b' ' || bytes[i] == b'\t') { i += 1; }
+    
+    let start_width = i;
+    while i < bytes.len() && (bytes[i].is_ascii_digit() || bytes[i] == b'.' || bytes[i] == b'-') { i += 1; }
+    let width = std::str::from_utf8(&bytes[start_width..i]).ok()?.parse::<f32>().ok()?;
+    
+    if !s[i..].starts_with("px;") { return None; }
+    i += 3;
+    while i < bytes.len() && (bytes[i] == b' ' || bytes[i] == b'\t') { i += 1; }
+    
+    if !s[i..].starts_with("height:") { return None; }
+    i += 7;
+    while i < bytes.len() && (bytes[i] == b' ' || bytes[i] == b'\t') { i += 1; }
+    
+    let start_height = i;
+    while i < bytes.len() && (bytes[i].is_ascii_digit() || bytes[i] == b'.' || bytes[i] == b'-') { i += 1; }
+    let height = std::str::from_utf8(&bytes[start_height..i]).ok()?.parse::<f32>().ok()?;
+    
+    if !s[i..].starts_with("px;") { return None; }
+    i += 3;
+    while i < bytes.len() && (bytes[i] == b' ' || bytes[i] == b'\t') { i += 1; }
+    
+    if !s[i..].starts_with("background-color:") { return None; }
+    i += 17;
+    while i < bytes.len() && (bytes[i] == b' ' || bytes[i] == b'\t') { i += 1; }
+    
+    let start_color = i;
+    while i < bytes.len() && bytes[i] != b';' { i += 1; }
+    let color_str = std::str::from_utf8(&bytes[start_color..i]).ok()?.trim();
+    let bg_color = parse_color_fast(color_str)?;
+    
+    Some(FastLayoutStyle {
+        left,
+        top,
+        width,
+        height,
+        bg_color,
+    })
+}
+
 pub fn parse_inline_style(style_str: &str, current_style: &mut ContainerStyle, taffy_style: &mut Style) {
+    if style_str.starts_with("left:") {
+        if let Some(parsed) = parse_layout_style_fast(style_str) {
+            taffy_style.inset.left = LengthPercentageAuto::length(parsed.left);
+            taffy_style.inset.top = LengthPercentageAuto::length(parsed.top);
+            taffy_style.size.width = Dimension::length(parsed.width);
+            taffy_style.size.height = Dimension::length(parsed.height);
+            current_style.background_color = Some(parsed.bg_color);
+            return;
+        }
+    }
+
     let mut rest = style_str;
     while !rest.is_empty() {
         let decl;

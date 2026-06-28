@@ -23,24 +23,18 @@ pub fn blend_pixel(dst: &mut u32, src: u32) {
         *dst = src;
     } else if src_a > 0 {
         let d = *dst;
-        let dst_a = (d >> 24) & 0xff;
-        
-        let src_r = (src >> 16) & 0xff;
-        let src_g = (src >> 8) & 0xff;
-        let src_b = src & 0xff;
-        
-        let dst_r = (d >> 16) & 0xff;
-        let dst_g = (d >> 8) & 0xff;
-        let dst_b = d & 0xff;
-        
         let inv_a = 255 - src_a;
         
-        let r = div_255(src_r * src_a + dst_r * inv_a);
-        let g = div_255(src_g * src_a + dst_g * inv_a);
-        let b = div_255(src_b * src_a + dst_b * inv_a);
-        let a = src_a + div_255(dst_a * inv_a);
+        let src_ag = ((src & 0xFF00FF00) >> 8) * src_a;
+        let src_rb = (src & 0x00FF00FF) * src_a;
         
-        *dst = (a << 24) | (r << 16) | (g << 8) | b;
+        let ag = ((d & 0xFF00FF00) >> 8) * inv_a + src_ag;
+        let rb = (d & 0x00FF00FF) * inv_a + src_rb;
+        
+        let temp_ag = ag + ((ag >> 8) & 0x00FF00FF) + 0x00010001;
+        let temp_rb = rb + ((rb >> 8) & 0x00FF00FF) + 0x00010001;
+        
+        *dst = (temp_ag & 0xFF00FF00) | ((temp_rb >> 8) & 0x00FF00FF);
     }
 }
 

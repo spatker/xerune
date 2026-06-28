@@ -330,6 +330,7 @@ mod tests {
         let stylesheet_str = model.stylesheet();
         let stylesheet = simplecss::StyleSheet::parse(stylesheet_str);
         let mut base_styles = std::collections::HashMap::new();
+        let mut style_cache = std::collections::HashMap::new();
 
         ui::resolve_styles(
             &mut builder.taffy,
@@ -342,6 +343,7 @@ mod tests {
             &stylesheet,
             &builder.node_metadata,
             &mut base_styles,
+            &mut style_cache,
         );
 
         let mut ui = ui::Ui {
