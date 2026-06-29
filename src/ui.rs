@@ -120,6 +120,133 @@ pub trait TemplateLayout {
     fn build_ui(&self, builder: &mut UiBuilder) -> NodeId;
 }
 
+use std::borrow::Borrow;
+
+#[derive(Clone, Default, Debug)]
+pub struct NodeMap<T> {
+    inner: Vec<Option<T>>,
+}
+
+impl<T> NodeMap<T> {
+    pub fn new() -> Self {
+        Self { inner: Vec::new() }
+    }
+
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self { inner: Vec::with_capacity(capacity) }
+    }
+
+    #[inline]
+    fn get_idx(node: NodeId) -> usize {
+        (u64::from(node) & 0xFFFFFFFF) as usize
+    }
+
+    #[inline]
+    pub fn insert(&mut self, node: NodeId, value: T) -> Option<T> {
+        let idx = Self::get_idx(node);
+        if idx >= self.inner.len() {
+            self.inner.resize_with(idx + 1, || None);
+        }
+        std::mem::replace(&mut self.inner[idx], Some(value))
+    }
+
+    #[inline]
+    pub fn get<Q: Borrow<NodeId>>(&self, node: Q) -> Option<&T> {
+        let idx = Self::get_idx(*node.borrow());
+        self.inner.get(idx).and_then(|opt| opt.as_ref())
+    }
+
+    #[inline]
+    pub fn get_mut<Q: Borrow<NodeId>>(&mut self, node: Q) -> Option<&mut T> {
+        let idx = Self::get_idx(*node.borrow());
+        self.inner.get_mut(idx).and_then(|opt| opt.as_mut())
+    }
+
+    #[inline]
+    pub fn contains_key<Q: Borrow<NodeId>>(&self, node: Q) -> bool {
+        self.get(node).is_some()
+    }
+
+    #[inline]
+    pub fn remove<Q: Borrow<NodeId>>(&mut self, node: Q) -> Option<T> {
+        let idx = Self::get_idx(*node.borrow());
+        if idx < self.inner.len() {
+            self.inner[idx].take()
+        } else {
+            None
+        }
+    }
+
+    #[inline]
+    pub fn clear(&mut self) {
+        self.inner.clear();
+    }
+
+    #[inline]
+    pub fn values(&self) -> NodeMapValues<'_, T> {
+        NodeMapValues {
+            iter: self.inner.iter(),
+        }
+    }
+
+    #[inline]
+    pub fn iter(&self) -> NodeMapIter<'_, T> {
+        NodeMapIter {
+            iter: self.inner.iter(),
+            idx: 0,
+        }
+    }
+}
+
+pub struct NodeMapIter<'a, T> {
+    iter: std::slice::Iter<'a, Option<T>>,
+    idx: usize,
+}
+
+impl<'a, T> Iterator for NodeMapIter<'a, T> {
+    type Item = (NodeId, &'a T);
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        while let Some(opt) = self.iter.next() {
+            let current_idx = self.idx;
+            self.idx += 1;
+            if let Some(val) = opt.as_ref() {
+                return Some((NodeId::from(current_idx), val));
+            }
+        }
+        None
+    }
+}
+
+pub struct NodeMapValues<'a, T> {
+    iter: std::slice::Iter<'a, Option<T>>,
+}
+
+impl<'a, T> Iterator for NodeMapValues<'a, T> {
+    type Item = &'a T;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        while let Some(opt) = self.iter.next() {
+            if let Some(val) = opt.as_ref() {
+                return Some(val);
+            }
+        }
+        None
+    }
+}
+
+impl<'a, T> IntoIterator for &'a NodeMap<T> {
+    type Item = (NodeId, &'a T);
+    type IntoIter = NodeMapIter<'a, T>;
+
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct NodeMetadata {
     pub tag: std::borrow::Cow<'static, str>,
@@ -196,10 +323,10 @@ fn intern_string(s: &str) -> &'static str {
 
 pub struct UiBuilder {
     pub taffy: TaffyTree,
-    pub node_metadata: HashMap<NodeId, NodeMetadata>,
-    pub render_data: HashMap<NodeId, RenderData>,
-    pub interactions: HashMap<NodeId, Interaction>,
-    pub node_to_handle: HashMap<NodeId, Handle>,
+    pub node_metadata: NodeMap<NodeMetadata>,
+    pub render_data: NodeMap<RenderData>,
+    pub interactions: NodeMap<Interaction>,
+    pub node_to_handle: NodeMap<Handle>,
 }
 
 impl UiBuilder {
@@ -210,10 +337,10 @@ impl UiBuilder {
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
             taffy: TaffyTree::new(),
-            node_metadata: HashMap::with_capacity(capacity),
-            render_data: HashMap::with_capacity(capacity),
-            interactions: HashMap::with_capacity(capacity),
-            node_to_handle: HashMap::with_capacity(capacity),
+            node_metadata: NodeMap::with_capacity(capacity),
+            render_data: NodeMap::with_capacity(capacity),
+            interactions: NodeMap::with_capacity(capacity),
+            node_to_handle: NodeMap::with_capacity(capacity),
         }
     }
 
@@ -410,7 +537,7 @@ impl UiBuilder {
 struct TaffyElementWrapper<'a> {
     node: NodeId,
     taffy: &'a TaffyTree,
-    metadata: &'a HashMap<NodeId, NodeMetadata>,
+    metadata: &'a NodeMap<NodeMetadata>,
     meta: &'a NodeMetadata,
 }
 
@@ -502,18 +629,22 @@ struct CachedStyles {
     stylesheet: simplecss::StyleSheet<'static>,
     keyframes: HashMap<String, css::KeyframesAnimation>,
     has_nth_or_last_child: bool,
+    style_cache: std::cell::RefCell<HashMap<StyleCacheKey, (Style, ContainerStyle)>>,
 }
 
-static STYLESHEET_CACHE: std::sync::OnceLock<std::sync::Mutex<HashMap<&'static str, &'static CachedStyles>>> = std::sync::OnceLock::new();
+thread_local! {
+    static STYLESHEET_CACHE: std::cell::RefCell<HashMap<&'static str, &'static CachedStyles>> = std::cell::RefCell::new(HashMap::new());
+    static CACHE_STATS: std::cell::Cell<(usize, usize)> = std::cell::Cell::new((0, 0));
+}
 
 pub struct Ui {
     pub taffy: TaffyTree,
-    pub render_data: HashMap<NodeId, RenderData>,
-    pub interactions: HashMap<NodeId, Interaction>,
-    pub scroll_offsets: HashMap<NodeId, (f32, f32)>,
+    pub render_data: NodeMap<RenderData>,
+    pub interactions: NodeMap<Interaction>,
+    pub scroll_offsets: NodeMap<(f32, f32)>,
     pub root: NodeId,
-    pub node_to_handle: HashMap<NodeId, Handle>,
-    pub base_styles: HashMap<NodeId, (Style, ContainerStyle)>,
+    pub node_to_handle: NodeMap<Handle>,
+    pub base_styles: NodeMap<(Style, ContainerStyle)>,
     pub keyframes: HashMap<String, css::KeyframesAnimation>,
 }
 
@@ -579,27 +710,27 @@ impl Ui {
 
     fn preprocess_compiled_tree(
         taffy: &taffy::TaffyTree,
-        node_metadata: &mut HashMap<NodeId, NodeMetadata>,
+        node_metadata: &mut NodeMap<NodeMetadata>,
         node: NodeId,
     ) {
-        if let Some(meta) = node_metadata.get(&node) {
+        let children = if let Some(meta) = node_metadata.get(&node) {
             if meta.tag == "#text" {
                 return;
             }
+            meta.children.clone()
         } else {
             return;
-        }
+        };
 
-        if let Ok(children) = taffy.children(node) {
-            let mut child_elements = Vec::new();
-            for &child in &children {
-                if let Some(child_meta) = node_metadata.get(&child) {
-                    if child_meta.tag != "#text" {
-                        child_elements.push(child);
-                    }
+        let mut child_elements = Vec::new();
+        for child in children {
+            if let Some(child_meta) = node_metadata.get(&child) {
+                if child_meta.tag != "#text" {
+                    child_elements.push(child);
                 }
-                Self::preprocess_compiled_tree(taffy, node_metadata, child);
             }
+            Self::preprocess_compiled_tree(taffy, node_metadata, child);
+        }
 
             let num_children = child_elements.len();
             for (i, child) in child_elements.iter().enumerate() {
@@ -645,7 +776,6 @@ impl Ui {
                     }
                 }
             }
-        }
     }
 
     pub fn new_compiled(
@@ -663,41 +793,41 @@ impl Ui {
 
         let stylesheet_str = model.stylesheet();
         
-        let cache = STYLESHEET_CACHE.get_or_init(|| std::sync::Mutex::new(HashMap::new()));
-        let mut cache_guard = cache.lock().unwrap();
-        let cached = if let Some(&c) = cache_guard.get(stylesheet_str) {
-            c
-        } else {
-            let has_nth_or_last_child = stylesheet_str.contains(":nth-child") || stylesheet_str.contains(":last-child");
-            let keyframes = css::parse_keyframes(stylesheet_str);
-            
-            let re_nth = regex::Regex::new(r":nth-child\(\s*(\d+)\s*\)").unwrap();
-            let css_str = re_nth.replace_all(stylesheet_str, ".nth-child-$1").into_owned();
-            let css_str = css_str.replace(":last-child", ".last-child");
-            let re_slash = regex::Regex::new(r"/[\d\.]+").unwrap();
-            let css_str = re_slash.replace_all(&css_str, "").into_owned();
-            
-            let static_css_str: &'static str = Box::leak(css_str.into_boxed_str());
-            let stylesheet = simplecss::StyleSheet::parse(static_css_str);
-            
-            let cached_val: &'static CachedStyles = Box::leak(Box::new(CachedStyles {
-                stylesheet,
-                keyframes,
-                has_nth_or_last_child,
-            }));
-            cache_guard.insert(stylesheet_str, cached_val);
-            cached_val
-        };
-        // Drop cache_guard before resolving styles to prevent deadlocks and free up lock
-        drop(cache_guard);
+        let cached = STYLESHEET_CACHE.with(|cache| {
+            let mut cache_guard = cache.borrow_mut();
+            if let Some(&c) = cache_guard.get(stylesheet_str) {
+                c
+            } else {
+                let has_nth_or_last_child = stylesheet_str.contains(":nth-child") || stylesheet_str.contains(":last-child");
+                let keyframes = css::parse_keyframes(stylesheet_str);
+                
+                let re_nth = regex::Regex::new(r":nth-child\(\s*(\d+)\s*\)").unwrap();
+                let css_str = re_nth.replace_all(stylesheet_str, ".nth-child-$1").into_owned();
+                let css_str = css_str.replace(":last-child", ".last-child");
+                let re_slash = regex::Regex::new(r"/[\d\.]+").unwrap();
+                let css_str = re_slash.replace_all(&css_str, "").into_owned();
+                
+                let static_css_str: &'static str = Box::leak(css_str.into_boxed_str());
+                let stylesheet = simplecss::StyleSheet::parse(static_css_str);
+                
+                let cached_val: &'static CachedStyles = Box::leak(Box::new(CachedStyles {
+                    stylesheet,
+                    keyframes,
+                    has_nth_or_last_child,
+                    style_cache: std::cell::RefCell::new(HashMap::with_capacity(128)),
+                }));
+                cache_guard.insert(stylesheet_str, cached_val);
+                cached_val
+            }
+        });
 
         // Preprocess the compiled tree to add nth-child and last-child classes before resolving styles
         if cached.has_nth_or_last_child {
             Self::preprocess_compiled_tree(&builder.taffy, &mut builder.node_metadata, root);
         }
 
-        let mut base_styles = HashMap::with_capacity(128);
-        let mut style_cache = HashMap::with_capacity(64);
+        let mut base_styles = NodeMap::with_capacity(128);
+        let mut style_cache = cached.style_cache.borrow_mut();
         
         {
             profile!("resolve_styles");
@@ -712,15 +842,16 @@ impl Ui {
                 &cached.stylesheet,
                 &builder.node_metadata,
                 &mut base_styles,
-                &mut style_cache,
+                &mut *style_cache,
             );
         }
+
 
         Ok(Self {
             taffy: builder.taffy,
             render_data: builder.render_data,
             interactions: builder.interactions,
-            scroll_offsets: HashMap::new(),
+            scroll_offsets: NodeMap::new(),
             root,
             node_to_handle: builder.node_to_handle,
             base_styles,
@@ -779,7 +910,7 @@ impl Ui {
     }
 
     pub fn scroll_into_view(&mut self, interaction_id: &str) {
-        let node_opt = self.interactions.iter().find(|(_, v)| *v == interaction_id).map(|(k, _)| *k);
+        let node_opt = self.interactions.iter().find(|(_, v)| *v == interaction_id).map(|(k, _)| k);
         if let Some(node) = node_opt {
              let mut current = node;
              while let Some(parent) = self.taffy.parent(current) {
@@ -968,7 +1099,7 @@ fn process_element_type(
     id: NodeId,
     parsed: &ParsedAttributes,
     current_style: ContainerStyle,
-    render_data: &mut HashMap<NodeId, RenderData>,
+    render_data: &mut NodeMap<RenderData>,
 ) {
     match parsed.element_type {
         defaults::ElementType::Image => {
@@ -1000,13 +1131,13 @@ fn dom_to_taffy(
     taffy: &mut TaffyTree,
     handle: &Handle,
     text_measurer: &impl TextMeasurer,
-    render_data: &mut HashMap<NodeId, RenderData>,
-    interactions: &mut HashMap<NodeId, Interaction>,
+    render_data: &mut NodeMap<RenderData>,
+    interactions: &mut NodeMap<Interaction>,
     parent_style: ContainerStyle,
     message_validator: &impl Fn(&str) -> bool,
     stylesheet: &simplecss::StyleSheet<'_>,
-    node_to_handle: &mut HashMap<NodeId, Handle>,
-    base_styles: &mut HashMap<NodeId, (Style, ContainerStyle)>,
+    node_to_handle: &mut NodeMap<Handle>,
+    base_styles: &mut NodeMap<(Style, ContainerStyle)>,
 ) -> Option<NodeId> {
     
     let mut current_style = parent_style.clone();
@@ -1490,8 +1621,8 @@ fn dom_to_taffy(
 fn layout_to_draw_commands(
     taffy: &TaffyTree,
     root: NodeId,
-    render_data: &HashMap<NodeId, RenderData>,
-    scroll_offsets: &HashMap<NodeId, (f32, f32)>,
+    render_data: &NodeMap<RenderData>,
+    scroll_offsets: &NodeMap<(f32, f32)>,
     offset_x: f32,
     offset_y: f32,
     focused_id: Option<&str>,
@@ -1504,8 +1635,8 @@ fn layout_to_draw_commands(
 fn traverse_layout(
     taffy: &TaffyTree,
     root: NodeId,
-    render_data: &HashMap<NodeId, RenderData>,
-    scroll_offsets: &HashMap<NodeId, (f32, f32)>,
+    render_data: &NodeMap<RenderData>,
+    scroll_offsets: &NodeMap<(f32, f32)>,
     offset_x: f32,
     offset_y: f32,
     commands: &mut Vec<DrawCommand>,
@@ -1657,8 +1788,8 @@ fn traverse_layout(
 pub fn hit_test_recursive(
     taffy: &TaffyTree,
     root: NodeId,
-    scroll_offsets: &HashMap<NodeId, (f32, f32)>,
-    render_data: &HashMap<NodeId, RenderData>,
+    scroll_offsets: &NodeMap<(f32, f32)>,
+    render_data: &NodeMap<RenderData>,
     x: f32,
     y: f32,
     abs_x: f32,
@@ -1789,13 +1920,13 @@ pub(crate) fn resolve_styles(
     taffy: &mut TaffyTree,
     node: NodeId,
     text_measurer: &impl TextMeasurer,
-    render_data: &mut HashMap<NodeId, RenderData>,
-    interactions: &mut HashMap<NodeId, Interaction>,
+    render_data: &mut NodeMap<RenderData>,
+    interactions: &mut NodeMap<Interaction>,
     parent_style: ContainerStyle,
     message_validator: &impl Fn(&str) -> bool,
     stylesheet: &simplecss::StyleSheet<'_>,
-    node_metadata: &HashMap<NodeId, NodeMetadata>,
-    base_styles: &mut HashMap<NodeId, (Style, ContainerStyle)>,
+    node_metadata: &NodeMap<NodeMetadata>,
+    base_styles: &mut NodeMap<(Style, ContainerStyle)>,
     style_cache: &mut HashMap<StyleCacheKey, (Style, ContainerStyle)>,
 ) {
     let meta = match node_metadata.get(&node) {
@@ -1875,8 +2006,16 @@ pub(crate) fn resolve_styles(
     };
 
     let (mut layout_style, mut current_style) = if let Some(cached_styles) = style_cache.get(&cache_key) {
+        CACHE_STATS.with(|stats| {
+            let (hits, misses) = stats.get();
+            stats.set((hits + 1, misses));
+        });
         cached_styles.clone()
     } else {
+        CACHE_STATS.with(|stats| {
+            let (hits, misses) = stats.get();
+            stats.set((hits, misses + 1));
+        });
         let defaults = defaults::get_default_style(tag, &parent_style);
         let mut l_style = defaults.taffy_style;
         let mut c_style = defaults.container_style;

@@ -3,6 +3,9 @@ use std::time::Instant;
 use xerune::{Model, Runtime, XeruneTemplate};
 use skia_renderer::TinySkiaMeasurer;
 
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 #[path = "support/mod.rs"]
 mod support;
 
@@ -155,7 +158,7 @@ fn main() -> anyhow::Result<()> {
     // Create 100 items for benchmark
     let model = AnimationModel::new(100);
     let mut runtime = Runtime::new(model, measurer);
-    runtime.set_interval("tick".to_string(), 33);
+    runtime.set_interval("tick".to_string(), 16);
     
     if std::env::var("HEADLESS").is_ok() {
         let mut image_cache = std::collections::HashMap::new();

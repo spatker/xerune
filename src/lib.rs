@@ -294,9 +294,9 @@ mod tests {
     fn print_layout_tree(
         taffy: &taffy::TaffyTree,
         node: taffy::NodeId,
-        metadata: &std::collections::HashMap<taffy::NodeId, ui::NodeMetadata>,
-        render_data: &std::collections::HashMap<taffy::NodeId, RenderData>,
-        interactions: &std::collections::HashMap<taffy::NodeId, String>,
+        metadata: &ui::NodeMap<ui::NodeMetadata>,
+        render_data: &ui::NodeMap<RenderData>,
+        interactions: &ui::NodeMap<String>,
         indent: usize,
     ) {
         let prefix = "  ".repeat(indent);
@@ -306,8 +306,8 @@ mod tests {
         let interaction = interactions.get(&node).map(|s| s.as_str()).unwrap_or("");
         let text = metadata.get(&node).and_then(|m| m.text.as_ref().map(|t| t.as_str())).unwrap_or("");
         println!("{}{} [class='{}'] layout={:?} interaction='{}' text='{}'", prefix, tag, class, layout, interaction, text);
-        if let Ok(children) = taffy.children(node) {
-            for child in children {
+        if let Some(meta) = metadata.get(&node) {
+            for &child in &meta.children {
                 print_layout_tree(taffy, child, metadata, render_data, interactions, indent + 1);
             }
         }
@@ -329,7 +329,7 @@ mod tests {
 
         let stylesheet_str = model.stylesheet();
         let stylesheet = simplecss::StyleSheet::parse(stylesheet_str);
-        let mut base_styles = std::collections::HashMap::new();
+        let mut base_styles = ui::NodeMap::new();
         let mut style_cache = std::collections::HashMap::new();
 
         ui::resolve_styles(
@@ -350,9 +350,9 @@ mod tests {
             taffy: builder.taffy,
             render_data: builder.render_data,
             interactions: builder.interactions,
-            scroll_offsets: std::collections::HashMap::new(),
+            scroll_offsets: ui::NodeMap::new(),
             root,
-            node_to_handle: std::collections::HashMap::new(),
+            node_to_handle: ui::NodeMap::new(),
             base_styles,
             keyframes: std::collections::HashMap::new(),
         };

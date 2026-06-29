@@ -13,7 +13,7 @@ macro_rules! profile {
 use crate::graphics::{Context, DrawCommand, Rect, TextMeasurer, Renderer};
 use crate::style::{ContainerStyle, RenderData, AnimationIterationCount};
 use crate::model::{InputEvent, Model};
-use crate::ui::Ui;
+use crate::ui::{Ui, NodeMap};
 
 #[derive(Clone, Debug)]
 pub struct Timer {
@@ -50,7 +50,7 @@ pub struct Runtime<M, R> {
     measurer: R,
     pub ui: Ui,
     default_style: ContainerStyle,
-    pub(crate) scroll_offsets: HashMap<NodeId, (f32, f32)>, // Persist scroll offsets
+    pub(crate) scroll_offsets: NodeMap<(f32, f32)>, // Persist scroll offsets
     cached_size: Size<AvailableSpace>,
     context: Context,
     last_commands: Vec<DrawCommand>,
@@ -77,7 +77,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
              measurer,
              ui,
              default_style,
-             scroll_offsets: HashMap::new(),
+             scroll_offsets: NodeMap::new(),
              cached_size: Size::MAX_CONTENT,
              context,
              last_commands: Vec::new(),
@@ -98,7 +98,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
                      let mut width = 200;
                      let mut height = 200;
 
-                     if let Ok(style) = ui.taffy.style(*node_id) {
+                     if let Ok(style) = ui.taffy.style(node_id) {
                          let w_dim = style.size.width;
                          if !w_dim.is_auto() {
                              let val = w_dim.value();
@@ -387,7 +387,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
         if !self.ui.keyframes.is_empty() || !self.active_animations.is_empty() {
             // Sync declared animations
             let mut declared_animations = HashMap::new();
-            for (&node_id, render_data) in &self.ui.render_data {
+            for (node_id, render_data) in &self.ui.render_data {
                 let style = render_data.style();
                 if let Some(ref name) = style.animation_name {
                     declared_animations.insert(node_id, (name.clone(), style));
