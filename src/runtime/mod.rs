@@ -1,3 +1,9 @@
+pub mod timer;
+pub mod animation;
+
+pub use timer::{Timer, TickResult};
+pub use animation::ActiveAnimation;
+
 use std::str::FromStr;
 use taffy::prelude::*;
 use std::collections::HashMap;
@@ -15,42 +21,12 @@ use crate::style::{ContainerStyle, RenderData, AnimationIterationCount};
 use crate::model::{InputEvent, Model};
 use crate::ui::{Ui, NodeMap};
 
-#[derive(Clone, Debug)]
-pub struct Timer {
-    pub id: usize,
-    pub message: String,
-    pub interval: std::time::Duration,
-    pub next_trigger: std::time::Instant,
-    pub is_recurring: bool,
-}
-
-#[derive(Clone, Debug)]
-pub struct ActiveAnimation {
-    pub node_id: NodeId,
-    pub name: std::sync::Arc<str>,
-    pub duration: f32, // in seconds
-    pub timing_function: std::sync::Arc<str>,
-    pub delay: f32, // in seconds
-    pub iteration_count: crate::style::AnimationIterationCount,
-    pub direction: std::sync::Arc<str>,
-    pub fill_mode: std::sync::Arc<str>,
-    pub play_state: std::sync::Arc<str>,
-    pub elapsed: std::time::Duration,
-    pub is_finished: bool,
-}
-
-#[derive(Clone, Debug)]
-pub struct TickResult {
-    pub needs_redraw: bool,
-    pub next_tick_in: std::time::Duration,
-}
-
 pub struct Runtime<M, R> {
     model: M,
     measurer: R,
     pub ui: Ui,
     default_style: ContainerStyle,
-    pub(crate) scroll_offsets: NodeMap<(f32, f32)>, // Persist scroll offsets
+    pub(crate) scroll_offsets: NodeMap<(f32, f32)>,
     cached_size: Size<AvailableSpace>,
     context: Context,
     last_commands: Vec<DrawCommand>,
@@ -69,7 +45,6 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
          let ui = Ui::new_compiled(&model, &measurer, default_style.clone(), &validator).unwrap();
          
          let mut context = Context::new();
-         // Initial sync of canvases
          Runtime::<M, R>::sync_canvases(&ui, &mut context);
 
          Self {
@@ -94,7 +69,6 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
         for (node_id, data) in &ui.render_data {
             if let RenderData::Canvas(id, _style) = data {
                 if !context.canvases.contains_key(id) {
-                     // Try to get size from Taffy style (set by CSS or attributes)
                      let mut width = 200;
                      let mut height = 200;
 
@@ -104,14 +78,14 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
                              let val = w_dim.value();
                              if w_dim == Dimension::length(val) {
                                   width = val as u32;
-                             }
+                              }
                          }
 
                          let h_dim = style.size.height;
                          if !h_dim.is_auto() {
                              let val = h_dim.value();
                              if h_dim == Dimension::length(val) {
-                                 height = val as u32;
+                                  height = val as u32;
                              }
                          }
                      }
@@ -130,7 +104,6 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
         match event {
             InputEvent::Click { x, y } => {
                 if let Some((msg_str, clicked_node)) = self.ui.hit_test(x, y) {
-                    // Update focus if this node is an input
                     if let Some(RenderData::TextInput(id, _, _)) = self.ui.render_data.get(&clicked_node) {
                         if !id.is_empty() {
                             self.focused_id = Some(id.clone());
@@ -144,11 +117,11 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
                     if !msg_str.is_empty() {
                         return self.process_message_str(&msg_str) || self.focused_id.is_some();
                     }
-                    return self.focused_id.is_some(); // True if focus changed (needs redraw)
+                    return self.focused_id.is_some();
                 }
                 
                 let old_focus = self.focused_id.take();
-                return old_focus.is_some(); // True if changed
+                return old_focus.is_some();
             }
             InputEvent::Message(msg_str) => {
                 self.process_message_str(&msg_str)
@@ -170,7 +143,6 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
             }
             InputEvent::TextInput { id: event_id, text } => {
                 if let Some(ref focused) = self.focused_id {
-                    // If the event provides an explicit ID, it must match.
                     if event_id.is_empty() || &event_id == focused {
                         let msg_str = format!("{}:text:{}", focused, text);
                         return self.process_message_str(&msg_str);
@@ -198,7 +170,6 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
         }
     }
 
-    
     fn process_message_str(&mut self, msg_str: &str) -> bool {
         if let Ok(msg) = M::Message::from_str(msg_str) {
             profile!("update");
@@ -235,13 +206,12 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
         }
 
         if !dirty {
-            // Only trigger redraw if a *visible* canvas is dirty
             for cmd in &self.last_commands {
                 if let DrawCommand::DrawCanvas { id, .. } = cmd {
                     if let Some(canvas) = self.context.canvases.get(id) {
                         if canvas.dirty {
                             dirty = true;
-                            break; // We DO NOT reset canvas.dirty here!
+                            break;
                         }
                     }
                 }
@@ -251,14 +221,12 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
         dirty
     }
 
-    
     pub fn render(&mut self, renderer: &mut impl Renderer) -> Option<Rect> {
         profile!("render");
         let commands = self.ui.build_commands(&self.context.canvases, self.focused_id.as_deref());
         
         let mut dirty_region: Option<Rect> = None;
 
-        // Compare with last_commands
         let max_len = commands.len().max(self.last_commands.len());
         for i in 0..max_len {
             let cmd1 = commands.get(i);
@@ -284,7 +252,6 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
             }
         }
 
-        // Also invalidate for dirty canvases
         for cmd in &commands {
             if let DrawCommand::DrawCanvas { id, rect } = cmd {
                 if let Some(canvas) = self.context.canvases.get(id) {
@@ -298,8 +265,6 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
             }
         }
 
-        // After expanding dirty_region bounds to cover the changes,
-        // reset the canvas dirty flags.
         for canvas in self.context.canvases.values_mut() {
             canvas.dirty = false;
         }
@@ -313,7 +278,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
          let _ = self.ui.compute_layout(Size {
             width: length(width),
              height: length(height),
-         });
+          });
     }
 
     pub fn compute_layout(&mut self, size: Size<AvailableSpace>) {
@@ -356,7 +321,6 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
         let now = std::time::Instant::now();
         let mut needs_redraw = false;
 
-        // 1. Process Timers
         let mut triggered_messages = Vec::new();
         for timer in &mut self.timers {
             if now >= timer.next_trigger {
@@ -380,12 +344,10 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
             self.timers.push(timer);
         }
 
-        // 2. Process Animations
         let dt = now.duration_since(self.last_tick_time);
         self.last_tick_time = now;
 
         if !self.ui.keyframes.is_empty() || !self.active_animations.is_empty() {
-            // Sync declared animations
             let mut declared_animations = HashMap::new();
             for (node_id, render_data) in &self.ui.render_data {
                 let style = render_data.style();
@@ -396,7 +358,6 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
 
             let mut animated_properties_changed = false;
 
-            // Add or update active animations
             for (node_id, (name, style)) in &declared_animations {
                 let play_state = style.animation_play_state.clone();
                 
@@ -437,7 +398,6 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
                 }
             }
 
-            // Clean up animations that are no longer declared, and restore base styles
             let mut nodes_to_restore = Vec::new();
             self.active_animations.retain(|node_id, _| {
                 let keep = declared_animations.contains_key(node_id);
@@ -468,7 +428,6 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
 
             let mut layout_affected = false;
 
-            // Execute active animations
             for (node_id, active) in &mut self.active_animations {
                 if active.is_finished {
                     continue;
@@ -487,12 +446,10 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
                     AnimationIterationCount::Count(count) => raw_progress >= count,
                 };
 
-                // Determine easing progress t
                 let mut apply_kf = true;
                 let progress = if finished {
                     active.is_finished = true;
                     if &*active.fill_mode == "forwards" || &*active.fill_mode == "both" {
-                        // Lock progress to final state
                         let final_raw = match active.iteration_count {
                             AnimationIterationCount::Infinite => 0.0,
                             AnimationIterationCount::Count(c) => c,
@@ -514,7 +471,6 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
                         0.0
                     }
                 } else if elapsed_sec < 0.0 {
-                    // Delay phase
                     if &*active.fill_mode == "backwards" || &*active.fill_mode == "both" {
                         let is_rev = &*active.direction == "reverse" || &*active.direction == "alternate-reverse";
                         if is_rev { 1.0 } else { 0.0 }
@@ -535,7 +491,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
                 };
 
                 let eased = if apply_kf {
-                    ease(progress, &active.timing_function)
+                    animation::ease(progress, &active.timing_function)
                 } else {
                     0.0
                 };
@@ -553,7 +509,6 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
                                 }
                             }
 
-                            // Find bracketing keyframes once per node instead of inside the prop loop
                             let mut kf1: Option<&crate::css::Keyframe> = None;
                             let mut kf2: Option<&crate::css::Keyframe> = None;
                             for kf in &keyframes_anim.keyframes {
@@ -574,16 +529,15 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
                             };
 
                             for prop in animated_properties {
-                                let val1 = get_prop_val(kf1, &prop, base_container, base_layout);
-                                let val2 = get_prop_val(kf2, &prop, base_container, base_layout);
+                                let val1 = animation::get_prop_val(kf1, &prop, base_container, base_layout);
+                                let val2 = animation::get_prop_val(kf2, &prop, base_container, base_layout);
 
                                 if let (Some(v1), Some(v2)) = (val1, val2) {
-                                    // Layout-affecting check
                                     if ["width", "height", "left", "right", "top", "bottom", "margin-left", "margin-right", "margin-top", "margin-bottom", "padding-left", "padding-right", "padding-top", "padding-bottom"].contains(&prop.as_str()) {
                                         layout_affected = true;
                                     }
 
-                                    interpolate_property(&prop, &v1, &v2, segment_t, &mut current_container, &mut current_layout);
+                                    animation::interpolate_property(&prop, &v1, &v2, segment_t, &mut current_container, &mut current_layout);
                                 }
                             }
                         }
@@ -611,7 +565,6 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
             }
         }
 
-        // 3. Compute Sleep Time
         let target_frame_duration = std::time::Duration::from_nanos((1_000_000_000.0 / self.target_fps as f64) as u64);
         
         let mut min_sleep = if self.active_animations.values().any(|a| !a.is_finished && &*a.play_state != "paused") {
@@ -631,269 +584,5 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
             needs_redraw,
             next_tick_in: min_sleep,
         }
-    }
-}
-
-fn ease(t: f32, func: &str) -> f32 {
-    match func {
-        "linear" => t,
-        "ease" => solve_cubic_bezier(0.25, 0.1, 0.25, 1.0, t),
-        "ease-in" => solve_cubic_bezier(0.42, 0.0, 1.0, 1.0, t),
-        "ease-out" => solve_cubic_bezier(0.0, 0.0, 0.58, 1.0, t),
-        "ease-in-out" => solve_cubic_bezier(0.42, 0.0, 0.58, 1.0, t),
-        _ => {
-            if func.starts_with("cubic-bezier(") && func.ends_with(')') {
-                let inner = &func["cubic-bezier(".len()..func.len() - 1];
-                let parts: Vec<&str> = inner.split(',').collect();
-                if parts.len() == 4 {
-                    let x1 = parts[0].trim().parse::<f32>().unwrap_or(0.0);
-                    let y1 = parts[1].trim().parse::<f32>().unwrap_or(0.0);
-                    let x2 = parts[2].trim().parse::<f32>().unwrap_or(1.0);
-                    let y2 = parts[3].trim().parse::<f32>().unwrap_or(1.0);
-                    return solve_cubic_bezier(x1, y1, x2, y2, t);
-                }
-            }
-            t
-        }
-    }
-}
-
-fn solve_cubic_bezier(x1: f32, y1: f32, x2: f32, y2: f32, t: f32) -> f32 {
-    if t <= 0.0 { return 0.0; }
-    if t >= 1.0 { return 1.0; }
-
-    let mut u = t;
-    for _ in 0..8 {
-        let x = sample_curve_x(x1, x2, u);
-        let dx = sample_curve_derivative_x(x1, x2, u);
-        if dx.abs() < 1e-6 {
-            break;
-        }
-        let next_u = u - (x - t) / dx;
-        u = next_u.clamp(0.0, 1.0);
-    }
-    sample_curve_y(y1, y2, u)
-}
-
-fn sample_curve_x(x1: f32, x2: f32, t: f32) -> f32 {
-    let tm = 1.0 - t;
-    3.0 * tm * tm * t * x1 + 3.0 * tm * t * t * x2 + t * t * t
-}
-
-fn sample_curve_y(y1: f32, y2: f32, t: f32) -> f32 {
-    let tm = 1.0 - t;
-    3.0 * tm * tm * t * y1 + 3.0 * tm * t * t * y2 + t * t * t
-}
-
-fn sample_curve_derivative_x(x1: f32, x2: f32, t: f32) -> f32 {
-    let tm = 1.0 - t;
-    3.0 * tm * tm * x1 + 6.0 * tm * t * (x2 - x1) + 3.0 * t * t * (1.0 - x2)
-}
-
-fn interpolate_color(c1: crate::graphics::Color, c2: crate::graphics::Color, t: f32) -> crate::graphics::Color {
-    crate::graphics::Color {
-        r: ((1.0 - t) * c1.r as f32 + t * c2.r as f32).round() as u8,
-        g: ((1.0 - t) * c1.g as f32 + t * c2.g as f32).round() as u8,
-        b: ((1.0 - t) * c1.b as f32 + t * c2.b as f32).round() as u8,
-        a: ((1.0 - t) * c1.a as f32 + t * c2.a as f32).round() as u8,
-    }
-}
-
-fn interpolate_f32(v1: f32, v2: f32, t: f32) -> f32 {
-    (1.0 - t) * v1 + t * v2
-}
-
-fn interpolate_length_percentage(lp1: LengthPercentage, lp2: LengthPercentage, t: f32) -> Option<LengthPercentage> {
-    let r1 = lp1.into_raw();
-    let r2 = lp2.into_raw();
-    match (r1.tag(), r2.tag()) {
-        (taffy::style::CompactLength::LENGTH_TAG, taffy::style::CompactLength::LENGTH_TAG) => {
-            Some(LengthPercentage::length(interpolate_f32(r1.value(), r2.value(), t)))
-        }
-        (taffy::style::CompactLength::PERCENT_TAG, taffy::style::CompactLength::PERCENT_TAG) => {
-            Some(LengthPercentage::percent(interpolate_f32(r1.value(), r2.value(), t)))
-        }
-        _ => None,
-    }
-}
-
-fn interpolate_length_percentage_auto(lp1: LengthPercentageAuto, lp2: LengthPercentageAuto, t: f32) -> Option<LengthPercentageAuto> {
-    let r1 = lp1.into_raw();
-    let r2 = lp2.into_raw();
-    match (r1.tag(), r2.tag()) {
-        (taffy::style::CompactLength::LENGTH_TAG, taffy::style::CompactLength::LENGTH_TAG) => {
-            Some(LengthPercentageAuto::length(interpolate_f32(r1.value(), r2.value(), t)))
-        }
-        (taffy::style::CompactLength::PERCENT_TAG, taffy::style::CompactLength::PERCENT_TAG) => {
-            Some(LengthPercentageAuto::percent(interpolate_f32(r1.value(), r2.value(), t)))
-        }
-        _ => None,
-    }
-}
-
-fn interpolate_dimension(d1: Dimension, d2: Dimension, t: f32) -> Option<Dimension> {
-    let r1 = d1.into_raw();
-    let r2 = d2.into_raw();
-    match (r1.tag(), r2.tag()) {
-        (taffy::style::CompactLength::LENGTH_TAG, taffy::style::CompactLength::LENGTH_TAG) => {
-            Some(Dimension::length(interpolate_f32(r1.value(), r2.value(), t)))
-        }
-        (taffy::style::CompactLength::PERCENT_TAG, taffy::style::CompactLength::PERCENT_TAG) => {
-            Some(Dimension::percent(interpolate_f32(r1.value(), r2.value(), t)))
-        }
-        _ => None,
-    }
-}
-
-fn interpolate_property(
-    prop: &str,
-    val1: &str,
-    val2: &str,
-    t: f32,
-    style: &mut ContainerStyle,
-    taffy_style: &mut Style,
-) {
-    if ["color", "background-color", "border-color"].contains(&prop) {
-        if let (Some(c1), Some(c2)) = (crate::css::parse_hex_color(val1), crate::css::parse_hex_color(val2)) {
-            let interpolated = interpolate_color(c1, c2, t);
-            match prop {
-                "color" => style.color = interpolated,
-                "background-color" => style.background_color = Some(interpolated),
-                "border-color" => style.border_color = Some(interpolated),
-                _ => {}
-            }
-        }
-    }
-    else if ["border-radius", "border-width", "font-size"].contains(&prop) {
-        if let (Some(v1), Some(v2)) = (crate::css::parse_px(val1), crate::css::parse_px(val2)) {
-            let interpolated = (1.0 - t) * v1 + t * v2;
-            match prop {
-                "border-radius" => style.border_radius = interpolated,
-                "border-width" => style.border_width = interpolated,
-                "font-size" => style.font_size = interpolated,
-                _ => {}
-            }
-        }
-    }
-    else if ["width", "height"].contains(&prop) {
-        if let (Some(d1), Some(d2)) = (crate::css::parse_dimension(val1), crate::css::parse_dimension(val2)) {
-            if let Some(interpolated) = interpolate_dimension(d1, d2, t) {
-                match prop {
-                    "width" => {
-                        taffy_style.size.width = interpolated;
-                        let raw = interpolated.into_raw();
-                        if raw.tag() == taffy::style::CompactLength::LENGTH_TAG {
-                            style.width = Some(raw.value());
-                        }
-                    }
-                    "height" => {
-                        taffy_style.size.height = interpolated;
-                        let raw = interpolated.into_raw();
-                        if raw.tag() == taffy::style::CompactLength::LENGTH_TAG {
-                            style.height = Some(raw.value());
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        }
-    }
-    else if ["left", "right", "top", "bottom", "margin-left", "margin-right", "margin-top", "margin-bottom"].contains(&prop) {
-        if let (Some(lp1), Some(lp2)) = (crate::css::parse_length_percentage_auto(val1), crate::css::parse_length_percentage_auto(val2)) {
-            if let Some(interpolated) = interpolate_length_percentage_auto(lp1, lp2, t) {
-                match prop {
-                    "left" => taffy_style.inset.left = interpolated,
-                    "right" => taffy_style.inset.right = interpolated,
-                    "top" => taffy_style.inset.top = interpolated,
-                    "bottom" => taffy_style.inset.bottom = interpolated,
-                    "margin-left" => taffy_style.margin.left = interpolated,
-                    "margin-right" => taffy_style.margin.right = interpolated,
-                    "margin-top" => taffy_style.margin.top = interpolated,
-                    "margin-bottom" => taffy_style.margin.bottom = interpolated,
-                    _ => {}
-                }
-            }
-        }
-    }
-    else if ["padding-left", "padding-right", "padding-top", "padding-bottom"].contains(&prop) {
-        if let (Some(lp1), Some(lp2)) = (crate::css::parse_length_percentage(val1), crate::css::parse_length_percentage(val2)) {
-            if let Some(interpolated) = interpolate_length_percentage(lp1, lp2, t) {
-                match prop {
-                    "padding-left" => {
-                        taffy_style.padding.left = interpolated;
-                        let raw = interpolated.into_raw();
-                        if raw.tag() == taffy::style::CompactLength::LENGTH_TAG {
-                            style.padding_left = raw.value();
-                        }
-                    }
-                    "padding-right" => {
-                        taffy_style.padding.right = interpolated;
-                        let raw = interpolated.into_raw();
-                        if raw.tag() == taffy::style::CompactLength::LENGTH_TAG {
-                            style.padding_right = raw.value();
-                        }
-                    }
-                    "padding-top" => {
-                        taffy_style.padding.top = interpolated;
-                        let raw = interpolated.into_raw();
-                        if raw.tag() == taffy::style::CompactLength::LENGTH_TAG {
-                            style.padding_top = raw.value();
-                        }
-                    }
-                    "padding-bottom" => {
-                        taffy_style.padding.bottom = interpolated;
-                        let raw = interpolated.into_raw();
-                        if raw.tag() == taffy::style::CompactLength::LENGTH_TAG {
-                            style.padding_bottom = raw.value();
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        }
-    }
-}
-
-fn get_prop_val(
-    kf: Option<&crate::css::Keyframe>,
-    prop: &str,
-    base_container: &ContainerStyle,
-    base_layout: &Style,
-) -> Option<String> {
-    if let Some(k) = kf {
-        if let Some((_, val)) = k.declarations.iter().find(|(p, _)| p == prop) {
-            return Some(val.clone());
-        }
-    }
-    match prop {
-        "color" => Some(format!("rgba({},{},{},{})", base_container.color.r, base_container.color.g, base_container.color.b, base_container.color.a as f32 / 255.0)),
-        "background-color" => base_container.background_color.map(|c| format!("rgba({},{},{},{})", c.r, c.g, c.b, c.a as f32 / 255.0)),
-        "border-radius" => Some(format!("{}px", base_container.border_radius)),
-        "border-width" => Some(format!("{}px", base_container.border_width)),
-        "border-color" => base_container.border_color.map(|c| format!("rgba({},{},{},{})", c.r, c.g, c.b, c.a as f32 / 255.0)),
-        "font-size" => Some(format!("{}px", base_container.font_size)),
-        "width" => format_compact_length(base_layout.size.width.into_raw()),
-        "height" => format_compact_length(base_layout.size.height.into_raw()),
-        "padding-left" => format_compact_length(base_layout.padding.left.into_raw()),
-        "padding-right" => format_compact_length(base_layout.padding.right.into_raw()),
-        "padding-top" => format_compact_length(base_layout.padding.top.into_raw()),
-        "padding-bottom" => format_compact_length(base_layout.padding.bottom.into_raw()),
-        "margin-left" => format_compact_length(base_layout.margin.left.into_raw()),
-        "margin-right" => format_compact_length(base_layout.margin.right.into_raw()),
-        "margin-top" => format_compact_length(base_layout.margin.top.into_raw()),
-        "margin-bottom" => format_compact_length(base_layout.margin.bottom.into_raw()),
-        "left" => format_compact_length(base_layout.inset.left.into_raw()),
-        "right" => format_compact_length(base_layout.inset.right.into_raw()),
-        "top" => format_compact_length(base_layout.inset.top.into_raw()),
-        "bottom" => format_compact_length(base_layout.inset.bottom.into_raw()),
-        _ => None,
-    }
-}
-
-fn format_compact_length(cl: taffy::style::CompactLength) -> Option<String> {
-    match cl.tag() {
-        taffy::style::CompactLength::LENGTH_TAG => Some(format!("{}px", cl.value())),
-        taffy::style::CompactLength::PERCENT_TAG => Some(format!("{}%", cl.value() * 100.0)),
-        _ => None,
     }
 }
