@@ -43,7 +43,9 @@ pub fn run_app<M: Model + xerune::ui::TemplateLayout + 'static, TM: TextMeasurer
         let rotate = fb_w < fb_h;
         let (w, h) = if rotate { (fb_h, fb_w) } else { (fb_w, fb_h) };
         
-        println!("Framebuffer: {}x{} @ {}bpp", fb_w, fb_h, bpp);
+        let layout = fb.get_pixel_layout();
+        let fb_is_bgra = layout.blue.offset < layout.red.offset;
+        println!("Framebuffer: {}x{} @ {}bpp, is_bgra: {}", fb_w, fb_h, bpp, fb_is_bgra);
         
         let mut double_buffered = false;
         
@@ -59,7 +61,7 @@ pub fn run_app<M: Model + xerune::ui::TemplateLayout + 'static, TM: TextMeasurer
         }
         
         let mut fb_mmap = fb.map().map_err(|e| anyhow::anyhow!("Failed to map framebuffer: {:?}", e))?;
-        let rx_input = spawn_input_thread();
+        let (rx_input, calibration) = spawn_input_thread();
         
         runtime.set_size(w as f32, h as f32);
         
@@ -102,12 +104,22 @@ pub fn run_app<M: Model + xerune::ui::TemplateLayout + 'static, TM: TextMeasurer
             while let Ok(ev) = rx_input.try_recv() {
                 match ev.kind() {
                     InputEventKind::AbsAxis(AbsoluteAxisType::ABS_X) | InputEventKind::AbsAxis(AbsoluteAxisType::ABS_MT_POSITION_X) => {
-                        touch_x = ev.value() as f32;
+                        let raw_val = ev.value() as f32;
+                        if let Some(ref cal) = calibration {
+                            touch_x = ((raw_val - cal.x_min) / (cal.x_max - cal.x_min) * fb_w as f32).clamp(0.0, fb_w as f32 - 1.0);
+                        } else {
+                            touch_x = raw_val;
+                        }
                         if rotate { mouse_y = fb_w as f32 - 1.0 - touch_x; } else { mouse_x = touch_x; }
                         dirty |= runtime.handle_event(InputEvent::Hover { x: mouse_x, y: mouse_y });
                     },
                     InputEventKind::AbsAxis(AbsoluteAxisType::ABS_Y) | InputEventKind::AbsAxis(AbsoluteAxisType::ABS_MT_POSITION_Y) => {
-                        touch_y = ev.value() as f32;
+                        let raw_val = ev.value() as f32;
+                        if let Some(ref cal) = calibration {
+                            touch_y = ((raw_val - cal.y_min) / (cal.y_max - cal.y_min) * fb_h as f32).clamp(0.0, fb_h as f32 - 1.0);
+                        } else {
+                            touch_y = raw_val;
+                        }
                         if rotate { mouse_x = touch_y; } else { mouse_y = touch_y; }
                         dirty |= runtime.handle_event(InputEvent::Hover { x: mouse_x, y: mouse_y });
                     },
@@ -163,7 +175,7 @@ pub fn run_app<M: Model + xerune::ui::TemplateLayout + 'static, TM: TextMeasurer
                     {
                         if let Some(fb_pixmap) = tiny_skia::PixmapMut::from_bytes(draw_slice, fb_w, fb_h) {
                              let mut renderer = TinySkiaRenderer::new(fb_pixmap, fonts, &mut image_cache, &mut gradient_cache, &mut glyph_cache);
-                             renderer.swap_rb = true; // FB is BGRA
+                             renderer.swap_rb = fb_is_bgra;
                              if rotate {
                                  renderer.transform = tiny_skia::Transform::from_rotate(90.0).post_translate(fb_w as f32, 0.0);
                              }
@@ -173,18 +185,33 @@ pub fn run_app<M: Model + xerune::ui::TemplateLayout + 'static, TM: TextMeasurer
 
                     #[cfg(feature = "fast-renderer")]
                     {
-                        let mut renderer = FastRenderer::new(&mut back_buffer, w, h, fonts, &mut image_cache, &mut glyph_cache);
-                        renderer.swap_rb = true; // FB is BGRA
-                        renderer.rotate = rotate;
-                        renderer.physical_width = fb_w;
-                        renderer.physical_height = fb_h;
-                        runtime.render(&mut renderer);
+                        if double_buffered {
+                            let draw_slice_u32 = unsafe {
+                                std::slice::from_raw_parts_mut(
+                                    draw_slice.as_mut_ptr() as *mut u32,
+                                    draw_slice.len() / 4,
+                                )
+                            };
+                            let mut renderer = FastRenderer::new(draw_slice_u32, w, h, fonts, &mut image_cache, &mut glyph_cache);
+                            renderer.swap_rb = !fb_is_bgra;
+                            renderer.rotate = rotate;
+                            renderer.physical_width = fb_w;
+                            renderer.physical_height = fb_h;
+                            runtime.render(&mut renderer);
+                        } else {
+                            let mut renderer = FastRenderer::new(&mut back_buffer, w, h, fonts, &mut image_cache, &mut glyph_cache);
+                            renderer.swap_rb = !fb_is_bgra;
+                            renderer.rotate = rotate;
+                            renderer.physical_width = fb_w;
+                            renderer.physical_height = fb_h;
+                            runtime.render(&mut renderer);
 
-                        // Copy completed frame from local double-buffer to framebuffer
-                        let ptr_src = back_buffer.as_ptr() as *const u8;
-                        let ptr_dst = draw_slice.as_mut_ptr();
-                        unsafe {
-                            std::ptr::copy_nonoverlapping(ptr_src, ptr_dst, page_size);
+                            // Copy completed frame from local double-buffer to framebuffer
+                            let ptr_src = back_buffer.as_ptr() as *const u8;
+                            let ptr_dst = draw_slice.as_mut_ptr();
+                            unsafe {
+                                std::ptr::copy_nonoverlapping(ptr_src, ptr_dst, page_size);
+                            }
                         }
                     }
                     
@@ -355,7 +382,16 @@ fn render_16bit_fallback<M: Model + xerune::ui::TemplateLayout, TM: TextMeasurer
 }
 
 #[cfg(all(target_os = "linux", feature = "linuxfb", feature = "evdev"))]
-fn spawn_input_thread() -> Receiver<evdev::InputEvent> {
+#[derive(Debug, Clone)]
+pub struct TouchCalibration {
+    pub x_min: f32,
+    pub x_max: f32,
+    pub y_min: f32,
+    pub y_max: f32,
+}
+
+#[cfg(all(target_os = "linux", feature = "linuxfb", feature = "evdev"))]
+fn spawn_input_thread() -> (Receiver<evdev::InputEvent>, Option<TouchCalibration>) {
     let mut touch_device: Option<Device> = None;
     for id in 0..10 {
         let path = format!("/dev/input/event{}", id);
@@ -364,6 +400,37 @@ fn spawn_input_thread() -> Receiver<evdev::InputEvent> {
                 println!("Found touch device: {} ({})", dev.name().unwrap_or("?"), path);
                 touch_device = Some(dev);
                 break;
+            }
+        }
+    }
+    
+    let mut calibration = None;
+    if let Some(ref dev) = touch_device {
+        if let Ok(abs_state) = dev.get_abs_state() {
+            let x_info = &abs_state[AbsoluteAxisType::ABS_MT_POSITION_X.0 as usize];
+            let y_info = &abs_state[AbsoluteAxisType::ABS_MT_POSITION_Y.0 as usize];
+            let (mut xm, mut xM) = (x_info.minimum as f32, x_info.maximum as f32);
+            let (mut ym, mut yM) = (y_info.minimum as f32, y_info.maximum as f32);
+            
+            if xM - xm <= 0.0 {
+                let x_info_fallback = &abs_state[AbsoluteAxisType::ABS_X.0 as usize];
+                xm = x_info_fallback.minimum as f32;
+                xM = x_info_fallback.maximum as f32;
+            }
+            if yM - ym <= 0.0 {
+                let y_info_fallback = &abs_state[AbsoluteAxisType::ABS_Y.0 as usize];
+                ym = y_info_fallback.minimum as f32;
+                yM = y_info_fallback.maximum as f32;
+            }
+            
+            if xM - xm > 0.0 && yM - ym > 0.0 {
+                calibration = Some(TouchCalibration {
+                    x_min: xm,
+                    x_max: xM,
+                    y_min: ym,
+                    y_max: yM,
+                });
+                println!("Touch screen calibration: X=[{}, {}], Y=[{}, {}]", xm, xM, ym, yM);
             }
         }
     }
@@ -388,6 +455,6 @@ fn spawn_input_thread() -> Receiver<evdev::InputEvent> {
             }
         });
     }
-    rx
+    (rx, calibration)
 }
 

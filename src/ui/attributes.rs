@@ -2,6 +2,7 @@ use taffy::prelude::*;
 use crate::style::{ContainerStyle, RenderData};
 use crate::css;
 use crate::defaults;
+use crate::TextMeasurer;
 use super::node_map::NodeMap;
 
 #[cfg(feature = "dynamic-parser")]

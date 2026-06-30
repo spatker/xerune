@@ -15,6 +15,7 @@ path = "src/lib.rs"
 profile = ["dep:coarse-prof"]
 fast-renderer = []
 dynamic-parser = ["dep:html5ever", "dep:markup5ever", "dep:markup5ever_rcdom"]
+drm = ["dep:drm", "dep:drm-fourcc"]
 
 [dependencies]
 xerune_derive = { path = "xerune_derive" }
@@ -30,7 +31,10 @@ env_logger = "0.11"
 
 # Embedded Linux dependencies
 linuxfb = { version = "0.2", optional = true }
+drm = { version = "0.12", optional = true }
+drm-fourcc = { version = "2.2", optional = true }
 evdev = { version = "0.12", optional = true }
+libc = "0.2"
 simplecss = "0.2.2"
 
 mimalloc = "0.1.43"
@@ -47,6 +51,8 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 # For the embedded backend in examples
 linuxfb = "0.2"
+drm = "0.12"
+drm-fourcc = "2.2"
 evdev = "0.12"
 # anyhow for easier error handling in examples
 anyhow = "1.0" 

@@ -286,7 +286,10 @@ fn main() -> anyhow::Result<()> {
     let mut runtime = Runtime::new(model, measurer);
     runtime.set_interval("tick".to_string(), 16);
     
-    #[cfg(not(all(target_os = "linux", feature = "linuxfb", feature = "evdev")))]
+    #[cfg(not(any(
+        all(target_os = "linux", feature = "linuxfb", feature = "evdev"),
+        all(target_os = "linux", feature = "drm", feature = "evdev")
+    )))]
     {
         support::winit_backend::run_app(
             "Xerune Breakout", 
@@ -298,7 +301,7 @@ fn main() -> anyhow::Result<()> {
         )
     }
 
-    #[cfg(all(target_os = "linux", feature = "linuxfb", feature = "evdev"))]
+    #[cfg(all(target_os = "linux", feature = "linuxfb", feature = "evdev", not(feature = "drm")))]
     {
          support::linux_backend::run_app(
              "Xerune Breakout", 
@@ -307,6 +310,20 @@ fn main() -> anyhow::Result<()> {
              runtime, 
              fonts_ref, 
              |_| {}
-         )
+         )?;
     }
+
+    #[cfg(all(target_os = "linux", feature = "drm", feature = "evdev"))]
+    {
+         support::drm_backend::run_app(
+             "Xerune Breakout", 
+             GAME_WIDTH as u32, 
+             GAME_HEIGHT as u32, 
+             runtime, 
+             fonts_ref, 
+             |_| {}
+         )?;
+    }
+
+    Ok(())
 }

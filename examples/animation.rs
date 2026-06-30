@@ -204,7 +204,10 @@ fn main() -> anyhow::Result<()> {
     }
 
     
-    #[cfg(not(all(target_os = "linux", feature = "linuxfb", feature = "evdev")))]
+    #[cfg(not(any(
+        all(target_os = "linux", feature = "linuxfb", feature = "evdev"),
+        all(target_os = "linux", feature = "drm", feature = "evdev")
+    )))]
     {
         support::winit_backend::run_app(
             "Xerune Animation Benchmark",
@@ -216,7 +219,7 @@ fn main() -> anyhow::Result<()> {
         )
     }
     
-    #[cfg(all(target_os = "linux", feature = "linuxfb", feature = "evdev"))]
+    #[cfg(all(target_os = "linux", feature = "linuxfb", feature = "evdev", not(feature = "drm")))]
     {
         support::linux_backend::run_app(
             "Xerune Animation Benchmark",
@@ -225,6 +228,20 @@ fn main() -> anyhow::Result<()> {
             runtime, 
             fonts_ref, 
             move |_tx| {}
-        )
+        )?;
     }
+
+    #[cfg(all(target_os = "linux", feature = "drm", feature = "evdev"))]
+    {
+        support::drm_backend::run_app(
+            "Xerune Animation Benchmark",
+            800, 
+            600, 
+            runtime, 
+            fonts_ref, 
+            move |_tx| {}
+        )?;
+    }
+
+    Ok(())
 }

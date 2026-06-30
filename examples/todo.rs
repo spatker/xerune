@@ -162,14 +162,24 @@ fn main() -> anyhow::Result<()> {
     
     let runtime = Runtime::new(todo_list, measurer);
     
-    #[cfg(not(all(target_os = "linux", feature = "linuxfb", feature = "evdev")))]
+    #[cfg(not(any(
+        all(target_os = "linux", feature = "linuxfb", feature = "evdev"),
+        all(target_os = "linux", feature = "drm", feature = "evdev")
+    )))]
     {
         support::winit_backend::run_app("Xerune Todo Example", 800, 600, runtime, fonts_ref, | _ | {})
     }
 
-    #[cfg(all(target_os = "linux", feature = "linuxfb", feature = "evdev"))]
+    #[cfg(all(target_os = "linux", feature = "linuxfb", feature = "evdev", not(feature = "drm")))]
     {
-        support::linux_backend::run_app("Xerune Todo Example", 800, 600, runtime, fonts_ref, | _ | {})
+        support::linux_backend::run_app("Xerune Todo Example", 800, 600, runtime, fonts_ref, | _ | {})?;
     }
+
+    #[cfg(all(target_os = "linux", feature = "drm", feature = "evdev"))]
+    {
+        support::drm_backend::run_app("Xerune Todo Example", 800, 600, runtime, fonts_ref, | _ | {})?;
+    }
+
+    Ok(())
 }
 

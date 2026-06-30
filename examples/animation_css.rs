@@ -30,7 +30,10 @@ fn main() -> anyhow::Result<()> {
     let model = ShowcaseModel;
     let runtime = Runtime::new(model, measurer);
 
-    #[cfg(not(all(target_os = "linux", feature = "linuxfb", feature = "evdev")))]
+    #[cfg(not(any(
+        all(target_os = "linux", feature = "linuxfb", feature = "evdev"),
+        all(target_os = "linux", feature = "drm", feature = "evdev")
+    )))]
     {
         support::winit_backend::run_app(
             "Xerune Native CSS Animations", 
@@ -42,7 +45,7 @@ fn main() -> anyhow::Result<()> {
         )
     }
 
-    #[cfg(all(target_os = "linux", feature = "linuxfb", feature = "evdev"))]
+    #[cfg(all(target_os = "linux", feature = "linuxfb", feature = "evdev", not(feature = "drm")))]
     {
          support::linux_backend::run_app(
              "Xerune Native CSS Animations", 
@@ -51,6 +54,20 @@ fn main() -> anyhow::Result<()> {
              runtime, 
              fonts_ref, 
              |_| {}
-         )
+         )?;
     }
+
+    #[cfg(all(target_os = "linux", feature = "drm", feature = "evdev"))]
+    {
+         support::drm_backend::run_app(
+             "Xerune Native CSS Animations", 
+             800, 
+             600, 
+             runtime, 
+             fonts_ref, 
+             |_| {}
+         )?;
+    }
+
+    Ok(())
 }
