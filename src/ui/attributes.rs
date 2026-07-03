@@ -2,7 +2,6 @@ use taffy::prelude::*;
 use crate::style::{ContainerStyle, RenderData};
 use crate::css;
 use crate::defaults;
-use crate::TextMeasurer;
 use super::node_map::NodeMap;
 
 #[cfg(feature = "dynamic-parser")]
@@ -161,21 +160,21 @@ pub(crate) fn preprocess_dom(handle: &DomHandle) {
     }
 }
 
-pub(crate) struct ParsedAttributes {
-    pub(crate) element_type: defaults::ElementType,
-    pub(crate) slider_value: f32,
-    pub(crate) progress_value: f32,
-    pub(crate) progress_max: f32,
-    pub(crate) checkbox_checked: bool,
-    pub(crate) interaction_id: Option<String>,
-    pub(crate) image_src: String,
-    pub(crate) canvas_id: String,
-    pub(crate) element_id: Option<String>,
-    pub(crate) text_input_text: Option<String>,
+pub struct ParsedAttributes {
+    pub element_type: defaults::ElementType,
+    pub slider_value: f32,
+    pub progress_value: f32,
+    pub progress_max: f32,
+    pub checkbox_checked: bool,
+    pub interaction_id: Option<String>,
+    pub image_src: String,
+    pub canvas_id: String,
+    pub element_id: Option<String>,
+    pub text_input_text: Option<String>,
 }
 
 impl ParsedAttributes {
-    pub(crate) fn new(element_type: defaults::ElementType) -> Self {
+    pub fn new(element_type: defaults::ElementType) -> Self {
         Self {
             element_type,
             slider_value: 0.0,
@@ -191,7 +190,7 @@ impl ParsedAttributes {
     }
 }
 
-pub(crate) fn parse_attributes_generic<'a>(
+pub fn parse_attributes_generic<'a>(
     tag: &str,
     attrs: impl IntoIterator<Item = (&'a str, &'a str)>,
     current_style: &mut ContainerStyle,

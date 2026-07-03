@@ -626,3 +626,386 @@ pub(crate) fn resolve_styles(
 
     base_styles.insert(node, (layout_style, current_style));
 }
+
+pub fn finalize_node_style(
+    node: NodeId,
+    tag: &str,
+    parent_style: &ContainerStyle,
+    layout_style: &mut Style,
+    current_style: &mut ContainerStyle,
+    parsed: &crate::ui::attributes::ParsedAttributes,
+    taffy: &mut TaffyTree,
+    render_data: &mut NodeMap<RenderData>,
+    interactions: &mut NodeMap<Interaction>,
+    base_styles: &mut NodeMap<(Style, ContainerStyle)>,
+) {
+    if let Some(d) = current_style.inline_size {
+        layout_style.size.width = d;
+        if d == taffy::style::Dimension::length(d.value()) {
+            current_style.width = Some(d.value());
+        }
+    }
+    if let Some(d) = current_style.block_size {
+        layout_style.size.height = d;
+        if d == taffy::style::Dimension::length(d.value()) {
+            current_style.height = Some(d.value());
+        }
+    }
+    if let Some(d) = current_style.min_inline_size {
+        layout_style.min_size.width = d;
+    }
+    if let Some(d) = current_style.max_inline_size {
+        layout_style.max_size.width = d;
+    }
+    if let Some(d) = current_style.min_block_size {
+        layout_style.min_size.height = d;
+    }
+    if let Some(d) = current_style.max_block_size {
+        layout_style.max_size.height = d;
+    }
+
+    let add_h = current_style.padding_left + current_style.padding_right + current_style.border_width * 2.0;
+    let add_v = current_style.padding_top + current_style.padding_bottom + current_style.border_width * 2.0;
+
+    if current_style.box_sizing == BoxSizing::ContentBox {
+        layout_style.size.width = to_border_box(layout_style.size.width, add_h);
+        layout_style.size.height = to_border_box(layout_style.size.height, add_v);
+    } else {
+        layout_style.min_size.width = to_content_box(layout_style.min_size.width, add_h);
+        layout_style.min_size.height = to_content_box(layout_style.min_size.height, add_v);
+        layout_style.max_size.width = to_content_box(layout_style.max_size.width, add_h);
+        layout_style.max_size.height = to_content_box(layout_style.max_size.height, add_v);
+    }
+
+    if layout_style.position == Position::Absolute {
+        enum Alignment {
+            Start,
+            End,
+            Center,
+        }
+
+        if layout_style.inset.left.is_auto() && layout_style.inset.right.is_auto() {
+            let is_parent_row = parent_style.flex_direction == FlexDirection::Row || parent_style.flex_direction == FlexDirection::RowReverse;
+            let h_align = if is_parent_row {
+                let jc = parent_style.justify_content.unwrap_or(MyJustifyContent::FlexStart);
+                match jc {
+                    MyJustifyContent::FlexStart => {
+                        if (parent_style.flex_direction == FlexDirection::Row) ^ (parent_style.direction == Direction::Rtl) {
+                            Alignment::Start
+                        } else {
+                            Alignment::End
+                        }
+                    }
+                    MyJustifyContent::FlexEnd => {
+                        if (parent_style.flex_direction == FlexDirection::Row) ^ (parent_style.direction == Direction::Rtl) {
+                            Alignment::End
+                        } else {
+                            Alignment::Start
+                        }
+                    }
+                    MyJustifyContent::Center | MyJustifyContent::SpaceAround | MyJustifyContent::SpaceEvenly => {
+                        Alignment::Center
+                    }
+                    MyJustifyContent::SpaceBetween => {
+                        if (parent_style.flex_direction == FlexDirection::Row) ^ (parent_style.direction == Direction::Rtl) {
+                            Alignment::Start
+                        } else {
+                            Alignment::End
+                        }
+                    }
+                    MyJustifyContent::Start => {
+                        if parent_style.direction == Direction::Rtl {
+                            Alignment::End
+                        } else {
+                            Alignment::Start
+                        }
+                    }
+                    MyJustifyContent::End => {
+                        if parent_style.direction == Direction::Rtl {
+                            Alignment::Start
+                        } else {
+                            Alignment::End
+                        }
+                    }
+                    MyJustifyContent::Left => {
+                        Alignment::Start
+                    }
+                    MyJustifyContent::Right => {
+                        Alignment::End
+                    }
+                }
+            } else {
+                let align = layout_style.align_self.map(|s| match s {
+                    AlignSelf::FlexStart | AlignSelf::Start => AlignItems::FlexStart,
+                    AlignSelf::FlexEnd | AlignSelf::End => AlignItems::FlexEnd,
+                    AlignSelf::Center => AlignItems::Center,
+                    AlignSelf::Baseline => AlignItems::Baseline,
+                    AlignSelf::Stretch => AlignItems::Stretch,
+                }).unwrap_or_else(|| parent_style.align_items.unwrap_or(AlignItems::Stretch));
+
+                match align {
+                    AlignItems::FlexStart | AlignItems::Stretch | AlignItems::Baseline | AlignItems::Start => {
+                        if (parent_style.direction == Direction::Rtl) ^ (parent_style.flex_wrap == FlexWrap::WrapReverse) {
+                            Alignment::End
+                        } else {
+                            Alignment::Start
+                        }
+                    }
+                    AlignItems::FlexEnd | AlignItems::End => {
+                        if (parent_style.direction == Direction::Rtl) ^ (parent_style.flex_wrap == FlexWrap::WrapReverse) {
+                            Alignment::Start
+                        } else {
+                            Alignment::End
+                        }
+                    }
+                    AlignItems::Center => {
+                        Alignment::Center
+                    }
+                }
+            };
+
+            match h_align {
+                Alignment::Start => {
+                    layout_style.inset.left = length(parent_style.padding_left);
+                }
+                Alignment::End => {
+                    if let (Some(pw), Some(cw)) = (parent_style.width, current_style.width) {
+                        layout_style.inset.left = length(pw - cw + parent_style.padding_left);
+                    } else {
+                        layout_style.inset.right = length(parent_style.padding_right);
+                    }
+                }
+                Alignment::Center => {
+                    if let (Some(pw), Some(cw)) = (parent_style.width, current_style.width) {
+                        layout_style.inset.left = length((pw - cw) / 2.0 + parent_style.padding_left);
+                    } else {
+                        layout_style.inset.left = length(parent_style.padding_left);
+                    }
+                }
+            }
+        }
+
+        if layout_style.inset.top.is_auto() && layout_style.inset.bottom.is_auto() {
+            let is_parent_row = parent_style.flex_direction == FlexDirection::Row || parent_style.flex_direction == FlexDirection::RowReverse;
+            let v_align = if !is_parent_row {
+                let jc = parent_style.justify_content.unwrap_or(MyJustifyContent::FlexStart);
+                match jc {
+                    MyJustifyContent::FlexStart => {
+                        if parent_style.flex_direction == FlexDirection::Column {
+                            Alignment::Start
+                        } else {
+                            Alignment::End
+                        }
+                    }
+                    MyJustifyContent::FlexEnd => {
+                        if parent_style.flex_direction == FlexDirection::Column {
+                            Alignment::End
+                        } else {
+                            Alignment::Start
+                        }
+                    }
+                    MyJustifyContent::Center | MyJustifyContent::SpaceAround | MyJustifyContent::SpaceEvenly => {
+                        Alignment::Center
+                    }
+                    MyJustifyContent::SpaceBetween => {
+                        if parent_style.flex_direction == FlexDirection::Column {
+                            Alignment::Start
+                        } else {
+                            Alignment::End
+                        }
+                    }
+                    MyJustifyContent::Start | MyJustifyContent::Left | MyJustifyContent::Right => {
+                        Alignment::Start
+                    }
+                    MyJustifyContent::End => {
+                        Alignment::End
+                    }
+                }
+            } else {
+                let align = layout_style.align_self.map(|s| match s {
+                    AlignSelf::FlexStart | AlignSelf::Start => AlignItems::FlexStart,
+                    AlignSelf::FlexEnd | AlignSelf::End => AlignItems::FlexEnd,
+                    AlignSelf::Center => AlignItems::Center,
+                    AlignSelf::Baseline => AlignItems::Baseline,
+                    AlignSelf::Stretch => AlignItems::Stretch,
+                }).unwrap_or_else(|| parent_style.align_items.unwrap_or(AlignItems::Stretch));
+
+                match align {
+                    AlignItems::FlexStart | AlignItems::Stretch | AlignItems::Baseline | AlignItems::Start => {
+                        if parent_style.flex_wrap == FlexWrap::WrapReverse {
+                            Alignment::End
+                        } else {
+                            Alignment::Start
+                        }
+                    }
+                    AlignItems::FlexEnd | AlignItems::End => {
+                        if parent_style.flex_wrap == FlexWrap::WrapReverse {
+                            Alignment::Start
+                        } else {
+                            Alignment::End
+                        }
+                    }
+                    AlignItems::Center => {
+                        Alignment::Center
+                    }
+                }
+            };
+
+            match v_align {
+                Alignment::Start => {
+                    layout_style.inset.top = length(parent_style.padding_top);
+                }
+                Alignment::End => {
+                    if let (Some(ph), Some(ch)) = (parent_style.height, current_style.height) {
+                        layout_style.inset.top = length(ph - ch + parent_style.padding_top);
+                    } else {
+                        layout_style.inset.bottom = length(parent_style.padding_bottom);
+                    }
+                }
+                Alignment::Center => {
+                    if let (Some(ph), Some(ch)) = (parent_style.height, current_style.height) {
+                        layout_style.inset.top = length((ph - ch) / 2.0 + parent_style.padding_top);
+                    } else {
+                        layout_style.inset.top = length(parent_style.padding_top);
+                    }
+                }
+            }
+        }
+    }
+
+    if current_style.display == Display::None {
+        layout_style.display = taffy::style::Display::None;
+    } else if current_style.display != Display::Flex {
+        let mut has_inline_child = false;
+        if let Ok(children) = taffy.children(node) {
+            for child_id in children {
+                if let Some(child_data) = render_data.get(&child_id) {
+                    match child_data {
+                        RenderData::Container(child_style) => {
+                            if child_style.display == Display::InlineBlock || child_style.is_floated {
+                                has_inline_child = true;
+                                break;
+                            }
+                        }
+                        _ => {
+                            has_inline_child = true;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        if has_inline_child || tag == "tr" {
+            layout_style.flex_direction = FlexDirection::Row;
+            layout_style.flex_wrap = FlexWrap::Wrap;
+            if let Some(align) = current_style.text_align {
+                match align {
+                    TextAlign::Right => layout_style.justify_content = Some(JustifyContent::FlexEnd),
+                    TextAlign::Center => layout_style.justify_content = Some(JustifyContent::Center),
+                    TextAlign::Left => layout_style.justify_content = Some(JustifyContent::FlexStart),
+                }
+            }
+        } else {
+            layout_style.flex_direction = FlexDirection::Column;
+        }
+    }
+
+    if parent_style.display != Display::Flex && current_style.display == Display::Block {
+        if layout_style.size.width.is_auto() {
+            layout_style.size.width = Dimension::percent(1.0);
+        }
+    }
+
+    layout_style.border = taffy::geometry::Rect {
+        left: length(current_style.border_width),
+        right: length(current_style.border_width),
+        top: length(current_style.border_width),
+        bottom: length(current_style.border_width),
+    };
+
+    if current_style.direction == Direction::Rtl {
+        match layout_style.flex_direction {
+            FlexDirection::Row | FlexDirection::RowReverse => {
+                layout_style.flex_direction = match layout_style.flex_direction {
+                    FlexDirection::Row => FlexDirection::RowReverse,
+                    FlexDirection::RowReverse => FlexDirection::Row,
+                    other => other,
+                };
+                layout_style.justify_content = match layout_style.justify_content {
+                    Some(JustifyContent::FlexStart) | None => Some(JustifyContent::FlexEnd),
+                    Some(JustifyContent::FlexEnd) => Some(JustifyContent::FlexStart),
+                    other => other,
+                };
+            }
+            FlexDirection::Column | FlexDirection::ColumnReverse => {
+                layout_style.align_items = match layout_style.align_items {
+                    Some(AlignItems::FlexStart) | None => Some(AlignItems::FlexEnd),
+                    Some(AlignItems::FlexEnd) => Some(AlignItems::FlexStart),
+                    other => other,
+                };
+                layout_style.align_content = match layout_style.align_content {
+                    Some(AlignContent::FlexStart) | None => Some(AlignContent::FlexEnd),
+                    Some(AlignContent::FlexEnd) => Some(AlignContent::FlexStart),
+                    other => other,
+                };
+            }
+        }
+    }
+
+    if !layout_style.max_size.height.is_auto() {
+        let val = layout_style.max_size.height.value();
+        if layout_style.max_size.height == Dimension::length(val) {
+            layout_style.max_size.height = Dimension::length(val + current_style.border_width * 2.0 + current_style.padding_top + current_style.padding_bottom);
+        }
+    }
+    if !layout_style.max_size.width.is_auto() {
+        let val = layout_style.max_size.width.value();
+        if layout_style.max_size.width == Dimension::length(val) {
+            layout_style.max_size.width = Dimension::length(val + current_style.border_width * 2.0 + current_style.padding_left + current_style.padding_right);
+        }
+    }
+    if !layout_style.min_size.height.is_auto() {
+        let val = layout_style.min_size.height.value();
+        if layout_style.min_size.height == Dimension::length(val) {
+            layout_style.min_size.height = Dimension::length(val + current_style.border_width * 2.0 + current_style.padding_top + current_style.padding_bottom);
+        }
+    }
+    if !layout_style.min_size.width.is_auto() {
+        let val = layout_style.min_size.width.value();
+        if layout_style.min_size.width == Dimension::length(val) {
+            layout_style.min_size.width = Dimension::length(val + current_style.border_width * 2.0 + current_style.padding_left + current_style.padding_right);
+        }
+    }
+
+    let is_parent_flex = parent_style.display == Display::Flex;
+    if is_parent_flex {
+        let resolved_align = match layout_style.align_self {
+            None => parent_style.align_items.unwrap_or(AlignItems::Stretch),
+            Some(AlignSelf::FlexStart) => AlignItems::FlexStart,
+            Some(AlignSelf::FlexEnd) => AlignItems::FlexEnd,
+            Some(AlignSelf::Center) => AlignItems::Center,
+            Some(AlignSelf::Baseline) => AlignItems::Baseline,
+            Some(AlignSelf::Stretch) => AlignItems::Stretch,
+            Some(AlignSelf::Start) => AlignItems::Start,
+            Some(AlignSelf::End) => AlignItems::End,
+        };
+        if resolved_align == AlignItems::Baseline {
+            let is_column = parent_style.flex_direction == FlexDirection::Column 
+                || parent_style.flex_direction == FlexDirection::ColumnReverse;
+            if is_column {
+                layout_style.align_self = Some(AlignSelf::FlexStart);
+            }
+        }
+    }
+
+    let _ = taffy.set_style(node, layout_style.clone());
+
+    crate::ui::attributes::process_element_type(node, parsed, current_style.clone(), render_data);
+
+    if let Some(interaction) = parsed.interaction_id.clone() {
+        interactions.insert(node, interaction);
+    }
+
+    base_styles.insert(node, (layout_style.clone(), current_style.clone()));
+}

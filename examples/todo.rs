@@ -167,7 +167,7 @@ fn main() -> anyhow::Result<()> {
         all(target_os = "linux", feature = "drm", feature = "evdev")
     )))]
     {
-        support::winit_backend::run_app("Xerune Todo Example", 800, 600, runtime, fonts_ref, | _ | {})
+        support::winit_backend::run_app("Xerune Todo Example", 800, 600, runtime, fonts_ref, | _ | {})?
     }
 
     #[cfg(all(target_os = "linux", feature = "linuxfb", feature = "evdev", not(feature = "drm")))]

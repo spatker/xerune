@@ -298,7 +298,7 @@ fn main() -> anyhow::Result<()> {
             runtime, 
             fonts_ref, 
             move |_proxy| {}
-        )
+        )?
     }
 
     #[cfg(all(target_os = "linux", feature = "linuxfb", feature = "evdev", not(feature = "drm")))]

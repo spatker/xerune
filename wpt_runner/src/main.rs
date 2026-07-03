@@ -68,7 +68,13 @@ impl xerune::ui::TemplateLayout for RawHtmlModel {
         Box::leak(css_str.into_boxed_str())
     }
 
-    fn build_ui(&self, builder: &mut xerune::ui::UiBuilder) -> taffy::NodeId {
+    fn build_ui(
+        &self,
+        builder: &mut xerune::ui::UiBuilder,
+        _measurer: &impl xerune::TextMeasurer,
+        _default_style: &xerune::style::ContainerStyle,
+        _message_validator: &impl Fn(&str) -> bool,
+    ) -> taffy::NodeId {
         use html5ever::parse_document;
         use html5ever::tendril::TendrilSink;
         use markup5ever_rcdom::{Handle, NodeData, RcDom};

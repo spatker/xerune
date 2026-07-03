@@ -41,7 +41,13 @@ pub type Interaction = String;
 
 pub trait TemplateLayout {
     fn stylesheet(&self) -> &'static str;
-    fn build_ui(&self, builder: &mut UiBuilder) -> NodeId;
+    fn build_ui(
+        &self,
+        builder: &mut UiBuilder,
+        measurer: &impl TextMeasurer,
+        default_style: &ContainerStyle,
+        message_validator: &impl Fn(&str) -> bool,
+    ) -> NodeId;
 }
 
 pub struct Ui {
@@ -195,61 +201,65 @@ impl Ui {
         let mut builder = UiBuilder::new();
         let root = {
             profile!("build_ui");
-            model.build_ui(&mut builder)
+            model.build_ui(&mut builder, measurer, &default_style, message_validator)
         };
 
         let stylesheet_str = model.stylesheet();
-        
-        let cached = style_resolution::STYLESHEET_CACHE.with(|cache| {
-            let mut cache_guard = cache.borrow_mut();
-            if let Some(&c) = cache_guard.get(stylesheet_str) {
-                c
-            } else {
-                let has_nth_or_last_child = stylesheet_str.contains(":nth-child") || stylesheet_str.contains(":last-child");
-                let keyframes = css::parse_keyframes(stylesheet_str);
-                
-                let re_nth = regex::Regex::new(r":nth-child\(\s*(\d+)\s*\)").unwrap();
-                let css_str = re_nth.replace_all(stylesheet_str, ".nth-child-$1").into_owned();
-                let css_str = css_str.replace(":last-child", ".last-child");
-                let re_slash = regex::Regex::new(r"/[\d\.]+").unwrap();
-                let css_str = re_slash.replace_all(&css_str, "").into_owned();
-                
-                let static_css_str: &'static str = Box::leak(css_str.into_boxed_str());
-                let stylesheet = simplecss::StyleSheet::parse(static_css_str);
-                
-                let cached_val: &'static style_resolution::CachedStyles = Box::leak(Box::new(style_resolution::CachedStyles {
-                    stylesheet,
-                    keyframes,
-                    has_nth_or_last_child,
-                    style_cache: std::cell::RefCell::new(HashMap::with_capacity(128)),
-                }));
-                cache_guard.insert(stylesheet_str, cached_val);
-                cached_val
+        let mut base_styles = builder.base_styles;
+        let mut keyframes = builder.keyframes;
+
+        if !stylesheet_str.is_empty() || builder.node_metadata.iter().next().is_some() {
+            let cached = style_resolution::STYLESHEET_CACHE.with(|cache| {
+                let mut cache_guard = cache.borrow_mut();
+                if let Some(&c) = cache_guard.get(stylesheet_str) {
+                    c
+                } else {
+                    let has_nth_or_last_child = stylesheet_str.contains(":nth-child") || stylesheet_str.contains(":last-child");
+                    let keyframes = css::parse_keyframes(stylesheet_str);
+                    
+                    let re_nth = regex::Regex::new(r":nth-child\(\s*(\d+)\s*\)").unwrap();
+                    let css_str = re_nth.replace_all(stylesheet_str, ".nth-child-$1").into_owned();
+                    let css_str = css_str.replace(":last-child", ".last-child");
+                    let re_slash = regex::Regex::new(r"/[\d\.]+").unwrap();
+                    let css_str = re_slash.replace_all(&css_str, "").into_owned();
+                    
+                    let static_css_str: &'static str = Box::leak(css_str.into_boxed_str());
+                    let stylesheet = simplecss::StyleSheet::parse(static_css_str);
+                    
+                    let cached_val: &'static style_resolution::CachedStyles = Box::leak(Box::new(style_resolution::CachedStyles {
+                        stylesheet,
+                        keyframes,
+                        has_nth_or_last_child,
+                        style_cache: std::cell::RefCell::new(HashMap::with_capacity(128)),
+                    }));
+                    cache_guard.insert(stylesheet_str, cached_val);
+                    cached_val
+                }
+            });
+
+            if cached.has_nth_or_last_child {
+                Self::preprocess_compiled_tree(&builder.taffy, &mut builder.node_metadata, root);
             }
-        });
 
-        if cached.has_nth_or_last_child {
-            Self::preprocess_compiled_tree(&builder.taffy, &mut builder.node_metadata, root);
-        }
-
-        let mut base_styles = NodeMap::with_capacity(128);
-        let mut style_cache = cached.style_cache.borrow_mut();
-        
-        {
-            profile!("resolve_styles");
-            style_resolution::resolve_styles(
-                &mut builder.taffy,
-                root,
-                measurer,
-                &mut builder.render_data,
-                &mut builder.interactions,
-                default_style,
-                message_validator,
-                &cached.stylesheet,
-                &builder.node_metadata,
-                &mut base_styles,
-                &mut *style_cache,
-            );
+            let mut style_cache = cached.style_cache.borrow_mut();
+            
+            {
+                profile!("resolve_styles");
+                style_resolution::resolve_styles(
+                    &mut builder.taffy,
+                    root,
+                    measurer,
+                    &mut builder.render_data,
+                    &mut builder.interactions,
+                    default_style,
+                    message_validator,
+                    &cached.stylesheet,
+                    &builder.node_metadata,
+                    &mut base_styles,
+                    &mut *style_cache,
+                );
+            }
+            keyframes = cached.keyframes.clone();
         }
 
         Ok(Self {
@@ -260,7 +270,7 @@ impl Ui {
             root,
             node_to_handle: builder.node_to_handle,
             base_styles,
-            keyframes: cached.keyframes.clone(),
+            keyframes,
         })
     }
 
@@ -377,7 +387,7 @@ impl Ui {
     }
 }
 
-pub(crate) fn normalize_text(text: &str) -> std::borrow::Cow<'_, str> {
+pub fn normalize_text(text: &str) -> std::borrow::Cow<'_, str> {
     let mut needs_normalization = false;
     let mut last_was_space = false;
     let mut is_first = true;

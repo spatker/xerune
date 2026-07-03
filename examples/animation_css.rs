@@ -42,7 +42,7 @@ fn main() -> anyhow::Result<()> {
             runtime, 
             fonts_ref, 
             |_| {}
-        )
+        )?
     }
 
     #[cfg(all(target_os = "linux", feature = "linuxfb", feature = "evdev", not(feature = "drm")))]

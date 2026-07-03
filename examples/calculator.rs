@@ -190,7 +190,7 @@ fn main() -> anyhow::Result<()> {
             runtime, 
             fonts_ref, 
             |_| {} // No periodic ticks needed for basic calculator
-        )
+        )?
     }
 
     #[cfg(all(target_os = "linux", feature = "linuxfb", feature = "evdev", not(feature = "drm")))]

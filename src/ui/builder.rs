@@ -10,6 +10,8 @@ pub struct UiBuilder {
     pub render_data: NodeMap<RenderData>,
     pub interactions: NodeMap<Interaction>,
     pub node_to_handle: NodeMap<Handle>,
+    pub base_styles: NodeMap<(Style, crate::style::ContainerStyle)>,
+    pub keyframes: std::collections::HashMap<String, crate::css::KeyframesAnimation>,
 }
 
 fn intern_string(s: &str) -> &'static str {
@@ -40,6 +42,8 @@ impl UiBuilder {
             render_data: NodeMap::with_capacity(capacity),
             interactions: NodeMap::with_capacity(capacity),
             node_to_handle: NodeMap::with_capacity(capacity),
+            base_styles: NodeMap::with_capacity(capacity),
+            keyframes: std::collections::HashMap::new(),
         }
     }
 

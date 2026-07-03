@@ -25,7 +25,13 @@ impl TemplateLayout for MockModel {
     fn stylesheet(&self) -> &'static str {
         ""
     }
-    fn build_ui(&self, builder: &mut UiBuilder) -> taffy::NodeId {
+    fn build_ui(
+        &self,
+        builder: &mut UiBuilder,
+        _measurer: &impl TextMeasurer,
+        _default_style: &ContainerStyle,
+        _message_validator: &impl Fn(&str) -> bool,
+    ) -> taffy::NodeId {
         let parent = builder.create_element("div", &[("style", "height: 100px; overflow: scroll;")]);
         let child = builder.create_element("div", &[("style", "height: 200px; flex-shrink: 0;"), ("data-on-click", "test_interaction")]);
         let text = builder.create_text("Content", &[]);
@@ -111,7 +117,13 @@ impl TemplateLayout for SelectorMockModel {
         }
         "#
     }
-    fn build_ui(&self, builder: &mut UiBuilder) -> taffy::NodeId {
+    fn build_ui(
+        &self,
+        builder: &mut UiBuilder,
+        _measurer: &impl TextMeasurer,
+        _default_style: &ContainerStyle,
+        _message_validator: &impl Fn(&str) -> bool,
+    ) -> taffy::NodeId {
         let parent = builder.create_element("div", &[]);
         
         let child1 = builder.create_element("div", &[("class", "blue-text"), ("id", "my-id")]);

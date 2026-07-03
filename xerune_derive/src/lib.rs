@@ -423,8 +423,161 @@ fn generate_attr_string_code(nodes: &[Node<'_>], local_vars: &HashSet<String>) -
 }
 
 // Recursively compile RcDom nodes into Rust builder calls
+struct MacroElementWrapper {
+    handle: Handle,
+    active_classes: HashSet<String>,
+}
+
+fn get_static_classes(handle: &Handle) -> HashSet<String> {
+    let mut static_classes = HashSet::new();
+    if let NodeData::Element { ref attrs, .. } = handle.data {
+        if let Some(attr) = attrs.borrow().iter().find(|a| a.name.local.as_ref() == "class") {
+            let class_val = attr.value.as_ref();
+            let parts = class_val.split_whitespace();
+            for part in parts {
+                if !part.contains("{%") && !part.contains("{{") && !part.contains("%}") && !part.contains("}}") {
+                    static_classes.insert(part.to_string());
+                }
+            }
+        }
+    }
+    static_classes
+}
+
+impl simplecss::Element for MacroElementWrapper {
+    fn parent_element(&self) -> Option<Self> {
+        let parent_weak = self.handle.parent.take();
+        let parent_opt = parent_weak.as_ref().and_then(|weak| weak.upgrade());
+        self.handle.parent.set(parent_weak);
+        parent_opt.map(|p| MacroElementWrapper {
+            active_classes: get_static_classes(&p),
+            handle: p,
+        })
+    }
+
+    fn prev_sibling_element(&self) -> Option<Self> {
+        let parent = self.parent_element()?;
+        let siblings = parent.handle.children.borrow();
+        let index = siblings.iter().position(|child| std::rc::Rc::ptr_eq(child, &self.handle))?;
+        if index > 0 {
+            for i in (0..index).rev() {
+                let sibling = &siblings[i];
+                if matches!(sibling.data, NodeData::Element { .. }) {
+                    return Some(MacroElementWrapper {
+                        active_classes: get_static_classes(sibling),
+                        handle: sibling.clone(),
+                    });
+                }
+            }
+        }
+        None
+    }
+
+    fn has_local_name(&self, name: &str) -> bool {
+        if let NodeData::Element { name: ref element_name, .. } = self.handle.data {
+            element_name.local.as_ref() == name
+        } else {
+            false
+        }
+    }
+
+    fn attribute_matches(&self, local_name: &str, operator: simplecss::AttributeOperator<'_>) -> bool {
+        if local_name == "class" {
+            for cls in &self.active_classes {
+                if operator.matches(cls) {
+                    return true;
+                }
+            }
+        }
+        if let NodeData::Element { ref attrs, .. } = self.handle.data {
+            for attr in attrs.borrow().iter() {
+                if attr.name.local.as_ref() == local_name {
+                    return operator.matches(attr.value.as_ref());
+                }
+            }
+        }
+        false
+    }
+
+    fn pseudo_class_matches(&self, class: simplecss::PseudoClass<'_>) -> bool {
+        match class {
+            simplecss::PseudoClass::FirstChild => {
+                if let Some(parent) = self.parent_element() {
+                    let siblings = parent.handle.children.borrow();
+                    for child in siblings.iter() {
+                        if matches!(child.data, NodeData::Element { .. }) {
+                            return std::rc::Rc::ptr_eq(child, &self.handle);
+                        }
+                    }
+                    false
+                } else {
+                    true
+                }
+            }
+            _ => false,
+        }
+    }
+}
+
+fn get_classes_and_conditions(
+    class_attr_val: &str,
+    local_vars: &HashSet<String>,
+) -> Vec<(String, Option<String>)> {
+    let syntax = askama_parser::Syntax::default();
+    let Ok(ast) = askama_parser::Ast::from_str(class_attr_val, None, &syntax) else {
+        return class_attr_val.split_whitespace().map(|c| (c.to_string(), None)).collect();
+    };
+
+    fn walk_nodes(
+        nodes: &[askama_parser::Node<'_>],
+        cond: Option<String>,
+        local_vars: &HashSet<String>,
+        res: &mut Vec<(String, Option<String>)>,
+    ) {
+        for node in nodes {
+            match node {
+                askama_parser::Node::Lit(lit) => {
+                    let val = format!("{}{}{}", lit.lws, lit.val, lit.rws);
+                    for cls in val.split_whitespace() {
+                        if !cls.is_empty() {
+                            res.push((cls.to_string(), cond.clone()));
+                        }
+                    }
+                }
+                askama_parser::Node::If(if_node) => {
+                    for branch_with_span in &if_node.branches {
+                        let branch = &**branch_with_span;
+                        let branch_cond = if let Some(ref c) = branch.cond {
+                            let reconstructed = format_cond_test(c, local_vars);
+                            if let Some(ref parent_cond) = cond {
+                                Some(format!("({}) && ({})", parent_cond, reconstructed))
+                            } else {
+                                Some(reconstructed)
+                            }
+                        } else {
+                            cond.clone()
+                        };
+                        walk_nodes(&branch.nodes, branch_cond, local_vars, res);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    let mut res = Vec::new();
+    walk_nodes(ast.nodes(), None, local_vars, &mut res);
+    res
+}
+
+struct MatchedRule {
+    declarations: Vec<(String, String)>,
+    condition: Option<String>,
+}
+
 fn compile_dom_node<'a>(
     handle: &Handle,
+    stylesheet: &simplecss::StyleSheet<'_>,
     local_vars: &mut HashSet<String>,
     dynamic_exprs: &HashMap<usize, &'a Expr<'a>>,
     dynamic_loops: &HashMap<usize, &'a Node<'a>>,
@@ -434,7 +587,7 @@ fn compile_dom_node<'a>(
         NodeData::Document => {
             let mut children_code = Vec::new();
             for child in get_node_children(handle).iter() {
-                children_code.push(compile_dom_node(child, local_vars, dynamic_exprs, dynamic_loops, dynamic_ifs));
+                children_code.push(compile_dom_node(child, stylesheet, local_vars, dynamic_exprs, dynamic_loops, dynamic_ifs));
             }
             quote! {
                 #(#children_code)*
@@ -459,7 +612,36 @@ fn compile_dom_node<'a>(
                     return quote! {
                         let node = {
                             use xerune::ui::ToDisplayString;
-                            builder.create_text_cow(#expr_tokens.to_display_string().into_owned().into(), &[])
+                            let text_val = #expr_tokens.to_display_string().into_owned();
+                            let mut current_style = parent_style.clone();
+                            current_style.background_color = None;
+                            current_style.background_gradient = None;
+                            current_style.border_width = 0.0;
+                            current_style.border_radius = 0.0;
+                            current_style.border_color = None;
+                            current_style.overflow = xerune::Overflow::Visible;
+                            current_style.animation_name = None;
+                            current_style.animation_duration = 0.0;
+                            current_style.animation_timing_function = std::sync::Arc::from("ease");
+                            current_style.animation_delay = 0.0;
+                            current_style.animation_iteration_count = xerune::style::AnimationIterationCount::Count(1.0);
+                            current_style.animation_direction = std::sync::Arc::from("normal");
+                            current_style.animation_fill_mode = std::sync::Arc::from("none");
+                            current_style.animation_play_state = std::sync::Arc::from("running");
+
+                            let normalized = xerune::ui::normalize_text(&text_val);
+                            let (width, height) = measurer.measure_text(&normalized, current_style.font_size, current_style.weight);
+                            let text_layout_style = taffy::style::Style {
+                                size: taffy::geometry::Size { 
+                                    width: taffy::style::Dimension::length(width), 
+                                    height: taffy::style::Dimension::length(height) 
+                                },
+                                ..taffy::style::Style::default()
+                            };
+                            let node_id = builder.taffy.new_leaf(text_layout_style.clone()).unwrap();
+                            builder.render_data.insert(node_id, xerune::style::RenderData::Text(normalized.into_owned(), current_style.clone()));
+                            builder.base_styles.insert(node_id, (text_layout_style, current_style));
+                            node_id
                         };
                         builder.append_child(parent, node);
                     };
@@ -481,7 +663,7 @@ fn compile_dom_node<'a>(
                         
                         let mut children_code = Vec::new();
                         for child in get_node_children(handle).iter() {
-                            children_code.push(compile_dom_node(child, &mut loop_local_vars, dynamic_exprs, dynamic_loops, dynamic_ifs));
+                            children_code.push(compile_dom_node(child, stylesheet, &mut loop_local_vars, dynamic_exprs, dynamic_loops, dynamic_ifs));
                         }
                         
                         let var_tokens: proc_macro2::TokenStream = var_str.parse().unwrap();
@@ -490,6 +672,7 @@ fn compile_dom_node<'a>(
                         return quote! {
                             {
                                 let parent = parent;
+                                let parent_style = parent_style.clone();
                                 for (mut _loop_item_index, #var_tokens) in #iter_tokens.iter().enumerate() {
                                     #(#children_code)*
                                 }
@@ -507,7 +690,6 @@ fn compile_dom_node<'a>(
                         let mut if_code = proc_macro2::TokenStream::new();
                         for (branch_idx, branch_with_span) in if_struct.branches.iter().enumerate() {
                             let branch = &**branch_with_span;
-                            // Find matching branch tag in handle's children
                             let branch_handle = {
                                 let children = get_node_children(handle);
                                 children.iter().find(|child| {
@@ -529,7 +711,7 @@ fn compile_dom_node<'a>(
                             if let Some(bh) = branch_handle {
                                 let mut children_code = Vec::new();
                                 for child in get_node_children(&bh).iter() {
-                                    children_code.push(compile_dom_node(child, local_vars, dynamic_exprs, dynamic_loops, dynamic_ifs));
+                                    children_code.push(compile_dom_node(child, stylesheet, local_vars, dynamic_exprs, dynamic_loops, dynamic_ifs));
                                 }
                                 
                                 if let Some(ref cond) = branch.cond {
@@ -574,6 +756,69 @@ fn compile_dom_node<'a>(
                 return quote! {};
             }
 
+            // Standard Element styling logic
+            let class_attr = attrs.borrow().iter().find(|a| a.name.local.as_ref() == "class").map(|a| a.value.to_string());
+            let mut static_classes = HashSet::new();
+            let mut conditional_classes = Vec::new();
+
+            if let Some(ref class_val) = class_attr {
+                let parsed_classes = get_classes_and_conditions(class_val, local_vars);
+                for (cls, cond_opt) in parsed_classes {
+                    if let Some(cond) = cond_opt {
+                        conditional_classes.push((cls, cond));
+                    } else {
+                        static_classes.insert(cls);
+                    }
+                }
+            }
+
+            let mut matched_rules = Vec::new();
+            for rule in &stylesheet.rules {
+                let mut wrapper = MacroElementWrapper {
+                    handle: handle.clone(),
+                    active_classes: static_classes.clone(),
+                };
+                
+                if rule.selector.matches(&wrapper) {
+                    matched_rules.push(MatchedRule {
+                        declarations: rule.declarations.iter().map(|d| (d.name.to_string(), d.value.to_string())).collect(),
+                        condition: None,
+                    });
+                } else {
+                    for (cls, cond) in &conditional_classes {
+                        let mut active = static_classes.clone();
+                        active.insert(cls.clone());
+                        wrapper.active_classes = active;
+                        if rule.selector.matches(&wrapper) {
+                            matched_rules.push(MatchedRule {
+                                declarations: rule.declarations.iter().map(|d| (d.name.to_string(), d.value.to_string())).collect(),
+                                condition: Some(cond.clone()),
+                            });
+                        }
+                    }
+                }
+            }
+
+            let mut rule_applications = Vec::new();
+            for rule in matched_rules {
+                let mut app = Vec::new();
+                for (prop_name, prop_val) in rule.declarations {
+                    app.push(quote! {
+                        xerune::css::apply_declaration(#prop_name, #prop_val, &mut current_style, &mut layout_style);
+                    });
+                }
+                if let Some(cond) = rule.condition {
+                    let cond_tokens: proc_macro2::TokenStream = cond.parse().unwrap();
+                    rule_applications.push(quote! {
+                        if #cond_tokens {
+                            #(#app)*
+                        }
+                    });
+                } else {
+                    rule_applications.extend(app);
+                }
+            }
+
             // Create attribute constructor
             let mut static_attrs = Vec::new();
             let mut dynamic_attrs = Vec::new();
@@ -582,7 +827,6 @@ fn compile_dom_node<'a>(
                 let key = attr.name.local.as_ref();
                 let val = attr.value.as_ref();
                 if val.contains("{%") || val.contains("{{") {
-                    // Parse with askama to compile dynamic string
                     let syntax = Syntax::default();
                     let val_ast = Ast::from_str(val, None, &syntax).unwrap();
                     let val_tokens = generate_attr_string_code(val_ast.nodes(), local_vars);
@@ -598,111 +842,60 @@ fn compile_dom_node<'a>(
 
             let mut child_compilation = Vec::new();
             for child in get_node_children(handle).iter() {
-                child_compilation.push(compile_dom_node(child, local_vars, dynamic_exprs, dynamic_loops, dynamic_ifs));
+                child_compilation.push(compile_dom_node(child, stylesheet, local_vars, dynamic_exprs, dynamic_loops, dynamic_ifs));
             }
 
-            // Determine if widget tag (input, checkbox, progress, slider, img, canvas)
-            let is_input = tag == "input";
-            let (type_attr, value_attr, checked_attr, max_attr, src_attr, id_attr) = {
-                let attrs_ref = attrs.borrow();
-                let type_attr = attrs_ref.iter().find(|a| a.name.local.as_ref() == "type").map(|a| a.value.to_string());
-                let value_attr = attrs_ref.iter().find(|a| a.name.local.as_ref() == "value").map(|a| a.value.to_string());
-                let checked_attr = attrs_ref.iter().find(|a| a.name.local.as_ref() == "checked").map(|a| a.value.to_string());
-                let max_attr = attrs_ref.iter().find(|a| a.name.local.as_ref() == "max").map(|a| a.value.to_string());
-                let src_attr = attrs_ref.iter().find(|a| a.name.local.as_ref() == "src").map(|a| a.value.to_string());
-                let id_attr = attrs_ref.iter().find(|a| a.name.local.as_ref() == "id").map(|a| a.value.to_string());
-                (type_attr, value_attr, checked_attr, max_attr, src_attr, id_attr)
-            };
-            
-            let builder_call = if is_input && type_attr.as_deref() == Some("checkbox") {
-                let checked_tokens = if let Some(ref checked_val) = checked_attr {
-                    if checked_val.contains("{{") {
-                        let val_ast = Ast::from_str(checked_val, None, &Syntax::default()).unwrap();
-                        if let Some(Node::Expr(_, expr)) = val_ast.nodes().first() {
-                            let expr_str = format_expr(expr, local_vars);
-                            let expr_tokens: proc_macro2::TokenStream = expr_str.parse().unwrap();
-                            quote! { #expr_tokens }
-                        } else {
-                            quote! { false }
-                        }
-                    } else {
-                        let is_checked = checked_val != "false";
-                        quote! { #is_checked }
-                    }
-                } else {
-                    quote! { false }
-                };
-                quote! { builder.create_checkbox_cow(#checked_tokens, &mut attrs_slice) }
-            } else if is_input && type_attr.as_deref() == Some("range") {
-                let val = value_attr.as_deref().and_then(|v| v.parse::<f32>().ok()).unwrap_or(0.0);
-                quote! { builder.create_slider_cow(#val, &mut attrs_slice) }
-            } else if is_input && (type_attr.as_deref() == Some("text") || type_attr.is_none()) {
-                let val_tokens = if let Some(ref val) = value_attr {
-                    if val.contains("{%") || val.contains("{{") {
-                        let val_ast = Ast::from_str(val, None, &Syntax::default()).unwrap();
-                        let attr_code = generate_attr_string_code(val_ast.nodes(), local_vars);
-                        quote! { std::borrow::Cow::Owned(#attr_code) }
-                    } else {
-                        quote! { std::borrow::Cow::Borrowed(#val) }
-                    }
-                } else {
-                    quote! { std::borrow::Cow::Borrowed("") }
-                };
-                quote! { builder.create_input_text_cow(#val_tokens, &mut attrs_slice) }
-            } else if tag == "progress" {
-                let val_tokens = if let Some(ref val) = value_attr {
-                    if val.contains("{{") {
-                        let val_ast = Ast::from_str(val, None, &Syntax::default()).unwrap();
-                        if let Some(Node::Expr(_, expr)) = val_ast.nodes().first() {
-                            let expr_str = format_expr(expr, local_vars);
-                            let expr_tokens: proc_macro2::TokenStream = expr_str.parse().unwrap();
-                            quote! { #expr_tokens }
-                        } else {
-                            quote! { 0.0 }
-                        }
-                    } else {
-                        let parsed_val = val.parse::<f32>().unwrap_or(0.0);
-                        quote! { #parsed_val }
-                    }
-                } else {
-                    quote! { 0.0 }
-                };
-                let max_val = max_attr.as_deref().and_then(|m| m.parse::<f32>().ok()).unwrap_or(1.0);
-                quote! { builder.create_progress_cow(#val_tokens, #max_val, &mut attrs_slice) }
-            } else if tag == "img" {
-                let src_tokens = if let Some(ref val) = src_attr {
-                    if val.contains("{%") || val.contains("{{") {
-                        let val_ast = Ast::from_str(val, None, &Syntax::default()).unwrap();
-                        let attr_code = generate_attr_string_code(val_ast.nodes(), local_vars);
-                        quote! { std::borrow::Cow::Owned(#attr_code) }
-                    } else {
-                        quote! { std::borrow::Cow::Borrowed(#val) }
-                    }
-                } else {
-                    quote! { std::borrow::Cow::Borrowed("") }
-                };
-                quote! { builder.create_image_cow(#src_tokens, &mut attrs_slice) }
-            } else if tag == "canvas" {
-                let id_val = id_attr.unwrap_or_default();
-                quote! { builder.create_canvas_cow(std::borrow::Cow::Borrowed(#id_val), &mut attrs_slice) }
-            } else {
-                quote! { builder.create_element_cow(std::borrow::Cow::Borrowed(#tag), &mut attrs_slice) }
-            };
-
             quote! {
-                let node = {
+                let (node, mut layout_style, mut current_style, parsed) = {
                     #(#dynamic_vars)*
-                    let mut attrs_slice = [
+                    let attrs_slice: &[(std::borrow::Cow<'static, str>, std::borrow::Cow<'_, str>)] = &[
                         #(#static_attrs,)*
                         #(#dynamic_attrs),*
                     ];
-                    #builder_call
+
+                    let defaults = xerune::defaults::get_default_style(#tag, &parent_style);
+                    let mut layout_style = defaults.taffy_style;
+                    let mut current_style = defaults.container_style;
+
+                    // Match and apply CSS rules
+                    #(#rule_applications)*
+
+                    // Match and apply inline/dynamic attributes
+                    let mut parsed = xerune::ui::attributes::ParsedAttributes::new(defaults.element_type);
+                    xerune::ui::attributes::parse_attributes_generic(
+                        #tag,
+                        attrs_slice.iter().map(|(k, v)| (k.as_ref(), v.as_ref())),
+                        &mut current_style,
+                        &mut layout_style,
+                        &mut parsed,
+                        message_validator,
+                    );
+
+                    // Create the taffy node
+                    let node_id = builder.taffy.new_leaf(layout_style.clone()).unwrap();
+
+                    (node_id, layout_style, current_style, parsed)
                 };
                 builder.append_child(parent, node);
                 {
                     let parent = node;
+                    let parent_style = current_style.clone();
                     #(#child_compilation)*
                 }
+                
+                // Finalize style and insert into Maps after children are appended
+                xerune::ui::style_resolution::finalize_node_style(
+                    node,
+                    #tag,
+                    &parent_style,
+                    &mut layout_style,
+                    &mut current_style,
+                    &parsed,
+                    &mut builder.taffy,
+                    &mut builder.render_data,
+                    &mut builder.interactions,
+                    &mut builder.base_styles,
+                );
             }
         }
         NodeData::Text { contents } => {
@@ -712,7 +905,37 @@ fn compile_dom_node<'a>(
                 return quote! {};
             }
             quote! {
-                let node = builder.create_text_cow(std::borrow::Cow::Borrowed(#trimmed), &[]);
+                let node = {
+                    let mut current_style = parent_style.clone();
+                    current_style.background_color = None;
+                    current_style.background_gradient = None;
+                    current_style.border_width = 0.0;
+                    current_style.border_radius = 0.0;
+                    current_style.border_color = None;
+                    current_style.overflow = xerune::Overflow::Visible;
+                    current_style.animation_name = None;
+                    current_style.animation_duration = 0.0;
+                    current_style.animation_timing_function = std::sync::Arc::from("ease");
+                    current_style.animation_delay = 0.0;
+                    current_style.animation_iteration_count = xerune::style::AnimationIterationCount::Count(1.0);
+                    current_style.animation_direction = std::sync::Arc::from("normal");
+                    current_style.animation_fill_mode = std::sync::Arc::from("none");
+                    current_style.animation_play_state = std::sync::Arc::from("running");
+
+                    let normalized = xerune::ui::normalize_text(#trimmed);
+                    let (width, height) = measurer.measure_text(&normalized, current_style.font_size, current_style.weight);
+                    let text_layout_style = taffy::style::Style {
+                        size: taffy::geometry::Size { 
+                            width: taffy::style::Dimension::length(width), 
+                            height: taffy::style::Dimension::length(height) 
+                        },
+                        ..taffy::style::Style::default()
+                    };
+                    let node_id = builder.taffy.new_leaf(text_layout_style.clone()).unwrap();
+                    builder.render_data.insert(node_id, xerune::style::RenderData::Text(normalized.into_owned(), current_style.clone()));
+                    builder.base_styles.insert(node_id, (text_layout_style, current_style));
+                    node_id
+                };
                 builder.append_child(parent, node);
             }
         }
@@ -849,18 +1072,34 @@ pub fn derive_xerune_template(input: TokenStream) -> TokenStream {
         .read_from(&mut preprocessed_html.as_bytes())
         .unwrap();
 
+    let stylesheet = simplecss::StyleSheet::parse(&css_content);
+
     let mut local_vars = HashSet::new();
-    let body_compilation = compile_dom_node(&dom.document, &mut local_vars, &dynamic_exprs, &dynamic_loops, &dynamic_ifs);
+    let body_compilation = compile_dom_node(&dom.document, &stylesheet, &mut local_vars, &dynamic_exprs, &dynamic_loops, &dynamic_ifs);
 
     let expanded = quote! {
         impl xerune::ui::TemplateLayout for #name {
             fn stylesheet(&self) -> &'static str {
-                #css_content
+                ""
             }
 
-            fn build_ui(&self, builder: &mut xerune::ui::UiBuilder) -> taffy::NodeId {
-                let parent = builder.create_element_cow(std::borrow::Cow::Borrowed("body"), &mut []);
-                #body_compilation
+            fn build_ui(
+                &self,
+                builder: &mut xerune::ui::UiBuilder,
+                measurer: &impl xerune::TextMeasurer,
+                default_style: &xerune::style::ContainerStyle,
+                message_validator: &impl Fn(&str) -> bool,
+            ) -> taffy::NodeId {
+                builder.keyframes = xerune::css::parse_keyframes(#css_content);
+                let parent = builder.taffy.new_leaf(taffy::style::Style::default()).unwrap();
+                let parent_style = default_style.clone();
+                builder.render_data.insert(parent, xerune::style::RenderData::Container(parent_style.clone()));
+                builder.base_styles.insert(parent, (taffy::style::Style::default(), parent_style.clone()));
+                {
+                    let parent = parent;
+                    let parent_style = parent_style;
+                    #body_compilation
+                }
                 parent
             }
         }
