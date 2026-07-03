@@ -1,18 +1,19 @@
 use taffy::prelude::*;
 use crate::style::{ContainerStyle, AnimationIterationCount};
+use crate::alloc_prelude::*;
 
 #[derive(Clone, Debug)]
 pub struct ActiveAnimation {
     pub node_id: NodeId,
-    pub name: std::sync::Arc<str>,
+    pub name: Arc<str>,
     pub duration: f32,
-    pub timing_function: std::sync::Arc<str>,
+    pub timing_function: Arc<str>,
     pub delay: f32,
     pub iteration_count: AnimationIterationCount,
-    pub direction: std::sync::Arc<str>,
-    pub fill_mode: std::sync::Arc<str>,
-    pub play_state: std::sync::Arc<str>,
-    pub elapsed: std::time::Duration,
+    pub direction: Arc<str>,
+    pub fill_mode: Arc<str>,
+    pub play_state: Arc<str>,
+    pub elapsed: core::time::Duration,
     pub is_finished: bool,
 }
 
@@ -74,10 +75,10 @@ fn sample_curve_derivative_x(x1: f32, x2: f32, t: f32) -> f32 {
 
 fn interpolate_color(c1: crate::graphics::Color, c2: crate::graphics::Color, t: f32) -> crate::graphics::Color {
     crate::graphics::Color {
-        r: ((1.0 - t) * c1.r as f32 + t * c2.r as f32).round() as u8,
-        g: ((1.0 - t) * c1.g as f32 + t * c2.g as f32).round() as u8,
-        b: ((1.0 - t) * c1.b as f32 + t * c2.b as f32).round() as u8,
-        a: ((1.0 - t) * c1.a as f32 + t * c2.a as f32).round() as u8,
+        r: ((1.0 - t) * c1.r as f32 + t * c2.r as f32 + 0.5) as u8,
+        g: ((1.0 - t) * c1.g as f32 + t * c2.g as f32 + 0.5) as u8,
+        b: ((1.0 - t) * c1.b as f32 + t * c2.b as f32 + 0.5) as u8,
+        a: ((1.0 - t) * c1.a as f32 + t * c2.a as f32 + 0.5) as u8,
     }
 }
 

@@ -1,7 +1,8 @@
 use taffy::prelude::NodeId;
+use crate::alloc_prelude::*;
 
 pub struct NodeMetadata {
-    pub tag: std::borrow::Cow<'static, str>,
+    pub tag: Cow<'static, str>,
     pub attrs: Vec<(String, String)>,
     pub text: Option<String>,
     pub checked: Option<bool>,
@@ -11,8 +12,8 @@ pub struct NodeMetadata {
     pub image_src: Option<String>,
     pub canvas_id: Option<String>,
     pub input_text: Option<String>,
-    pub class: Option<std::borrow::Cow<'static, str>>,
-    pub id: Option<std::borrow::Cow<'static, str>>,
+    pub class: Option<Cow<'static, str>>,
+    pub id: Option<Cow<'static, str>>,
     pub style: Option<String>,
     pub other_attrs: Option<Vec<(String, String)>>,
     pub children: Vec<NodeId>,
@@ -20,9 +21,9 @@ pub struct NodeMetadata {
 
 impl NodeMetadata {
     pub fn new(
-        tag: std::borrow::Cow<'static, str>,
-        class: Option<std::borrow::Cow<'static, str>>,
-        id: Option<std::borrow::Cow<'static, str>>,
+        tag: Cow<'static, str>,
+        class: Option<Cow<'static, str>>,
+        id: Option<Cow<'static, str>>,
         style: Option<String>,
         other_attrs: Option<Vec<(String, String)>>,
     ) -> Self {

@@ -1,12 +1,14 @@
 pub mod timer;
 pub mod animation;
+pub mod time;
 
 pub use timer::{Timer, TickResult};
 pub use animation::ActiveAnimation;
 
-use std::str::FromStr;
+use core::str::FromStr;
 use taffy::prelude::*;
-use std::collections::HashMap;
+use crate::alloc_prelude::*;
+use crate::runtime::time::Instant;
 
 #[cfg(feature = "profile")]
 use coarse_prof::profile;
@@ -35,7 +37,8 @@ pub struct Runtime<M, R> {
     pub(crate) timers: Vec<Timer>,
     next_timer_id: usize,
     pub(crate) active_animations: HashMap<NodeId, ActiveAnimation>,
-    last_tick_time: std::time::Instant,
+    last_tick_time: Instant,
+    start_time: Instant,
 }
 
 impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
@@ -61,7 +64,8 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
              timers: Vec::new(),
              next_timer_id: 1,
              active_animations: HashMap::new(),
-             last_tick_time: std::time::Instant::now(),
+             last_tick_time: Instant::now(),
+             start_time: Instant::now(),
          }
     }
 
@@ -292,33 +296,42 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
     }
 
     pub fn set_interval(&mut self, message: String, millis: u32) {
-        let duration = std::time::Duration::from_millis(millis as u64);
+        let duration = core::time::Duration::from_millis(millis as u64);
         let id = self.next_timer_id;
         self.next_timer_id += 1;
         self.timers.push(Timer {
             id,
             message,
             interval: duration,
-            next_trigger: std::time::Instant::now() + duration,
+            next_trigger: Instant::now() + duration,
             is_recurring: true,
         });
     }
 
     pub fn set_timeout(&mut self, message: String, millis: u32) {
-        let duration = std::time::Duration::from_millis(millis as u64);
+        let duration = core::time::Duration::from_millis(millis as u64);
         let id = self.next_timer_id;
         self.next_timer_id += 1;
         self.timers.push(Timer {
             id,
             message,
             interval: duration,
-            next_trigger: std::time::Instant::now() + duration,
+            next_trigger: Instant::now() + duration,
             is_recurring: false,
         });
     }
 
+    #[cfg(feature = "std")]
     pub fn tick(&mut self) -> TickResult {
-        let now = std::time::Instant::now();
+        self.tick_with_time(Instant::now())
+    }
+
+    pub fn tick_at_ms(&mut self, now_ms: u64) -> TickResult {
+        let now = self.start_time + core::time::Duration::from_millis(now_ms);
+        self.tick_with_time(now)
+    }
+
+    pub fn tick_with_time(&mut self, now: Instant) -> TickResult {
         let mut needs_redraw = false;
 
         let mut triggered_messages = Vec::new();
@@ -337,7 +350,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
             needs_redraw |= self.handle_messages(triggered_messages);
         }
 
-        let new_timers = std::mem::take(&mut self.context.pending_timers);
+        let new_timers = core::mem::take(&mut self.context.pending_timers);
         for mut timer in new_timers {
             timer.id = self.next_timer_id;
             self.next_timer_id += 1;
@@ -352,7 +365,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
             for (node_id, render_data) in &self.ui.render_data {
                 let style = render_data.style();
                 if let Some(ref name) = style.animation_name {
-                    declared_animations.insert(node_id, (name.clone(), style));
+                    declared_animations.insert(node_id, (name.clone(), style.clone()));
                 }
             }
 
@@ -373,7 +386,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
                             direction: style.animation_direction.clone(),
                             fill_mode: style.animation_fill_mode.clone(),
                             play_state: play_state.clone(),
-                            elapsed: std::time::Duration::ZERO,
+                            elapsed: core::time::Duration::ZERO,
                             is_finished: false,
                         };
                         animated_properties_changed = true;
@@ -391,7 +404,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
                         direction: style.animation_direction.clone(),
                         fill_mode: style.animation_fill_mode.clone(),
                         play_state: play_state.clone(),
-                        elapsed: std::time::Duration::ZERO,
+                        elapsed: core::time::Duration::ZERO,
                         is_finished: false,
                     });
                     animated_properties_changed = true;
@@ -454,7 +467,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
                             AnimationIterationCount::Infinite => 0.0,
                             AnimationIterationCount::Count(c) => c,
                         };
-                        let final_iter = (final_raw.max(0.001) - 0.0001).floor() as u32;
+                        let final_iter = (final_raw.max(0.001) - 0.0001) as u32;
                         let mut final_p = final_raw % 1.0;
                         if final_p == 0.0 && final_raw > 0.0 {
                             final_p = 1.0;
@@ -480,7 +493,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
                     }
                 } else {
                     let progress = raw_progress % 1.0;
-                    let iteration = raw_progress.floor() as u32;
+                    let iteration = raw_progress as u32;
                     let is_rev = match &*active.direction {
                         "reverse" => true,
                         "alternate" => iteration % 2 == 1,
@@ -502,7 +515,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
 
                     if apply_kf {
                         if let Some(keyframes_anim) = self.ui.keyframes.get(&*active.name) {
-                            let mut animated_properties = std::collections::HashSet::new();
+                            let mut animated_properties = HashSet::new();
                             for kf in &keyframes_anim.keyframes {
                                 for (prop, _) in &kf.declarations {
                                     animated_properties.insert(prop.clone());
@@ -565,12 +578,12 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
             }
         }
 
-        let target_frame_duration = std::time::Duration::from_nanos((1_000_000_000.0 / self.target_fps as f64) as u64);
+        let target_frame_duration = core::time::Duration::from_nanos((1_000_000_000.0 / self.target_fps as f64) as u64);
         
         let mut min_sleep = if self.active_animations.values().any(|a| !a.is_finished && &*a.play_state != "paused") {
             target_frame_duration
         } else {
-            std::time::Duration::from_secs(3600 * 24)
+            core::time::Duration::from_secs(3600 * 24)
         };
 
         for timer in &self.timers {

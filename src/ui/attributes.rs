@@ -3,6 +3,7 @@ use crate::style::{ContainerStyle, RenderData};
 use crate::css;
 use crate::defaults;
 use super::node_map::NodeMap;
+use crate::alloc_prelude::*;
 
 #[cfg(feature = "dynamic-parser")]
 use crate::style::{Overflow, BoxSizing, Display, MyJustifyContent, TextAlign, Direction};

@@ -10,7 +10,7 @@ pub use builder::UiBuilder;
 
 use taffy::prelude::*;
 use taffy::TaffyError;
-use std::collections::HashMap;
+use crate::alloc_prelude::*;
 
 #[cfg(feature = "dynamic-parser")]
 use html5ever::parse_document;
@@ -164,7 +164,7 @@ impl Ui {
                     if is_last {
                         class_val.push_str(" last-child");
                     }
-                    child_meta.class = Some(std::borrow::Cow::Owned(class_val));
+                    child_meta.class = Some(Cow::Owned(class_val));
                 }
 
                 // 2. Mutate backward-compatible attrs field
@@ -208,6 +208,7 @@ impl Ui {
         let mut base_styles = builder.base_styles;
         let mut keyframes = builder.keyframes;
 
+        #[cfg(feature = "std")]
         if !stylesheet_str.is_empty() || builder.node_metadata.iter().next().is_some() {
             let cached = style_resolution::STYLESHEET_CACHE.with(|cache| {
                 let mut cache_guard = cache.borrow_mut();
@@ -387,7 +388,7 @@ impl Ui {
     }
 }
 
-pub fn normalize_text(text: &str) -> std::borrow::Cow<'_, str> {
+pub fn normalize_text(text: &str) -> Cow<'_, str> {
     let mut needs_normalization = false;
     let mut last_was_space = false;
     let mut is_first = true;
@@ -407,67 +408,67 @@ pub fn normalize_text(text: &str) -> std::borrow::Cow<'_, str> {
         needs_normalization = true;
     }
     if needs_normalization {
-        std::borrow::Cow::Owned(text.split_whitespace().collect::<Vec<&str>>().join(" "))
+        Cow::Owned(text.split_whitespace().collect::<Vec<&str>>().join(" "))
     } else {
-        std::borrow::Cow::Borrowed(text)
+        Cow::Borrowed(text)
     }
 }
 
 pub trait ToDisplayString {
-    fn to_display_string(&self) -> std::borrow::Cow<'_, str>;
+    fn to_display_string(&self) -> Cow<'_, str>;
 }
 
 impl ToDisplayString for str {
-    fn to_display_string(&self) -> std::borrow::Cow<'_, str> {
-        std::borrow::Cow::Borrowed(self)
+    fn to_display_string(&self) -> Cow<'_, str> {
+        Cow::Borrowed(self)
     }
 }
 
 impl ToDisplayString for String {
-    fn to_display_string(&self) -> std::borrow::Cow<'_, str> {
-        std::borrow::Cow::Borrowed(self.as_str())
+    fn to_display_string(&self) -> Cow<'_, str> {
+        Cow::Borrowed(self.as_str())
     }
 }
 
 impl<T: ToDisplayString + ?Sized> ToDisplayString for &T {
-    fn to_display_string(&self) -> std::borrow::Cow<'_, str> {
+    fn to_display_string(&self) -> Cow<'_, str> {
         (*self).to_display_string()
     }
 }
 
 impl ToDisplayString for f32 {
-    fn to_display_string(&self) -> std::borrow::Cow<'_, str> {
-        std::borrow::Cow::Owned(self.to_string())
+    fn to_display_string(&self) -> Cow<'_, str> {
+        Cow::Owned(self.to_string())
     }
 }
 
 impl ToDisplayString for f64 {
-    fn to_display_string(&self) -> std::borrow::Cow<'_, str> {
-        std::borrow::Cow::Owned(self.to_string())
+    fn to_display_string(&self) -> Cow<'_, str> {
+        Cow::Owned(self.to_string())
     }
 }
 
 impl ToDisplayString for i32 {
-    fn to_display_string(&self) -> std::borrow::Cow<'_, str> {
-        std::borrow::Cow::Owned(self.to_string())
+    fn to_display_string(&self) -> Cow<'_, str> {
+        Cow::Owned(self.to_string())
     }
 }
 
 impl ToDisplayString for u32 {
-    fn to_display_string(&self) -> std::borrow::Cow<'_, str> {
-        std::borrow::Cow::Owned(self.to_string())
+    fn to_display_string(&self) -> Cow<'_, str> {
+        Cow::Owned(self.to_string())
     }
 }
 
 impl ToDisplayString for usize {
-    fn to_display_string(&self) -> std::borrow::Cow<'_, str> {
-        std::borrow::Cow::Owned(self.to_string())
+    fn to_display_string(&self) -> Cow<'_, str> {
+        Cow::Owned(self.to_string())
     }
 }
 
 impl ToDisplayString for bool {
-    fn to_display_string(&self) -> std::borrow::Cow<'_, str> {
-        std::borrow::Cow::Borrowed(if *self { "true" } else { "false" })
+    fn to_display_string(&self) -> Cow<'_, str> {
+        Cow::Borrowed(if *self { "true" } else { "false" })
     }
 }
 

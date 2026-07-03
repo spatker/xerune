@@ -3,6 +3,7 @@ use crate::style::RenderData;
 use super::node_map::NodeMap;
 use super::metadata::NodeMetadata;
 use super::{Interaction, Handle};
+use crate::alloc_prelude::*;
 
 pub struct UiBuilder {
     pub taffy: TaffyTree,
@@ -11,9 +12,10 @@ pub struct UiBuilder {
     pub interactions: NodeMap<Interaction>,
     pub node_to_handle: NodeMap<Handle>,
     pub base_styles: NodeMap<(Style, crate::style::ContainerStyle)>,
-    pub keyframes: std::collections::HashMap<String, crate::css::KeyframesAnimation>,
+    pub keyframes: HashMap<String, crate::css::KeyframesAnimation>,
 }
 
+#[cfg(feature = "std")]
 fn intern_string(s: &str) -> &'static str {
     thread_local! {
         static CACHE: std::cell::RefCell<std::collections::HashSet<&'static str>> = std::cell::RefCell::new(std::collections::HashSet::new());
@@ -43,11 +45,11 @@ impl UiBuilder {
             interactions: NodeMap::with_capacity(capacity),
             node_to_handle: NodeMap::with_capacity(capacity),
             base_styles: NodeMap::with_capacity(capacity),
-            keyframes: std::collections::HashMap::new(),
+            keyframes: HashMap::new(),
         }
     }
 
-    fn parse_attrs_cow(attrs: &mut [(std::borrow::Cow<'static, str>, std::borrow::Cow<'static, str>)]) -> (Option<std::borrow::Cow<'static, str>>, Option<std::borrow::Cow<'static, str>>, Option<String>, Option<Vec<(String, String)>>) {
+    fn parse_attrs_cow(attrs: &mut [(Cow<'static, str>, Cow<'static, str>)]) -> (Option<Cow<'static, str>>, Option<Cow<'static, str>>, Option<String>, Option<Vec<(String, String)>>) {
         let mut class = None;
         let mut id = None;
         let mut style = None;
@@ -55,19 +57,19 @@ impl UiBuilder {
 
         for (k, v) in attrs {
             match k.as_ref() {
-                "class" => class = Some(std::mem::take(v)),
-                "id" => id = Some(std::mem::take(v)),
-                "style" => style = Some(std::mem::take(v).into_owned()),
+                "class" => class = Some(core::mem::take(v)),
+                "id" => id = Some(core::mem::take(v)),
+                "style" => style = Some(core::mem::take(v).into_owned()),
                 _ => {
                     let vec = other_attrs.get_or_insert_with(Vec::new);
-                    vec.push((std::mem::take(k).into_owned(), std::mem::take(v).into_owned()));
+                    vec.push((core::mem::take(k).into_owned(), core::mem::take(v).into_owned()));
                 }
             }
         }
         (class, id, style, other_attrs)
     }
 
-    pub fn create_element_cow(&mut self, tag: std::borrow::Cow<'static, str>, attrs: &mut [(std::borrow::Cow<'static, str>, std::borrow::Cow<'static, str>)]) -> NodeId {
+    pub fn create_element_cow(&mut self, tag: Cow<'static, str>, attrs: &mut [(Cow<'static, str>, Cow<'static, str>)]) -> NodeId {
         let id = self.taffy.new_leaf(Style::default()).unwrap();
         let (class, id_val, style, other_attrs) = Self::parse_attrs_cow(attrs);
         let metadata = NodeMetadata::new(tag, class, id_val, style, other_attrs);
@@ -75,69 +77,70 @@ impl UiBuilder {
         id
     }
 
-    pub fn create_text_cow(&mut self, text: std::borrow::Cow<'static, str>, _attrs: &[(std::borrow::Cow<'static, str>, std::borrow::Cow<'static, str>)]) -> NodeId {
+    pub fn create_text_cow(&mut self, text: Cow<'static, str>, _attrs: &[(Cow<'static, str>, Cow<'static, str>)]) -> NodeId {
         let id = self.taffy.new_leaf(Style::default()).unwrap();
-        let mut metadata = NodeMetadata::new(std::borrow::Cow::Borrowed("#text"), None, None, None, None);
+        let mut metadata = NodeMetadata::new(Cow::Borrowed("#text"), None, None, None, None);
         metadata.text = Some(text.into_owned());
         self.node_metadata.insert(id, metadata);
         id
     }
 
-    pub fn create_checkbox_cow(&mut self, checked: bool, attrs: &mut [(std::borrow::Cow<'static, str>, std::borrow::Cow<'static, str>)]) -> NodeId {
+    pub fn create_checkbox_cow(&mut self, checked: bool, attrs: &mut [(Cow<'static, str>, Cow<'static, str>)]) -> NodeId {
         let id = self.taffy.new_leaf(Style::default()).unwrap();
         let (class, id_val, style, other_attrs) = Self::parse_attrs_cow(attrs);
-        let mut metadata = NodeMetadata::new(std::borrow::Cow::Borrowed("input"), class, id_val, style, other_attrs);
+        let mut metadata = NodeMetadata::new(Cow::Borrowed("input"), class, id_val, style, other_attrs);
         metadata.checked = Some(checked);
         self.node_metadata.insert(id, metadata);
         id
     }
 
-    pub fn create_slider_cow(&mut self, value: f32, attrs: &mut [(std::borrow::Cow<'static, str>, std::borrow::Cow<'static, str>)]) -> NodeId {
+    pub fn create_slider_cow(&mut self, value: f32, attrs: &mut [(Cow<'static, str>, Cow<'static, str>)]) -> NodeId {
         let id = self.taffy.new_leaf(Style::default()).unwrap();
         let (class, id_val, style, other_attrs) = Self::parse_attrs_cow(attrs);
-        let mut metadata = NodeMetadata::new(std::borrow::Cow::Borrowed("input"), class, id_val, style, other_attrs);
+        let mut metadata = NodeMetadata::new(Cow::Borrowed("input"), class, id_val, style, other_attrs);
         metadata.slider_value = Some(value);
         self.node_metadata.insert(id, metadata);
         id
     }
 
-    pub fn create_input_text_cow(&mut self, value: std::borrow::Cow<'static, str>, attrs: &mut [(std::borrow::Cow<'static, str>, std::borrow::Cow<'static, str>)]) -> NodeId {
+    pub fn create_input_text_cow(&mut self, value: Cow<'static, str>, attrs: &mut [(Cow<'static, str>, Cow<'static, str>)]) -> NodeId {
         let id = self.taffy.new_leaf(Style::default()).unwrap();
         let (class, id_val, style, other_attrs) = Self::parse_attrs_cow(attrs);
-        let mut metadata = NodeMetadata::new(std::borrow::Cow::Borrowed("input"), class, id_val, style, other_attrs);
+        let mut metadata = NodeMetadata::new(Cow::Borrowed("input"), class, id_val, style, other_attrs);
         metadata.input_text = Some(value.into_owned());
         self.node_metadata.insert(id, metadata);
         id
     }
 
-    pub fn create_progress_cow(&mut self, value: f32, max: f32, attrs: &mut [(std::borrow::Cow<'static, str>, std::borrow::Cow<'static, str>)]) -> NodeId {
+    pub fn create_progress_cow(&mut self, value: f32, max: f32, attrs: &mut [(Cow<'static, str>, Cow<'static, str>)]) -> NodeId {
         let id = self.taffy.new_leaf(Style::default()).unwrap();
         let (class, id_val, style, other_attrs) = Self::parse_attrs_cow(attrs);
-        let mut metadata = NodeMetadata::new(std::borrow::Cow::Borrowed("progress"), class, id_val, style, other_attrs);
+        let mut metadata = NodeMetadata::new(Cow::Borrowed("progress"), class, id_val, style, other_attrs);
         metadata.progress_value = Some(value);
         metadata.progress_max = Some(max);
         self.node_metadata.insert(id, metadata);
         id
     }
 
-    pub fn create_image_cow(&mut self, src: std::borrow::Cow<'static, str>, attrs: &mut [(std::borrow::Cow<'static, str>, std::borrow::Cow<'static, str>)]) -> NodeId {
+    pub fn create_image_cow(&mut self, src: Cow<'static, str>, attrs: &mut [(Cow<'static, str>, Cow<'static, str>)]) -> NodeId {
         let id = self.taffy.new_leaf(Style::default()).unwrap();
         let (class, id_val, style, other_attrs) = Self::parse_attrs_cow(attrs);
-        let mut metadata = NodeMetadata::new(std::borrow::Cow::Borrowed("img"), class, id_val, style, other_attrs);
+        let mut metadata = NodeMetadata::new(Cow::Borrowed("img"), class, id_val, style, other_attrs);
         metadata.image_src = Some(src.into_owned());
         self.node_metadata.insert(id, metadata);
         id
     }
 
-    pub fn create_canvas_cow(&mut self, canvas_id: std::borrow::Cow<'static, str>, attrs: &mut [(std::borrow::Cow<'static, str>, std::borrow::Cow<'static, str>)]) -> NodeId {
+    pub fn create_canvas_cow(&mut self, canvas_id: Cow<'static, str>, attrs: &mut [(Cow<'static, str>, Cow<'static, str>)]) -> NodeId {
         let id = self.taffy.new_leaf(Style::default()).unwrap();
         let (class, id_val, style, other_attrs) = Self::parse_attrs_cow(attrs);
-        let mut metadata = NodeMetadata::new(std::borrow::Cow::Borrowed("canvas"), class, id_val, style, other_attrs);
+        let mut metadata = NodeMetadata::new(Cow::Borrowed("canvas"), class, id_val, style, other_attrs);
         metadata.canvas_id = Some(canvas_id.into_owned());
         self.node_metadata.insert(id, metadata);
         id
     }
 
+    #[cfg(feature = "std")]
     fn parse_attrs(attrs: &[(&str, &str)]) -> (Option<std::borrow::Cow<'static, str>>, Option<std::borrow::Cow<'static, str>>, Option<String>, Option<Vec<(String, String)>>) {
         let mut class = None;
         let mut id = None;
@@ -158,6 +161,7 @@ impl UiBuilder {
         (class, id, style, other_attrs)
     }
 
+    #[cfg(feature = "std")]
     pub fn create_element(&mut self, tag: &str, attrs: &[(&str, &str)]) -> NodeId {
         let id = self.taffy.new_leaf(Style::default()).unwrap();
         let (class, id_val, style, other_attrs) = Self::parse_attrs(attrs);
@@ -166,6 +170,7 @@ impl UiBuilder {
         id
     }
 
+    #[cfg(feature = "std")]
     pub fn create_text(&mut self, text: &str, _attrs: &[(&str, &str)]) -> NodeId {
         let id = self.taffy.new_leaf(Style::default()).unwrap();
         let mut metadata = NodeMetadata::new(std::borrow::Cow::Borrowed("#text"), None, None, None, None);
@@ -174,6 +179,7 @@ impl UiBuilder {
         id
     }
 
+    #[cfg(feature = "std")]
     pub fn create_checkbox(&mut self, checked: bool, attrs: &[(&str, &str)]) -> NodeId {
         let id = self.taffy.new_leaf(Style::default()).unwrap();
         let (class, id_val, style, other_attrs) = Self::parse_attrs(attrs);
@@ -183,6 +189,7 @@ impl UiBuilder {
         id
     }
 
+    #[cfg(feature = "std")]
     pub fn create_slider(&mut self, value: f32, attrs: &[(&str, &str)]) -> NodeId {
         let id = self.taffy.new_leaf(Style::default()).unwrap();
         let (class, id_val, style, other_attrs) = Self::parse_attrs(attrs);
@@ -192,6 +199,7 @@ impl UiBuilder {
         id
     }
 
+    #[cfg(feature = "std")]
     pub fn create_input_text(&mut self, value: &str, attrs: &[(&str, &str)]) -> NodeId {
         let id = self.taffy.new_leaf(Style::default()).unwrap();
         let (class, id_val, style, other_attrs) = Self::parse_attrs(attrs);
@@ -201,6 +209,7 @@ impl UiBuilder {
         id
     }
 
+    #[cfg(feature = "std")]
     pub fn create_progress(&mut self, value: f32, max: f32, attrs: &[(&str, &str)]) -> NodeId {
         let id = self.taffy.new_leaf(Style::default()).unwrap();
         let (class, id_val, style, other_attrs) = Self::parse_attrs(attrs);
@@ -211,6 +220,7 @@ impl UiBuilder {
         id
     }
 
+    #[cfg(feature = "std")]
     pub fn create_image(&mut self, src: &str, attrs: &[(&str, &str)]) -> NodeId {
         let id = self.taffy.new_leaf(Style::default()).unwrap();
         let (class, id_val, style, other_attrs) = Self::parse_attrs(attrs);
@@ -220,6 +230,7 @@ impl UiBuilder {
         id
     }
 
+    #[cfg(feature = "std")]
     pub fn create_canvas(&mut self, canvas_id: &str, attrs: &[(&str, &str)]) -> NodeId {
         let id = self.taffy.new_leaf(Style::default()).unwrap();
         let (class, id_val, style, other_attrs) = Self::parse_attrs(attrs);
@@ -237,6 +248,7 @@ impl UiBuilder {
     }
 }
 
+#[cfg(feature = "std")]
 pub(crate) struct TaffyElementWrapper<'a> {
     pub node: NodeId,
     pub taffy: &'a TaffyTree,
@@ -244,6 +256,7 @@ pub(crate) struct TaffyElementWrapper<'a> {
     pub meta: &'a NodeMetadata,
 }
 
+#[cfg(feature = "std")]
 impl<'a> simplecss::Element for TaffyElementWrapper<'a> {
     fn parent_element(&self) -> Option<Self> {
         let mut curr = self.node;

@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use crate::style::{ContainerStyle, AnimationIterationCount};
+use crate::alloc_prelude::*;
 
 #[derive(Clone, Debug)]
 pub struct Keyframe {
@@ -47,22 +47,22 @@ pub fn parse_animation_shorthand(val: &str, current_style: &mut ContainerStyle) 
         }
         
         if ["linear", "ease", "ease-in", "ease-out", "ease-in-out"].contains(&part_lower.as_str()) || part_lower.starts_with("cubic-bezier(") {
-            current_style.animation_timing_function = std::sync::Arc::from(part);
+            current_style.animation_timing_function = Arc::from(part);
             continue;
         }
         
         if ["normal", "reverse", "alternate", "alternate-reverse"].contains(&part_lower.as_str()) {
-            current_style.animation_direction = std::sync::Arc::from(part_lower);
+            current_style.animation_direction = Arc::from(part_lower);
             continue;
         }
         
         if ["none", "forwards", "backwards", "both"].contains(&part_lower.as_str()) {
-            current_style.animation_fill_mode = std::sync::Arc::from(part_lower);
+            current_style.animation_fill_mode = Arc::from(part_lower);
             continue;
         }
         
         if ["running", "paused"].contains(&part_lower.as_str()) {
-            current_style.animation_play_state = std::sync::Arc::from(part_lower);
+            current_style.animation_play_state = Arc::from(part_lower);
             continue;
         }
         
@@ -71,10 +71,11 @@ pub fn parse_animation_shorthand(val: &str, current_style: &mut ContainerStyle) 
             continue;
         }
         
-        current_style.animation_name = Some(std::sync::Arc::from(part));
+        current_style.animation_name = Some(Arc::from(part));
     }
 }
 
+#[cfg(feature = "std")]
 pub fn strip_css_comments(css: &str) -> String {
     let mut result = String::new();
     let mut chars = css.chars().peekable();
@@ -94,6 +95,7 @@ pub fn strip_css_comments(css: &str) -> String {
     result
 }
 
+#[cfg(feature = "std")]
 pub fn parse_keyframes(css: &str) -> HashMap<String, KeyframesAnimation> {
     let css = strip_css_comments(css);
     let mut animations = HashMap::new();
@@ -138,6 +140,7 @@ pub fn parse_keyframes(css: &str) -> HashMap<String, KeyframesAnimation> {
     animations
 }
 
+#[cfg(feature = "std")]
 fn parse_keyframe_blocks(content: &str) -> Vec<Keyframe> {
     let mut keyframes = Vec::new();
     let mut pos = 0;
@@ -174,10 +177,11 @@ fn parse_keyframe_blocks(content: &str) -> Vec<Keyframe> {
             break;
         }
     }
-    keyframes.sort_by(|a, b| a.percentage.partial_cmp(&b.percentage).unwrap_or(std::cmp::Ordering::Equal));
+    keyframes.sort_by(|a, b| a.percentage.partial_cmp(&b.percentage).unwrap_or(core::cmp::Ordering::Equal));
     keyframes
 }
 
+#[cfg(feature = "std")]
 fn parse_declarations(content: &str) -> Vec<(String, String)> {
     let mut decls = Vec::new();
     let tokenizer = simplecss::DeclarationTokenizer::from(content);

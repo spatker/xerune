@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use crate::alloc_prelude::*;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Color {
@@ -24,7 +24,7 @@ impl Color {
 #[derive(Debug, Clone, PartialEq)]
 pub struct LinearGradient {
     pub angle: f32, // in degrees
-    pub stops: std::sync::Arc<[(Color, f32)]>, // Color and position (0.0 to 1.0)
+    pub stops: Arc<[(Color, f32)]>, // Color and position (0.0 to 1.0)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -107,23 +107,23 @@ impl Context {
     }
 
     pub fn set_interval(&mut self, message: String, millis: u32) {
-        let duration = std::time::Duration::from_millis(millis as u64);
+        let duration = core::time::Duration::from_millis(millis as u64);
         self.pending_timers.push(crate::runtime::Timer {
             id: 0,
             message,
             interval: duration,
-            next_trigger: std::time::Instant::now() + duration,
+            next_trigger: crate::runtime::time::Instant::now() + duration,
             is_recurring: true,
         });
     }
 
     pub fn set_timeout(&mut self, message: String, millis: u32) {
-        let duration = std::time::Duration::from_millis(millis as u64);
+        let duration = core::time::Duration::from_millis(millis as u64);
         self.pending_timers.push(crate::runtime::Timer {
             id: 0,
             message,
             interval: duration,
-            next_trigger: std::time::Instant::now() + duration,
+            next_trigger: crate::runtime::time::Instant::now() + duration,
             is_recurring: false,
         });
     }

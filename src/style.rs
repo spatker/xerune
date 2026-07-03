@@ -1,4 +1,5 @@
 use crate::graphics::{Color, LinearGradient};
+use crate::alloc_prelude::*;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Display {
@@ -102,14 +103,14 @@ pub struct ContainerStyle {
     pub is_floated: bool,
     pub box_sizing: BoxSizing,
     // Animation properties
-    pub animation_name: Option<std::sync::Arc<str>>,
+    pub animation_name: Option<Arc<str>>,
     pub animation_duration: f32, // in seconds
-    pub animation_timing_function: std::sync::Arc<str>,
+    pub animation_timing_function: Arc<str>,
     pub animation_delay: f32, // in seconds
     pub animation_iteration_count: AnimationIterationCount,
-    pub animation_direction: std::sync::Arc<str>,
-    pub animation_fill_mode: std::sync::Arc<str>,
-    pub animation_play_state: std::sync::Arc<str>,
+    pub animation_direction: Arc<str>,
+    pub animation_fill_mode: Arc<str>,
+    pub animation_play_state: Arc<str>,
 }
 
 impl Default for ContainerStyle {
@@ -152,12 +153,12 @@ impl Default for ContainerStyle {
             box_sizing: BoxSizing::ContentBox,
             animation_name: None,
             animation_duration: 0.0,
-            animation_timing_function: std::sync::Arc::from("ease"),
+            animation_timing_function: Arc::from("ease"),
             animation_delay: 0.0,
             animation_iteration_count: AnimationIterationCount::Count(1.0),
-            animation_direction: std::sync::Arc::from("normal"),
-            animation_fill_mode: std::sync::Arc::from("none"),
-            animation_play_state: std::sync::Arc::from("running"),
+            animation_direction: Arc::from("normal"),
+            animation_fill_mode: Arc::from("none"),
+            animation_play_state: Arc::from("running"),
         }
     }
 }

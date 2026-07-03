@@ -6,9 +6,11 @@ use crate::defaults;
 use super::node_map::NodeMap;
 use super::metadata::NodeMetadata;
 use super::Interaction;
+#[cfg(feature = "std")]
 use super::builder::TaffyElementWrapper;
-use std::collections::HashMap;
+use crate::alloc_prelude::*;
 
+#[cfg(feature = "std")]
 #[derive(Hash, PartialEq, Eq, Clone)]
 pub struct StyleCacheKey {
     pub tag: std::borrow::Cow<'static, str>,
@@ -20,6 +22,7 @@ pub struct StyleCacheKey {
     pub parent_color_u32: u32,
 }
 
+#[cfg(feature = "std")]
 pub(crate) struct CachedStyles {
     pub(crate) stylesheet: simplecss::StyleSheet<'static>,
     pub(crate) keyframes: HashMap<String, css::KeyframesAnimation>,
@@ -27,6 +30,7 @@ pub(crate) struct CachedStyles {
     pub(crate) style_cache: std::cell::RefCell<HashMap<StyleCacheKey, (Style, ContainerStyle)>>,
 }
 
+#[cfg(feature = "std")]
 thread_local! {
     pub(crate) static STYLESHEET_CACHE: std::cell::RefCell<HashMap<&'static str, &'static CachedStyles>> = std::cell::RefCell::new(HashMap::new());
     pub(crate) static CACHE_STATS: std::cell::Cell<(usize, usize)> = std::cell::Cell::new((0, 0));
@@ -48,6 +52,7 @@ pub(crate) fn to_content_box(dim: taffy::style::Dimension, sub: f32) -> taffy::s
     }
 }
 
+#[cfg(feature = "std")]
 pub(crate) fn resolve_styles(
     taffy: &mut TaffyTree,
     node: NodeId,

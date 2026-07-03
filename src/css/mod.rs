@@ -3,11 +3,14 @@ pub mod animation;
 
 pub use parser::{parse_hex_color, parse_px, parse_dimension, parse_length_percentage, parse_length_percentage_auto};
 use parser::{parse_padding, parse_margin};
-pub use animation::{Keyframe, KeyframesAnimation, parse_keyframes, parse_duration_sec, parse_animation_shorthand};
+pub use animation::{Keyframe, KeyframesAnimation, parse_duration_sec, parse_animation_shorthand};
+#[cfg(feature = "std")]
+pub use animation::parse_keyframes;
 
 use crate::{Color, ContainerStyle, Display, TextAlign, Direction, WritingMode, FlexDirection, FlexWrap, AlignContent, AlignItems, MyJustifyContent, BoxSizing, style::AnimationIterationCount};
 use taffy::prelude::*;
 use taffy::style::Style;
+use crate::alloc_prelude::*;
 
 struct FastLayoutStyle {
     left: f32,
@@ -21,13 +24,13 @@ fn parse_layout_style_fast(s: &str) -> Option<FastLayoutStyle> {
     let bytes = s.as_bytes();
     let mut i = 0;
     
-    if !s[i..].starts_with("left:") { return None; }
+        if !s[i..].starts_with("left:") { return None; }
     i += 5;
     while i < bytes.len() && (bytes[i] == b' ' || bytes[i] == b'\t') { i += 1; }
     
     let start_left = i;
     while i < bytes.len() && (bytes[i].is_ascii_digit() || bytes[i] == b'.' || bytes[i] == b'-') { i += 1; }
-    let left = std::str::from_utf8(&bytes[start_left..i]).ok()?.parse::<f32>().ok()?;
+    let left = core::str::from_utf8(&bytes[start_left..i]).ok()?.parse::<f32>().ok()?;
     
     if !s[i..].starts_with("px;") { return None; }
     i += 3;
@@ -39,7 +42,7 @@ fn parse_layout_style_fast(s: &str) -> Option<FastLayoutStyle> {
     
     let start_top = i;
     while i < bytes.len() && (bytes[i].is_ascii_digit() || bytes[i] == b'.' || bytes[i] == b'-') { i += 1; }
-    let top = std::str::from_utf8(&bytes[start_top..i]).ok()?.parse::<f32>().ok()?;
+    let top = core::str::from_utf8(&bytes[start_top..i]).ok()?.parse::<f32>().ok()?;
     
     if !s[i..].starts_with("px;") { return None; }
     i += 3;
@@ -51,7 +54,7 @@ fn parse_layout_style_fast(s: &str) -> Option<FastLayoutStyle> {
     
     let start_width = i;
     while i < bytes.len() && (bytes[i].is_ascii_digit() || bytes[i] == b'.' || bytes[i] == b'-') { i += 1; }
-    let width = std::str::from_utf8(&bytes[start_width..i]).ok()?.parse::<f32>().ok()?;
+    let width = core::str::from_utf8(&bytes[start_width..i]).ok()?.parse::<f32>().ok()?;
     
     if !s[i..].starts_with("px;") { return None; }
     i += 3;
@@ -63,7 +66,7 @@ fn parse_layout_style_fast(s: &str) -> Option<FastLayoutStyle> {
     
     let start_height = i;
     while i < bytes.len() && (bytes[i].is_ascii_digit() || bytes[i] == b'.' || bytes[i] == b'-') { i += 1; }
-    let height = std::str::from_utf8(&bytes[start_height..i]).ok()?.parse::<f32>().ok()?;
+    let height = core::str::from_utf8(&bytes[start_height..i]).ok()?.parse::<f32>().ok()?;
     
     if !s[i..].starts_with("px;") { return None; }
     i += 3;
@@ -75,7 +78,7 @@ fn parse_layout_style_fast(s: &str) -> Option<FastLayoutStyle> {
     
     let start_color = i;
     while i < bytes.len() && bytes[i] != b';' { i += 1; }
-    let color_str = std::str::from_utf8(&bytes[start_color..i]).ok()?.trim();
+    let color_str = core::str::from_utf8(&bytes[start_color..i]).ok()?.trim();
     let bg_color = parser::parse_hex_color(color_str)?;
     
     Some(FastLayoutStyle {
@@ -665,13 +668,13 @@ pub fn apply_declaration(prop: &str, val: &str, current_style: &mut ContainerSty
              }
          }
          "animation-name" => {
-             current_style.animation_name = Some(std::sync::Arc::from(val.trim()));
+             current_style.animation_name = Some(Arc::from(val.trim()));
          }
          "animation-duration" => {
              current_style.animation_duration = parse_duration_sec(val);
          }
          "animation-timing-function" => {
-             current_style.animation_timing_function = std::sync::Arc::from(val.trim());
+             current_style.animation_timing_function = Arc::from(val.trim());
          }
          "animation-delay" => {
              current_style.animation_delay = parse_duration_sec(val);
@@ -684,13 +687,13 @@ pub fn apply_declaration(prop: &str, val: &str, current_style: &mut ContainerSty
              };
          }
          "animation-direction" => {
-             current_style.animation_direction = std::sync::Arc::from(val.trim().to_lowercase());
+             current_style.animation_direction = Arc::from(val.trim().to_lowercase());
          }
          "animation-fill-mode" => {
-             current_style.animation_fill_mode = std::sync::Arc::from(val.trim().to_lowercase());
+             current_style.animation_fill_mode = Arc::from(val.trim().to_lowercase());
          }
          "animation-play-state" => {
-             current_style.animation_play_state = std::sync::Arc::from(val.trim().to_lowercase());
+             current_style.animation_play_state = Arc::from(val.trim().to_lowercase());
          }
          "animation" => {
              parse_animation_shorthand(val, current_style);

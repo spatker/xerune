@@ -1,7 +1,8 @@
 use crate::graphics::Context;
+use crate::alloc_prelude::*;
 
 pub trait Model {
-    type Message: std::str::FromStr + Send + Sync + 'static;
+    type Message: core::str::FromStr + Send + Sync + 'static;
     fn view(&self) -> String {
         String::new()
     }

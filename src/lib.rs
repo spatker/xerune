@@ -1,3 +1,37 @@
+#![cfg_attr(not(feature = "std"), no_std)]
+
+#[cfg(not(feature = "std"))]
+extern crate alloc;
+
+pub mod alloc_prelude {
+    #[cfg(not(feature = "std"))]
+    pub use alloc::{
+        string::{String, ToString},
+        vec::Vec,
+        boxed::Box,
+        sync::Arc,
+        borrow::Cow,
+        rc::Rc,
+        format,
+        vec,
+    };
+    #[cfg(not(feature = "std"))]
+    pub use hashbrown::{HashMap, HashSet};
+
+    #[cfg(feature = "std")]
+    pub use std::{
+        string::{String, ToString},
+        vec::Vec,
+        boxed::Box,
+        sync::Arc,
+        borrow::Cow,
+        rc::Rc,
+        collections::{HashMap, HashSet},
+        format,
+        vec,
+    };
+}
+
 pub mod graphics;
 pub mod style;
 pub mod model;

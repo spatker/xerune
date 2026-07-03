@@ -1,5 +1,6 @@
-use std::borrow::Borrow;
+use core::borrow::Borrow;
 use taffy::prelude::NodeId;
+use crate::alloc_prelude::*;
 
 #[derive(Clone, Default, Debug)]
 pub struct NodeMap<T> {
@@ -26,7 +27,7 @@ impl<T> NodeMap<T> {
         if idx >= self.inner.len() {
             self.inner.resize_with(idx + 1, || None);
         }
-        std::mem::replace(&mut self.inner[idx], Some(value))
+        core::mem::replace(&mut self.inner[idx], Some(value))
     }
 
     #[inline]
@@ -78,11 +79,11 @@ impl<T> NodeMap<T> {
 }
 
 pub struct NodeMapIter<'a, T> {
-    iter: std::slice::Iter<'a, Option<T>>,
+    iter: core::slice::Iter<'a, Option<T>>,
     idx: usize,
 }
 
-impl<'a, T> Iterator for NodeMapIter<'a, T> {
+impl<'a, T: 'a> Iterator for NodeMapIter<'a, T> {
     type Item = (NodeId, &'a T);
 
     #[inline]
@@ -99,10 +100,10 @@ impl<'a, T> Iterator for NodeMapIter<'a, T> {
 }
 
 pub struct NodeMapValues<'a, T> {
-    iter: std::slice::Iter<'a, Option<T>>,
+    iter: core::slice::Iter<'a, Option<T>>,
 }
 
-impl<'a, T> Iterator for NodeMapValues<'a, T> {
+impl<'a, T: 'a> Iterator for NodeMapValues<'a, T> {
     type Item = &'a T;
 
     #[inline]
