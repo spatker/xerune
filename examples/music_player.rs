@@ -411,7 +411,7 @@ fn main() -> anyhow::Result<()> {
     #[cfg(not(feature = "fast-renderer"))]
     let measurer = TinySkiaMeasurer { fonts: fonts_ref };
     #[cfg(feature = "fast-renderer")]
-    let measurer = FastMeasurer { fonts: fonts_ref };
+    let measurer = FastMeasurer { fonts: fonts_ref.into() };
 
     let model = MusicPlayerModel::new();
     let mut runtime = Runtime::new(model, measurer);

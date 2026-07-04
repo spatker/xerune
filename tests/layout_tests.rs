@@ -321,7 +321,7 @@ fn test_tiled_rendering_identity() {
         active_item: 0,
         new_item_title: "abc".to_string(),
     };
-    let measurer = fast_renderer::FastMeasurer { fonts: &fonts };
+    let measurer = fast_renderer::FastMeasurer { fonts: (&fonts).into() };
     let mut runtime = Runtime::new(model, measurer);
     runtime.set_size(800.0, 600.0);
 
@@ -356,4 +356,34 @@ fn test_tiled_rendering_identity() {
 
     // 3. Compare pixel buffers
     assert_eq!(full_buffer, tiled_buffer, "Full screen rendering and tiled rendering outputs must be pixel-perfect identical");
+}
+
+#[test]
+fn test_bitmap_font_rendering() {
+    use std::collections::HashMap;
+    use fast_renderer::FastRenderer;
+    use xerune::font::{DEFAULT_ROBOTO_REGULAR, DEFAULT_ROBOTO_BOLD};
+
+    let fonts = vec![DEFAULT_ROBOTO_REGULAR, DEFAULT_ROBOTO_BOLD];
+
+    let commands = vec![
+        DrawCommand::DrawText {
+            text: "Hello World!".to_string(),
+            rect: Rect { x: 10.0, y: 10.0, width: 200.0, height: 30.0 },
+            color: Color::new(255, 255, 255, 255),
+            font_size: 16.0,
+            weight: 0,
+        }
+    ];
+
+    let mut buffer = vec![0u32; 200 * 50];
+    let mut image_cache = HashMap::new();
+    let mut glyph_cache = HashMap::new();
+
+    let mut renderer = FastRenderer::new(&mut buffer, 200, 50, &fonts, &mut image_cache, &mut glyph_cache);
+    renderer.render(&commands, &HashMap::new(), None);
+
+    // Verify that some pixels are drawn (not all zeros)
+    let non_zero_count = buffer.iter().filter(|&&pixel| pixel != 0).count();
+    assert!(non_zero_count > 0, "Bitmap font should have rasterized some non-zero pixels onto the buffer");
 }

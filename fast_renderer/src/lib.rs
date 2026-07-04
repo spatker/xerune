@@ -7,6 +7,7 @@ pub mod blitter;
 pub mod gradient;
 pub mod rounded_rect;
 
+#[cfg(feature = "std")]
 use fontdue::Font;
 use xerune::{Canvas, DrawCommand, Rect, Renderer, TextMeasurer};
 use xerune::alloc_prelude::*;
@@ -24,8 +25,57 @@ macro_rules! profile {
     ($($tt:tt)*) => {};
 }
 
+#[derive(Clone, Copy)]
+pub enum FontSource<'a> {
+    #[cfg(feature = "std")]
+    Ttf(&'a [Font]),
+    Bitmap(&'a [xerune::font::BitmapFont]),
+}
+
+#[cfg(feature = "std")]
+impl<'a> From<&'a [Font]> for FontSource<'a> {
+    fn from(fonts: &'a [Font]) -> Self {
+        FontSource::Ttf(fonts)
+    }
+}
+
+#[cfg(feature = "std")]
+impl<'a> From<&'a Vec<Font>> for FontSource<'a> {
+    fn from(fonts: &'a Vec<Font>) -> Self {
+        FontSource::Ttf(fonts.as_slice())
+    }
+}
+
+impl<'a> From<&'a [xerune::font::BitmapFont]> for FontSource<'a> {
+    fn from(fonts: &'a [xerune::font::BitmapFont]) -> Self {
+        FontSource::Bitmap(fonts)
+    }
+}
+
+impl<'a> From<&'a Vec<xerune::font::BitmapFont>> for FontSource<'a> {
+    fn from(fonts: &'a Vec<xerune::font::BitmapFont>) -> Self {
+        FontSource::Bitmap(fonts.as_slice())
+    }
+}
+
 pub struct FastMeasurer<'a> {
-    pub fonts: &'a [Font],
+    pub fonts: FontSource<'a>,
+}
+
+pub fn find_best_bitmap_font<'a>(fonts: &'a [xerune::font::BitmapFont], target_size: f32, target_weight: u16) -> Option<&'a xerune::font::BitmapFont> {
+    if fonts.is_empty() {
+        return None;
+    }
+    // Try to find exact size and weight
+    if let Some(f) = fonts.iter().find(|f| (f.size - target_size).abs() < 0.1 && f.weight == target_weight) {
+        return Some(f);
+    }
+    // Try to find matching weight
+    if let Some(f) = fonts.iter().find(|f| f.weight == target_weight) {
+        return Some(f);
+    }
+    // Fallback to first
+    Some(&fonts[0])
 }
 
 impl<'a> TextMeasurer for FastMeasurer<'a> {
@@ -59,44 +109,74 @@ impl<'a> TextMeasurer for FastMeasurer<'a> {
             return dims;
         }
 
-        let font_index = if weight > 0 && self.fonts.len() > 1 { 1 } else { 0 };
+        let result = match &self.fonts {
+            #[cfg(feature = "std")]
+            FontSource::Ttf(ttf_fonts) => {
+                let font_index = if weight > 0 && ttf_fonts.len() > 1 { 1 } else { 0 };
 
-        let mut layout = fontdue::layout::Layout::new(fontdue::layout::CoordinateSystem::PositiveYDown);
-        layout.reset(&fontdue::layout::LayoutSettings::default());
-        layout.append(self.fonts, &fontdue::layout::TextStyle::new(text, font_size, font_index));
+                let mut layout = fontdue::layout::Layout::new(fontdue::layout::CoordinateSystem::PositiveYDown);
+                layout.reset(&fontdue::layout::LayoutSettings::default());
+                layout.append(ttf_fonts, &fontdue::layout::TextStyle::new(text, font_size, font_index));
 
-        let mut min_x = f32::MAX;
-        let mut min_y = f32::MAX;
-        let mut max_x = f32::MIN;
-        let mut max_y = f32::MIN;
+                let mut min_x = f32::MAX;
+                let mut min_y = f32::MAX;
+                let mut max_x = f32::MIN;
+                let mut max_y = f32::MIN;
 
-        for glyph in layout.glyphs() {
-            let gx = glyph.x;
-            let gy = glyph.y;
-            let gw = glyph.width as f32;
-            let gh = glyph.height as f32;
+                for glyph in layout.glyphs() {
+                    let gx = glyph.x;
+                    let gy = glyph.y;
+                    let gw = glyph.width as f32;
+                    let gh = glyph.height as f32;
 
-            if gx < min_x { min_x = gx; }
-            if gy < min_y { min_y = gy; }
-            if gx + gw > max_x { max_x = gx + gw; }
-            if gy + gh > max_y { max_y = gy + gh; }
-        }
+                    if gx < min_x { min_x = gx; }
+                    if gy < min_y { min_y = gy; }
+                    if gx + gw > max_x { max_x = gx + gw; }
+                    if gy + gh > max_y { max_y = gy + gh; }
+                }
 
-        let width = if max_x > min_x { max_x - min_x } else { 0.0 };
-        
-        let height = if let Some(metrics) = self.fonts[font_index].horizontal_line_metrics(font_size) {
-            metrics.new_line_size
-        } else {
-            if max_y > min_y { max_y - min_y } else { 20.0 }
+                let width = if max_x > min_x { max_x - min_x } else { 0.0 };
+                
+                let height = if let Some(metrics) = ttf_fonts[font_index].horizontal_line_metrics(font_size) {
+                    metrics.new_line_size
+                } else {
+                    if max_y > min_y { max_y - min_y } else { 20.0 }
+                };
+
+                (width, height)
+            }
+            FontSource::Bitmap(bitmap_fonts) => {
+                let font = match find_best_bitmap_font(bitmap_fonts, font_size, weight) {
+                    Some(f) => f,
+                    None => return (0.0, 0.0),
+                };
+
+                let mut max_w: f32 = 0.0;
+                let mut current_w: f32 = 0.0;
+                let mut lines = 1;
+                for c in text.chars() {
+                    if c == '\n' {
+                        max_w = max_w.max(current_w);
+                        current_w = 0.0;
+                        lines += 1;
+                        continue;
+                    }
+                    if let Some(glyph) = font.lookup_glyph(c) {
+                        current_w += glyph.x_advance as f32;
+                    }
+                }
+                max_w = max_w.max(current_w);
+                let height = lines as f32 * font.line_height;
+                (max_w, height)
+            }
         };
 
-        let result = (width, height);
         #[cfg(feature = "std")]
         MEASURE_CACHE.with(|cache| {
             cache.borrow_mut()
                 .entry(text.to_string())
                 .or_insert_with(Vec::new)
-                .push((font_size_bits, weight, width, height));
+                .push((font_size_bits, weight, result.0, result.1));
         });
 
         result
@@ -115,7 +195,7 @@ pub struct FastRenderer<'a> {
     pub height: u32,
     pub physical_width: u32,
     pub physical_height: u32,
-    pub fonts: &'a [Font],
+    pub fonts: FontSource<'a>,
     pub clip_stack: Vec<Rect>,
     pub swap_rb: bool,
     pub rotate: bool,
@@ -123,15 +203,16 @@ pub struct FastRenderer<'a> {
     pub y_offset: i32,
     pub image_cache: &'a mut HashMap<String, (u32, u32, Vec<u32>)>, // (width, height, pixels)
     pub glyph_cache: &'a mut HashMap<(usize, u16, u32), CachedGlyph>,
+    #[cfg(feature = "std")]
     pub layout: fontdue::layout::Layout,
 }
 
 impl<'a> FastRenderer<'a> {
-    pub fn new(
+    pub fn new<F: Into<FontSource<'a>>>(
         buffer: &'a mut [u32],
         width: u32,
         height: u32,
-        fonts: &'a [Font],
+        fonts: F,
         image_cache: &'a mut HashMap<String, (u32, u32, Vec<u32>)>,
         glyph_cache: &'a mut HashMap<(usize, u16, u32), CachedGlyph>,
     ) -> Self {
@@ -141,7 +222,7 @@ impl<'a> FastRenderer<'a> {
             height,
             physical_width: width,
             physical_height: height,
-            fonts,
+            fonts: fonts.into(),
             clip_stack: Vec::new(),
             swap_rb: false,
             rotate: false,
@@ -149,6 +230,7 @@ impl<'a> FastRenderer<'a> {
             y_offset: 0,
             image_cache,
             glyph_cache,
+            #[cfg(feature = "std")]
             layout: fontdue::layout::Layout::new(fontdue::layout::CoordinateSystem::PositiveYDown),
         }
     }
@@ -336,14 +418,6 @@ impl<'a> Renderer for FastRenderer<'a> {
                 } => {
                     profile!("render_text");
                     let local_rect = self.translate_rect(rect);
-                    let font_index = if *weight > 0 && self.fonts.len() > 1 { 1 } else { 0 };
-
-                    {
-                        profile!("text_layout");
-                        self.layout.reset(&fontdue::layout::LayoutSettings::default());
-                        self.layout.append(self.fonts, &fontdue::layout::TextStyle::new(text, *font_size, font_index));
-                    }
-
                     let packed_color = pack_color(*color, self.swap_rb);
                     let clip = self.get_clip_rect();
                     let (clip_x1, clip_y1, clip_x2, clip_y2) = if let Some(cr) = clip {
@@ -357,82 +431,176 @@ impl<'a> Renderer for FastRenderer<'a> {
                         (0, 0, self.width as i32, self.height as i32)
                     };
 
-                    profile!("text_rasterize_blend");
-                    let color_a = (packed_color >> 24) & 0xff;
-                    let r = (packed_color >> 16) & 0xff;
-                    let g = (packed_color >> 8) & 0xff;
-                    let b = packed_color & 0xff;
+                    match &self.fonts {
+                        #[cfg(feature = "std")]
+                        FontSource::Ttf(ttf_fonts) => {
+                            let font_index = if *weight > 0 && ttf_fonts.len() > 1 { 1 } else { 0 };
 
-                    for glyph in self.layout.glyphs() {
-                        let sub_px = (glyph.key.px * 16.0) as u32;
-                        let cache_key = (glyph.font_index, glyph.key.glyph_index, sub_px);
+                            {
+                                profile!("text_layout");
+                                self.layout.reset(&fontdue::layout::LayoutSettings::default());
+                                self.layout.append(ttf_fonts, &fontdue::layout::TextStyle::new(text, *font_size, font_index));
+                            }
 
-                        if !self.glyph_cache.contains_key(&cache_key) {
-                            let (metrics, bitmap) = self.fonts[glyph.font_index].rasterize_indexed(glyph.key.glyph_index, glyph.key.px);
-                            if metrics.width > 0 && metrics.height > 0 {
-                                self.glyph_cache.insert(
-                                    cache_key,
-                                    CachedGlyph {
-                                        width: metrics.width as u32,
-                                        height: metrics.height as u32,
-                                        bitmap,
-                                    },
-                                );
+                            profile!("text_rasterize_blend");
+                            let color_a = (packed_color >> 24) & 0xff;
+                            let r = (packed_color >> 16) & 0xff;
+                            let g = (packed_color >> 8) & 0xff;
+                            let b = packed_color & 0xff;
+
+                            for glyph in self.layout.glyphs() {
+                                let sub_px = (glyph.key.px * 16.0) as u32;
+                                let cache_key = (glyph.font_index, glyph.key.glyph_index, sub_px);
+
+                                if !self.glyph_cache.contains_key(&cache_key) {
+                                    let (metrics, bitmap) = ttf_fonts[glyph.font_index].rasterize_indexed(glyph.key.glyph_index, glyph.key.px);
+                                    if metrics.width > 0 && metrics.height > 0 {
+                                        self.glyph_cache.insert(
+                                            cache_key,
+                                            CachedGlyph {
+                                                width: metrics.width as u32,
+                                                height: metrics.height as u32,
+                                                bitmap,
+                                            },
+                                        );
+                                    }
+                                }
+
+                                if let Some(cached) = self.glyph_cache.get(&cache_key) {
+                                    let gx = (local_rect.x + glyph.x) as i32;
+                                    let gy = (local_rect.y + glyph.y) as i32;
+                                    let gw = cached.width as i32;
+                                    let gh = cached.height as i32;
+
+                                    let start_x = gx.max(clip_x1);
+                                    let start_y = gy.max(clip_y1);
+                                    let end_x = (gx + gw).min(clip_x2);
+                                    let end_y = (gy + gh).min(clip_y2);
+
+                                    if start_x < end_x && start_y < end_y {
+                                        if self.rotate {
+                                            for y in start_y..end_y {
+                                                let src_y = (y - gy) as usize;
+                                                let src_row_offset = src_y * cached.width as usize;
+                                                for x in start_x..end_x {
+                                                    let src_x = (x - gx) as usize;
+                                                    let cov = cached.bitmap[src_row_offset + src_x];
+                                                    if cov > 0 {
+                                                        let a = div_255(color_a * cov as u32);
+                                                        if a > 0 {
+                                                            let idx = (x as usize * self.physical_width as usize) + (self.physical_width as usize - 1 - y as usize);
+                                                            if idx < self.buffer.len() {
+                                                                let inv_a = 255 - a;
+                                                                let d = self.buffer[idx];
+                                                                let dst_a = (d >> 24) & 0xff;
+                                                                let dst_r = (d >> 16) & 0xff;
+                                                                let dst_g = (d >> 8) & 0xff;
+                                                                let dst_b = d & 0xff;
+                                                                
+                                                                let res_r = div_255(r * a + dst_r * inv_a);
+                                                                let res_g = div_255(g * a + dst_g * inv_a);
+                                                                let res_b = div_255(b * a + dst_b * inv_a);
+                                                                let res_a = a + div_255(dst_a * inv_a);
+                                                                self.buffer[idx] = (res_a << 24) | (res_r << 16) | (res_g << 8) | res_b;
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        } else {
+                                            for y in start_y..end_y {
+                                                let src_y = (y - gy) as usize;
+                                                let dst_row_start = (y * self.physical_width as i32 + start_x) as usize;
+                                                let draw_w = (end_x - start_x) as usize;
+                                                
+                                                let src_x_start = (start_x - gx) as usize;
+                                                let glyph_span = &cached.bitmap[src_y * cached.width as usize + src_x_start..src_y * cached.width as usize + src_x_start + draw_w];
+                                                let dst_span = &mut self.buffer[dst_row_start..dst_row_start + draw_w];
+                                                blend_glyph_span(dst_span, glyph_span, packed_color);
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
+                        FontSource::Bitmap(bitmap_fonts) => {
+                            let font = match find_best_bitmap_font(bitmap_fonts, *font_size, *weight) {
+                                Some(f) => f,
+                                None => continue,
+                            };
 
-                        if let Some(cached) = self.glyph_cache.get(&cache_key) {
-                            let gx = (local_rect.x + glyph.x) as i32;
-                            let gy = (local_rect.y + glyph.y) as i32;
-                            let gw = cached.width as i32;
-                            let gh = cached.height as i32;
+                            let color_a = (packed_color >> 24) & 0xff;
+                            let r = (packed_color >> 16) & 0xff;
+                            let g = (packed_color >> 8) & 0xff;
+                            let b = packed_color & 0xff;
 
-                            let start_x = gx.max(clip_x1);
-                            let start_y = gy.max(clip_y1);
-                            let end_x = (gx + gw).min(clip_x2);
-                            let end_y = (gy + gh).min(clip_y2);
+                            let mut pen_x = local_rect.x;
+                            let mut pen_y = local_rect.y;
 
-                            if start_x < end_x && start_y < end_y {
-                                if self.rotate {
-                                    for y in start_y..end_y {
-                                        let src_y = (y - gy) as usize;
-                                        let src_row_offset = src_y * cached.width as usize;
-                                        for x in start_x..end_x {
-                                            let src_x = (x - gx) as usize;
-                                            let cov = cached.bitmap[src_row_offset + src_x];
-                                            if cov > 0 {
-                                                let a = div_255(color_a * cov as u32);
-                                                if a > 0 {
-                                                    let idx = (x as usize * self.physical_width as usize) + (self.physical_width as usize - 1 - y as usize);
-                                                    if idx < self.buffer.len() {
-                                                        let inv_a = 255 - a;
-                                                        let d = self.buffer[idx];
-                                                        let dst_a = (d >> 24) & 0xff;
-                                                        let dst_r = (d >> 16) & 0xff;
-                                                        let dst_g = (d >> 8) & 0xff;
-                                                        let dst_b = d & 0xff;
-                                                        
-                                                        let res_r = div_255(r * a + dst_r * inv_a);
-                                                        let res_g = div_255(g * a + dst_g * inv_a);
-                                                        let res_b = div_255(b * a + dst_b * inv_a);
-                                                        let res_a = a + div_255(dst_a * inv_a);
-                                                        self.buffer[idx] = (res_a << 24) | (res_r << 16) | (res_g << 8) | res_b;
+                            for c in text.chars() {
+                                if c == '\n' {
+                                    pen_x = local_rect.x;
+                                    pen_y += font.line_height;
+                                    continue;
+                                }
+
+                                if let Some(glyph) = font.lookup_glyph(c) {
+                                    if glyph.width > 0 && glyph.height > 0 {
+                                        let gx = (pen_x + glyph.x_offset as f32) as i32;
+                                        let gy = (pen_y + glyph.y_offset as f32) as i32;
+                                        let gw = glyph.width as i32;
+                                        let gh = glyph.height as i32;
+
+                                        let start_x = gx.max(clip_x1);
+                                        let start_y = gy.max(clip_y1);
+                                        let end_x = (gx + gw).min(clip_x2);
+                                        let end_y = (gy + gh).min(clip_y2);
+
+                                        if start_x < end_x && start_y < end_y {
+                                            if self.rotate {
+                                                for y in start_y..end_y {
+                                                    let src_y = (y - gy) as usize;
+                                                    let src_row_offset = src_y * glyph.width as usize;
+                                                    for x in start_x..end_x {
+                                                        let src_x = (x - gx) as usize;
+                                                        let cov = glyph.bitmap[src_row_offset + src_x];
+                                                        if cov > 0 {
+                                                            let a = div_255(color_a * cov as u32);
+                                                            if a > 0 {
+                                                                let idx = (x as usize * self.physical_width as usize) + (self.physical_width as usize - 1 - y as usize);
+                                                                if idx < self.buffer.len() {
+                                                                    let inv_a = 255 - a;
+                                                                    let d = self.buffer[idx];
+                                                                    let dst_a = (d >> 24) & 0xff;
+                                                                    let dst_r = (d >> 16) & 0xff;
+                                                                    let dst_g = (d >> 8) & 0xff;
+                                                                    let dst_b = d & 0xff;
+                                                                    
+                                                                    let res_r = div_255(r * a + dst_r * inv_a);
+                                                                    let res_g = div_255(g * a + dst_g * inv_a);
+                                                                    let res_b = div_255(b * a + dst_b * inv_a);
+                                                                    let res_a = a + div_255(dst_a * inv_a);
+                                                                    self.buffer[idx] = (res_a << 24) | (res_r << 16) | (res_g << 8) | res_b;
+                                                                }
+                                                            }
+                                                        }
                                                     }
+                                                }
+                                            } else {
+                                                for y in start_y..end_y {
+                                                    let src_y = (y - gy) as usize;
+                                                    let dst_row_start = (y * self.physical_width as i32 + start_x) as usize;
+                                                    let draw_w = (end_x - start_x) as usize;
+                                                    
+                                                    let src_x_start = (start_x - gx) as usize;
+                                                    let glyph_span = &glyph.bitmap[src_y * glyph.width as usize + src_x_start..src_y * glyph.width as usize + src_x_start + draw_w];
+                                                    let dst_span = &mut self.buffer[dst_row_start..dst_row_start + draw_w];
+                                                    blend_glyph_span(dst_span, glyph_span, packed_color);
                                                 }
                                             }
                                         }
                                     }
-                                } else {
-                                    for y in start_y..end_y {
-                                        let src_y = (y - gy) as usize;
-                                        let dst_row_start = (y * self.physical_width as i32 + start_x) as usize;
-                                        let draw_w = (end_x - start_x) as usize;
-                                        
-                                        let src_x_start = (start_x - gx) as usize;
-                                        let glyph_span = &cached.bitmap[src_y * cached.width as usize + src_x_start..src_y * cached.width as usize + src_x_start + draw_w];
-                                        let dst_span = &mut self.buffer[dst_row_start..dst_row_start + draw_w];
-                                        blend_glyph_span(dst_span, glyph_span, packed_color);
-                                    }
+                                    pen_x += glyph.x_advance as f32;
                                 }
                             }
                         }
