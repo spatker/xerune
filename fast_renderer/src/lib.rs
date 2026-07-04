@@ -1,10 +1,15 @@
+#![cfg_attr(not(feature = "std"), no_std)]
+
+#[cfg(not(feature = "std"))]
+extern crate alloc;
+
 pub mod blitter;
 pub mod gradient;
 pub mod rounded_rect;
 
-use std::collections::HashMap;
 use fontdue::Font;
 use xerune::{Canvas, DrawCommand, Rect, Renderer, TextMeasurer};
+use xerune::alloc_prelude::*;
 
 use blitter::{pack_color, blend_solid_rect, blend_pixel, blend_glyph_span, div_255};
 use rounded_rect::{draw_rounded_rect, draw_rounded_border};
@@ -30,11 +35,13 @@ impl<'a> TextMeasurer for FastMeasurer<'a> {
             return (0.0, 0.0);
         }
 
+        #[cfg(feature = "std")]
         thread_local! {
             static MEASURE_CACHE: std::cell::RefCell<HashMap<String, Vec<(u32, u16, f32, f32)>>> = std::cell::RefCell::new(HashMap::with_capacity(256));
         }
 
         let font_size_bits = font_size.to_bits();
+        #[cfg(feature = "std")]
         let cached = MEASURE_CACHE.with(|cache| {
             if let Some(entries) = cache.borrow().get(text) {
                 for &(sz, wt, w, h) in entries {
@@ -45,6 +52,8 @@ impl<'a> TextMeasurer for FastMeasurer<'a> {
             }
             None
         });
+        #[cfg(not(feature = "std"))]
+        let cached = None;
 
         if let Some(dims) = cached {
             return dims;
@@ -82,6 +91,7 @@ impl<'a> TextMeasurer for FastMeasurer<'a> {
         };
 
         let result = (width, height);
+        #[cfg(feature = "std")]
         MEASURE_CACHE.with(|cache| {
             cache.borrow_mut()
                 .entry(text.to_string())
@@ -109,6 +119,8 @@ pub struct FastRenderer<'a> {
     pub clip_stack: Vec<Rect>,
     pub swap_rb: bool,
     pub rotate: bool,
+    pub x_offset: i32,
+    pub y_offset: i32,
     pub image_cache: &'a mut HashMap<String, (u32, u32, Vec<u32>)>, // (width, height, pixels)
     pub glyph_cache: &'a mut HashMap<(usize, u16, u32), CachedGlyph>,
     pub layout: fontdue::layout::Layout,
@@ -133,6 +145,8 @@ impl<'a> FastRenderer<'a> {
             clip_stack: Vec::new(),
             swap_rb: false,
             rotate: false,
+            x_offset: 0,
+            y_offset: 0,
             image_cache,
             glyph_cache,
             layout: fontdue::layout::Layout::new(fontdue::layout::CoordinateSystem::PositiveYDown),
@@ -141,6 +155,55 @@ impl<'a> FastRenderer<'a> {
 
     fn get_clip_rect(&self) -> Option<Rect> {
         self.clip_stack.last().copied()
+    }
+
+    #[inline(always)]
+    fn translate_rect(&self, r: &Rect) -> Rect {
+        Rect {
+            x: r.x - self.x_offset as f32,
+            y: r.y - self.y_offset as f32,
+            width: r.width,
+            height: r.height,
+        }
+    }
+
+    pub fn render_tiled<F>(
+        &mut self,
+        commands: &[DrawCommand],
+        canvases: &HashMap<String, Canvas>,
+        dirty_rect: Option<Rect>,
+        screen_height: u32,
+        mut flush_cb: F,
+    ) where
+        F: FnMut(i32, i32, u32, u32, &[u32]),
+    {
+        let mut y = 0;
+        let tile_h = self.height as i32;
+        while y < screen_height as i32 {
+            self.y_offset = y;
+            self.x_offset = 0;
+
+            let tile_rect = Rect {
+                x: 0.0,
+                y: y as f32,
+                width: self.width as f32,
+                height: self.height as f32,
+            };
+
+            let overlap = match dirty_rect {
+                Some(dr) => tile_rect.intersects(&dr),
+                None => true,
+            };
+
+            if overlap {
+                self.buffer.fill(0);
+                self.render(commands, canvases, dirty_rect);
+                let actual_h = (screen_height as i32 - y).min(tile_h) as u32;
+                flush_cb(0, y, self.width, actual_h, &self.buffer[.. (self.width * actual_h) as usize]);
+            }
+
+            y += tile_h;
+        }
     }
 }
 
@@ -154,29 +217,49 @@ impl<'a> TextMeasurer for FastRenderer<'a> {
 impl<'a> Renderer for FastRenderer<'a> {
     fn render(&mut self, commands: &[DrawCommand], canvases: &HashMap<String, Canvas>, dirty_rect: Option<Rect>) {
         profile!("render_full");
-        if let Some(dr) = dirty_rect {
-            self.clip_stack.push(dr);
-        }
+        
+        let tile_rect = Rect {
+            x: self.x_offset as f32,
+            y: self.y_offset as f32,
+            width: self.width as f32,
+            height: self.height as f32,
+        };
+
+        let active_clip = match dirty_rect {
+            Some(dr) => match tile_rect.intersect(&dr) {
+                Some(intersected) => intersected,
+                None => return, // No overlap between this tile and the dirty region
+            },
+            None => tile_rect,
+        };
+
+        let local_base_clip = Rect {
+            x: active_clip.x - self.x_offset as f32,
+            y: active_clip.y - self.y_offset as f32,
+            width: active_clip.width,
+            height: active_clip.height,
+        };
+
+        self.clip_stack.push(local_base_clip);
 
         for command in commands {
             let cmd_bounds = command.bounds();
 
-            if let Some(dr) = dirty_rect {
-                if let Some(cb) = cmd_bounds {
-                    if !cb.intersects(&dr) {
-                        continue;
-                    }
+            if let Some(cb) = cmd_bounds {
+                if !cb.intersects(&active_clip) {
+                    continue;
                 }
             }
 
             match command {
                 DrawCommand::Clip { rect } => {
                     profile!("render_clip");
+                    let local_rect = self.translate_rect(rect);
                     let intersected = if let Some(top) = self.clip_stack.last() {
-                        let x1 = top.x.max(rect.x);
-                        let y1 = top.y.max(rect.y);
-                        let x2 = (top.x + top.width).min(rect.x + rect.width);
-                        let y2 = (top.y + top.height).min(rect.y + rect.height);
+                        let x1 = top.x.max(local_rect.x);
+                        let y1 = top.y.max(local_rect.y);
+                        let x2 = (top.x + top.width).min(local_rect.x + local_rect.width);
+                        let y2 = (top.y + top.height).min(local_rect.y + local_rect.height);
                         Rect {
                             x: x1,
                             y: y1,
@@ -184,7 +267,7 @@ impl<'a> Renderer for FastRenderer<'a> {
                             height: (y2 - y1).max(0.0),
                         }
                     } else {
-                        *rect
+                        local_rect
                     };
                     self.clip_stack.push(intersected);
                 }
@@ -201,6 +284,7 @@ impl<'a> Renderer for FastRenderer<'a> {
                     border_color,
                 } => {
                     profile!("render_rect");
+                    let local_rect = self.translate_rect(rect);
                     let clip = self.get_clip_rect();
 
                     if color.is_some() || gradient.is_some() {
@@ -209,10 +293,10 @@ impl<'a> Renderer for FastRenderer<'a> {
                             self.width,
                             self.height,
                             self.physical_width,
-                            rect.x as i32,
-                            rect.y as i32,
-                            rect.width as i32,
-                            rect.height as i32,
+                            local_rect.x as i32,
+                            local_rect.y as i32,
+                            local_rect.width as i32,
+                            local_rect.height as i32,
                             *border_radius,
                             *color,
                             gradient.as_ref(),
@@ -229,10 +313,10 @@ impl<'a> Renderer for FastRenderer<'a> {
                                 self.width,
                                 self.height,
                                 self.physical_width,
-                                rect.x as i32,
-                                rect.y as i32,
-                                rect.width as i32,
-                                rect.height as i32,
+                                local_rect.x as i32,
+                                local_rect.y as i32,
+                                local_rect.width as i32,
+                                local_rect.height as i32,
                                 *border_radius,
                                 *border_width,
                                 *bc,
@@ -251,6 +335,7 @@ impl<'a> Renderer for FastRenderer<'a> {
                     weight,
                 } => {
                     profile!("render_text");
+                    let local_rect = self.translate_rect(rect);
                     let font_index = if *weight > 0 && self.fonts.len() > 1 { 1 } else { 0 };
 
                     {
@@ -297,8 +382,8 @@ impl<'a> Renderer for FastRenderer<'a> {
                         }
 
                         if let Some(cached) = self.glyph_cache.get(&cache_key) {
-                            let gx = (rect.x + glyph.x) as i32;
-                            let gy = (rect.y + glyph.y) as i32;
+                            let gx = (local_rect.x + glyph.x) as i32;
+                            let gy = (local_rect.y + glyph.y) as i32;
                             let gw = cached.width as i32;
                             let gh = cached.height as i32;
 
@@ -359,56 +444,78 @@ impl<'a> Renderer for FastRenderer<'a> {
                     border_radius,
                 } => {
                     profile!("render_image");
-                    if !self.image_cache.contains_key(src) {
-                        if let Ok(data) = std::fs::read(src) {
-                            if let Ok(png_pixmap) = tiny_skia::Pixmap::decode_png(&data) {
-                                let w = png_pixmap.width();
-                                let h = png_pixmap.height();
-                                let mut pixels = Vec::with_capacity((w * h) as usize);
-                                for chunk in png_pixmap.data().chunks_exact(4) {
-                                    let r = chunk[0];
-                                    let g = chunk[1];
-                                    let b = chunk[2];
-                                    let a = chunk[3];
-                                    let col = xerune::Color::new(r, g, b, a);
-                                    pixels.push(pack_color(col, self.swap_rb));
+                    let local_rect = self.translate_rect(rect);
+                    let clip = self.get_clip_rect();
+
+                    #[cfg(feature = "std")]
+                    {
+                        if !self.image_cache.contains_key(src) {
+                            if let Ok(data) = std::fs::read(src) {
+                                if let Ok(png_pixmap) = tiny_skia::Pixmap::decode_png(&data) {
+                                    let w = png_pixmap.width();
+                                    let h = png_pixmap.height();
+                                    let mut pixels = Vec::with_capacity((w * h) as usize);
+                                    for chunk in png_pixmap.data().chunks_exact(4) {
+                                        let r = chunk[0];
+                                        let g = chunk[1];
+                                        let b = chunk[2];
+                                        let a = chunk[3];
+                                        let col = xerune::Color::new(r, g, b, a);
+                                        pixels.push(pack_color(col, self.swap_rb));
+                                    }
+                                    self.image_cache.insert(src.clone(), (w, h, pixels));
+                                } else {
+                                    log::warn!("Failed to decode PNG image: {}", src);
                                 }
-                                self.image_cache.insert(src.clone(), (w, h, pixels));
                             } else {
-                                log::warn!("Failed to decode PNG image: {}", src);
+                                log::warn!("Failed to read image file: {}", src);
                             }
+                        }
+
+                        if let Some(&(img_w, img_h, ref img_pixels)) = self.image_cache.get(src) {
+                            blit_image(
+                                self.buffer,
+                                self.width,
+                                self.height,
+                                self.physical_width,
+                                &local_rect,
+                                *border_radius,
+                                img_w,
+                                img_h,
+                                img_pixels,
+                                clip,
+                                self.rotate,
+                            );
                         } else {
-                            log::warn!("Failed to read image file: {}", src);
+                            let grey = pack_color(xerune::Color::new(200, 200, 200, 255), self.swap_rb);
+                            blend_solid_rect(
+                                self.buffer,
+                                self.width,
+                                self.height,
+                                self.physical_width,
+                                local_rect.x as i32,
+                                local_rect.y as i32,
+                                local_rect.width as i32,
+                                local_rect.height as i32,
+                                grey,
+                                clip,
+                                self.rotate,
+                            );
                         }
                     }
 
-                    if let Some(&(img_w, img_h, ref img_pixels)) = self.image_cache.get(src) {
-                        let clip = self.get_clip_rect();
-                        blit_image(
-                            self.buffer,
-                            self.width,
-                            self.height,
-                            self.physical_width,
-                            rect,
-                            *border_radius,
-                            img_w,
-                            img_h,
-                            img_pixels,
-                            clip,
-                            self.rotate,
-                        );
-                    } else {
-                        let clip = self.get_clip_rect();
+                    #[cfg(not(feature = "std"))]
+                    {
                         let grey = pack_color(xerune::Color::new(200, 200, 200, 255), self.swap_rb);
                         blend_solid_rect(
                             self.buffer,
                             self.width,
                             self.height,
                             self.physical_width,
-                            rect.x as i32,
-                            rect.y as i32,
-                            rect.width as i32,
-                            rect.height as i32,
+                            local_rect.x as i32,
+                            local_rect.y as i32,
+                            local_rect.width as i32,
+                            local_rect.height as i32,
                             grey,
                             clip,
                             self.rotate,
@@ -417,16 +524,17 @@ impl<'a> Renderer for FastRenderer<'a> {
                 }
                 DrawCommand::DrawCheckbox { rect, checked, color } => {
                     profile!("render_checkbox");
+                    let local_rect = self.translate_rect(rect);
                     let clip = self.get_clip_rect();
                     draw_rounded_border(
                         self.buffer,
                         self.width,
                         self.height,
                         self.physical_width,
-                        rect.x as i32,
-                        rect.y as i32,
-                        rect.width as i32,
-                        rect.height as i32,
+                        local_rect.x as i32,
+                        local_rect.y as i32,
+                        local_rect.width as i32,
+                        local_rect.height as i32,
                         0.0,
                         1.0,
                         *color,
@@ -436,10 +544,10 @@ impl<'a> Renderer for FastRenderer<'a> {
                     );
                     if *checked {
                         let inset = 4;
-                        let inner_x = rect.x as i32 + inset;
-                        let inner_y = rect.y as i32 + inset;
-                        let inner_w = rect.width as i32 - inset * 2;
-                        let inner_h = rect.height as i32 - inset * 2;
+                        let inner_x = local_rect.x as i32 + inset;
+                        let inner_y = local_rect.y as i32 + inset;
+                        let inner_w = local_rect.width as i32 - inset * 2;
+                        let inner_h = local_rect.height as i32 - inset * 2;
                         let packed = pack_color(*color, self.swap_rb);
                         blend_solid_rect(
                             self.buffer,
@@ -458,19 +566,20 @@ impl<'a> Renderer for FastRenderer<'a> {
                 }
                 DrawCommand::DrawSlider { rect, value, color } => {
                     profile!("render_slider");
+                    let local_rect = self.translate_rect(rect);
                     let clip = self.get_clip_rect();
 
                     let track_h = 6.0;
-                    let track_y = rect.y + (rect.height - track_h) / 2.0;
+                    let track_y = local_rect.y + (local_rect.height - track_h) / 2.0;
                     let bg_color = xerune::Color::new(60, 60, 60, 255);
                     draw_rounded_rect(
                         self.buffer,
                         self.width,
                         self.height,
                         self.physical_width,
-                        rect.x as i32,
+                        local_rect.x as i32,
                         track_y as i32,
-                        rect.width as i32,
+                        local_rect.width as i32,
                         track_h as i32,
                         track_h / 2.0,
                         Some(bg_color),
@@ -481,13 +590,13 @@ impl<'a> Renderer for FastRenderer<'a> {
                     );
 
                     if *value > 0.0 {
-                        let active_w = rect.width * value;
+                        let active_w = local_rect.width * value;
                         draw_rounded_rect(
                             self.buffer,
                             self.width,
                             self.height,
                             self.physical_width,
-                            rect.x as i32,
+                            local_rect.x as i32,
                             track_y as i32,
                             active_w as i32,
                             track_h as i32,
@@ -501,8 +610,8 @@ impl<'a> Renderer for FastRenderer<'a> {
                     }
 
                     let thumb_r = 10.0;
-                    let thumb_x = rect.x + rect.width * value;
-                    let thumb_y = rect.y + rect.height / 2.0;
+                    let thumb_x = local_rect.x + local_rect.width * value;
+                    let thumb_y = local_rect.y + local_rect.height / 2.0;
                     
                     let thumb_left = (thumb_x - thumb_r) as i32;
                     let thumb_top = (thumb_y - thumb_r) as i32;
@@ -545,6 +654,7 @@ impl<'a> Renderer for FastRenderer<'a> {
                 }
                 DrawCommand::DrawProgress { rect, value, max, color } => {
                     profile!("render_progress");
+                    let local_rect = self.translate_rect(rect);
                     let clip = self.get_clip_rect();
 
                     let bg_color = xerune::Color::new(200, 200, 200, 255);
@@ -553,11 +663,11 @@ impl<'a> Renderer for FastRenderer<'a> {
                         self.width,
                         self.height,
                         self.physical_width,
-                        rect.x as i32,
-                        rect.y as i32,
-                        rect.width as i32,
-                        rect.height as i32,
-                        rect.height / 2.0,
+                        local_rect.x as i32,
+                        local_rect.y as i32,
+                        local_rect.width as i32,
+                        local_rect.height as i32,
+                        local_rect.height / 2.0,
                         Some(bg_color),
                         None,
                         self.swap_rb,
@@ -567,17 +677,17 @@ impl<'a> Renderer for FastRenderer<'a> {
 
                     let progress = (value / max).clamp(0.0, 1.0);
                     if progress > 0.0 {
-                        let active_w = rect.width * progress;
+                        let active_w = local_rect.width * progress;
                         draw_rounded_rect(
                             self.buffer,
                             self.width,
                             self.height,
                             self.physical_width,
-                            rect.x as i32,
-                            rect.y as i32,
+                            local_rect.x as i32,
+                            local_rect.y as i32,
                             active_w as i32,
-                            rect.height as i32,
-                            rect.height / 2.0,
+                            local_rect.height as i32,
+                            local_rect.height / 2.0,
                             Some(*color),
                             None,
                             self.swap_rb,
@@ -588,6 +698,7 @@ impl<'a> Renderer for FastRenderer<'a> {
                 }
                 DrawCommand::DrawCanvas { id, rect } => {
                     profile!("render_canvas");
+                    let local_rect = self.translate_rect(rect);
                     if let Some(canvas) = canvases.get(id) {
                         let mut pixels = Vec::with_capacity((canvas.width * canvas.height) as usize);
                         for chunk in canvas.data.chunks_exact(4) {
@@ -605,7 +716,7 @@ impl<'a> Renderer for FastRenderer<'a> {
                             self.width,
                             self.height,
                             self.physical_width,
-                            rect,
+                            &local_rect,
                             0.0,
                             canvas.width,
                             canvas.height,
@@ -618,9 +729,7 @@ impl<'a> Renderer for FastRenderer<'a> {
             }
         }
 
-        if dirty_rect.is_some() {
-            self.clip_stack.pop();
-        }
+        self.clip_stack.pop();
     }
 }
 
@@ -727,6 +836,66 @@ pub fn blit_image(
                     blend_pixel(&mut buffer[idx], blended_pixel);
                 }
             }
+        }
+    }
+}
+
+pub trait F32Ext {
+    fn round(self) -> f32;
+    fn ceil(self) -> f32;
+    fn sqrt(self) -> f32;
+}
+
+impl F32Ext for f32 {
+    #[inline(always)]
+    fn round(self) -> f32 {
+        #[cfg(feature = "std")]
+        {
+            self.round()
+        }
+        #[cfg(not(feature = "std"))]
+        {
+            if self >= 0.0 {
+                (self + 0.5) as i32 as f32
+            } else {
+                (self - 0.5) as i32 as f32
+            }
+        }
+    }
+
+    #[inline(always)]
+    fn ceil(self) -> f32 {
+        #[cfg(feature = "std")]
+        {
+            self.ceil()
+        }
+        #[cfg(not(feature = "std"))]
+        {
+            let i = self as i32;
+            if self > i as f32 {
+                (i + 1) as f32
+            } else {
+                i as f32
+            }
+        }
+    }
+
+    #[inline(always)]
+    fn sqrt(self) -> f32 {
+        #[cfg(feature = "std")]
+        {
+            self.sqrt()
+        }
+        #[cfg(not(feature = "std"))]
+        {
+            if self <= 0.0 {
+                return 0.0;
+            }
+            let mut val = self;
+            for _ in 0..6 {
+                val = 0.5 * (val + self / val);
+            }
+            val
         }
     }
 }

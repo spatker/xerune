@@ -59,6 +59,23 @@ impl Rect {
             || self.y + self.height <= other.y
             || other.y + other.height <= self.y)
     }
+
+    pub fn intersect(&self, other: &Rect) -> Option<Rect> {
+        let x1 = self.x.max(other.x);
+        let y1 = self.y.max(other.y);
+        let x2 = (self.x + self.width).min(other.x + other.width);
+        let y2 = (self.y + self.height).min(other.y + other.height);
+        if x1 < x2 && y1 < y2 {
+            Some(Rect {
+                x: x1,
+                y: y1,
+                width: x2 - x1,
+                height: y2 - y1,
+            })
+        } else {
+            None
+        }
+    }
 }
 
 pub struct Canvas {

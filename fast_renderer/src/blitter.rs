@@ -231,7 +231,7 @@ pub fn blend_glyph_span(dst: &mut [u32], coverage: &[u8], color: u32) {
             let end_dst = ptr_dst.add(simd_len);
 
             while ptr_dst < end_dst {
-                let cov_u32 = *(ptr_cov as *const u32);
+                let cov_u32 = unsafe { core::ptr::read_unaligned(ptr_cov as *const u32) };
                 if cov_u32 == 0 {
                     ptr_dst = ptr_dst.add(4);
                     ptr_cov = ptr_cov.add(4);
@@ -299,7 +299,7 @@ pub fn blend_glyph_span(dst: &mut [u32], coverage: &[u8], color: u32) {
             let end_dst = ptr_dst.add(simd_len);
 
             while ptr_dst < end_dst {
-                let cov_u32 = *(ptr_cov as *const u32);
+                let cov_u32 = unsafe { core::ptr::read_unaligned(ptr_cov as *const u32) };
                 if cov_u32 == 0 {
                     ptr_dst = ptr_dst.add(4);
                     ptr_cov = ptr_cov.add(4);

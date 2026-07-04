@@ -300,3 +300,60 @@ fn test_todo_layout_comparison() {
     print_taffy_tree(&runtime.ui.taffy, runtime.ui.root, 0);
     println!("----------------------------");
 }
+
+#[test]
+fn test_tiled_rendering_identity() {
+    use std::collections::HashMap;
+    use fontdue::Font;
+    use fast_renderer::FastRenderer;
+
+    // Load font
+    let font_data = std::fs::read("resources/fonts/Roboto-Regular.ttf").expect("Failed to read font file");
+    let font = Font::from_bytes(font_data, fontdue::FontSettings::default()).expect("Failed to parse font");
+    let fonts = vec![font];
+
+    // Setup model and layout
+    let model = TestTodoModel {
+        items: vec![
+            TodoItem { title: "Item 1".to_string(), completed: false },
+            TodoItem { title: "Item 2".to_string(), completed: true },
+        ],
+        active_item: 0,
+        new_item_title: "abc".to_string(),
+    };
+    let measurer = fast_renderer::FastMeasurer { fonts: &fonts };
+    let mut runtime = Runtime::new(model, measurer);
+    runtime.set_size(800.0, 600.0);
+
+    // Get render commands
+    let commands = runtime.ui.build_commands(&HashMap::new(), None);
+
+    // 1. Full-screen rendering
+    let mut full_buffer = vec![0u32; 800 * 600];
+    let mut image_cache1 = HashMap::new();
+    let mut glyph_cache1 = HashMap::new();
+    {
+        let mut renderer = FastRenderer::new(&mut full_buffer, 800, 600, &fonts, &mut image_cache1, &mut glyph_cache1);
+        renderer.render(&commands, &HashMap::new(), None);
+    }
+
+    // 2. Tile-based rendering
+    let mut tiled_buffer = vec![0u32; 800 * 600];
+    let mut image_cache2 = HashMap::new();
+    let mut glyph_cache2 = HashMap::new();
+    {
+        // 50-pixel height tile
+        let mut tile_buffer = vec![0u32; 800 * 50];
+        let mut renderer = FastRenderer::new(&mut tile_buffer, 800, 50, &fonts, &mut image_cache2, &mut glyph_cache2);
+        renderer.render_tiled(&commands, &HashMap::new(), None, 600, |tx, ty, tw, th, pixels| {
+            for dy in 0..th {
+                let src_start = (dy * tw) as usize;
+                let dst_start = ((ty + dy as i32) * 800 + tx) as usize;
+                tiled_buffer[dst_start .. dst_start + tw as usize].copy_from_slice(&pixels[src_start .. src_start + tw as usize]);
+            }
+        });
+    }
+
+    // 3. Compare pixel buffers
+    assert_eq!(full_buffer, tiled_buffer, "Full screen rendering and tiled rendering outputs must be pixel-perfect identical");
+}

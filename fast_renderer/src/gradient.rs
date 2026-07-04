@@ -1,5 +1,6 @@
 use crate::blitter::{pack_color, blend_solid_span, blend_pixel};
-
+use crate::F32Ext;
+use xerune::alloc_prelude::Vec;
 pub fn sample_gradient(stops: &[(xerune::Color, f32)], t: f32) -> xerune::Color {
     if stops.is_empty() {
         return xerune::Color::BLACK;
