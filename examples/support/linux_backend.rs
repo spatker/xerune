@@ -92,8 +92,7 @@ pub fn run_app<M: Model + xerune::ui::TemplateLayout + 'static, TM: TextMeasurer
         // let mut prev_render_time_ms: Option<f32> = None;
         let mut active_page = 0;
 
-        #[cfg(feature = "fast-renderer")]
-        let mut back_buffer = vec![0u32; (fb_w * fb_h) as usize];
+        let mut local_buffer = vec![0u32; (w * h) as usize];
 
         loop {
             let frame_start = Instant::now();
@@ -173,47 +172,35 @@ pub fn run_app<M: Model + xerune::ui::TemplateLayout + 'static, TM: TextMeasurer
 
                     #[cfg(not(feature = "fast-renderer"))]
                     {
-                        if let Some(fb_pixmap) = tiny_skia::PixmapMut::from_bytes(draw_slice, fb_w, fb_h) {
+                        let draw_slice_u8 = unsafe {
+                            std::slice::from_raw_parts_mut(
+                                local_buffer.as_mut_ptr() as *mut u8,
+                                local_buffer.len() * 4,
+                            )
+                        };
+                        if let Some(fb_pixmap) = tiny_skia::PixmapMut::from_bytes(draw_slice_u8, w, h) {
                              let mut renderer = TinySkiaRenderer::new(fb_pixmap, fonts, &mut image_cache, &mut gradient_cache, &mut glyph_cache);
                              renderer.swap_rb = fb_is_bgra;
-                             if rotate {
-                                 renderer.transform = tiny_skia::Transform::from_rotate(90.0).post_translate(fb_w as f32, 0.0);
-                             }
                              runtime.render(&mut renderer);
                         }
                     }
 
                     #[cfg(feature = "fast-renderer")]
                     {
-                        if double_buffered {
-                            let draw_slice_u32 = unsafe {
-                                std::slice::from_raw_parts_mut(
-                                    draw_slice.as_mut_ptr() as *mut u32,
-                                    draw_slice.len() / 4,
-                                )
-                            };
-                            let mut renderer = FastRenderer::new(draw_slice_u32, w, h, fonts, &mut image_cache, &mut glyph_cache);
-                            renderer.swap_rb = !fb_is_bgra;
-                            renderer.rotate = rotate;
-                            renderer.physical_width = fb_w;
-                            renderer.physical_height = fb_h;
-                            runtime.render(&mut renderer);
-                        } else {
-                            let mut renderer = FastRenderer::new(&mut back_buffer, w, h, fonts, &mut image_cache, &mut glyph_cache);
-                            renderer.swap_rb = !fb_is_bgra;
-                            renderer.rotate = rotate;
-                            renderer.physical_width = fb_w;
-                            renderer.physical_height = fb_h;
-                            runtime.render(&mut renderer);
-
-                            // Copy completed frame from local double-buffer to framebuffer
-                            let ptr_src = back_buffer.as_ptr() as *const u8;
-                            let ptr_dst = draw_slice.as_mut_ptr();
-                            unsafe {
-                                std::ptr::copy_nonoverlapping(ptr_src, ptr_dst, page_size);
-                            }
-                        }
+                        let mut renderer = FastRenderer::new(&mut local_buffer, w, h, fonts, &mut image_cache, &mut glyph_cache);
+                        renderer.swap_rb = !fb_is_bgra;
+                        runtime.render(&mut renderer);
                     }
+                    
+                    // Copy from local_buffer to physical framebuffer (draw_slice) with rotation!
+                    let draw_slice_u32 = unsafe {
+                        std::slice::from_raw_parts_mut(
+                            draw_slice.as_mut_ptr() as *mut u32,
+                            draw_slice.len() / 4,
+                        )
+                    };
+                    let rotation = if rotate { 90 } else { 0 };
+                    blit_rotated(&local_buffer, draw_slice_u32, w, h, fb_w, fb_h, rotation);
                     
                     // Flip the display registers to instantly show the newly drawn virtual offset!
                     if double_buffered && mmap_len >= page_size * 2 {
@@ -456,5 +443,54 @@ fn spawn_input_thread() -> (Receiver<evdev::InputEvent>, Option<TouchCalibration
         });
     }
     (rx, calibration)
+}
+
+fn blit_rotated(
+    local_buffer: &[u32],
+    draw_slice: &mut [u32],
+    logical_w: u32,
+    logical_h: u32,
+    disp_w: u32,
+    disp_h: u32,
+    rotation: u32,
+) {
+    match rotation {
+        90 => {
+            for py in 0..disp_h as usize {
+                let dst_offset = py * disp_w as usize;
+                for px in 0..disp_w as usize {
+                    let x = py;
+                    let y = disp_w as usize - 1 - px;
+                    let src_idx = y * logical_w as usize + x;
+                    draw_slice[dst_offset + px] = local_buffer[src_idx];
+                }
+            }
+        }
+        180 => {
+            for py in 0..disp_h as usize {
+                let dst_offset = py * disp_w as usize;
+                let src_y = logical_h as usize - 1 - py;
+                let src_row_offset = src_y * logical_w as usize;
+                for px in 0..disp_w as usize {
+                    let src_x = logical_w as usize - 1 - px;
+                    draw_slice[dst_offset + px] = local_buffer[src_row_offset + src_x];
+                }
+            }
+        }
+        270 => {
+            for py in 0..disp_h as usize {
+                let dst_offset = py * disp_w as usize;
+                for px in 0..disp_w as usize {
+                    let x = logical_w as usize - 1 - py;
+                    let y = px;
+                    let src_idx = y * logical_w as usize + x;
+                    draw_slice[dst_offset + px] = local_buffer[src_idx];
+                }
+            }
+        }
+        _ => {
+            draw_slice.copy_from_slice(local_buffer);
+        }
+    }
 }
 

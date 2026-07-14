@@ -8,7 +8,7 @@ use fontdue::Font;
 use tiny_skia::Pixmap;
 use std::time::Instant;
 use std::fs::File;
-use std::os::fd::{AsFd, BorrowedFd};
+use std::os::fd::{AsFd, BorrowedFd, AsRawFd};
 use std::sync::mpsc::{channel, Receiver};
 use std::thread;
 
@@ -53,7 +53,8 @@ fn spawn_input_thread() -> (Receiver<evdev::InputEvent>, Option<TouchCalibration
     for id in 0..10 {
         let path = format!("/dev/input/event{}", id);
         if let Ok(dev) = evdev::Device::open(&path) {
-            if dev.supported_absolute_axes().map(|axes| axes.contains(evdev::AbsoluteAxisType::ABS_MT_POSITION_X)).unwrap_or(false) {
+            let axes = dev.supported_absolute_axes().unwrap_or_default();
+            if axes.contains(evdev::AbsoluteAxisType::ABS_MT_POSITION_X) || axes.contains(evdev::AbsoluteAxisType::ABS_X) {
                 println!("Found touch device: {} ({})", dev.name().unwrap_or("?"), path);
                 touch_device = Some(dev);
                 break;
@@ -115,6 +116,98 @@ fn spawn_input_thread() -> (Receiver<evdev::InputEvent>, Option<TouchCalibration
     (rx, calibration)
 }
 
+fn blit_rotated(
+    local_buffer: &[u32],
+    draw_slice: &mut [u32],
+    logical_w: u32,
+    logical_h: u32,
+    disp_w: u32,
+    disp_h: u32,
+    rotation: u32,
+) {
+    match rotation {
+        90 => {
+            for py in 0..disp_h as usize {
+                let dst_offset = py * disp_w as usize;
+                for px in 0..disp_w as usize {
+                    let x = py;
+                    let y = disp_w as usize - 1 - px;
+                    let src_idx = y * logical_w as usize + x;
+                    draw_slice[dst_offset + px] = local_buffer[src_idx];
+                }
+            }
+        }
+        180 => {
+            for py in 0..disp_h as usize {
+                let dst_offset = py * disp_w as usize;
+                let src_y = logical_h as usize - 1 - py;
+                let src_row_offset = src_y * logical_w as usize;
+                for px in 0..disp_w as usize {
+                    let src_x = logical_w as usize - 1 - px;
+                    draw_slice[dst_offset + px] = local_buffer[src_row_offset + src_x];
+                }
+            }
+        }
+        270 => {
+            for py in 0..disp_h as usize {
+                let dst_offset = py * disp_w as usize;
+                for px in 0..disp_w as usize {
+                    let x = logical_w as usize - 1 - py;
+                    let y = px;
+                    let src_idx = y * logical_w as usize + x;
+                    draw_slice[dst_offset + px] = local_buffer[src_idx];
+                }
+            }
+        }
+        _ => {
+            draw_slice.copy_from_slice(local_buffer);
+        }
+    }
+}
+
+fn map_touch_to_logical(touch_x: f32, touch_y: f32, disp_w: f32, disp_h: f32, rotation: u32) -> (f32, f32) {
+    match rotation {
+        90 => (touch_y, disp_w - 1.0 - touch_x),
+        180 => (disp_w - 1.0 - touch_x, disp_h - 1.0 - touch_y),
+        270 => (disp_h - 1.0 - touch_y, touch_x),
+        _ => (touch_x, touch_y),
+    }
+}
+
+fn wait_for_page_flip(card: &Card) -> anyhow::Result<()> {
+    let fd = card.as_fd().as_raw_fd();
+    let mut poll_fd = libc::pollfd {
+        fd,
+        events: libc::POLLIN,
+        revents: 0,
+    };
+    loop {
+        let ret = unsafe { libc::poll(&mut poll_fd, 1, -1) };
+        if ret < 0 {
+            let err = std::io::Error::last_os_error();
+            if err.kind() == std::io::ErrorKind::Interrupted {
+                continue;
+            }
+            return Err(anyhow::anyhow!("Poll error: {}", err));
+        }
+        if ret > 0 {
+            break;
+        }
+    }
+    
+    let events = card.receive_events()
+        .map_err(|e| anyhow::anyhow!("Failed to receive DRM events: {:?}", e))?;
+    for event in events {
+        match event {
+            drm::control::Event::PageFlip(_) => {
+                return Ok(());
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
 pub fn run_app<M: Model + xerune::ui::TemplateLayout + 'static, TM: TextMeasurer + 'static>(
     _title: &str,
     _width: u32,
@@ -147,8 +240,15 @@ pub fn run_app<M: Model + xerune::ui::TemplateLayout + 'static, TM: TextMeasurer
         .ok_or_else(|| anyhow::anyhow!("No modes found on connector"))?;
         
     let (disp_w, disp_h) = mode.size();
-    let (w, h) = (disp_w as u32, disp_h as u32);
-    println!("DRM Display: {}x{} (mode: {})", w, h, mode.name().to_string_lossy());
+    
+    // Parse rotation option
+    let rotation = std::env::var("XERUNE_ROTATION")
+        .ok()
+        .and_then(|s| s.parse::<u32>().ok())
+        .unwrap_or(0);
+    let rotate = rotation == 90 || rotation == 270;
+    let (w, h) = if rotate { (disp_h as u32, disp_w as u32) } else { (disp_w as u32, disp_h as u32) };
+    println!("DRM Display: {}x{} (mode: {}, rotation: {}), logical size: {}x{}", disp_w, disp_h, mode.name().to_string_lossy(), rotation, w, h);
     
     let encoder_handle = connector.current_encoder().unwrap_or_else(|| {
         connector.encoders().get(0).copied().expect("No encoders found")
@@ -160,15 +260,15 @@ pub fn run_app<M: Model + xerune::ui::TemplateLayout + 'static, TM: TextMeasurer
     });
     
     // Allocate two dumb buffers for double buffering!
-    let fmt = DrmFourcc::Xrgb8888;
-    let mut db1 = card.create_dumb_buffer((w, h), fmt, 32)
+    let fmt = DrmFourcc::Argb8888;
+    let mut db1 = card.create_dumb_buffer((disp_w as u32, disp_h as u32), fmt, 32)
         .map_err(|e| anyhow::anyhow!("Failed to create dumb buffer 1: {:?}", e))?;
-    let mut db2 = card.create_dumb_buffer((w, h), fmt, 32)
+    let mut db2 = card.create_dumb_buffer((disp_w as u32, disp_h as u32), fmt, 32)
         .map_err(|e| anyhow::anyhow!("Failed to create dumb buffer 2: {:?}", e))?;
         
-    let fb1 = card.add_framebuffer(&db1, 24, 32)
+    let fb1 = card.add_framebuffer(&db1, 32, 32)
         .map_err(|e| anyhow::anyhow!("Failed to add framebuffer 1: {:?}", e))?;
-    let fb2 = card.add_framebuffer(&db2, 24, 32)
+    let fb2 = card.add_framebuffer(&db2, 32, 32)
         .map_err(|e| anyhow::anyhow!("Failed to add framebuffer 2: {:?}", e))?;
         
     let mut map1 = card.map_dumb_buffer(&mut db1)
@@ -208,6 +308,8 @@ pub fn run_app<M: Model + xerune::ui::TemplateLayout + 'static, TM: TextMeasurer
     let mut force_redraw = true;
     let mut current_fb = fb1;
     
+    let mut local_buffer = vec![0u32; (w * h) as usize];
+    
     loop {
         let frame_start = Instant::now();
         let mut dirty = force_redraw;
@@ -219,21 +321,25 @@ pub fn run_app<M: Model + xerune::ui::TemplateLayout + 'static, TM: TextMeasurer
                 evdev::InputEventKind::AbsAxis(evdev::AbsoluteAxisType::ABS_X) | evdev::InputEventKind::AbsAxis(evdev::AbsoluteAxisType::ABS_MT_POSITION_X) => {
                     let raw_val = ev.value() as f32;
                     if let Some(ref cal) = calibration {
-                        touch_x = ((raw_val - cal.x_min) / (cal.x_max - cal.x_min) * w as f32).clamp(0.0, w as f32 - 1.0);
+                        touch_x = ((raw_val - cal.x_min) / (cal.x_max - cal.x_min) * disp_w as f32).clamp(0.0, disp_w as f32 - 1.0);
                     } else {
                         touch_x = raw_val;
                     }
-                    mouse_x = touch_x;
+                    let (mx, my) = map_touch_to_logical(touch_x, touch_y, disp_w as f32, disp_h as f32, rotation);
+                    mouse_x = mx;
+                    mouse_y = my;
                     dirty |= runtime.handle_event(InputEvent::Hover { x: mouse_x, y: mouse_y });
                 },
                 evdev::InputEventKind::AbsAxis(evdev::AbsoluteAxisType::ABS_Y) | evdev::InputEventKind::AbsAxis(evdev::AbsoluteAxisType::ABS_MT_POSITION_Y) => {
                     let raw_val = ev.value() as f32;
                     if let Some(ref cal) = calibration {
-                        touch_y = ((raw_val - cal.y_min) / (cal.y_max - cal.y_min) * h as f32).clamp(0.0, h as f32 - 1.0);
+                        touch_y = ((raw_val - cal.y_min) / (cal.y_max - cal.y_min) * disp_h as f32).clamp(0.0, disp_h as f32 - 1.0);
                     } else {
                         touch_y = raw_val;
                     }
-                    mouse_y = touch_y;
+                    let (mx, my) = map_touch_to_logical(touch_x, touch_y, disp_w as f32, disp_h as f32, rotation);
+                    mouse_x = mx;
+                    mouse_y = my;
                     dirty |= runtime.handle_event(InputEvent::Hover { x: mouse_x, y: mouse_y });
                 },
                 evdev::InputEventKind::Key(evdev::Key::BTN_LEFT) | evdev::InputEventKind::Key(evdev::Key::BTN_TOUCH) => {
@@ -270,7 +376,13 @@ pub fn run_app<M: Model + xerune::ui::TemplateLayout + 'static, TM: TextMeasurer
             
             #[cfg(not(feature = "fast-renderer"))]
             {
-                if let Some(fb_pixmap) = tiny_skia::PixmapMut::from_bytes(draw_slice, w, h) {
+                let draw_slice_u8 = unsafe {
+                    std::slice::from_raw_parts_mut(
+                        local_buffer.as_mut_ptr() as *mut u8,
+                        local_buffer.len() * 4,
+                    )
+                };
+                if let Some(fb_pixmap) = tiny_skia::PixmapMut::from_bytes(draw_slice_u8, w, h) {
                      let mut renderer = TinySkiaRenderer::new(fb_pixmap, fonts, &mut image_cache, &mut gradient_cache, &mut glyph_cache);
                      renderer.swap_rb = true; // Xrgb8888 is BGRA in memory
                      runtime.render(&mut renderer);
@@ -279,21 +391,27 @@ pub fn run_app<M: Model + xerune::ui::TemplateLayout + 'static, TM: TextMeasurer
 
             #[cfg(feature = "fast-renderer")]
             {
-                let draw_slice_u32 = unsafe {
-                    std::slice::from_raw_parts_mut(
-                        draw_slice.as_mut_ptr() as *mut u32,
-                        draw_slice.len() / 4,
-                    )
-                };
-                let mut renderer = FastRenderer::new(draw_slice_u32, w, h, fonts, &mut image_cache, &mut glyph_cache);
+                let mut renderer = FastRenderer::new(&mut local_buffer, w, h, fonts, &mut image_cache, &mut glyph_cache);
                 renderer.swap_rb = false; // Xrgb8888 matches FastRenderer default
                 runtime.render(&mut renderer);
             }
             
+            // Blit from local_buffer to physical dumb buffer (draw_slice) with rotation!
+            let draw_slice_u32 = unsafe {
+                std::slice::from_raw_parts_mut(
+                    draw_slice.as_mut_ptr() as *mut u32,
+                    draw_slice.len() / 4,
+                )
+            };
+            blit_rotated(&local_buffer, draw_slice_u32, w, h, disp_w as u32, disp_h as u32, rotation);
+            
             // Perform hardware page flip!
             loop {
-                match card.page_flip(crtc_handle, target_fb, drm::control::PageFlipFlags::empty(), None) {
+                match card.page_flip(crtc_handle, target_fb, drm::control::PageFlipFlags::EVENT, None) {
                     Ok(_) => {
+                        if let Err(e) = wait_for_page_flip(&card) {
+                            log::warn!("Error waiting for page flip: {:?}", e);
+                        }
                         current_fb = target_fb;
                         break;
                     }
