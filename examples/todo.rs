@@ -1,7 +1,7 @@
 // Force rebuild 2
 use xerune::XeruneTemplate;
 use fontdue::Font;
-use xerune::{Runtime, Model};
+use xerune::{Runtime, Model, XeruneMessage};
 
 #[cfg(not(feature = "fast-renderer"))]
 use skia_renderer::TinySkiaMeasurer;
@@ -24,39 +24,15 @@ struct TodoItem {
     completed: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, XeruneMessage)]
 enum TodoMsg {
     Toggle(usize),
     Remove(usize),
     Add,
-    TextInput(String, String),
+    #[xerune(prefix = "todo_input:text:")]
+    TodoInput(String),
+    #[xerune(prefix = "keydown:")]
     KeyDown(String),
-}
-
-impl std::str::FromStr for TodoMsg {
-    type Err = ();
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if let Some(index_str) = s.strip_prefix("toggle:") {
-             if let Ok(index) = index_str.parse::<usize>() {
-                 return Ok(TodoMsg::Toggle(index));
-             }
-        }
-        if let Some(index_str) = s.strip_prefix("remove:") {
-             if let Ok(index) = index_str.parse::<usize>() {
-                 return Ok(TodoMsg::Remove(index));
-             }
-        }
-        if s == "add" {
-            return Ok(TodoMsg::Add);
-        }
-        if let Some(text_payload) = s.strip_prefix("todo_input:text:") {
-            return Ok(TodoMsg::TextInput("todo_input".to_string(), text_payload.to_string()));
-        }
-        if let Some(key) = s.strip_prefix("keydown:") {
-            return Ok(TodoMsg::KeyDown(key.to_string()));
-        }
-        Err(())
-    }
 }
 
 impl Model for TodoList {
@@ -87,13 +63,11 @@ impl Model for TodoList {
                     self.new_item_title.clear();
                 }
             }
-            TodoMsg::TextInput(id, text) => {
-                if id == "todo_input" {
-                    // Ignore control characters
-                    for c in text.chars() {
-                        if !c.is_control() {
-                            self.new_item_title.push(c);
-                        }
+            TodoMsg::TodoInput(text) => {
+                // Ignore control characters
+                for c in text.chars() {
+                    if !c.is_control() {
+                        self.new_item_title.push(c);
                     }
                 }
             }

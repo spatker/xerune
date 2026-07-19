@@ -2,18 +2,9 @@ use xerune::*;
 use taffy::prelude::TaffyMaxContent;
 
 struct MockModel;
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, XeruneMessage)]
 enum MockMsg {
     Tick,
-}
-impl std::str::FromStr for MockMsg {
-    type Err = ();
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "tick" => Ok(MockMsg::Tick),
-            _ => Err(()),
-        }
-    }
 }
 
 impl Model for MockModel {
@@ -246,6 +237,17 @@ struct TodoItem {
     completed: bool,
 }
 
+#[derive(Debug, PartialEq, XeruneMessage)]
+enum TestTodoMsg {
+    Toggle(usize),
+    Remove(usize),
+    Add,
+    #[xerune(prefix = "todo_input:text:")]
+    TodoInput(String),
+    #[xerune(prefix = "keydown:")]
+    KeyDown(String),
+}
+
 #[derive(XeruneTemplate)]
 #[template(path = "todo_list.html")]
 struct TestTodoModel {
@@ -255,7 +257,7 @@ struct TestTodoModel {
 }
 
 impl Model for TestTodoModel {
-    type Message = MockMsg;
+    type Message = TestTodoMsg;
     fn update(&mut self, _msg: Self::Message, _context: &mut Context) {}
 }
 
@@ -391,18 +393,10 @@ fn test_bitmap_font_rendering() {
 #[test]
 fn test_touch_scrolling_and_clicking() {
     struct TouchMockModel;
-    #[derive(Debug, PartialEq)]
+    #[derive(Debug, PartialEq, XeruneMessage)]
     enum TouchMockMsg {
+        #[xerune(rename = "click_action")]
         ClickMsg,
-    }
-    impl std::str::FromStr for TouchMockMsg {
-        type Err = ();
-        fn from_str(s: &str) -> Result<Self, Self::Err> {
-            match s {
-                "click_action" => Ok(TouchMockMsg::ClickMsg),
-                _ => Err(()),
-            }
-        }
     }
     impl Model for TouchMockModel {
         type Message = TouchMockMsg;

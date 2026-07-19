@@ -1,10 +1,18 @@
 use crate::graphics::Context;
 use crate::alloc_prelude::*;
 
+/// Trait defining compile-time validated message parsing and validation capabilities.
+pub trait XeruneMessage: core::str::FromStr {
+    /// List of valid message prefixes.
+    const VALID_PREFIXES: &'static [&'static str];
+    /// List of valid exact match message strings.
+    const VALID_EXACT: &'static [&'static str];
+}
+
 /// Trait defining an application Model in the Model-View-Update (Elm) architecture.
 pub trait Model {
-    /// The message type processed by this model. Must implement `FromStr` to allow stringified HTML interaction mappings.
-    type Message: core::str::FromStr + Send + Sync + 'static;
+    /// The message type processed by this model. Must implement `XeruneMessage` to allow compile-time verified HTML interaction mappings.
+    type Message: XeruneMessage + Send + Sync + 'static;
 
     /// Produces the declarative HTML view structure of the model.
     fn view(&self) -> String {
@@ -91,4 +99,25 @@ pub enum InputEvent {
         /// The y coordinate.
         y: f32,
     },
+}
+
+impl XeruneMessage for String {
+    const VALID_PREFIXES: &'static [&'static str] = &[];
+    const VALID_EXACT: &'static [&'static str] = &[];
+}
+
+/// A no-op message type for models that do not process any interaction messages.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NoMessage {}
+
+impl core::str::FromStr for NoMessage {
+    type Err = ();
+    fn from_str(_s: &str) -> Result<Self, Self::Err> {
+        Err(())
+    }
+}
+
+impl XeruneMessage for NoMessage {
+    const VALID_PREFIXES: &'static [&'static str] = &[];
+    const VALID_EXACT: &'static [&'static str] = &[];
 }

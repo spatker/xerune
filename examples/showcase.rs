@@ -1,4 +1,4 @@
-use xerune::{Model, Runtime, XeruneTemplate};
+use xerune::{Model, Runtime, XeruneTemplate, XeruneMessage};
 use fontdue::Font;
 use tiny_skia::{PixmapMut, Paint, Color, Transform, Rect};
 use rand::Rng;
@@ -25,24 +25,11 @@ struct ShowcaseModel {
     user_counter: i32,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, XeruneMessage)]
 enum ShowcaseMsg {
     IncrementProgress,
     IncrementUserCounter,
     Tick,
-}
-
-impl std::str::FromStr for ShowcaseMsg {
-    type Err = ();
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "increment_progress" => Ok(ShowcaseMsg::IncrementProgress),
-            "increment_user_counter" => Ok(ShowcaseMsg::IncrementUserCounter),
-            "tick" => Ok(ShowcaseMsg::Tick),
-            _ => Err(()),
-        }
-    }
 }
 
 impl Model for ShowcaseModel {

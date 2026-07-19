@@ -1,6 +1,6 @@
 use fontdue::Font;
 use std::time::Instant;
-use xerune::{Model, Runtime, XeruneTemplate};
+use xerune::{Model, Runtime, XeruneTemplate, XeruneMessage};
 use skia_renderer::TinySkiaMeasurer;
 
 #[global_allocator]
@@ -84,25 +84,11 @@ impl AnimationModel {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, XeruneMessage)]
 enum AnimationMsg {
+    #[xerune(prefix = "render_time_ms:")]
     RenderTime(f32),
     Tick,
-}
-
-impl std::str::FromStr for AnimationMsg {
-    type Err = ();
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if let Some(val) = s.strip_prefix("render_time_ms:") {
-            if let Ok(ms) = val.parse::<f32>() {
-                return Ok(AnimationMsg::RenderTime(ms));
-            }
-        }
-        if s == "tick" {
-            return Ok(AnimationMsg::Tick);
-        }
-        Err(())
-    }
 }
 
 impl Model for AnimationModel {

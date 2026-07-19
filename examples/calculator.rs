@@ -1,5 +1,5 @@
 use fontdue::Font;
-use xerune::{Model, Runtime, XeruneTemplate};
+use xerune::{Model, Runtime, XeruneTemplate, XeruneMessage};
 use skia_renderer::TinySkiaMeasurer;
 
 mod support;
@@ -82,35 +82,13 @@ impl CalculatorModel {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, XeruneMessage)]
 enum Msg {
     Digit(char),
+    #[xerune(prefix = "op:")]
     Operation(String),
     Equals,
     Clear,
-}
-
-impl std::str::FromStr for Msg {
-    type Err = ();
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if let Some(digit_str) = s.strip_prefix("digit:") {
-            if let Some(c) = digit_str.chars().next() {
-                return Ok(Msg::Digit(c));
-            }
-        }
-        if let Some(op_str) = s.strip_prefix("op:") {
-            if op_str != "None" {
-                return Ok(Msg::Operation(op_str.to_string()));
-            } else {
-                return Err(());
-            }
-        }
-        match s {
-            "equals" => Ok(Msg::Equals),
-            "clear" => Ok(Msg::Clear),
-            _ => Err(()),
-        }
-    }
 }
 
 impl Model for CalculatorModel {

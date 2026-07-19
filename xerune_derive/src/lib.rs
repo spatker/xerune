@@ -1088,6 +1088,76 @@ pub fn derive_xerune_template(input: TokenStream) -> TokenStream {
 
     let stylesheet = simplecss::StyleSheet::parse(&css_content);
 
+    // Collect data-on-click action strings
+    let mut raw_actions = Vec::new();
+    fn collect_actions(handle: &Handle, actions: &mut Vec<String>) {
+        if let NodeData::Element { ref attrs, .. } = handle.data {
+            for attr in attrs.borrow().iter() {
+                if attr.name.local.as_ref() == "data-on-click" {
+                    actions.push(attr.value.to_string());
+                }
+            }
+        }
+        for child in handle.children.borrow().iter() {
+            collect_actions(child, actions);
+        }
+    }
+    collect_actions(&dom.document, &mut raw_actions);
+
+    let mut check_calls = Vec::new();
+    for action in raw_actions {
+        if let Some(idx) = action.find("{{").or_else(|| action.find("{%")) {
+            let prefix = &action[..idx];
+            if !prefix.is_empty() {
+                let panic_msg = format!("Invalid action prefix '{}' in HTML template", prefix);
+                check_calls.push(quote! {
+                    {
+                        let mut found = false;
+                        let mut i = 0;
+                        while i < prefixes.len() {
+                            if const_str_starts_with(#prefix, prefixes[i]) {
+                                found = true;
+                                break;
+                            }
+                            i += 1;
+                        }
+                        if !found {
+                            panic!(#panic_msg);
+                        }
+                    }
+                });
+            }
+        } else {
+            let panic_msg = format!("Invalid action '{}' in HTML template", action);
+            check_calls.push(quote! {
+                {
+                    let mut found = false;
+                    let mut i = 0;
+                    while i < exact.len() {
+                        if const_str_eq(#action, exact[i]) {
+                            found = true;
+                            break;
+                        }
+                        i += 1;
+                    }
+                    if !found {
+                        i = 0;
+                        while i < prefixes.len() {
+                            if const_str_starts_with(#action, prefixes[i]) {
+                                found = true;
+                                break;
+                            }
+                            i += 1;
+                        }
+                    }
+                    if !found {
+                        panic!(#panic_msg);
+                    }
+                }
+            });
+        }
+    }
+
     let mut local_vars = HashSet::new();
     let body_compilation = compile_dom_node(&dom.document, &stylesheet, &mut local_vars, &dynamic_exprs, &dynamic_loops, &dynamic_ifs);
 
@@ -1106,6 +1176,37 @@ pub fn derive_xerune_template(input: TokenStream) -> TokenStream {
                 default_style: &xerune::style::ContainerStyle,
                 message_validator: &impl Fn(&str) -> bool,
             ) -> taffy::NodeId {
+                const _: () = {
+                    const fn const_str_eq(a: &str, b: &str) -> bool {
+                        let a_bytes = a.as_bytes();
+                        let b_bytes = b.as_bytes();
+                        if a_bytes.len() != b_bytes.len() { return false; }
+                        let mut i = 0;
+                        while i < a_bytes.len() {
+                            if a_bytes[i] != b_bytes[i] { return false; }
+                            i += 1;
+                        }
+                        true
+                    }
+                    const fn const_str_starts_with(s: &str, prefix: &str) -> bool {
+                        let s_bytes = s.as_bytes();
+                        let p_bytes = prefix.as_bytes();
+                        if s_bytes.len() < p_bytes.len() { return false; }
+                        let mut i = 0;
+                        while i < p_bytes.len() {
+                            if s_bytes[i] != p_bytes[i] { return false; }
+                            i += 1;
+                        }
+                        true
+                    }
+
+                    type MsgType = <#name as xerune::Model>::Message;
+                    let exact = <MsgType as xerune::XeruneMessage>::VALID_EXACT;
+                    let prefixes = <MsgType as xerune::XeruneMessage>::VALID_PREFIXES;
+
+                    #(#check_calls)*
+                };
+
                 builder.keyframes = xerune::css::parse_keyframes(#css_content);
                 let parent = builder.taffy.new_leaf(taffy::style::Style::default()).unwrap();
                 let parent_style = default_style.clone();
@@ -1125,3 +1226,134 @@ pub fn derive_xerune_template(input: TokenStream) -> TokenStream {
 
     TokenStream::from(expanded)
 }
+
+#[proc_macro_derive(XeruneMessage, attributes(xerune))]
+pub fn derive_xerune_message(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    let name = &input.ident;
+
+    let mut no_from_str = false;
+    for attr in &input.attrs {
+        if attr.path().is_ident("xerune") {
+            let _ = attr.parse_nested_meta(|meta| {
+                if meta.path.is_ident("no_from_str") {
+                    no_from_str = true;
+                    Ok(())
+                } else {
+                    Err(meta.error("unsupported attribute"))
+                }
+            });
+        }
+    }
+
+    let data = match &input.data {
+        syn::Data::Enum(d) => d,
+        _ => panic!("XeruneMessage can only be derived on enums"),
+    };
+
+    let mut exact_matches = Vec::new();
+    let mut prefix_matches = Vec::new();
+    let mut from_str_branches = Vec::new();
+
+    for variant in &data.variants {
+        let variant_name = &variant.ident;
+
+        let to_snake_case = |s: &str| {
+            let mut res = String::new();
+            for (i, c) in s.chars().enumerate() {
+                if c.is_uppercase() {
+                    if i > 0 {
+                        res.push('_');
+                    }
+                    res.push(c.to_ascii_lowercase());
+                } else {
+                    res.push(c);
+                }
+            }
+            res
+        };
+
+        let mut custom_rename = None;
+        let mut custom_prefix = None;
+        for attr in &variant.attrs {
+            if attr.path().is_ident("xerune") {
+                let _ = attr.parse_nested_meta(|meta| {
+                    if meta.path.is_ident("rename") {
+                        let value = meta.value()?;
+                        let s: syn::LitStr = value.parse()?;
+                        custom_rename = Some(s.value());
+                        Ok(())
+                    } else if meta.path.is_ident("prefix") {
+                        let value = meta.value()?;
+                        let s: syn::LitStr = value.parse()?;
+                        custom_prefix = Some(s.value());
+                        Ok(())
+                    } else {
+                        Err(meta.error("unsupported attribute"))
+                    }
+                });
+            }
+        }
+
+        match &variant.fields {
+            syn::Fields::Unit => {
+                let exact_str = custom_rename.unwrap_or_else(|| to_snake_case(&variant_name.to_string()));
+                exact_matches.push(exact_str.clone());
+                from_str_branches.push(quote! {
+                    #exact_str => Ok(#name::#variant_name),
+                });
+            }
+            syn::Fields::Unnamed(fields) if fields.unnamed.len() == 1 => {
+                let field = &fields.unnamed[0];
+                let field_type = &field.ty;
+
+                let prefix_str = custom_prefix.unwrap_or_else(|| {
+                    let mut s = to_snake_case(&variant_name.to_string());
+                    s.push(':');
+                    s
+                });
+                prefix_matches.push(prefix_str.clone());
+
+                from_str_branches.push(quote! {
+                    _s if _s.starts_with(#prefix_str) => {
+                        let payload = &_s[#prefix_str.len()..];
+                        if let Ok(val) = payload.parse::<#field_type>() {
+                            Ok(#name::#variant_name(val))
+                        } else {
+                            Err(())
+                        }
+                    }
+                });
+            }
+            _ => panic!("XeruneMessage only supports unit variants and single-field tuple variants currently. For custom variants, please use manual implementation with #[xerune(no_from_str)]."),
+        }
+    }
+
+    let from_str_impl = if no_from_str {
+        quote! {}
+    } else {
+        quote! {
+            impl core::str::FromStr for #name {
+                type Err = ();
+                fn from_str(s: &str) -> Result<Self, Self::Err> {
+                    match s {
+                        #(#from_str_branches)*
+                        _ => Err(()),
+                    }
+                }
+            }
+        }
+    };
+
+    let expanded = quote! {
+        #from_str_impl
+
+        impl xerune::model::XeruneMessage for #name {
+            const VALID_PREFIXES: &'static [&'static str] = &[#(#prefix_matches),*];
+            const VALID_EXACT: &'static [&'static str] = &[#(#exact_matches),*];
+        }
+    };
+
+    TokenStream::from(expanded)
+}
+

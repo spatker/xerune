@@ -5,7 +5,7 @@ use std::fs;
 use std::time::{Duration, Instant};
 
 // Import from the library and renderer
-use xerune::{Model, Runtime, XeruneTemplate};
+use xerune::{Model, Runtime, XeruneTemplate, XeruneMessage};
 
 #[cfg(not(feature = "fast-renderer"))]
 use skia_renderer::TinySkiaMeasurer;
@@ -115,7 +115,7 @@ impl MusicPlayerModel {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, XeruneMessage)]
 enum Msg {
     SelectTrack(String),
     Back,
@@ -126,32 +126,8 @@ enum Msg {
     Tick,
     HoverTrack(String),
     UnhoverTrack,
+    #[xerune(prefix = "keydown:")]
     KeyDown(String),
-}
-
-impl std::str::FromStr for Msg {
-    type Err = ();
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-         if let Some(id_str) = s.strip_prefix("select_track:") {
-             return Ok(Msg::SelectTrack(id_str.to_string()));
-         }
-         if let Some(id_str) = s.strip_prefix("hover_track:") {
-             return Ok(Msg::HoverTrack(id_str.to_string()));
-         }
-         if let Some(key) = s.strip_prefix("keydown:") {
-             return Ok(Msg::KeyDown(key.to_string()));
-         }
-         match s {
-             "unhover_track" => Ok(Msg::UnhoverTrack),
-             "back" => Ok(Msg::Back),
-             "stop" => Ok(Msg::Stop),
-             "play_pause" => Ok(Msg::PlayPause),
-             "next" => Ok(Msg::Next),
-             "prev" => Ok(Msg::Prev),
-             "tick" => Ok(Msg::Tick),
-             _ => Err(()),
-         }
-    }
 }
 
 impl Model for MusicPlayerModel {

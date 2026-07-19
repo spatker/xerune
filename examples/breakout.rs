@@ -2,7 +2,7 @@ use fontdue::Font;
 use std::collections::HashSet;
 use std::time::Instant;
 
-use xerune::{Model, Runtime, XeruneTemplate};
+use xerune::{Model, Runtime, XeruneTemplate, XeruneMessage};
 use skia_renderer::TinySkiaMeasurer;
 use std::f32::consts::PI;
 
@@ -109,27 +109,13 @@ impl BreakoutModel {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, XeruneMessage)]
 enum Msg {
     Tick,
+    #[xerune(prefix = "keydown:")]
     KeyDown(String),
+    #[xerune(prefix = "keyup:")]
     KeyUp(String),
-}
-
-impl std::str::FromStr for Msg {
-    type Err = ();
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if let Some(key) = s.strip_prefix("keydown:") {
-            return Ok(Msg::KeyDown(key.to_string()));
-        }
-        if let Some(key) = s.strip_prefix("keyup:") {
-            return Ok(Msg::KeyUp(key.to_string()));
-        }
-        match s {
-            "tick" => Ok(Msg::Tick),
-            _ => Err(()),
-        }
-    }
 }
 
 impl Model for BreakoutModel {
