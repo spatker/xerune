@@ -17,4 +17,8 @@ pub enum InputEvent {
     KeyUp(String),
     Message(String),
     TextInput { id: String, text: String },
+    TouchStart { id: u64, x: f32, y: f32 },
+    TouchMove { id: u64, x: f32, y: f32 },
+    TouchEnd { id: u64, x: f32, y: f32 },
+    TouchCancel { id: u64, x: f32, y: f32 },
 }

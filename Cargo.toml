@@ -12,7 +12,7 @@ path = "src/lib.rs"
 
 
 [features]
-default = ["std"]
+default = ["std", "winit"]
 std = [
     "taffy/std",
     "dep:csscolorparser",
@@ -26,6 +26,7 @@ dynamic-parser = ["dep:html5ever", "dep:markup5ever", "dep:markup5ever_rcdom", "
 drm = ["dep:drm", "dep:drm-fourcc", "dep:libc"]
 linuxfb = ["dep:linuxfb", "dep:libc"]
 evdev = ["dep:evdev", "dep:libc"]
+winit = ["dep:winit", "dep:softbuffer", "std"]
 
 [dependencies]
 xerune_derive = { path = "xerune_derive" }
@@ -39,6 +40,8 @@ regex = { version = "1.10", optional = true }
 log = "0.4"
 env_logger = { version = "0.11", optional = true }
 hashbrown = { version = "0.14", default-features = false, features = ["ahash", "inline-more"] }
+winit = { version = "0.29.15", optional = true }
+softbuffer = { version = "0.4.1", optional = true }
 
 # Embedded Linux dependencies
 linuxfb = { version = "0.2", optional = true }

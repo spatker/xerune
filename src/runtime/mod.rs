@@ -23,6 +23,16 @@ use crate::style::{ContainerStyle, RenderData, AnimationIterationCount};
 use crate::model::{InputEvent, Model};
 use crate::ui::{Ui, NodeMap};
 
+#[derive(Debug, Clone, Copy)]
+pub struct TouchState {
+    pub id: u64,
+    pub start_x: f32,
+    pub start_y: f32,
+    pub last_x: f32,
+    pub last_y: f32,
+    pub has_scrolled: bool,
+}
+
 pub struct Runtime<M, R> {
     model: M,
     measurer: R,
@@ -39,6 +49,7 @@ pub struct Runtime<M, R> {
     pub(crate) active_animations: HashMap<NodeId, ActiveAnimation>,
     last_tick_time: Instant,
     start_time: Instant,
+    pub(crate) touch_state: Option<TouchState>,
 }
 
 impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
@@ -66,6 +77,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
              active_animations: HashMap::new(),
              last_tick_time: Instant::now(),
              start_time: Instant::now(),
+             touch_state: None,
          }
     }
 
@@ -150,6 +162,61 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
                     if event_id.is_empty() || &event_id == focused {
                         let msg_str = format!("{}:text:{}", focused, text);
                         return self.process_message_str(&msg_str);
+                    }
+                }
+                false
+            }
+            InputEvent::TouchStart { id, x, y } => {
+                self.touch_state = Some(TouchState {
+                    id,
+                    start_x: x,
+                    start_y: y,
+                    last_x: x,
+                    last_y: y,
+                    has_scrolled: false,
+                });
+                false
+            }
+            InputEvent::TouchMove { id, x, y } => {
+                let mut redraw = false;
+                if let Some(ref mut state) = self.touch_state {
+                    if state.id == id {
+                        let delta_x = x - state.last_x;
+                        let delta_y = y - state.last_y;
+                        state.last_x = x;
+                        state.last_y = y;
+
+                        let moved_x = (x - state.start_x).abs();
+                        let moved_y = (y - state.start_y).abs();
+
+                        if state.has_scrolled || moved_x > 8.0 || moved_y > 8.0 {
+                            state.has_scrolled = true;
+                            if self.ui.handle_scroll(state.start_x, state.start_y, delta_x, delta_y) {
+                                self.scroll_offsets = self.ui.scroll_offsets.clone();
+                                redraw = true;
+                            }
+                        }
+                    }
+                }
+                redraw
+            }
+            InputEvent::TouchEnd { id, x, y } => {
+                let mut redraw = false;
+                if let Some(state) = self.touch_state.take() {
+                    if state.id == id {
+                        let moved_x = (x - state.start_x).abs();
+                        let moved_y = (y - state.start_y).abs();
+                        if !state.has_scrolled && moved_x <= 8.0 && moved_y <= 8.0 {
+                            redraw = self.handle_event(InputEvent::Click { x, y });
+                        }
+                    }
+                }
+                redraw
+            }
+            InputEvent::TouchCancel { id, .. } => {
+                if let Some(state) = self.touch_state.as_ref() {
+                    if state.id == id {
+                        self.touch_state = None;
                     }
                 }
                 false

@@ -1,6 +1,7 @@
 use taffy::prelude::*;
 use crate::style::{ContainerStyle, RenderData};
 use crate::css;
+use crate::graphics::TextMeasurer;
 use crate::defaults;
 use super::node_map::NodeMap;
 use crate::alloc_prelude::*;

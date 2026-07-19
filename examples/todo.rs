@@ -8,7 +8,6 @@ use skia_renderer::TinySkiaMeasurer;
 #[cfg(feature = "fast-renderer")]
 use fast_renderer::FastMeasurer;
 
-#[path = "support/mod.rs"]
 mod support;
 
 #[derive(XeruneTemplate)]
@@ -162,22 +161,30 @@ fn main() -> anyhow::Result<()> {
     
     let runtime = Runtime::new(todo_list, measurer);
     
+    let mut caches = support::RenderCaches::new();
+    let render_fn = move |runtime: &mut Runtime<_, _>, buffer: &mut [u32], width: u32, height: u32| {
+        support::render_frame(runtime, buffer, width, height, fonts_ref, &mut caches);
+    };
+
     #[cfg(not(any(
         all(target_os = "linux", feature = "linuxfb", feature = "evdev"),
         all(target_os = "linux", feature = "drm", feature = "evdev")
     )))]
     {
-        support::winit_backend::run_app("Xerune Todo Example", 800, 600, runtime, fonts_ref, | _ | {})?
+        use xerune::backend::Backend;
+        xerune::backend::WinitBackend::new().run("Xerune Todo Example", 800, 600, runtime, render_fn, | _ | {})?
     }
 
     #[cfg(all(target_os = "linux", feature = "linuxfb", feature = "evdev", not(feature = "drm")))]
     {
-        support::linux_backend::run_app("Xerune Todo Example", 800, 600, runtime, fonts_ref, | _ | {})?;
+        use xerune::backend::Backend;
+        xerune::backend::LinuxFbBackend::new().run("Xerune Todo Example", 800, 600, runtime, render_fn, | _ | {})?;
     }
 
     #[cfg(all(target_os = "linux", feature = "drm", feature = "evdev"))]
     {
-        support::drm_backend::run_app("Xerune Todo Example", 800, 600, runtime, fonts_ref, | _ | {})?;
+        use xerune::backend::Backend;
+        xerune::backend::DrmBackend::new().run("Xerune Todo Example", 800, 600, runtime, render_fn, | _ | {})?;
     }
 
     Ok(())

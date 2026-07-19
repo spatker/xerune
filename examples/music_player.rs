@@ -15,7 +15,6 @@ use fast_renderer::FastMeasurer;
 use tiny_skia::{PixmapMut, Color, Paint, Rect, Transform, PathBuilder, FillRule};
 use rand::Rng;
 
-#[path = "support/mod.rs"]
 mod support;
 
 #[cfg(feature = "profile")]
@@ -417,43 +416,51 @@ fn main() -> anyhow::Result<()> {
     let mut runtime = Runtime::new(model, measurer);
     runtime.set_interval("tick".to_string(), 33);
     
+    let mut caches = support::RenderCaches::new();
+    let render_fn = move |runtime: &mut Runtime<_, _>, buffer: &mut [u32], width: u32, height: u32| {
+        support::render_frame(runtime, buffer, width, height, fonts_ref, &mut caches);
+    };
+
     #[cfg(not(any(
         all(target_os = "linux", feature = "linuxfb", feature = "evdev"),
         all(target_os = "linux", feature = "drm", feature = "evdev")
     )))]
     {
-        support::winit_backend::run_app(
+        use xerune::backend::Backend;
+        xerune::backend::WinitBackend::new().run(
             "Xerune Music Player", 
             800, 
             480, 
             runtime, 
-            fonts_ref, 
+            render_fn,
             move |_proxy| {}
-        )?
+        ).map_err(|e| anyhow::anyhow!("{:?}", e))?
     }
 
     #[cfg(all(target_os = "linux", feature = "linuxfb", feature = "evdev", not(feature = "drm")))]
     {
-         support::linux_backend::run_app(
+         use xerune::backend::Backend;
+         xerune::backend::LinuxFbBackend::new().run(
              "Xerune Music Player", 
              800, 
              480, 
              runtime, 
-             fonts_ref, 
+             render_fn,
              move |_tx| {}
-         )?;
+         ).map_err(|e| anyhow::anyhow!("{:?}", e))?;
     }
 
     #[cfg(all(target_os = "linux", feature = "drm", feature = "evdev"))]
     {
-         support::drm_backend::run_app(
+         use xerune::backend::Backend;
+         xerune::backend::DrmBackend::new().run(
              "Xerune Music Player", 
              800, 
              480, 
              runtime, 
-             fonts_ref, 
+             render_fn,
              move |_tx| {}
-         )?;
+         ).map_err(|e| anyhow::anyhow!("{:?}", e))?;
     }
 
     Ok(())

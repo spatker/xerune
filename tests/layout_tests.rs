@@ -387,3 +387,69 @@ fn test_bitmap_font_rendering() {
     let non_zero_count = buffer.iter().filter(|&&pixel| pixel != 0).count();
     assert!(non_zero_count > 0, "Bitmap font should have rasterized some non-zero pixels onto the buffer");
 }
+
+#[test]
+fn test_touch_scrolling_and_clicking() {
+    struct TouchMockModel;
+    #[derive(Debug, PartialEq)]
+    enum TouchMockMsg {
+        ClickMsg,
+    }
+    impl std::str::FromStr for TouchMockMsg {
+        type Err = ();
+        fn from_str(s: &str) -> Result<Self, Self::Err> {
+            match s {
+                "click_action" => Ok(TouchMockMsg::ClickMsg),
+                _ => Err(()),
+            }
+        }
+    }
+    impl Model for TouchMockModel {
+        type Message = TouchMockMsg;
+        fn update(&mut self, _msg: Self::Message, _context: &mut Context) {}
+    }
+    impl TemplateLayout for TouchMockModel {
+        fn stylesheet(&self) -> &'static str { "" }
+        fn build_ui(
+            &self,
+            builder: &mut UiBuilder,
+            _measurer: &impl TextMeasurer,
+            _default_style: &ContainerStyle,
+            _message_validator: &impl Fn(&str) -> bool,
+        ) -> taffy::NodeId {
+            let parent = builder.create_element("div", &[("style", "width: 100px; height: 100px; overflow: scroll;")]);
+            let child = builder.create_element("div", &[("style", "width: 100px; height: 200px; flex-shrink: 0;"), ("data-on-click", "click_action")]);
+            builder.append_child(parent, child);
+            parent
+        }
+    }
+
+    let model = TouchMockModel;
+    let measurer = MockMeasurer;
+    let mut runtime = Runtime::new(model, measurer);
+    
+    runtime.compute_layout(taffy::geometry::Size::MAX_CONTENT);
+
+    // 1. Test touch click (finger tap with little/no movement)
+    let handled = runtime.handle_event(InputEvent::TouchStart { id: 1, x: 10.0, y: 10.0 });
+    assert!(!handled, "TouchStart should not trigger redraw on its own");
+    
+    let handled = runtime.handle_event(InputEvent::TouchEnd { id: 1, x: 11.0, y: 11.0 });
+    assert!(handled, "TouchEnd within threshold should trigger a click redraw");
+
+    // 2. Test touch scroll (finger drag with enough movement)
+    let handled = runtime.handle_event(InputEvent::TouchStart { id: 2, x: 10.0, y: 10.0 });
+    assert!(!handled);
+    
+    // Drag finger UP (y decreases: e.g. to 0.0) -> scrolls DOWN (content offset sy increases)
+    let handled = runtime.handle_event(InputEvent::TouchMove { id: 2, x: 10.0, y: 0.0 });
+    assert!(handled, "TouchMove past threshold should handle scroll and trigger redraw");
+    
+    let offsets = &runtime.ui.scroll_offsets;
+    let offset = offsets.values().next().expect("Should have scroll offset");
+    assert_eq!(offset.1, 10.0, "Scroll offset y should be 10.0");
+
+    // End touch scroll
+    let handled = runtime.handle_event(InputEvent::TouchEnd { id: 2, x: 10.0, y: 0.0 });
+    assert!(!handled, "TouchEnd after scrolling should not trigger click or redraw");
+}

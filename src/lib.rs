@@ -42,6 +42,9 @@ pub mod css;
 pub mod defaults;
 pub mod font;
 
+#[cfg(any(feature = "winit", feature = "linuxfb", feature = "drm"))]
+pub mod backend;
+
 pub use graphics::{Color, LinearGradient, Rect, Canvas, Context, DrawCommand, TextMeasurer, Renderer};
 pub use style::{Overflow, ContainerStyle, RenderData, Display, TextAlign, Direction, WritingMode, FlexDirection, FlexWrap, AlignContent, AlignItems, MyJustifyContent, Position, BoxSizing};
 pub use model::{Model, InputEvent};
