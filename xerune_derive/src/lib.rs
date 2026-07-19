@@ -972,7 +972,7 @@ fn extract_css_from_html(html: &str) -> String {
 }
 
 // Recursive include resolver to inline included templates at compile time at string level
-fn resolve_includes_text(content: &str, cargo_manifest_dir: &std::path::Path) -> String {
+fn resolve_includes_text(content: &str, cargo_manifest_dir: &std::path::Path, tracked_paths: &mut Vec<String>) -> String {
     let mut result = String::new();
     let mut remaining = content;
     while let Some(start_idx) = remaining.find("{% include") {
@@ -987,9 +987,12 @@ fn resolve_includes_text(content: &str, cargo_manifest_dir: &std::path::Path) ->
                 let mut full_path = cargo_manifest_dir.to_path_buf();
                 full_path.push("templates");
                 full_path.push(path_str);
+                
+                tracked_paths.push(path_str.to_string());
+                
                 let included_content = std::fs::read_to_string(&full_path)
                     .unwrap_or_else(|_| panic!("Failed to read included template file at {:?}", full_path));
-                let resolved_included = resolve_includes_text(&included_content, cargo_manifest_dir);
+                let resolved_included = resolve_includes_text(&included_content, cargo_manifest_dir, tracked_paths);
                 result.push_str(&resolved_included);
             }
             remaining = &rest[end_idx + 2..];
@@ -1038,9 +1041,20 @@ pub fn derive_xerune_template(input: TokenStream) -> TokenStream {
     let template_content = std::fs::read_to_string(&path)
         .unwrap_or_else(|_| panic!("Failed to read template file at {:?}", path));
 
+    let mut tracked_paths = vec![template_path.clone()];
+
     // Resolve includes at string level
-    let resolved_content = resolve_includes_text(&template_content, &cargo_manifest_path);
+    let resolved_content = resolve_includes_text(&template_content, &cargo_manifest_path, &mut tracked_paths);
     let template_content_ref: &'static str = Box::leak(resolved_content.into_boxed_str());
+
+    tracked_paths.sort();
+    tracked_paths.dedup();
+    let dummy_includes = tracked_paths.iter().map(|p| {
+        let relative_path = format!("/templates/{}", p);
+        quote! {
+            const _: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), #relative_path));
+        }
+    });
 
     // Parse template using askama_parser
     let syntax = Syntax::default();
@@ -1078,6 +1092,8 @@ pub fn derive_xerune_template(input: TokenStream) -> TokenStream {
     let body_compilation = compile_dom_node(&dom.document, &stylesheet, &mut local_vars, &dynamic_exprs, &dynamic_loops, &dynamic_ifs);
 
     let expanded = quote! {
+        #(#dummy_includes)*
+
         impl xerune::ui::TemplateLayout for #name {
             fn stylesheet(&self) -> &'static str {
                 ""

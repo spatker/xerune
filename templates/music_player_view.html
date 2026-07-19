@@ -8,6 +8,7 @@
         flex-direction: row;
         padding: 20px;
     }
+
     .left-section {
         display: flex;
         flex-direction: column;
@@ -16,6 +17,7 @@
         justify-content: flex-start;
         margin-right: 40px;
     }
+
     .back-btn-row {
         display: flex;
         flex-direction: row;
@@ -23,22 +25,26 @@
         width: 100%;
         margin-bottom: 20px;
     }
+
     .back-btn {
         padding: 10px;
         border-radius: 20px;
-        background-color: rgba(255,255,255,0.05);
+        background-color: rgba(255, 255, 255, 0.05);
     }
+
     .back-btn p {
         font-size: 16px;
         color: #ffffff;
         font-weight: bold;
         margin: 0;
     }
+
     .album-art {
         width: 280px;
         height: 280px;
         border-radius: 16px;
     }
+
     .right-section {
         display: flex;
         flex-direction: column;
@@ -47,33 +53,39 @@
         padding-right: 20px;
         padding-bottom: 20px;
     }
+
     .track-info-header {
         display: flex;
         flex-direction: column;
         align-items: center;
         margin-bottom: 20px;
     }
+
     .track-title-text {
         font-size: 28px;
         margin: 0 0 5px 0;
         color: #ffffff;
         font-weight: 700;
     }
+
     .track-artist-text {
         font-size: 18px;
         color: #b3b3b3;
         margin: 0 0 5px 0;
     }
+
     .track-album-text {
         font-size: 14px;
         color: #888888;
         font-weight: 500;
         margin: 0;
     }
+
     .visualizer-container {
         padding: 10px;
         margin-bottom: 20px;
     }
+
     .progress-bar-container {
         display: flex;
         flex-direction: row;
@@ -81,30 +93,36 @@
         justify-content: space-between;
         margin-bottom: 30px;
     }
+
     .time-label {
         font-size: 14px;
         color: #b3b3b3;
         width: 45px;
     }
+
     .time-label.left-label {
         text-align: left;
     }
+
     .time-label.right-label {
         text-align: right;
     }
+
     .slider-track {
         flex-grow: 1;
         margin: 0 10px;
         height: 6px;
         border-radius: 3px;
-        background-color: rgba(255,255,255,0.1);
+        background-color: rgba(255, 255, 255, 0.1);
         position: relative;
     }
+
     .slider-fill {
         height: 100%;
         border-radius: 3px;
         background-color: #1ed760;
     }
+
     .slider-handle {
         width: 12px;
         height: 12px;
@@ -113,6 +131,7 @@
         position: absolute;
         top: -3px;
     }
+
     .controls-row {
         display: flex;
         flex-direction: row;
@@ -120,23 +139,28 @@
         align-items: center;
         padding: 0 20px;
     }
+
     .control-btn {
         padding: 15px;
         border-radius: 50%;
     }
+
     .control-btn p {
         font-size: 24px;
         color: #ffffff;
         margin: 0;
     }
+
     .control-btn-stop p {
         color: #ff5555;
     }
+
     .play-pause-btn {
         padding: 20px 25px;
         background: linear-gradient(135deg, #1ed760 0%, #1db954 100%);
         border-radius: 50%;
     }
+
     .play-pause-btn p {
         font-size: 26px;
         color: #000000;
@@ -178,7 +202,7 @@
             <p class="time-label left-label">{{ elapsed_time }}</p>
             <div class="slider-track">
                 <div class="slider-fill" style="width: {{ progress * 100.0 }}%;"></div>
-                <div class="slider-handle" style="left: calc({{ progress * 100.0 }}% - 6px);"></div>
+                <div class="slider-handle" style="left: {{ progress * 100.0 }}%; margin-left: -6px;"></div>
             </div>
             <p class="time-label right-label">{{ total_time }}</p>
         </div>
