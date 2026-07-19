@@ -1,30 +1,37 @@
 #[cfg(feature = "std")]
+/// Monotonic time representation using std::time::Instant.
 pub type Instant = std::time::Instant;
 
+/// Monotonic time representation for `no_std` environments representing milliseconds.
 #[cfg(not(feature = "std"))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Instant(pub u64); // milliseconds since boot
 
 #[cfg(not(feature = "std"))]
 impl Instant {
+    /// Return the current time. Under no_std, this defaults to a zero timestamp.
     pub fn now() -> Self {
         // Under no_std, there is no real-time clock source by default.
         // The user must drive time by calling Runtime::tick_at_ms or tick_with_time.
         Instant(0)
     }
 
+    /// Create an Instant from a millisecond timestamp.
     pub fn from_millis(ms: u64) -> Self {
         Instant(ms)
     }
 
+    /// Return the raw millisecond count of the timestamp.
     pub fn as_millis(&self) -> u64 {
         self.0
     }
 
+    /// Calculate the elapsed time duration since another timestamp.
     pub fn duration_since(&self, other: Self) -> core::time::Duration {
         core::time::Duration::from_millis(self.0.saturating_sub(other.0))
     }
 
+    /// Calculate the elapsed time duration since another timestamp, saturating at zero.
     pub fn saturating_duration_since(&self, other: Self) -> core::time::Duration {
         if self.0 <= other.0 {
             core::time::Duration::ZERO
@@ -33,6 +40,7 @@ impl Instant {
         }
     }
 
+    /// Calculate the elapsed duration since this timestamp, relative to start.
     pub fn elapsed(&self) -> core::time::Duration {
         core::time::Duration::from_millis(self.0)
     }

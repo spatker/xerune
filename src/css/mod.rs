@@ -1,5 +1,7 @@
-pub mod parser;
-pub mod animation;
+#![allow(missing_docs)]
+
+pub(crate) mod parser;
+pub(crate) mod animation;
 
 pub use parser::{parse_hex_color, parse_px, parse_dimension, parse_length_percentage, parse_length_percentage_auto};
 use parser::{parse_padding, parse_margin};
@@ -7,7 +9,7 @@ pub use animation::{Keyframe, KeyframesAnimation, parse_duration_sec, parse_anim
 #[cfg(feature = "std")]
 pub use animation::parse_keyframes;
 
-use crate::{Color, ContainerStyle, Display, TextAlign, Direction, WritingMode, FlexDirection, FlexWrap, AlignContent, AlignItems, MyJustifyContent, BoxSizing, style::AnimationIterationCount};
+use crate::{Color, ContainerStyle, Display, TextAlign, Direction, WritingMode, FlexDirection, FlexWrap, AlignContent, AlignItems, CssJustifyContent, BoxSizing, style::AnimationIterationCount};
 use taffy::prelude::*;
 use taffy::style::Style;
 use crate::alloc_prelude::*;
@@ -90,6 +92,8 @@ fn parse_layout_style_fast(s: &str) -> Option<FastLayoutStyle> {
     })
 }
 
+/// Parses a CSS inline style string (e.g., "color: #ff0000; border-width: 2px;")
+/// and applies the values directly onto the given styling structures.
 pub fn parse_inline_style(style_str: &str, current_style: &mut ContainerStyle, taffy_style: &mut Style) {
     if style_str.starts_with("left:") {
         if let Some(parsed) = parse_layout_style_fast(style_str) {
@@ -123,6 +127,7 @@ pub fn parse_inline_style(style_str: &str, current_style: &mut ContainerStyle, t
     }
 }
 
+/// Applies a single CSS key-value declaration to the given styling structures.
 pub fn apply_declaration(prop: &str, val: &str, current_style: &mut ContainerStyle, taffy_style: &mut Style) {
     match prop {
         "display" => {
@@ -410,43 +415,43 @@ pub fn apply_declaration(prop: &str, val: &str, current_style: &mut ContainerSty
              match val {
                 "flex-start" => {
                     taffy_style.justify_content = Some(AlignContent::FlexStart);
-                    current_style.justify_content = Some(MyJustifyContent::FlexStart);
+                    current_style.justify_content = Some(CssJustifyContent::FlexStart);
                 }
                 "flex-end" => {
                     taffy_style.justify_content = Some(AlignContent::FlexEnd);
-                    current_style.justify_content = Some(MyJustifyContent::FlexEnd);
+                    current_style.justify_content = Some(CssJustifyContent::FlexEnd);
                 }
                 "center" => {
                     taffy_style.justify_content = Some(AlignContent::Center);
-                    current_style.justify_content = Some(MyJustifyContent::Center);
+                    current_style.justify_content = Some(CssJustifyContent::Center);
                 }
                 "space-between" => {
                     taffy_style.justify_content = Some(AlignContent::SpaceBetween);
-                    current_style.justify_content = Some(MyJustifyContent::SpaceBetween);
+                    current_style.justify_content = Some(CssJustifyContent::SpaceBetween);
                 }
                 "space-around" => {
                     taffy_style.justify_content = Some(AlignContent::SpaceAround);
-                    current_style.justify_content = Some(MyJustifyContent::SpaceAround);
+                    current_style.justify_content = Some(CssJustifyContent::SpaceAround);
                 }
                 "space-evenly" => {
                     taffy_style.justify_content = Some(AlignContent::SpaceEvenly);
-                    current_style.justify_content = Some(MyJustifyContent::SpaceEvenly);
+                    current_style.justify_content = Some(CssJustifyContent::SpaceEvenly);
                 }
                 "start" => {
                     taffy_style.justify_content = Some(AlignContent::Start);
-                    current_style.justify_content = Some(MyJustifyContent::Start);
+                    current_style.justify_content = Some(CssJustifyContent::Start);
                 }
                 "end" => {
                     taffy_style.justify_content = Some(AlignContent::End);
-                    current_style.justify_content = Some(MyJustifyContent::End);
+                    current_style.justify_content = Some(CssJustifyContent::End);
                 }
                 "left" => {
                     taffy_style.justify_content = Some(AlignContent::Start);
-                    current_style.justify_content = Some(MyJustifyContent::Left);
+                    current_style.justify_content = Some(CssJustifyContent::Left);
                 }
                 "right" => {
                     taffy_style.justify_content = Some(AlignContent::End);
-                    current_style.justify_content = Some(MyJustifyContent::Right);
+                    current_style.justify_content = Some(CssJustifyContent::Right);
                 }
                 _ => {}
             }

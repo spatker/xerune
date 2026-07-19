@@ -1,6 +1,6 @@
 # Xerune
 
-Xerune is a lightweight, CPU-only native HTML renderer designed for embedded Linux environments without GPU support.
+Xerune is a lightweight, CPU-only native HTML/CSS rendering engine and UI framework designed for embedded Linux environments (like Raspberry Pi, QEMU, or custom board systems) without GPU/OpenGLES acceleration.
 
 ## Demos
 
@@ -12,50 +12,76 @@ High quality videos: [Music Player](docs/img/music_player.mkv), [Showcase](docs/
 
 ## Features
 
-- **Compile time checked templates**: Uses [askama](https://github.com/djc/askama) for safe data bindings.
-- **HTML support**: Renders standard HTML elements.
-- **No GPU required**: Runs entirely on the CPU with decent performance.
-- **Click handling**: Native support for interactive elements.
-- **Custom callbacks**: Define logic for interactions.
-- **Layout and text rendering**: Built-in support for complex layouts and text.
+- **Model-View-Update (MVU) Architecture**: Elm-style design providing predictable state transitions and unidirectional data flow.
+- **Compile-time template verification**: Native type-safe data binding and layout generation.
+- **No GPU required**: High-performance CPU-only rendering.
+- **Embedded hardware-ready**: Dedicated backends for Linux Framebuffer (`/dev/fb0`) and DRM/KMS with double buffering.
+- **Input integration**: Built-in support for mouse, keyboard, and `evdev` touch input bounds calibration.
+- **CSS Stylesheets & Keyframe Animations**: Parse inline styles, global styles, classes, IDs, gradients, borders, font weights, and keyframe animations.
+- **Canvas APIs**: Support for custom user-drawn Canvas pixel buffers.
+
+## Documentation
+- [Quick Start Guide](docs/guide.md)
+- [Architecture Overview](docs/architecture.md)
+- [AI Assistant Context (gemini.md)](gemini.md)
 
 ## Architecture
 
-Xerune is built around the **Model-View-Update (MVU)** architecture (similar to Elm), designed for highly decoupled, efficient updates:
-
-- **Model (`src/model.rs`)**: Owns the application state and the `Message` routing.
-- **View (`Model::view`)**: Purely declarative. Takes the model and outputs raw HTML/CSS strings.
-- **Update (`Model::update`)**: Mutates the state based on `Message` intents. 
-- **UI & Layout Engine (`src/ui.rs`)**: Parses the raw HTML into a Taffy Flexbox tree and processes styling, isolating the view from the backend renderer.
-- **Runtime (`src/runtime.rs`)**: The engine loop that ties MVU to the underlying event system.
-
-This modular separation makes it very easy to create custom components simply by emitting predictable HTML, whilst keeping hardware-specific drawing instructions sequestered in different backends.
-
-## Roadmap
-
-- [x] Dirty region handling
-- [x] Performance improvements
-- [ ] ARM Linux as first class citizen
-- [ ] Touch support
-- [x] Animations
-- [x] Performance and resource optimization (CPU, RAM, storage)
-- [x] More CSS and HTML tags
-- [x] WPT test running support
+Xerune is built around the **Model-View-Update (MVU)** pattern:
+- **Model (`src/model.rs`)**: Owns the application state.
+- **View (`Model::view`)**: Takes the model and outputs declarative UI templates.
+- **Update (`Model::update`)**: Mutates the model state based on `Message` intents.
+- **UI Layout & Style Engine (`src/ui/`)**: Resolves HTML elements and CSS properties onto a Taffy Flexbox tree and generates `DrawCommand`s.
+- **Runtime (`src/runtime/`)**: Manages the main execution tick, message queues, and animation intervals.
 
 ## Dependencies
 
-Xerune relies on a few key libraries to provide its functionality:
-
-- **[askama](https://crates.io/crates/askama)**: Template rendering engine.
-- **[taffy](https://crates.io/crates/taffy)**: Flexbox layout engine.
+- **[taffy](https://crates.io/crates/taffy)**: Flexbox & grid layout engine.
 - **[html5ever](https://crates.io/crates/html5ever)**: HTML parsing.
-- **[csscolorparser](https://crates.io/crates/csscolorparser)**: CSS color parsing.
-- **[tiny-skia](https://crates.io/crates/tiny-skia)**: Software rendering.
-- **[winit](https://crates.io/crates/winit)** & **[softbuffer](https://crates.io/crates/softbuffer)**: Window creation and buffer management (for desktop examples).
+- **[winit](https://crates.io/crates/winit)** & **[softbuffer](https://crates.io/crates/softbuffer)**: Desktop windowing backend.
+- **[evdev](https://crates.io/crates/evdev)**: Linux touch & key input handling.
+- **[drm](https://crates.io/crates/drm)**: Linux Direct Rendering Manager control.
 
 ## Getting Started
 
-Check out the `examples/` directory to see how to use the library.
+### Example Code
+
+```rust
+use xerune::{Model, InputEvent, Runtime, Context, XeruneTemplate};
+
+#[derive(Default)]
+struct AppModel {
+    counter: i32,
+}
+
+#[derive(Debug)]
+enum Msg {
+    Increment,
+    Decrement,
+}
+
+#[derive(XeruneTemplate)]
+#[template(source = r#"
+    <div style="flex-direction: column; align-items: center; justify-content: center; width: 100%; height: 100%;">
+        <span style="font-size: 24px;">Counter: {{ counter }}</span>
+        <div style="flex-direction: row; margin-top: 10px;">
+            <button onclick="Increment" style="padding: 5px 15px; margin: 5px;">+</button>
+            <button onclick="Decrement" style="padding: 5px 15px; margin: 5px;">-</button>
+        </div>
+    </div>
+"#, ext = "html")]
+impl Model for AppModel {
+    type Message = Msg;
+
+    fn update(&mut self, msg: Self::Message, _ctx: &mut Context) -> Option<Self::Message> {
+        match msg {
+            Msg::Increment => self.counter += 1,
+            Msg::Decrement => self.counter -= 1,
+        }
+        None
+    }
+}
+```
 
 ### Running Examples
 
@@ -66,3 +92,7 @@ cargo run --release --example music_player
 cargo run --release --example todo
 cargo run --release --example showcase
 ```
+
+## License
+
+Licensed under the MIT License.

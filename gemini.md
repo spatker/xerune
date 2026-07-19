@@ -1,27 +1,30 @@
 # Xerune Architecture Guide
 
-This file provides context about the internal workings of the Xerune library.
+This file provides context about the internal workings of the Xerune library for developers and AI assistants.
 
 ## The MVU Paradigm
 
-Xerune follows a strict Model-View-Update (Elm) architecture.
-1. The developer defines a structure implementing the `Model` trait.
-2. The user interacts causing an `InputEvent`.
-3. The `Runtime` hit-tests the Flexbox tree to produce a stringified `Message`.
-4. The string is parsed into the user's explicit enum `Message`.
-5. `model.update(msg)` mutates the state.
-6. `model.view()` produces a new raw HTML string.
-7. Only if the HTML string differs from exactly the previous frame, the `Ui` module destroys the previous DOM layout and rebuilds a brand new Taffy DOM tree.
+Xerune follows a strict Model-View-Update (Elm-style) architecture:
+1. The developer defines a state structure implementing the `Model` trait.
+2. The user interacts causing an `InputEvent` (such as click, touch, keyboard key, scroll, hover, or custom message).
+3. The `Runtime` coordinates the inputs, updates the model state by calling `model.update(msg, &mut context)`, and triggers visual redraws.
+4. The template is defined via HTML/CSS structures parsed via `XeruneTemplate` procedural macro generating builder commands.
+5. If the layout structure changes or animations trigger, the layout is resolved onto a Taffy tree which computes relative bounds.
+6. The resolved Taffy layout tree and resolved styling bounds are walked to produce absolute screen-space `DrawCommand`s.
 
 ## Important Concepts
-- **Taffy**: The layout engine. We map `html5ever` DOM nodes directly into `Taffy` `NodeId`s.
-- **RenderData**: The styling attached to a given `NodeId`.
-- **DrawCommand**: Hardware agnostic primitives (rects, text, gradients). You process the Taffy tree (walking node by node) and convert relative coordinate layouts into absolute display coordinates packed into `DrawCommand`s.
-- **TinySkia Backend**: The standard software renderer implementation that interprets `DrawCommand`s.
+- **Taffy**: The underlying layout engine. CSS attributes are parsed and translated to Taffy's flexbox/grid layout inputs.
+- **ContainerStyle**: The structure holding CSS styling properties like background color, gradients, borders, font configuration, animations, etc.
+- **NodeMetadata**: Holds HTML-level attributes and states of processed nodes (tag name, class, id, checked/value state, children, etc.).
+- **DrawCommand**: Hardware-agnostic drawing primitives (rectangles, text, images, checkboxes, sliders, progress bars, custom canvas viewports).
+- **Renderer**: The trait implementing graphic rendering and text measurement. The workspace contains a reference `fast_renderer` and `skia_renderer` (TinySkia-based) to draw these commands.
+- **Backends**: System/display integration layers (e.g., `WinitBackend` using softbuffer, or direct Linux hardware access via `LinuxFbBackend` and `DrmBackend` using evdev).
 
 ## Module Responsibilities
-- `graphics.rs`: Abstractions over drawing instructions. Contains `Color`, `Canvas`, and `DrawCommand`.
-- `style.rs`: Abstractions over layout instructions. Contains `RenderData` and `ContainerStyle`. 
-- `ui.rs`: Parses HTML. Creates Taffy nodes. Converts Taffy layouts into global coordinates inside `DrawCommand` lists. Provides hit-testing and scrolling coordinate handling.
-- `model.rs`: Holds purely user-space trait abstractions (`Model`, `InputEvent`).
-- `runtime.rs`: The state machine connecting user-space MVU with the engine's `Renderer`.
+- `graphics.rs`: Abstractions over drawing instructions. Contains `Color`, `Canvas`, `Context`, `DrawCommand`, `TextMeasurer`, and `Renderer`.
+- `style.rs`: Holds formatting and layout types. Contains `ContainerStyle`, `CssJustifyContent`, `Display`, `Overflow`, etc.
+- `ui/`: Processes HTML elements and styling. Contains `UiBuilder` to programmatically build trees, `attributes` to map attributes, and `style_resolution` to parse and override stylesheet styles.
+- `model.rs`: Holds MVU user-space trait abstractions (`Model`, `InputEvent`).
+- `runtime/`: The orchestration engine managing ticks, event processing, frame pacing, and custom message passing.
+- `backend/`: Platform-specific display and input event loops (Winit, Linux Framebuffer, DRM/KMS).
+- `css/`: CSS parser logic for hex colors, dimensions, layout properties, and keyframe animations.

@@ -2,20 +2,32 @@ use taffy::prelude::*;
 use crate::{ContainerStyle, Display};
 use crate::alloc_prelude::*;
 
+/// Representation tags for UI element types mapping to native rendering primitives.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ElementType {
+    /// Normal element container.
     Container,
+    /// Image display element.
     Image,
+    /// Checkbox control.
     Checkbox,
+    /// Slider control.
     Slider,
+    /// Progress bar display.
     Progress,
+    /// Custom canvas pixel buffer view.
     Canvas,
+    /// Text input editor field.
     TextInput,
 }
 
+/// A structure bundling taffy layout Style, ContainerStyle and ElementType.
 pub struct StyleBundle {
+    /// The Taffy layout style mapping.
     pub taffy_style: Style,
+    /// The ContainerStyle resolved styling.
     pub container_style: ContainerStyle,
+    /// The ElementType native widget type.
     pub element_type: ElementType,
 }
 
@@ -29,6 +41,7 @@ impl Default for StyleBundle {
     }
 }
 
+/// Retrieves the default StyleBundle for a given HTML tag name, resetting non-inherited properties.
 pub fn get_default_style(tag: &str, parent_style: &ContainerStyle) -> StyleBundle {
     let mut bundle = StyleBundle::default();
     bundle.container_style = parent_style.clone();

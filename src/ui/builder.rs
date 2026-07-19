@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 use taffy::prelude::*;
 use crate::style::RenderData;
 use super::node_map::NodeMap;

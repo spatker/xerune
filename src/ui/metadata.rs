@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 use taffy::prelude::NodeId;
 use crate::alloc_prelude::*;
 

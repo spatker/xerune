@@ -1,115 +1,193 @@
 use crate::graphics::{Color, LinearGradient};
 use crate::alloc_prelude::*;
 
+/// Layout display type.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Display {
+    /// Render as a block-level container.
     Block,
+    /// Render as an inline-block level container.
     InlineBlock,
+    /// Render as a Flexbox layout container.
     Flex,
+    /// Hide element and discard from layout generation.
     None,
 }
 
+/// Horizontal alignment of text.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TextAlign {
+    /// Align text to the left boundary.
     Left,
+    /// Center text.
     Center,
+    /// Align text to the right boundary.
     Right,
 }
 
+/// Text direction.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Direction {
+    /// Left-to-right text direction.
     Ltr,
+    /// Right-to-left text direction.
     Rtl,
 }
 
+/// Bounding overflow behavior.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Overflow {
+    /// Overflow content is fully visible outside bounds.
     Visible,
+    /// Overflow content is clipped.
     Hidden,
+    /// Overflow content is clipped and allows scroll offsets.
     Scroll,
 }
 
+/// Writing mode orientation of text blocks.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WritingMode {
+    /// Horizontal top-to-bottom writing direction.
     HorizontalTb,
 }
 
 
 pub use taffy::prelude::{FlexDirection, FlexWrap, AlignContent, AlignItems, AlignSelf};
 
+/// Position type of elements.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Position {
+    /// Normal static flow position.
     Static,
+    /// Relative offset position from its normal position.
     Relative,
+    /// Absolute position relative to its closest positioned ancestor.
     Absolute,
 }
 
+/// Representation of CSS `justify-content` values mapping to layout engines.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum MyJustifyContent {
+pub enum CssJustifyContent {
+    /// Align items to the start of the line.
     FlexStart,
+    /// Align items to the end of the line.
     FlexEnd,
+    /// Align items to the center of the line.
     Center,
+    /// Distribute space evenly between items.
     SpaceBetween,
+    /// Distribute space evenly around items.
     SpaceAround,
+    /// Distribute space evenly with equal margins.
     SpaceEvenly,
+    /// Align to the start boundary.
     Start,
+    /// Align to the end boundary.
     End,
+    /// Align to the left boundary.
     Left,
+    /// Align to the right boundary.
     Right,
 }
 
 pub use taffy::BoxSizing;
 
+/// Iteration limit count of animations.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum AnimationIterationCount {
+    /// Infinite animation iterations.
     Infinite,
+    /// Finite number of iterations.
     Count(f32),
 }
 
+/// The resolved styling properties of an HTML container element.
 #[derive(Debug, Clone)]
 pub struct ContainerStyle {
+    /// Foreground text color.
     pub color: Color,
+    /// Font size in pixels.
     pub font_size: f32,
-    pub weight: u16, // 0 = Regular, 1 = Bold
+    /// Font weight (0 for Regular, 1 for Bold).
+    pub weight: u16,
+    /// Optional solid background fill color.
     pub background_color: Option<Color>,
+    /// Border corner radius.
     pub border_radius: f32,
+    /// Border stroke outline width.
     pub border_width: f32,
+    /// Optional border stroke color.
     pub border_color: Option<Color>,
+    /// Optional linear background gradient.
     pub background_gradient: Option<LinearGradient>,
+    /// Bounding box overflow behavior.
     pub overflow: Overflow,
+    /// Layout display type.
     pub display: Display,
+    /// Text horizontal alignment.
     pub text_align: Option<TextAlign>,
+    /// Ordering index within a Flexbox layout.
     pub order: i32,
+    /// Text writing direction.
     pub direction: Direction,
+    /// Writing mode orientation.
     pub writing_mode: WritingMode,
+    /// Flex direction layout.
     pub flex_direction: FlexDirection,
+    /// Flex wrap behavior.
     pub flex_wrap: FlexWrap,
-    pub justify_content: Option<MyJustifyContent>,
+    /// CSS justify-content alignment.
+    pub justify_content: Option<CssJustifyContent>,
+    /// Flex alignment of line items.
     pub align_items: Option<AlignItems>,
+    /// Optional fixed width.
     pub width: Option<f32>,
+    /// Optional fixed height.
     pub height: Option<f32>,
+    /// Left padding size.
     pub padding_left: f32,
+    /// Right padding size.
     pub padding_right: f32,
+    /// Top padding size.
     pub padding_top: f32,
+    /// Bottom padding size.
     pub padding_bottom: f32,
+    /// Layout inline size dimension constraint.
     pub inline_size: Option<taffy::style::Dimension>,
+    /// Layout block size dimension constraint.
     pub block_size: Option<taffy::style::Dimension>,
+    /// Minimum layout inline size.
     pub min_inline_size: Option<taffy::style::Dimension>,
+    /// Maximum layout inline size.
     pub max_inline_size: Option<taffy::style::Dimension>,
+    /// Minimum layout block size.
     pub min_block_size: Option<taffy::style::Dimension>,
+    /// Maximum layout block size.
     pub max_block_size: Option<taffy::style::Dimension>,
+    /// Flex alignment of the self container.
     pub align_self: Option<AlignSelf>,
+    /// Position configuration.
     pub position: Position,
+    /// Flags if this element has floated formatting.
     pub is_floated: bool,
+    /// Box sizing policy.
     pub box_sizing: BoxSizing,
-    // Animation properties
+    /// Animation name.
     pub animation_name: Option<Arc<str>>,
-    pub animation_duration: f32, // in seconds
+    /// Animation duration in seconds.
+    pub animation_duration: f32,
+    /// Animation easing function name.
     pub animation_timing_function: Arc<str>,
-    pub animation_delay: f32, // in seconds
+    /// Animation startup delay in seconds.
+    pub animation_delay: f32,
+    /// Iteration count of the animation.
     pub animation_iteration_count: AnimationIterationCount,
+    /// Direction direction of keyframes progression.
     pub animation_direction: Arc<str>,
+    /// Animation fill mode.
     pub animation_fill_mode: Arc<str>,
+    /// Animation play state control state.
     pub animation_play_state: Arc<str>,
 }
 
@@ -163,18 +241,28 @@ impl Default for ContainerStyle {
     }
 }
 
+/// Node representation containing resolved styling and DOM element metadata.
 pub enum RenderData {
+    /// Normal styled element container.
     Container(ContainerStyle),
+    /// Styled text element.
     Text(String, ContainerStyle),
+    /// Styled image element.
     Image(String, ContainerStyle),
+    /// Styled checkbox control.
     Checkbox(bool, ContainerStyle),
+    /// Styled slider control.
     Slider(f32, ContainerStyle),
-    Progress(f32, f32, ContainerStyle), // value, max, style
+    /// Styled progress bar control (value, max, style).
+    Progress(f32, f32, ContainerStyle),
+    /// Styled canvas viewport buffer mapping.
     Canvas(String, ContainerStyle),
-    TextInput(String, Option<String>, ContainerStyle), // id, text value, style
+    /// Styled text input field (id, text value, style).
+    TextInput(String, Option<String>, ContainerStyle),
 }
 
 impl RenderData {
+    /// Get a reference to the inner element style.
     pub fn style(&self) -> &ContainerStyle {
         match self {
             RenderData::Container(style) => style,

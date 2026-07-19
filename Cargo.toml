@@ -5,6 +5,12 @@ members = ["skia_renderer", "wpt_runner", "fast_renderer", "xerune_derive"]
 name = "xerune"
 version = "0.1.0"
 edition = "2024"
+description = "A lightweight, CPU-only native HTML renderer designed for embedded Linux environments"
+license = "MIT"
+repository = "https://github.com/spatker/xerune"
+readme = "README.md"
+keywords = ["html", "renderer", "embedded", "mvu", "gui"]
+categories = ["embedded", "gui", "rendering"]
 
 [lib]
 name = "xerune"
@@ -23,13 +29,13 @@ std = [
 profile = ["dep:coarse-prof"]
 fast-renderer = []
 dynamic-parser = ["dep:html5ever", "dep:markup5ever", "dep:markup5ever_rcdom", "std"]
-drm = ["dep:drm", "dep:drm-fourcc", "dep:libc"]
-linuxfb = ["dep:linuxfb", "dep:libc"]
-evdev = ["dep:evdev", "dep:libc"]
+drm = ["dep:drm", "dep:drm-fourcc", "dep:libc", "std"]
+linuxfb = ["dep:linuxfb", "dep:libc", "std"]
+evdev = ["dep:evdev", "dep:libc", "std"]
 winit = ["dep:winit", "dep:softbuffer", "std"]
 
 [dependencies]
-xerune_derive = { path = "xerune_derive" }
+xerune_derive = { version = "0.1.0", path = "xerune_derive" }
 coarse-prof = { version = "0.2.6", optional = true }
 html5ever = { version = "0.36.1", optional = true }
 markup5ever = { version = "0.36.1", optional = true }

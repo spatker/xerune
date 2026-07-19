@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 use taffy::prelude::*;
 use crate::style::{ContainerStyle, RenderData};
 use crate::css;
@@ -7,7 +9,7 @@ use super::node_map::NodeMap;
 use crate::alloc_prelude::*;
 
 #[cfg(feature = "dynamic-parser")]
-use crate::style::{Overflow, BoxSizing, Display, MyJustifyContent, TextAlign, Direction};
+use crate::style::{Overflow, BoxSizing, Display, CssJustifyContent, TextAlign, Direction};
 #[cfg(feature = "dynamic-parser")]
 use super::metadata::NodeMetadata;
 #[cfg(feature = "dynamic-parser")]
@@ -429,50 +431,50 @@ pub(crate) fn dom_to_taffy(
                 if layout_style.inset.left.is_auto() && layout_style.inset.right.is_auto() {
                     let is_parent_row = parent_style.flex_direction == FlexDirection::Row || parent_style.flex_direction == FlexDirection::RowReverse;
                     let h_align = if is_parent_row {
-                        let jc = parent_style.justify_content.unwrap_or(MyJustifyContent::FlexStart);
+                        let jc = parent_style.justify_content.unwrap_or(CssJustifyContent::FlexStart);
                         match jc {
-                            MyJustifyContent::FlexStart => {
+                            CssJustifyContent::FlexStart => {
                                 if (parent_style.flex_direction == FlexDirection::Row) ^ (parent_style.direction == Direction::Rtl) {
                                     Alignment::Start
                                 } else {
                                     Alignment::End
                                 }
                             }
-                            MyJustifyContent::FlexEnd => {
+                            CssJustifyContent::FlexEnd => {
                                 if (parent_style.flex_direction == FlexDirection::Row) ^ (parent_style.direction == Direction::Rtl) {
                                     Alignment::End
                                 } else {
                                     Alignment::Start
                                 }
                             }
-                            MyJustifyContent::Center | MyJustifyContent::SpaceAround | MyJustifyContent::SpaceEvenly => {
+                            CssJustifyContent::Center | CssJustifyContent::SpaceAround | CssJustifyContent::SpaceEvenly => {
                                 Alignment::Center
                             }
-                            MyJustifyContent::SpaceBetween => {
+                            CssJustifyContent::SpaceBetween => {
                                 if (parent_style.flex_direction == FlexDirection::Row) ^ (parent_style.direction == Direction::Rtl) {
                                     Alignment::Start
                                 } else {
                                     Alignment::End
                                 }
                             }
-                            MyJustifyContent::Start => {
+                            CssJustifyContent::Start => {
                                 if parent_style.direction == Direction::Rtl {
                                     Alignment::End
                                 } else {
                                     Alignment::Start
                                 }
                             }
-                            MyJustifyContent::End => {
+                            CssJustifyContent::End => {
                                 if parent_style.direction == Direction::Rtl {
                                     Alignment::Start
                                 } else {
                                     Alignment::End
                                 }
                             }
-                            MyJustifyContent::Left => {
+                            CssJustifyContent::Left => {
                                 Alignment::Start
                             }
-                            MyJustifyContent::Right => {
+                            CssJustifyContent::Right => {
                                 Alignment::End
                             }
                         }
@@ -530,36 +532,36 @@ pub(crate) fn dom_to_taffy(
                 if layout_style.inset.top.is_auto() && layout_style.inset.bottom.is_auto() {
                     let is_parent_row = parent_style.flex_direction == FlexDirection::Row || parent_style.flex_direction == FlexDirection::RowReverse;
                     let v_align = if !is_parent_row {
-                        let jc = parent_style.justify_content.unwrap_or(MyJustifyContent::FlexStart);
+                        let jc = parent_style.justify_content.unwrap_or(CssJustifyContent::FlexStart);
                         match jc {
-                            MyJustifyContent::FlexStart => {
+                            CssJustifyContent::FlexStart => {
                                 if parent_style.flex_direction == FlexDirection::Column {
                                     Alignment::Start
                                 } else {
                                     Alignment::End
                                 }
                             }
-                            MyJustifyContent::FlexEnd => {
+                            CssJustifyContent::FlexEnd => {
                                 if parent_style.flex_direction == FlexDirection::Column {
                                     Alignment::End
                                 } else {
                                     Alignment::Start
                                 }
                             }
-                            MyJustifyContent::Center | MyJustifyContent::SpaceAround | MyJustifyContent::SpaceEvenly => {
+                            CssJustifyContent::Center | CssJustifyContent::SpaceAround | CssJustifyContent::SpaceEvenly => {
                                 Alignment::Center
                             }
-                            MyJustifyContent::SpaceBetween => {
+                            CssJustifyContent::SpaceBetween => {
                                 if parent_style.flex_direction == FlexDirection::Column {
                                     Alignment::Start
                                 } else {
                                     Alignment::End
                                 }
                             }
-                            MyJustifyContent::Start | MyJustifyContent::Left | MyJustifyContent::Right => {
+                            CssJustifyContent::Start | CssJustifyContent::Left | CssJustifyContent::Right => {
                                 Alignment::Start
                             }
-                            MyJustifyContent::End => {
+                            CssJustifyContent::End => {
                                 Alignment::End
                             }
                         }

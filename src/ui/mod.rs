@@ -1,7 +1,8 @@
-pub mod node_map;
-pub mod metadata;
-pub mod builder;
+pub(crate) mod node_map;
+pub(crate) mod metadata;
+pub(crate) mod builder;
 pub mod attributes;
+/// Module containing stylesheet layout mapping resolver methods.
 pub mod style_resolution;
 
 pub use node_map::{NodeMap, NodeMapIter, NodeMapValues};
@@ -19,9 +20,11 @@ use html5ever::tendril::TendrilSink;
 #[cfg(feature = "dynamic-parser")]
 use markup5ever_rcdom::{Handle as DomHandle, NodeData, RcDom};
 
+/// Representation handle to an HTML DOM node.
 #[cfg(feature = "dynamic-parser")]
 pub type Handle = DomHandle;
 
+/// Representation handle to an HTML DOM node (unused when dynamic-parser feature is disabled).
 #[cfg(not(feature = "dynamic-parser"))]
 pub type Handle = ();
 
@@ -37,10 +40,14 @@ use crate::graphics::{Canvas, DrawCommand, Rect, TextMeasurer};
 use crate::style::{ContainerStyle, Overflow, RenderData};
 use crate::css;
 
+/// Mapped interaction message identifier.
 pub type Interaction = String;
 
+/// Trait defining a programmatically compiled template that can layout a UI structure.
 pub trait TemplateLayout {
+    /// The CSS stylesheet content accompanying this template.
     fn stylesheet(&self) -> &'static str;
+    /// Builds the layout tree onto the builder, returning the root NodeId.
     fn build_ui(
         &self,
         builder: &mut UiBuilder,
@@ -50,18 +57,29 @@ pub trait TemplateLayout {
     ) -> NodeId;
 }
 
+/// The core layout engine containing the taffy tree and metadata maps.
 pub struct Ui {
+    /// The taffy layout tree.
     pub taffy: TaffyTree,
+    /// Resolved layout style and rendering properties per node.
     pub render_data: NodeMap<RenderData>,
+    /// Mapped interaction identifier messages per node.
     pub interactions: NodeMap<Interaction>,
+    /// Active scroll position offsets per scrollable node.
     pub scroll_offsets: NodeMap<(f32, f32)>,
+    /// Root node identifier of the layout tree.
     pub root: NodeId,
+    /// Associated HTML DOM tree handle per node.
     pub node_to_handle: NodeMap<Handle>,
+    /// Cached layout styles and parsed attributes styles per node.
     pub base_styles: NodeMap<(Style, ContainerStyle)>,
+    /// Parsed keyframe animations.
     pub keyframes: HashMap<String, css::KeyframesAnimation>,
 }
 
 impl Ui {
+    /// Create a new UI layout engine by parsing an HTML source string.
+    /// Available only when the `dynamic-parser` feature is enabled.
     #[cfg(feature = "dynamic-parser")]
     pub fn new(
         html: &str, 
@@ -191,6 +209,7 @@ impl Ui {
         }
     }
 
+    /// Create a new UI layout engine from a precompiled template layout.
     pub fn new_compiled(
         model: &impl TemplateLayout,
         measurer: &impl TextMeasurer,
@@ -275,6 +294,8 @@ impl Ui {
         })
     }
 
+    /// Handles scroll inputs by checking for a scrollable element containing coordinates (x, y)
+    /// and adjusting its scroll offset by (delta_x, delta_y). Returns true if scrolled.
     pub fn handle_scroll(&mut self, x: f32, y: f32, delta_x: f32, delta_y: f32) -> bool {
         profile!("handle_scroll");
         if let Some(mut node) = hit_test_recursive(&self.taffy, self.root, &self.scroll_offsets, &self.render_data, x, y, 0.0, 0.0) {
@@ -325,6 +346,8 @@ impl Ui {
         false
     }
 
+    /// Adjusts the scroll offset of scrollable parent ancestors to make the element with
+    /// the specified interaction message visible.
     pub fn scroll_into_view(&mut self, interaction_id: &str) {
         let node_opt = self.interactions.iter().find(|(_, v)| *v == interaction_id).map(|(k, _)| k);
         if let Some(node) = node_opt {
@@ -354,12 +377,14 @@ impl Ui {
         }
     }
 
+    /// Recalculates the taffy layout based on the available size constraints.
     pub fn compute_layout(&mut self, available_space: Size<AvailableSpace>) -> Result<(), TaffyError> {
         profile!("taffy_layout");
         self.taffy.compute_layout(self.root, available_space)?;
         Ok(())
     }
 
+    /// Traverses the layout tree and builds the hardware-agnostic rendering draw commands list.
     pub fn build_commands(&self, _canvases: &HashMap<String, Canvas>, focused_id: Option<&str>) -> Vec<DrawCommand> {
         layout_to_draw_commands(
             &self.taffy,
@@ -372,6 +397,8 @@ impl Ui {
         )
     }
 
+    /// Performs a hit test check for coordinates (x, y) and returns the corresponding interaction
+    /// message identifier and the matching NodeId if found.
     pub fn hit_test(&self, x: f32, y: f32) -> Option<(Interaction, NodeId)> {
          profile!("hit_test");
          if let Some(clicked_node) = hit_test_recursive(&self.taffy, self.root, &self.scroll_offsets, &self.render_data, x, y, 0.0, 0.0) {
@@ -388,6 +415,7 @@ impl Ui {
     }
 }
 
+/// Normalizes input text strings by collapsing multiple spaces and trimming leading/trailing spaces.
 pub fn normalize_text(text: &str) -> Cow<'_, str> {
     let mut needs_normalization = false;
     let mut last_was_space = false;
@@ -414,7 +442,9 @@ pub fn normalize_text(text: &str) -> Cow<'_, str> {
     }
 }
 
+/// Trait for converting values to string types suitable for display within layout elements.
 pub trait ToDisplayString {
+    /// Converts the value to a Cow<'_, str> display string.
     fn to_display_string(&self) -> Cow<'_, str>;
 }
 
@@ -637,6 +667,7 @@ fn traverse_layout(
     }
 }
 
+/// Recursively traverses children nodes to hit-test a point against layout boundaries.
 pub fn hit_test_recursive(
     taffy: &TaffyTree,
     root: NodeId,

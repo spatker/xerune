@@ -1,4 +1,4 @@
-pub static ROBOTO_BOLD_BOLD: BitmapFont = BitmapFont {
+pub(crate) static ROBOTO_BOLD_BOLD: BitmapFont = BitmapFont {
 name: "Roboto-Bold",
 size: 16.0,
 weight: 1,

@@ -7,9 +7,11 @@ use std::thread;
 use linuxfb::Framebuffer;
 use evdev::{Device, AbsoluteAxisType, InputEventKind, Key};
 
+/// Backend implementation for Linux framebuffers (/dev/fb0).
 pub struct LinuxFbBackend;
 
 impl LinuxFbBackend {
+    /// Create a new LinuxFbBackend.
     pub fn new() -> Self {
         Self
     }
@@ -243,11 +245,16 @@ impl Backend for LinuxFbBackend {
     }
 }
 
+/// Input touch screen bounds calibration values.
 #[derive(Debug, Clone)]
 pub struct TouchCalibration {
+    /// Minimum X coordinate bound.
     pub x_min: f32,
+    /// Maximum X coordinate bound.
     pub x_max: f32,
+    /// Minimum Y coordinate bound.
     pub y_min: f32,
+    /// Maximum Y coordinate bound.
     pub y_max: f32,
 }
 

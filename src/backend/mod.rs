@@ -1,11 +1,11 @@
 #[cfg(feature = "winit")]
-pub mod winit_impl;
+pub(crate) mod winit_impl;
 
 #[cfg(all(target_os = "linux", feature = "linuxfb", feature = "evdev"))]
-pub mod linuxfb_impl;
+pub(crate) mod linuxfb_impl;
 
 #[cfg(all(target_os = "linux", feature = "drm", feature = "evdev"))]
-pub mod drm_impl;
+pub(crate) mod drm_impl;
 
 #[cfg(feature = "winit")]
 pub use winit_impl::WinitBackend;
@@ -16,10 +16,13 @@ pub use linuxfb_impl::LinuxFbBackend;
 #[cfg(all(target_os = "linux", feature = "drm", feature = "evdev"))]
 pub use drm_impl::DrmBackend;
 
+/// Trait defining a message-passing proxy wrapper to dispatch events back to the MVU event loop.
 pub trait EventProxy: Send + Sync + Clone + 'static {
+    /// Send an event message string.
     fn send_message(&self, message: String) -> Result<(), SendError>;
 }
 
+/// Error type when event transmission fails.
 #[derive(Debug)]
 pub struct SendError(pub String);
 
@@ -30,6 +33,7 @@ impl std::fmt::Display for SendError {
 }
 impl std::error::Error for SendError {}
 
+/// Standard MPSC channel proxy wrapper implementing EventProxy.
 #[cfg(any(
     all(target_os = "linux", feature = "linuxfb", feature = "evdev"),
     all(target_os = "linux", feature = "drm", feature = "evdev")
@@ -50,9 +54,12 @@ impl EventProxy for MpscProxy {
     }
 }
 
+/// Error representation when initializing or executing windowing/hardware backends.
 #[derive(Debug)]
 pub enum BackendError {
+    /// Error during platform initialization.
     Init(String),
+    /// Error during application execution.
     Run(String),
 }
 
@@ -66,9 +73,12 @@ impl std::fmt::Display for BackendError {
 }
 impl std::error::Error for BackendError {}
 
+/// Trait defining an operating system or hardware display backend.
 pub trait Backend {
+    /// Associated EventProxy type.
     type Proxy: EventProxy + Clone + Send + 'static;
 
+    /// Runs the backend application event loop.
     fn run<M, TM, F>(
         self,
         title: &str,

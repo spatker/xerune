@@ -2,18 +2,30 @@ use taffy::prelude::*;
 use crate::style::{ContainerStyle, AnimationIterationCount};
 use crate::alloc_prelude::*;
 
+/// Representation of an active CSS animation currently running on a node.
 #[derive(Clone, Debug)]
 pub struct ActiveAnimation {
+    /// The NodeId of the layout node this animation applies to.
     pub node_id: NodeId,
+    /// The name of the animation keyframe mapping.
     pub name: Arc<str>,
+    /// Duration of the animation sequence in seconds.
     pub duration: f32,
+    /// The easing/timing function name.
     pub timing_function: Arc<str>,
+    /// Delay before animation startup in seconds.
     pub delay: f32,
+    /// Number of times the animation should execute.
     pub iteration_count: AnimationIterationCount,
+    /// Progression direction of the keyframes sequence.
     pub direction: Arc<str>,
+    /// Fill mode configuration.
     pub fill_mode: Arc<str>,
+    /// Play state configuration ("running" or "paused").
     pub play_state: Arc<str>,
+    /// Elapsed duration since animation start.
     pub elapsed: core::time::Duration,
+    /// Flags if the animation sequence has completed all iterations.
     pub is_finished: bool,
 }
 

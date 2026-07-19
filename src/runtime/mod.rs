@@ -1,5 +1,8 @@
+/// Timer abstractions and callback ticking management.
 pub mod timer;
+/// Transition and keyframe animation tracking state.
 pub mod animation;
+/// Platform-independent monotonic time wrappers.
 pub mod time;
 
 pub use timer::{Timer, TickResult};
@@ -23,26 +26,37 @@ use crate::style::{ContainerStyle, RenderData, AnimationIterationCount};
 use crate::model::{InputEvent, Model};
 use crate::ui::{Ui, NodeMap};
 
+/// Current active state of a touch event/gesture tracking.
 #[derive(Debug, Clone, Copy)]
 pub struct TouchState {
+    /// Associated pointer/touch input identifier.
     pub id: u64,
+    /// Starting X coordinate of the touch stroke.
     pub start_x: f32,
+    /// Starting Y coordinate of the touch stroke.
     pub start_y: f32,
+    /// Last recorded/current X coordinate.
     pub last_x: f32,
+    /// Last recorded/current Y coordinate.
     pub last_y: f32,
+    /// Flags if this touch interaction has evolved into scroll offsets.
     pub has_scrolled: bool,
 }
 
+/// The Elm/MVU runtime engine coordinating state updates, layout, input events, and rendering.
 pub struct Runtime<M, R> {
     model: M,
     measurer: R,
+    /// The current resolved UI structure mapping.
     pub ui: Ui,
     default_style: ContainerStyle,
     pub(crate) scroll_offsets: NodeMap<(f32, f32)>,
     cached_size: Size<AvailableSpace>,
     context: Context,
     last_commands: Vec<DrawCommand>,
+    /// Focused input ID if any text inputs are currently active.
     pub focused_id: Option<String>,
+    /// Expected frames per second target.
     pub target_fps: u32,
     pub(crate) timers: Vec<Timer>,
     next_timer_id: usize,
@@ -53,6 +67,7 @@ pub struct Runtime<M, R> {
 }
 
 impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
+    /// Create a new UI MVU runtime with the specified initial Model and a TextMeasurer.
     pub fn new(model: M, measurer: R) -> Self {
          let default_style = ContainerStyle::default();
          let validator = |s: &str| M::Message::from_str(s).is_ok();
@@ -116,6 +131,8 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
         self.ui.scroll_offsets = self.scroll_offsets.clone();
     }
 
+    /// Dispatches an input event to the UI and updates the application model accordingly.
+    /// Returns true if the screen needs to be redrawn.
     pub fn handle_event(&mut self, event: InputEvent) -> bool {
         match event {
             InputEvent::Click { x, y } => {
@@ -225,6 +242,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
         }
     }
 
+    /// Feeds multiple text messages into the update loop. Returns true if the view changes.
     pub fn handle_messages(&mut self, messages: impl IntoIterator<Item = String>) -> bool {
         let mut any_update = false;
         for msg_str in messages {
@@ -252,6 +270,8 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
         }
     }
 
+    /// Syncs the declarative view to the layout tree and triggers layout recalculation.
+    /// Returns true if layout adjustments occurred.
     pub fn sync_view(&mut self) -> bool {
         self.ui = {
             profile!("ui_new_compiled");
@@ -292,6 +312,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
         dirty
     }
 
+    /// Renders the current layout tree state, optimizing redraws with the returned dirty rectangle.
     pub fn render(&mut self, renderer: &mut impl Renderer) -> Option<Rect> {
         profile!("render");
         let commands = self.ui.build_commands(&self.context.canvases, self.focused_id.as_deref());
@@ -345,6 +366,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
         dirty_region
     }
 
+    /// Set the fixed dimensions of the layout viewport.
     pub fn set_size(&mut self, width: f32, height: f32) {
          let _ = self.ui.compute_layout(Size {
             width: length(width),
@@ -352,16 +374,19 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
           });
     }
 
+    /// Recalculates layout with the provided available space constraints.
     pub fn compute_layout(&mut self, size: Size<AvailableSpace>) {
         self.cached_size = size;
         let _ = self.ui.compute_layout(size);
     }
     
+    /// Adjusts the scroll position of parent scroll elements to reveal a target interaction ID.
     pub fn scroll_into_view(&mut self, interaction_id: &str) {
         self.ui.scroll_into_view(interaction_id);
         self.scroll_offsets = self.ui.scroll_offsets.clone();
     }
 
+    /// Registers a recurring interval timer.
     pub fn set_interval(&mut self, message: String, millis: u32) {
         let duration = core::time::Duration::from_millis(millis as u64);
         let id = self.next_timer_id;
@@ -375,6 +400,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
         });
     }
 
+    /// Registers a one-shot timeout timer.
     pub fn set_timeout(&mut self, message: String, millis: u32) {
         let duration = core::time::Duration::from_millis(millis as u64);
         let id = self.next_timer_id;
@@ -388,16 +414,20 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
         });
     }
 
+    /// Evaluates current animations and timers, updating state if necessary.
+    /// Requires std monotonic time features.
     #[cfg(feature = "std")]
     pub fn tick(&mut self) -> TickResult {
         self.tick_with_time(Instant::now())
     }
 
+    /// Evaluates animations and timers using the specified millisecond elapsed time duration.
     pub fn tick_at_ms(&mut self, now_ms: u64) -> TickResult {
         let now = self.start_time + core::time::Duration::from_millis(now_ms);
         self.tick_with_time(now)
     }
 
+    /// Evaluates animations and timers using the specified Instant time.
     pub fn tick_with_time(&mut self, now: Instant) -> TickResult {
         let mut needs_redraw = false;
 

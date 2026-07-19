@@ -6,6 +6,7 @@ use std::num::NonZeroU32;
 use crate::{Model, InputEvent, Runtime, TextMeasurer};
 use super::{Backend, EventProxy, BackendError, SendError};
 
+/// Proxy struct to dispatch user messages from winit events into the MVU event loop.
 #[derive(Clone)]
 pub struct WinitProxy {
     proxy: EventLoopProxy<String>,
@@ -18,9 +19,11 @@ impl EventProxy for WinitProxy {
     }
 }
 
+/// Backend implementation for winit window environments.
 pub struct WinitBackend;
 
 impl WinitBackend {
+    /// Create a new WinitBackend.
     pub fn new() -> Self {
         Self
     }

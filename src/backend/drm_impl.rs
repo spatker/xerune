@@ -10,6 +10,7 @@ use drm::control::Device as ControlDevice;
 use drm::Device as BasicDevice;
 use drm_fourcc::DrmFourcc;
 
+/// File descriptor wrapper representing an opened DRI/DRM card device.
 pub struct Card(File);
 
 impl AsFd for Card {
@@ -22,6 +23,7 @@ impl drm::Device for Card {}
 impl drm::control::Device for Card {}
 
 impl Card {
+    /// Attempt to open the first available DRI card device under /dev/dri/.
     pub fn open_dri_card() -> Result<Self, BackendError> {
         for i in 0..5 {
             let path = format!("/dev/dri/card{}", i);
@@ -34,11 +36,16 @@ impl Card {
     }
 }
 
+/// Input touch screen bounds calibration values.
 #[derive(Debug, Clone)]
 pub struct TouchCalibration {
+    /// Minimum X coordinate bound.
     pub x_min: f32,
+    /// Maximum X coordinate bound.
     pub x_max: f32,
+    /// Minimum Y coordinate bound.
     pub y_min: f32,
+    /// Maximum Y coordinate bound.
     pub y_max: f32,
 }
 
@@ -202,9 +209,11 @@ fn wait_for_page_flip(card: &Card) -> Result<(), BackendError> {
     Ok(())
 }
 
+/// Backend implementation for direct rendering manager (DRM/KMS) display drivers.
 pub struct DrmBackend;
 
 impl DrmBackend {
+    /// Create a new DrmBackend.
     pub fn new() -> Self {
         Self
     }
