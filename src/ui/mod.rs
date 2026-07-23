@@ -547,6 +547,9 @@ fn traverse_layout(
         };
 
         if let Some(style) = maybe_style {
+            if style.display == crate::style::Display::None {
+                return;
+            }
             overflow = style.overflow;
             if style.background_color.is_some() || style.background_gradient.is_some() || style.border_width > 0.0 {
                  commands.push(DrawCommand::DrawRect {
@@ -689,6 +692,19 @@ pub fn hit_test_recursive(
         let mut child_abs_y = top;
 
         if let Some(data) = render_data.get(&root) {
+            let maybe_style = match data {
+                RenderData::Container(style) => Some(style),
+                RenderData::TextInput(_, _, style) => Some(style),
+                RenderData::Text(_, style) => Some(style),
+                _ => None,
+            };
+
+            if let Some(s) = maybe_style {
+                if s.display == crate::style::Display::None {
+                    return None;
+                }
+            }
+
             let overflow = match data {
                 RenderData::Container(style) => style.overflow,
                 RenderData::TextInput(_, _, style) => style.overflow,

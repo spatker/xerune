@@ -96,6 +96,26 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
          }
     }
 
+    /// Get a reference to the inner model.
+    pub fn model(&self) -> &M {
+        &self.model
+    }
+
+    /// Get a mutable reference to the inner model.
+    pub fn model_mut(&mut self) -> &mut M {
+        &mut self.model
+    }
+
+    /// Get a reference to the inner context.
+    pub fn context(&self) -> &Context {
+        &self.context
+    }
+
+    /// Get a mutable reference to the inner context.
+    pub fn context_mut(&mut self) -> &mut Context {
+        &mut self.context
+    }
+
     fn sync_canvases(ui: &Ui, context: &mut Context) {
         for (node_id, data) in &ui.render_data {
             if let RenderData::Canvas(id, _style) = data {
@@ -457,6 +477,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
         let dt = now.duration_since(self.last_tick_time);
         self.last_tick_time = now;
 
+        #[cfg(not(target_arch = "wasm32"))]
         if !self.ui.keyframes.is_empty() || !self.active_animations.is_empty() {
             let mut declared_animations = HashMap::new();
             for (node_id, render_data) in &self.ui.render_data {

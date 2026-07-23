@@ -1,19 +1,31 @@
-#[cfg(feature = "std")]
+#[cfg(all(feature = "std", not(target_arch = "wasm32")))]
 /// Monotonic time representation using std::time::Instant.
 pub type Instant = std::time::Instant;
 
-/// Monotonic time representation for `no_std` environments representing milliseconds.
-#[cfg(not(feature = "std"))]
+#[cfg(all(target_arch = "wasm32", feature = "browser"))]
+#[wasm_bindgen::prelude::wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(js_namespace = Date, js_name = now)]
+    fn date_now() -> f64;
+}
+
+/// Monotonic time representation for `no_std` and WASM environments representing milliseconds.
+#[cfg(any(not(feature = "std"), target_arch = "wasm32"))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Instant(pub u64); // milliseconds since boot
 
-#[cfg(not(feature = "std"))]
+#[cfg(any(not(feature = "std"), target_arch = "wasm32"))]
 impl Instant {
-    /// Return the current time. Under no_std, this defaults to a zero timestamp.
+    /// Return the current time. Under no_std or WASM, this defaults to a zero timestamp.
     pub fn now() -> Self {
-        // Under no_std, there is no real-time clock source by default.
-        // The user must drive time by calling Runtime::tick_at_ms or tick_with_time.
-        Instant(0)
+        #[cfg(all(target_arch = "wasm32", feature = "browser"))]
+        {
+            Instant(date_now() as u64)
+        }
+        #[cfg(not(all(target_arch = "wasm32", feature = "browser")))]
+        {
+            Instant(0)
+        }
     }
 
     /// Create an Instant from a millisecond timestamp.
@@ -42,11 +54,11 @@ impl Instant {
 
     /// Calculate the elapsed duration since this timestamp, relative to start.
     pub fn elapsed(&self) -> core::time::Duration {
-        core::time::Duration::from_millis(self.0)
+        Self::now().duration_since(*self)
     }
 }
 
-#[cfg(not(feature = "std"))]
+#[cfg(any(not(feature = "std"), target_arch = "wasm32"))]
 impl core::ops::Add<core::time::Duration> for Instant {
     type Output = Self;
 
@@ -55,14 +67,14 @@ impl core::ops::Add<core::time::Duration> for Instant {
     }
 }
 
-#[cfg(not(feature = "std"))]
+#[cfg(any(not(feature = "std"), target_arch = "wasm32"))]
 impl core::ops::AddAssign<core::time::Duration> for Instant {
     fn add_assign(&mut self, rhs: core::time::Duration) {
         self.0 += rhs.as_millis() as u64;
     }
 }
 
-#[cfg(not(feature = "std"))]
+#[cfg(any(not(feature = "std"), target_arch = "wasm32"))]
 impl core::ops::Sub<core::time::Duration> for Instant {
     type Output = Self;
 
@@ -71,7 +83,7 @@ impl core::ops::Sub<core::time::Duration> for Instant {
     }
 }
 
-#[cfg(not(feature = "std"))]
+#[cfg(any(not(feature = "std"), target_arch = "wasm32"))]
 impl core::ops::Sub<Instant> for Instant {
     type Output = core::time::Duration;
 

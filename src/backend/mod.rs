@@ -7,6 +7,9 @@ pub(crate) mod linuxfb_impl;
 #[cfg(all(target_os = "linux", feature = "drm", feature = "evdev"))]
 pub(crate) mod drm_impl;
 
+#[cfg(feature = "browser")]
+pub mod browser_impl;
+
 #[cfg(feature = "winit")]
 pub use winit_impl::WinitBackend;
 

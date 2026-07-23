@@ -1,31 +1,54 @@
-// Force rebuild 2
-use xerune::XeruneTemplate;
+#[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm")))]
 use fontdue::Font;
-use xerune::{Runtime, Model, XeruneMessage};
+use xerune::{Runtime, Model, XeruneMessage, XeruneTemplate};
 
+#[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm")))]
 #[cfg(not(feature = "fast-renderer"))]
 use skia_renderer::TinySkiaMeasurer;
+#[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm")))]
 #[cfg(feature = "fast-renderer")]
 use fast_renderer::FastMeasurer;
 
-mod support;
+#[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm")))]
+#[cfg(not(feature = "fast-renderer"))]
+pub type Measurer = TinySkiaMeasurer<'static>;
+#[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm")))]
+#[cfg(feature = "fast-renderer")]
+pub type Measurer = FastMeasurer<'static>;
 
-#[derive(XeruneTemplate)]
+#[derive(XeruneTemplate, serde::Serialize, serde::Deserialize)]
 #[template(path = "todo_list.html")]
-struct TodoList {
+pub struct TodoList {
     items: Vec<TodoItem>,
     active_item: usize,
     new_item_title: String,
 }
 
-#[derive(Clone)]
-struct TodoItem {
-    title: String,
-    completed: bool,
+impl Default for TodoList {
+    fn default() -> Self {
+        let mut items = Vec::new();
+        for i in 1..=20 {
+            items.push(TodoItem {
+                title: format!("Todo Item {}", i),
+                completed: i % 3 == 0,
+            });
+        }
+        Self {
+            items,
+            active_item: 0,
+            new_item_title: String::new(),
+        }
+    }
+}
+
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+pub struct TodoItem {
+    pub title: String,
+    pub completed: bool,
 }
 
 #[derive(Debug, Clone, XeruneMessage)]
-enum TodoMsg {
+pub enum TodoMsg {
     Toggle(usize),
     Remove(usize),
     Add,
@@ -64,7 +87,6 @@ impl Model for TodoList {
                 }
             }
             TodoMsg::TodoInput(text) => {
-                // Ignore control characters
                 for c in text.chars() {
                     if !c.is_control() {
                         self.new_item_title.push(c);
@@ -74,7 +96,6 @@ impl Model for TodoList {
             TodoMsg::KeyDown(key) => {
                 match key.as_str() {
                     "Backspace" => {
-                        // pop a char from new_item_title if it has focus
                         self.new_item_title.pop();
                     }
                     "ArrowUp" => {
@@ -96,11 +117,6 @@ impl Model for TodoList {
                             self.items[self.active_item].completed = !self.items[self.active_item].completed;
                         }
                     }
-                    "Space" => {
-                        // don't toggle if we're typing a space into the input box
-                        // (we handle space in TextInput instead for the input field, but we assume
-                        // space toggles item otherwise. For now, let's keep it simple.)
-                    }
                     _ => {}
                 }
             }
@@ -108,37 +124,16 @@ impl Model for TodoList {
     }
 }
 
-fn main() -> anyhow::Result<()> {
-    env_logger::init();
-    let font_data = include_bytes!("../resources/fonts/Roboto-Regular.ttf") as &[u8];
-    let roboto_regular = Font::from_bytes(font_data, fontdue::FontSettings::default()).unwrap();
-    let font_data_bold = include_bytes!("../resources/fonts/Roboto-Bold.ttf") as &[u8];
-    let roboto_bold = Font::from_bytes(font_data_bold, fontdue::FontSettings::default()).unwrap();
-    let fonts = vec![roboto_regular, roboto_bold];
-    // Leak fonts to satisfy static lifetime for winit event loop
-    let fonts_ref: &'static [Font] = Box::leak(Box::new(fonts));
-
-    let mut items = Vec::new();
-    for i in 1..=20 {
-        items.push(TodoItem {
-            title: format!("Todo Item {}", i),
-            completed: i % 3 == 0,
-        });
-    }
-
-    let todo_list = TodoList { items, active_item: 0, new_item_title: String::new() };
-
+// Logic to run this natively
+#[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm")))]
+pub fn run_native(render_frame: impl FnMut(&mut Runtime<TodoList, Measurer>, &mut [u32], u32, u32) + 'static, fonts_ref: &'static [Font]) -> anyhow::Result<()> {
+    let todo_list = TodoList::default();
     #[cfg(not(feature = "fast-renderer"))]
     let measurer = TinySkiaMeasurer { fonts: fonts_ref };
     #[cfg(feature = "fast-renderer")]
     let measurer = FastMeasurer { fonts: fonts_ref.into() };
     
     let runtime = Runtime::new(todo_list, measurer);
-    
-    let mut caches = support::RenderCaches::new();
-    let render_fn = move |runtime: &mut Runtime<_, _>, buffer: &mut [u32], width: u32, height: u32| {
-        support::render_frame(runtime, buffer, width, height, fonts_ref, &mut caches);
-    };
 
     #[cfg(not(any(
         all(target_os = "linux", feature = "linuxfb", feature = "evdev"),
@@ -146,21 +141,20 @@ fn main() -> anyhow::Result<()> {
     )))]
     {
         use xerune::backend::Backend;
-        xerune::backend::WinitBackend::new().run("Xerune Todo Example", 800, 600, runtime, render_fn, | _ | {})?
+        xerune::backend::WinitBackend::new().run("Xerune Todo Example", 800, 600, runtime, render_frame, | _ | {})?
     }
 
     #[cfg(all(target_os = "linux", feature = "linuxfb", feature = "evdev", not(feature = "drm")))]
     {
         use xerune::backend::Backend;
-        xerune::backend::LinuxFbBackend::new().run("Xerune Todo Example", 800, 600, runtime, render_fn, | _ | {})?;
+        xerune::backend::LinuxFbBackend::new().run("Xerune Todo Example", 800, 600, runtime, render_frame, | _ | {})?;
     }
 
     #[cfg(all(target_os = "linux", feature = "drm", feature = "evdev"))]
     {
         use xerune::backend::Backend;
-        xerune::backend::DrmBackend::new().run("Xerune Todo Example", 800, 600, runtime, render_fn, | _ | {})?;
+        xerune::backend::DrmBackend::new().run("Xerune Todo Example", 800, 600, runtime, render_frame, | _ | {})?;
     }
 
     Ok(())
 }
-

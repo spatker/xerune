@@ -618,7 +618,8 @@ impl<'a> Renderer for FastRenderer<'a> {
                     #[cfg(feature = "std")]
                     {
                         if !self.image_cache.contains_key(src) {
-                            if let Ok(data) = std::fs::read(src) {
+                            let path_to_read = src.strip_prefix('/').unwrap_or(src);
+                            if let Ok(data) = std::fs::read(path_to_read) {
                                 if let Ok(png_pixmap) = tiny_skia::Pixmap::decode_png(&data) {
                                     let w = png_pixmap.width();
                                     let h = png_pixmap.height();

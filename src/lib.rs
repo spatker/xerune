@@ -56,7 +56,7 @@ pub mod defaults;
 pub mod font;
 
 /// System-specific backends for windowing and hardware displays.
-#[cfg(any(feature = "winit", feature = "linuxfb", feature = "drm"))]
+#[cfg(any(feature = "winit", feature = "linuxfb", feature = "drm", feature = "browser"))]
 pub mod backend;
 
 pub use graphics::{Color, LinearGradient, Rect, Canvas, Context, DrawCommand, TextMeasurer, Renderer};

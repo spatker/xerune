@@ -1,20 +1,32 @@
+#[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm")))]
 use fontdue::Font;
-use xerune::{Model, Runtime, XeruneTemplate, XeruneMessage};
+use xerune::{Runtime, Model, XeruneMessage, XeruneTemplate};
+
+#[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm")))]
+#[cfg(not(feature = "fast-renderer"))]
 use skia_renderer::TinySkiaMeasurer;
+#[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm")))]
+#[cfg(feature = "fast-renderer")]
+use fast_renderer::FastMeasurer;
 
-mod support;
+#[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm")))]
+#[cfg(not(feature = "fast-renderer"))]
+pub type Measurer = TinySkiaMeasurer<'static>;
+#[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm")))]
+#[cfg(feature = "fast-renderer")]
+pub type Measurer = FastMeasurer<'static>;
 
-#[derive(XeruneTemplate)]
+#[derive(XeruneTemplate, serde::Serialize, serde::Deserialize)]
 #[template(path = "calculator.html")]
-struct CalculatorModel {
-    display: String,
-    previous_value: Option<f64>,
-    pending_operation: Option<String>,
-    new_input: bool,
+pub struct CalculatorModel {
+    pub display: String,
+    pub previous_value: Option<f64>,
+    pub pending_operation: Option<String>,
+    pub new_input: bool,
 }
 
-impl CalculatorModel {
-    fn new() -> Self {
+impl Default for CalculatorModel {
+    fn default() -> Self {
         Self {
             display: "0".to_string(),
             previous_value: None,
@@ -22,7 +34,9 @@ impl CalculatorModel {
             new_input: true,
         }
     }
+}
 
+impl CalculatorModel {
     fn format_result(result: f64) -> String {
         if result.is_nan() {
             return "Error".to_string();
@@ -69,7 +83,6 @@ impl CalculatorModel {
                         if current != 0.0 {
                             prev / current
                         } else {
-                            // Simple error handling
                             f64::NAN
                         }
                     }
@@ -83,7 +96,7 @@ impl CalculatorModel {
 }
 
 #[derive(Debug, Clone, PartialEq, XeruneMessage)]
-enum Msg {
+pub enum Msg {
     Digit(char),
     #[xerune(prefix = "op:")]
     Operation(String),
@@ -140,25 +153,15 @@ impl Model for CalculatorModel {
     }
 }
 
-fn main() -> anyhow::Result<()> {
-    env_logger::init();
-    
-    // Load fonts
-    let font_data = include_bytes!("../resources/fonts/Roboto-Regular.ttf") as &[u8];
-    let roboto_regular = Font::from_bytes(font_data, fontdue::FontSettings::default()).unwrap();
-    let font_data_bold = include_bytes!("../resources/fonts/Roboto-Bold.ttf") as &[u8];
-    let roboto_bold = Font::from_bytes(font_data_bold, fontdue::FontSettings::default()).unwrap();
-    let fonts = vec![roboto_regular, roboto_bold];
-    let fonts_ref: &'static [Font] = Box::leak(fonts.into_boxed_slice());
-
+#[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm")))]
+pub fn run_native(render_frame: impl FnMut(&mut Runtime<CalculatorModel, Measurer>, &mut [u32], u32, u32) + 'static, fonts_ref: &'static [Font]) -> anyhow::Result<()> {
+    let model = CalculatorModel::default();
+    #[cfg(not(feature = "fast-renderer"))]
     let measurer = TinySkiaMeasurer { fonts: fonts_ref };
-    let model = CalculatorModel::new();
-    let runtime = Runtime::new(model, measurer);
+    #[cfg(feature = "fast-renderer")]
+    let measurer = FastMeasurer { fonts: fonts_ref.into() };
     
-    let mut caches = support::RenderCaches::new();
-    let render_fn = move |runtime: &mut Runtime<_, _>, buffer: &mut [u32], width: u32, height: u32| {
-        support::render_frame(runtime, buffer, width, height, fonts_ref, &mut caches);
-    };
+    let runtime = Runtime::new(model, measurer);
 
     #[cfg(not(any(
         all(target_os = "linux", feature = "linuxfb", feature = "evdev"),
@@ -166,40 +169,19 @@ fn main() -> anyhow::Result<()> {
     )))]
     {
         use xerune::backend::Backend;
-        xerune::backend::WinitBackend::new().run(
-            "Xerune Calculator", 
-            400, 
-            500, 
-            runtime, 
-            render_fn,
-            |_| {} // No periodic ticks needed for basic calculator
-        ).map_err(|e| anyhow::anyhow!("{:?}", e))?
+        xerune::backend::WinitBackend::new().run("Xerune Calculator", 400, 500, runtime, render_frame, | _ | {})?
     }
 
     #[cfg(all(target_os = "linux", feature = "linuxfb", feature = "evdev", not(feature = "drm")))]
     {
-          use xerune::backend::Backend;
-          xerune::backend::LinuxFbBackend::new().run(
-              "Xerune Calculator", 
-              400, 
-              500, 
-              runtime, 
-              render_fn, 
-              |_| {}
-          ).map_err(|e| anyhow::anyhow!("{:?}", e))?;
+        use xerune::backend::Backend;
+        xerune::backend::LinuxFbBackend::new().run("Xerune Calculator", 400, 500, runtime, render_frame, | _ | {})?;
     }
 
     #[cfg(all(target_os = "linux", feature = "drm", feature = "evdev"))]
     {
-          use xerune::backend::Backend;
-          xerune::backend::DrmBackend::new().run(
-              "Xerune Calculator", 
-              400, 
-              500, 
-              runtime, 
-              render_fn, 
-              |_| {}
-          ).map_err(|e| anyhow::anyhow!("{:?}", e))?;
+        use xerune::backend::Backend;
+        xerune::backend::DrmBackend::new().run("Xerune Calculator", 400, 500, runtime, render_frame, | _ | {})?;
     }
 
     Ok(())

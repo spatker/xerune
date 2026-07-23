@@ -1,38 +1,53 @@
-// Force rebuild 3
+#[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm")))]
 use fontdue::Font;
-use serde::Deserialize;
-use std::fs;
-use std::time::{Duration, Instant};
+use serde::{Serialize, Deserialize};
+use tiny_skia::{PixmapMut, Color, Paint, Rect, Transform, PathBuilder, FillRule};
+use xerune::{Runtime, Model, XeruneMessage, XeruneTemplate};
 
-// Import from the library and renderer
-use xerune::{Model, Runtime, XeruneTemplate, XeruneMessage};
-
+#[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm")))]
 #[cfg(not(feature = "fast-renderer"))]
 use skia_renderer::TinySkiaMeasurer;
+#[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm")))]
 #[cfg(feature = "fast-renderer")]
 use fast_renderer::FastMeasurer;
 
-use tiny_skia::{PixmapMut, Color, Paint, Rect, Transform, PathBuilder, FillRule};
-use rand::Rng;
+#[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm")))]
+#[cfg(not(feature = "fast-renderer"))]
+pub type Measurer = TinySkiaMeasurer<'static>;
+#[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm")))]
+#[cfg(feature = "fast-renderer")]
+pub type Measurer = FastMeasurer<'static>;
 
-mod support;
+// Simple self-contained LCG random generator to guarantee 100% WASM compatibility
+struct LcgRng {
+    state: u64,
+}
 
-#[cfg(feature = "profile")]
-use coarse_prof::profile;
+impl LcgRng {
+    fn new(seed: u64) -> Self {
+        Self { state: seed }
+    }
 
+    fn gen_range(&mut self, min: f32, max: f32) -> f32 {
+        self.state = self.state.wrapping_mul(6364136223846793005).wrapping_add(1);
+        let x = (self.state >> 32) as u32;
+        let pct = (x as f32) / (u32::MAX as f32);
+        min + pct * (max - min)
+    }
+}
 
-#[derive(Debug, Deserialize, Clone)]
-struct Track {
-    id: String,
-    title: String,
-    artist: String,
-    album: String,
-    duration: String,
-    cover_url: String,
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub struct Track {
+    pub id: String,
+    pub title: String,
+    pub artist: String,
+    pub album: String,
+    pub duration: String,
+    pub cover_url: String,
 }
 
 impl Track {
-    fn duration_seconds(&self) -> u64 {
+    pub fn duration_seconds(&self) -> u64 {
         let parts: Vec<&str> = self.duration.split(':').collect();
         if parts.len() == 2 {
             let min: u64 = parts[0].parse().unwrap_or(0);
@@ -44,48 +59,68 @@ impl Track {
     }
 }
 
-#[derive(XeruneTemplate)]
+#[derive(XeruneTemplate, Serialize, Deserialize, Clone, PartialEq)]
 #[template(path = "music_player.html")]
-struct MusicPlayerModel {
-    tracks: Vec<Track>,
-    current_track_index: Option<usize>,
-    is_playing: bool,
-    elapsed_seconds: u64,
-    last_tick: Instant,
-    visualizer_data: Vec<f32>,
-    transition_progress: f32,
-    hovered_track: String,
-    active_list_index: usize,
-    current_track: Track,
-    elapsed_time: String,
-    total_time: String,
-    progress: f32,
-    list_x: f32,
-    player_x: f32,
+pub struct MusicPlayerModel {
+    pub tracks: Vec<Track>,
+    pub current_track_index: Option<usize>,
+    pub is_playing: bool,
+    pub elapsed_seconds: u64,
+    #[serde(skip, default = "xerune::runtime::time::Instant::now")]
+    pub last_tick: xerune::runtime::time::Instant,
+    pub visualizer_data: Vec<f32>,
+    pub transition_progress: f32,
+    pub hovered_track: String,
+    pub active_list_index: usize,
+    pub current_track: Track,
+    pub elapsed_time: String,
+    pub total_time: String,
+    pub progress: f32,
+    pub list_x: f32,
+    pub player_x: f32,
 }
 
 impl MusicPlayerModel {
-    fn new() -> Self {
-        // Load tracks from JSON
-        let json_content = fs::read_to_string("resources/music_player/music.json")
-            .expect("Failed to read music.json");
-        let tracks: Vec<Track> = serde_json::from_str(&json_content)
-            .expect("Failed to parse music.json");
+    pub fn new(json_content: Option<&str>) -> Self {
+        let tracks: Vec<Track> = if let Some(content) = json_content {
+            serde_json::from_str(content).expect("Failed to parse music json")
+        } else {
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                let content = std::fs::read_to_string("examples/music_player/resources/music.json")
+                    .or_else(|_| std::fs::read_to_string("resources/music_player/music.json"))
+                    .expect("Failed to read music.json");
+                serde_json::from_str(&content).expect("Failed to parse music json")
+            }
+            #[cfg(target_arch = "wasm32")]
+            {
+                Vec::new()
+            }
+        };
 
-        let dummy_track = tracks[0].clone();
+        let dummy_track = Track {
+            id: "".to_string(),
+            title: "".to_string(),
+            artist: "".to_string(),
+            album: "".to_string(),
+            duration: "0:00".to_string(),
+            cover_url: "".to_string(),
+        };
+        let current_track = if tracks.is_empty() { dummy_track } else { tracks[0].clone() };
+
         Self {
             tracks,
             current_track_index: None,
             is_playing: false,
             elapsed_seconds: 0,
-            last_tick: Instant::now(),
+            last_tick: xerune::runtime::time::Instant::now(),
             visualizer_data: vec![10.0; 30], // 30 bars
             transition_progress: 0.0,
             hovered_track: String::new(),
             active_list_index: 0,
-            current_track: dummy_track.clone(),
+            current_track: current_track.clone(),
             elapsed_time: "0:00".to_string(),
-            total_time: dummy_track.duration.clone(),
+            total_time: if current_track.id.is_empty() { "0:00".to_string() } else { current_track.duration.clone() },
             progress: 0.0,
             list_x: 0.0,
             player_x: 800.0,
@@ -99,6 +134,7 @@ impl MusicPlayerModel {
     }
 
     fn update_derived_fields(&mut self) {
+        if self.tracks.is_empty() { return; }
         let dummy_track = self.tracks[0].clone();
         let current = self.current_track_index.map(|i| &self.tracks[i]).unwrap_or(&dummy_track);
         self.current_track = current.clone();
@@ -116,7 +152,7 @@ impl MusicPlayerModel {
 }
 
 #[derive(Debug, Clone, PartialEq, XeruneMessage)]
-enum Msg {
+pub enum Msg {
     SelectTrack(String),
     Back,
     Stop,
@@ -134,13 +170,14 @@ impl Model for MusicPlayerModel {
     type Message = Msg;
 
     fn update(&mut self, msg: Self::Message, context: &mut xerune::Context) {
+         if self.tracks.is_empty() { return; }
          match msg {
              Msg::SelectTrack(id_str) => {
                  if let Some(index) = self.tracks.iter().position(|t| t.id == id_str) {
                      self.current_track_index = Some(index);
                      self.is_playing = true;
                      self.elapsed_seconds = 0;
-                     self.last_tick = Instant::now();
+                     self.last_tick = xerune::runtime::time::Instant::now();
                  }
              },
              Msg::Back => {
@@ -154,7 +191,7 @@ impl Model for MusicPlayerModel {
              Msg::PlayPause => {
                  self.is_playing = !self.is_playing;
                  if self.is_playing {
-                     self.last_tick = Instant::now();
+                     self.last_tick = xerune::runtime::time::Instant::now();
                  }
              },
              Msg::Next => {
@@ -162,7 +199,7 @@ impl Model for MusicPlayerModel {
                      idx = (idx + 1) % self.tracks.len();
                      self.current_track_index = Some(idx);
                      self.elapsed_seconds = 0;
-                     self.last_tick = Instant::now();
+                     self.last_tick = xerune::runtime::time::Instant::now();
                  }
              },
              Msg::Prev => {
@@ -174,7 +211,7 @@ impl Model for MusicPlayerModel {
                      }
                      self.current_track_index = Some(idx);
                      self.elapsed_seconds = 0;
-                     self.last_tick = Instant::now();
+                     self.last_tick = xerune::runtime::time::Instant::now();
                  }
              },
              Msg::HoverTrack(id_str) => {
@@ -198,9 +235,8 @@ impl Model for MusicPlayerModel {
                          }
                      }
                      "Enter" | "Space" => {
-                         // Select the active track
                          let id = self.tracks[self.active_list_index].id.clone();
-                         self.update(Msg::SelectTrack(id), context); // Re-dispatch
+                         self.update(Msg::SelectTrack(id), context);
                      }
                      "Escape" => {
                          self.update(Msg::Back, context);
@@ -217,11 +253,11 @@ impl Model for MusicPlayerModel {
                      self.transition_progress = (self.transition_progress - 0.1).max(0.0);
                  }
 
-                 // Update visualizer
+                 // Update visualizer simulation using LCG Rng
                  if self.is_playing {
-                     let mut rng = rand::thread_rng();
+                     let mut rng = LcgRng::new(self.elapsed_seconds.wrapping_add(1) * 31);
                      for val in self.visualizer_data.iter_mut() {
-                        let change = rng.gen_range(-5.0..5.0);
+                        let change = rng.gen_range(-5.0, 5.0);
                         *val = (*val + change).clamp(5.0, 50.0);
                      }
                  } else {
@@ -236,8 +272,6 @@ impl Model for MusicPlayerModel {
                      let w = canvas.width as f32;
                      let h = canvas.height as f32;
                      
-                     // Create a PixmapMut wrapping the canvas data
-                     // Canvas data is RGBA u8
                      if let Some(mut pixmap) = PixmapMut::from_bytes(&mut canvas.data, canvas.width, canvas.height) {
                          pixmap.fill(Color::TRANSPARENT);
                          
@@ -247,7 +281,6 @@ impl Model for MusicPlayerModel {
                          
                          let mut paint = Paint::default();
                          
-                         // Create linear gradient
                          let gradient = tiny_skia::LinearGradient::new(
                              tiny_skia::Point::from_xy(0.0, 0.0),
                              tiny_skia::Point::from_xy(0.0, h),
@@ -276,28 +309,15 @@ impl Model for MusicPlayerModel {
                  }
 
                  if self.is_playing {
-                     if self.last_tick.elapsed() >= Duration::from_secs(1) {
+                     if self.last_tick.elapsed() >= core::time::Duration::from_secs(1) {
                          if let Some(idx) = self.current_track_index {
                              let duration = self.tracks[idx].duration_seconds();
                              if self.elapsed_seconds < duration {
                                  self.elapsed_seconds += 1;
-                                 self.last_tick = Instant::now();
+                                 self.last_tick = xerune::runtime::time::Instant::now();
                              } else {
-                                 // Auto next
                                  self.update(Msg::Next, context); 
                              }
-                         }
-                     }
-                 }
-                 
-                 #[cfg(feature = "profile")]
-                 {
-                     static mut TICK_COUNT: usize = 0;
-                     unsafe {
-                         TICK_COUNT += 1;
-                         if TICK_COUNT % 100 == 0 {
-                             coarse_prof::write(&mut std::io::stdout()).unwrap();
-                             println!("--------------------------------------------------");
                          }
                      }
                  }
@@ -309,16 +329,13 @@ impl Model for MusicPlayerModel {
 
 fn rounded_rect_path(rect: Rect, radius: f32) -> Option<tiny_skia::Path> {
     let mut pb = PathBuilder::new();
-    
-    // Clamp radius to ensure it doesn't exceed half the rectangle's dimensions
     let r = radius.min(rect.width() / 2.0).min(rect.height() / 2.0).max(0.0);
     
     if r <= 0.0 {
         return Some(PathBuilder::from_rect(rect));
     }
     
-    // The factor for approximating a circle quadrant with a cubic Bezier curve.
-    let bezier_circle_factor = 0.55228475; // (4.0 / 3.0) * (std::f32::consts::PI / 8.0).tan();
+    let bezier_circle_factor = 0.55228475;
     let handle_offset = r * bezier_circle_factor;
     
     let left = rect.x();
@@ -326,76 +343,45 @@ fn rounded_rect_path(rect: Rect, radius: f32) -> Option<tiny_skia::Path> {
     let right = rect.x() + rect.width();
     let bottom = rect.y() + rect.height();
 
-    // Start at the top edge, just after the top-left corner
     pb.move_to(left + r, top);
-    
-    // Top edge
     pb.line_to(right - r, top);
-    
-    // Top-right corner
     pb.cubic_to(
-        right - r + handle_offset, top,            // Control point 1
-        right, top + r - handle_offset,            // Control point 2
-        right, top + r                             // End point
+        right - r + handle_offset, top,
+        right, top + r - handle_offset,
+        right, top + r
     );
-    
-    // Right edge
     pb.line_to(right, bottom - r);
-    
-    // Bottom-right corner
     pb.cubic_to(
         right, bottom - r + handle_offset,
         right - r + handle_offset, bottom,
         right - r, bottom
     );
-    
-    // Bottom edge
     pb.line_to(left + r, bottom);
-    
-    // Bottom-left corner
     pb.cubic_to(
         left + r - handle_offset, bottom,
         left, bottom - r + handle_offset,
         left, bottom - r
     );
-    
-    // Left edge
     pb.line_to(left, top + r);
-    
-    // Top-left corner
     pb.cubic_to(
         left, top + r - handle_offset,
         left + r - handle_offset, top,
         left + r, top
     );
-    
     pb.close();
     pb.finish()
 }
 
-fn main() -> anyhow::Result<()> {
-    env_logger::init();
-    // Load fonts
-    let font_data = include_bytes!("../resources/fonts/Roboto-Regular.ttf") as &[u8];
-    let roboto_regular = Font::from_bytes(font_data, fontdue::FontSettings::default()).unwrap();
-    let font_data_bold = include_bytes!("../resources/fonts/Roboto-Bold.ttf") as &[u8];
-    let roboto_bold = Font::from_bytes(font_data_bold, fontdue::FontSettings::default()).unwrap();
-    let fonts = vec![roboto_regular, roboto_bold];
-    let fonts_ref: &'static [Font] = Box::leak(fonts.into_boxed_slice());
-
+#[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm")))]
+pub fn run_native(render_frame: impl FnMut(&mut Runtime<MusicPlayerModel, Measurer>, &mut [u32], u32, u32) + 'static, fonts_ref: &'static [Font]) -> anyhow::Result<()> {
+    let model = MusicPlayerModel::new(None);
     #[cfg(not(feature = "fast-renderer"))]
     let measurer = TinySkiaMeasurer { fonts: fonts_ref };
     #[cfg(feature = "fast-renderer")]
     let measurer = FastMeasurer { fonts: fonts_ref.into() };
-
-    let model = MusicPlayerModel::new();
+    
     let mut runtime = Runtime::new(model, measurer);
     runtime.set_interval("tick".to_string(), 33);
-    
-    let mut caches = support::RenderCaches::new();
-    let render_fn = move |runtime: &mut Runtime<_, _>, buffer: &mut [u32], width: u32, height: u32| {
-        support::render_frame(runtime, buffer, width, height, fonts_ref, &mut caches);
-    };
 
     #[cfg(not(any(
         all(target_os = "linux", feature = "linuxfb", feature = "evdev"),
@@ -403,41 +389,35 @@ fn main() -> anyhow::Result<()> {
     )))]
     {
         use xerune::backend::Backend;
-        xerune::backend::WinitBackend::new().run(
-            "Xerune Music Player", 
-            800, 
-            480, 
-            runtime, 
-            render_fn,
-            move |_proxy| {}
-        ).map_err(|e| anyhow::anyhow!("{:?}", e))?
+        xerune::backend::WinitBackend::new().run("Xerune Music Player", 800, 480, runtime, render_frame, |_| {})?
     }
 
     #[cfg(all(target_os = "linux", feature = "linuxfb", feature = "evdev", not(feature = "drm")))]
     {
-         use xerune::backend::Backend;
-         xerune::backend::LinuxFbBackend::new().run(
-             "Xerune Music Player", 
-             800, 
-             480, 
-             runtime, 
-             render_fn,
-             move |_tx| {}
-         ).map_err(|e| anyhow::anyhow!("{:?}", e))?;
+        use xerune::backend::Backend;
+        xerune::backend::LinuxFbBackend::new().run("Xerune Music Player", 800, 480, runtime, render_frame, |_| {})?;
     }
 
     #[cfg(all(target_os = "linux", feature = "drm", feature = "evdev"))]
     {
-         use xerune::backend::Backend;
-         xerune::backend::DrmBackend::new().run(
-             "Xerune Music Player", 
-             800, 
-             480, 
-             runtime, 
-             render_fn,
-             move |_tx| {}
-         ).map_err(|e| anyhow::anyhow!("{:?}", e))?;
+        use xerune::backend::Backend;
+        xerune::backend::DrmBackend::new().run("Xerune Music Player", 800, 480, runtime, render_frame, |_| {})?;
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::str::FromStr;
+
+    #[test]
+    fn test_message_from_str() {
+        assert_eq!(Msg::from_str("play_pause"), Ok(Msg::PlayPause));
+        assert_eq!(Msg::from_str("back"), Ok(Msg::Back));
+        assert_eq!(Msg::from_str("stop"), Ok(Msg::Stop));
+        assert_eq!(Msg::from_str("next"), Ok(Msg::Next));
+        assert_eq!(Msg::from_str("prev"), Ok(Msg::Prev));
+    }
 }

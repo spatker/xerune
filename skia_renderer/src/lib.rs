@@ -465,7 +465,8 @@ impl<'a> Renderer for TinySkiaRenderer<'a> {
                 DrawCommand::DrawImage { src, rect, border_radius } => {
                     profile!("render_image");
                     if !self.image_cache.contains_key(src) {
-                        if let Ok(data) = std::fs::read(src) {
+                        let path_to_read = src.strip_prefix('/').unwrap_or(src);
+                        if let Ok(data) = std::fs::read(path_to_read) {
                             if let Ok(png_pixmap) = Pixmap::decode_png(&data) {
                                 self.image_cache.insert(src.clone(), png_pixmap);
                             } else {

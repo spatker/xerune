@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Xerune Standalone App Runner</title>
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/nunjucks/3.2.4/nunjucks.min.js"></script>
+
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #0b0f19;
+            color: #f3f4f6;
+            font-family: 'Outfit', sans-serif;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+        }
+
+        #app {
+            background-color: #1e1e1e;
+            border-radius: 12px;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+            position: relative;
+        }
+    </style>
+</head>
+<body>
+    <div id="app"></div>
+
+    <script type="module">
+        import init, { 
+            TodoApp, 
+            CalculatorApp, 
+            MusicPlayerApp, 
+            AnimationApp, 
+            AnimationCssApp, 
+            ShowcaseApp, 
+            BreakoutApp 
+        } from "../studio/pkg/wasm_demo.js?v=9";
+        import { initXeruneApp } from "../xerune.js?v=9";
+
+        async function start() {
+            await init();
+
+            const params = new URLSearchParams(window.location.search);
+            const appName = params.get("app") || "music_player";
+
+            let app;
+            let templatePath;
+
+            if (appName === "todo") {
+                app = new TodoApp("");
+                templatePath = "./todo/templates/todo_list.html";
+            } else if (appName === "calculator") {
+                app = new CalculatorApp("");
+                templatePath = "./calculator/templates/calculator.html";
+            } else if (appName === "music_player") {
+                const tracksRes = await fetch("./music_player/resources/music.json");
+                const tracksJson = await tracksRes.text();
+                app = new MusicPlayerApp("", tracksJson);
+                templatePath = "./music_player/templates/music_player.html";
+            } else if (appName === "animation") {
+                app = new AnimationApp("");
+                templatePath = "./animation/templates/animation.html";
+            } else if (appName === "animation_css") {
+                app = new AnimationCssApp("");
+                templatePath = "./animation_css/templates/animation_css.html";
+            } else if (appName === "showcase") {
+                app = new ShowcaseApp("");
+                templatePath = "./showcase/templates/showcase.html";
+            } else if (appName === "breakout") {
+                app = new BreakoutApp("");
+                templatePath = "./breakout/templates/breakout.html";
+            }
+
+            const response = await fetch(templatePath);
+            const templateText = await response.text();
+
+            initXeruneApp({
+                app: app,
+                containerId: "app",
+                templateText: templateText,
+                templateBaseDir: templatePath.substring(0, templatePath.lastIndexOf("/"))
+            });
+        }
+
+        start().catch(console.error);
+    </script>
+</body>
+</html>

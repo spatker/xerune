@@ -1,12 +1,23 @@
+#[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm")))]
 use fontdue::Font;
+use serde::{Serialize, Deserialize};
 use std::collections::HashSet;
-use std::time::Instant;
-
-use xerune::{Model, Runtime, XeruneTemplate, XeruneMessage};
-use skia_renderer::TinySkiaMeasurer;
 use std::f32::consts::PI;
+use xerune::{Runtime, Model, XeruneMessage, XeruneTemplate};
 
-mod support;
+#[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm")))]
+#[cfg(not(feature = "fast-renderer"))]
+use skia_renderer::TinySkiaMeasurer;
+#[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm")))]
+#[cfg(feature = "fast-renderer")]
+use fast_renderer::FastMeasurer;
+
+#[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm")))]
+#[cfg(not(feature = "fast-renderer"))]
+pub type Measurer = TinySkiaMeasurer<'static>;
+#[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm")))]
+#[cfg(feature = "fast-renderer")]
+pub type Measurer = FastMeasurer<'static>;
 
 const GAME_WIDTH: f32 = 800.0;
 const GAME_HEIGHT: f32 = 480.0;
@@ -27,50 +38,68 @@ const BLOCK_PADDING: f32 = 8.0;
 const BOARD_OFFSET_Y: f32 = 50.0;
 const BOARD_OFFSET_X: f32 = (GAME_WIDTH - (COLS as f32 * (BLOCK_WIDTH + BLOCK_PADDING))) / 2.0;
 
-#[derive(Clone, Debug)]
-struct Block {
-    x: f32,
-    y: f32,
-    alive: bool,
-    color: String,
+struct LcgRng {
+    state: u64,
 }
 
-#[derive(Clone, Debug)]
-struct Particle {
-    x: f32,
-    y: f32,
-    dx: f32,
-    dy: f32,
-    life: f32, // 1.0 down to 0.0
-    color: String,
+impl LcgRng {
+    fn new(seed: u64) -> Self {
+        Self { state: seed }
+    }
+
+    fn gen_range(&mut self, min: f32, max: f32) -> f32 {
+        self.state = self.state.wrapping_mul(6364136223846793005).wrapping_add(1);
+        let x = (self.state >> 32) as u32;
+        let pct = (x as f32) / (u32::MAX as f32);
+        min + pct * (max - min)
+    }
 }
 
-#[derive(XeruneTemplate)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Block {
+    pub x: f32,
+    pub y: f32,
+    pub alive: bool,
+    pub color: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Particle {
+    pub x: f32,
+    pub y: f32,
+    pub dx: f32,
+    pub dy: f32,
+    pub life: f32, // 1.0 down to 0.0
+    pub color: String,
+}
+
+#[derive(XeruneTemplate, Serialize, Deserialize)]
 #[template(path = "breakout.html")]
-struct BreakoutModel {
-    paddle_x: f32,
-    ball_x: f32,
-    ball_y: f32,
-    ball_dx: f32,
-    ball_dy: f32,
-    blocks: Vec<Block>,
-    particles: Vec<Particle>,
-    keys_held: HashSet<String>,
-    last_tick: Instant,
-    game_over: bool,
-    won: bool,
-    paddle_y: f32,
-    paddle_w: f32,
-    paddle_h: f32,
-    ball_s: f32,
-    block_w: f32,
-    block_h: f32,
-    game_width: f32,
-    game_height: f32,
+pub struct BreakoutModel {
+    pub paddle_x: f32,
+    pub ball_x: f32,
+    pub ball_y: f32,
+    pub ball_dx: f32,
+    pub ball_dy: f32,
+    pub blocks: Vec<Block>,
+    pub particles: Vec<Particle>,
+    pub keys_held: HashSet<String>,
+    #[serde(skip, default = "xerune::runtime::time::Instant::now")]
+    pub last_tick: xerune::runtime::time::Instant,
+    pub game_over: bool,
+    pub won: bool,
+    pub paddle_y: f32,
+    pub paddle_w: f32,
+    pub paddle_h: f32,
+    pub ball_s: f32,
+    pub block_w: f32,
+    pub block_h: f32,
+    pub game_width: f32,
+    pub game_height: f32,
 }
 
-impl BreakoutModel {
-    fn new() -> Self {
+impl Default for BreakoutModel {
+    fn default() -> Self {
         let mut blocks = Vec::new();
         let colors = ["#ff5555", "#ffaa00", "#55ff55", "#5555ff", "#aa00ff"];
         
@@ -94,7 +123,7 @@ impl BreakoutModel {
             blocks,
             particles: Vec::new(),
             keys_held: HashSet::new(),
-            last_tick: Instant::now(),
+            last_tick: xerune::runtime::time::Instant::now(),
             game_over: false,
             won: false,
             paddle_y: PADDLE_Y,
@@ -110,7 +139,7 @@ impl BreakoutModel {
 }
 
 #[derive(Debug, Clone, PartialEq, XeruneMessage)]
-enum Msg {
+pub enum Msg {
     Tick,
     #[xerune(prefix = "keydown:")]
     KeyDown(String),
@@ -124,8 +153,8 @@ impl Model for BreakoutModel {
     fn update(&mut self, msg: Self::Message, _context: &mut xerune::Context) {
         match msg {
             Msg::Tick => {
-                let now = Instant::now();
-                let dt = now.duration_since(self.last_tick).as_secs_f32();
+                let now = xerune::runtime::time::Instant::now();
+                let dt = now.duration_since(self.last_tick).as_secs_f32().min(0.1);
                 self.last_tick = now;
 
                 if self.game_over || self.won { return; }
@@ -145,17 +174,16 @@ impl Model for BreakoutModel {
                 // --- Wall Collisions ---
                 if self.ball_x <= 0.0 {
                     self.ball_x = 0.0;
-                    self.ball_dx *= -1.0; // Bounce left wall
+                    self.ball_dx *= -1.0;
                 } else if self.ball_x >= GAME_WIDTH - BALL_SIZE {
                     self.ball_x = GAME_WIDTH - BALL_SIZE;
-                    self.ball_dx *= -1.0; // Bounce right wall
+                    self.ball_dx *= -1.0;
                 }
 
                 if self.ball_y <= 0.0 {
                     self.ball_y = 0.0;
-                    self.ball_dy *= -1.0; // Bounce top wall
+                    self.ball_dy *= -1.0;
                 } else if self.ball_y >= GAME_HEIGHT {
-                    // Ball fell through the bottom
                     self.game_over = true;
                 }
 
@@ -164,18 +192,15 @@ impl Model for BreakoutModel {
                     && self.ball_y <= PADDLE_Y + PADDLE_HEIGHT 
                     && self.ball_x + BALL_SIZE >= self.paddle_x 
                     && self.ball_x <= self.paddle_x + PADDLE_WIDTH 
-                    && self.ball_dy > 0.0 // Only if ball is heading down
+                    && self.ball_dy > 0.0
                 {
-                    self.ball_y = PADDLE_Y - BALL_SIZE; // Push ball out of paddle
+                    self.ball_y = PADDLE_Y - BALL_SIZE;
                     
-                    // Change angle based on where it hit the paddle
                     let hit_factor = ((self.ball_x + BALL_SIZE / 2.0) - (self.paddle_x + PADDLE_WIDTH / 2.0)) / (PADDLE_WIDTH / 2.0);
-                    // hit_factor is -1.0 (left edge) to 1.0 (right edge)
                     
                     let speed = (self.ball_dx * self.ball_dx + self.ball_dy * self.ball_dy).sqrt();
-                    // Max bounce angle is 60 degrees (PI/3)
-                    let max_angle = PI / 3.0; 
-                    let bounce_angle = hit_factor * max_angle;
+                    let max_bounce_angle = PI / 3.0; 
+                    let bounce_angle = hit_factor * max_bounce_angle;
                     
                     self.ball_dx = speed * bounce_angle.sin();
                     self.ball_dy = -speed * bounce_angle.cos();
@@ -183,6 +208,8 @@ impl Model for BreakoutModel {
 
                 // --- Block Collisions ---
                 let mut hit_block = false;
+                let mut rng = LcgRng::new(self.ball_x.to_bits() as u64 ^ self.ball_y.to_bits() as u64);
+                
                 for block in self.blocks.iter_mut() {
                     if !block.alive { continue; }
 
@@ -191,16 +218,13 @@ impl Model for BreakoutModel {
                         && self.ball_y + BALL_SIZE >= block.y 
                         && self.ball_y <= block.y + BLOCK_HEIGHT 
                     {
-                        // Collision!
                         block.alive = false;
                         hit_block = true;
 
-                        // Spawn particles
-                        use rand::Rng;
-                        let mut rng = rand::thread_rng();
+                        // Spawn particles using custom LcgRng
                         for _ in 0..10 {
-                            let angle = rng.gen_range(0.0..PI * 2.0);
-                            let speed = rng.gen_range(50.0..150.0);
+                            let angle = rng.gen_range(0.0, PI * 2.0);
+                            let speed = rng.gen_range(50.0, 150.0);
                             self.particles.push(Particle {
                                 x: block.x + BLOCK_WIDTH / 2.0,
                                 y: block.y + BLOCK_HEIGHT / 2.0,
@@ -211,8 +235,6 @@ impl Model for BreakoutModel {
                             });
                         }
 
-                        // Determine bounce direction based on overlap
-                        // Very simple AABB response:
                         let overlap_left = (self.ball_x + BALL_SIZE) - block.x;
                         let overlap_right = (block.x + BLOCK_WIDTH) - self.ball_x;
                         let overlap_top = (self.ball_y + BALL_SIZE) - block.y;
@@ -226,12 +248,11 @@ impl Model for BreakoutModel {
                             self.ball_dy *= -1.0;
                         }
                         
-                        break; // Only hit one block per frame to avoid weird multi-bounces
+                        break;
                     }
                 }
 
                 if hit_block {
-                    // Check win condition
                     if self.blocks.iter().all(|b| !b.alive) {
                         self.won = true;
                     }
@@ -241,7 +262,7 @@ impl Model for BreakoutModel {
                 for particle in self.particles.iter_mut() {
                     particle.x += particle.dx * dt;
                     particle.y += particle.dy * dt;
-                    particle.life -= 1.5 * dt; // Die off
+                    particle.life -= 1.5 * dt;
                 }
                 self.particles.retain(|p| p.life > 0.0);
             },
@@ -255,26 +276,16 @@ impl Model for BreakoutModel {
     }
 }
 
-fn main() -> anyhow::Result<()> {
-    env_logger::init();
-    
-    // Load fonts
-    let font_data = include_bytes!("../resources/fonts/Roboto-Regular.ttf") as &[u8];
-    let roboto_regular = Font::from_bytes(font_data, fontdue::FontSettings::default()).unwrap();
-    let font_data_bold = include_bytes!("../resources/fonts/Roboto-Bold.ttf") as &[u8];
-    let roboto_bold = Font::from_bytes(font_data_bold, fontdue::FontSettings::default()).unwrap();
-    let fonts = vec![roboto_regular, roboto_bold];
-    let fonts_ref: &'static [Font] = Box::leak(fonts.into_boxed_slice());
-
+#[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm")))]
+pub fn run_native(render_frame: impl FnMut(&mut Runtime<BreakoutModel, Measurer>, &mut [u32], u32, u32) + 'static, fonts_ref: &'static [Font]) -> anyhow::Result<()> {
+    let model = BreakoutModel::default();
+    #[cfg(not(feature = "fast-renderer"))]
     let measurer = TinySkiaMeasurer { fonts: fonts_ref };
-    let model = BreakoutModel::new();
+    #[cfg(feature = "fast-renderer")]
+    let measurer = FastMeasurer { fonts: fonts_ref.into() };
+    
     let mut runtime = Runtime::new(model, measurer);
     runtime.set_interval("tick".to_string(), 16);
-    
-    let mut caches = support::RenderCaches::new();
-    let render_fn = move |runtime: &mut Runtime<_, _>, buffer: &mut [u32], width: u32, height: u32| {
-        support::render_frame(runtime, buffer, width, height, fonts_ref, &mut caches);
-    };
 
     #[cfg(not(any(
         all(target_os = "linux", feature = "linuxfb", feature = "evdev"),
@@ -282,40 +293,19 @@ fn main() -> anyhow::Result<()> {
     )))]
     {
         use xerune::backend::Backend;
-        xerune::backend::WinitBackend::new().run(
-            "Xerune Breakout", 
-            GAME_WIDTH as u32, 
-            GAME_HEIGHT as u32, 
-            runtime, 
-            render_fn,
-            move |_proxy| {}
-        ).map_err(|e| anyhow::anyhow!("{:?}", e))?
+        xerune::backend::WinitBackend::new().run("Xerune Breakout", GAME_WIDTH as u32, GAME_HEIGHT as u32, runtime, render_frame, |_| {})?
     }
 
     #[cfg(all(target_os = "linux", feature = "linuxfb", feature = "evdev", not(feature = "drm")))]
     {
-         use xerune::backend::Backend;
-         xerune::backend::LinuxFbBackend::new().run(
-             "Xerune Breakout", 
-             GAME_WIDTH as u32, 
-             GAME_HEIGHT as u32, 
-             runtime, 
-             render_fn,
-             |_| {}
-         ).map_err(|e| anyhow::anyhow!("{:?}", e))?;
+        use xerune::backend::Backend;
+        xerune::backend::LinuxFbBackend::new().run("Xerune Breakout", GAME_WIDTH as u32, GAME_HEIGHT as u32, runtime, render_frame, |_| {})?;
     }
 
     #[cfg(all(target_os = "linux", feature = "drm", feature = "evdev"))]
     {
-         use xerune::backend::Backend;
-         xerune::backend::DrmBackend::new().run(
-             "Xerune Breakout", 
-             GAME_WIDTH as u32, 
-             GAME_HEIGHT as u32, 
-             runtime, 
-             render_fn,
-             |_| {}
-         ).map_err(|e| anyhow::anyhow!("{:?}", e))?;
+        use xerune::backend::Backend;
+        xerune::backend::DrmBackend::new().run("Xerune Breakout", GAME_WIDTH as u32, GAME_HEIGHT as u32, runtime, render_frame, |_| {})?;
     }
 
     Ok(())

@@ -5,7 +5,7 @@
         "artist": "M83",
         "album": "Hurry Up, We're Dreaming",
         "duration": "4:03",
-        "cover_url": "resources/music_player/img/midnight_city.png"
+        "cover_url": "/examples/music_player/resources/img/midnight_city.png"
     },
     {
         "id": "2",
@@ -13,7 +13,7 @@
         "artist": "Daft Punk",
         "album": "Random Access Memories",
         "duration": "6:09",
-        "cover_url": "resources/music_player/img/get_lucky.png"
+        "cover_url": "/examples/music_player/resources/img/get_lucky.png"
     },
     {
         "id": "3",
@@ -21,7 +21,7 @@
         "artist": "Tame Impala",
         "album": "Currents",
         "duration": "3:36",
-        "cover_url": "resources/music_player/img/currents.png"
+        "cover_url": "/examples/music_player/resources/img/currents.png"
     },
     {
         "id": "4",
@@ -29,7 +29,7 @@
         "artist": "The Weeknd",
         "album": "After Hours",
         "duration": "3:20",
-        "cover_url": "resources/music_player/img/after_hours.png"
+        "cover_url": "/examples/music_player/resources/img/after_hours.png"
     },
     {
         "id": "5",
@@ -37,6 +37,6 @@
         "artist": "Dua Lipa",
         "album": "Future Nostalgia",
         "duration": "3:23",
-        "cover_url": "resources/music_player/img/future_nostalgia.png"
+        "cover_url": "/examples/music_player/resources/img/future_nostalgia.png"
     }
 ]
