@@ -78,6 +78,8 @@ pub struct MusicPlayerModel {
     pub progress: f32,
     pub list_x: f32,
     pub player_x: f32,
+    #[serde(default)]
+    pub tick_count: u64,
 }
 
 impl MusicPlayerModel {
@@ -124,6 +126,7 @@ impl MusicPlayerModel {
             progress: 0.0,
             list_x: 0.0,
             player_x: 800.0,
+            tick_count: 0,
         }
     }
 
@@ -245,22 +248,23 @@ impl Model for MusicPlayerModel {
                  }
              },
              Msg::Tick => {
-                 // Transition animation
-                 let target = if self.current_track_index.is_some() { 1.0 } else { 0.0 };
-                 if self.transition_progress < target {
-                     self.transition_progress = (self.transition_progress + 0.1).min(1.0);
-                 } else if self.transition_progress > target {
-                     self.transition_progress = (self.transition_progress - 0.1).max(0.0);
-                 }
+                  self.tick_count = self.tick_count.wrapping_add(1);
+                  // Transition animation
+                  let target = if self.current_track_index.is_some() { 1.0 } else { 0.0 };
+                  if self.transition_progress < target {
+                      self.transition_progress = (self.transition_progress + 0.1).min(1.0);
+                  } else if self.transition_progress > target {
+                      self.transition_progress = (self.transition_progress - 0.1).max(0.0);
+                  }
 
-                 // Update visualizer simulation using LCG Rng
-                 if self.is_playing {
-                     let mut rng = LcgRng::new(self.elapsed_seconds.wrapping_add(1) * 31);
-                     for val in self.visualizer_data.iter_mut() {
-                        let change = rng.gen_range(-5.0, 5.0);
-                        *val = (*val + change).clamp(5.0, 50.0);
-                     }
-                 } else {
+                  // Update visualizer simulation using LCG Rng
+                  if self.is_playing {
+                      let mut rng = LcgRng::new(self.tick_count);
+                      for val in self.visualizer_data.iter_mut() {
+                         let change = rng.gen_range(-5.0, 5.0);
+                         *val = (*val + change).clamp(5.0, 50.0);
+                      }
+                  } else {
                      // Decay
                      for val in self.visualizer_data.iter_mut() {
                          *val = (*val * 0.9).max(2.0);
