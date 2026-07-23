@@ -85,13 +85,34 @@ impl Model for AppModel {
 
 ### Running Examples
 
-> **Note**: For best performance, please run all examples with the `--release` flag.
+> **Note**: For best performance, please run all native examples with the `--release` flag.
 
 ```bash
 cargo run --release --example music_player
 cargo run --release --example todo
 cargo run --release --example showcase
 ```
+
+### Running in WebBrowser (WASM & Xerune Studio)
+
+Compile the WebAssembly studio package:
+
+```bash
+cd studio
+wasm-pack build --target web
+cd ..
+```
+
+Serve the repository with Python's HTTP server:
+
+```bash
+python3 -m http.server 8000
+```
+
+Open your browser to:
+- **Xerune Studio (Inspector & Controls)**: [http://localhost:8000/studio/index.html](http://localhost:8000/studio/index.html)
+- **Standalone Web Runner**: [http://localhost:8000/examples/standalone.html?app=music_player](http://localhost:8000/examples/standalone.html?app=music_player)  
+  *(Available apps: `music_player`, `todo`, `calculator`, `breakout`, `animation`, `animation_css`, `showcase`)*
 
 ## License
 

@@ -180,3 +180,25 @@ To rotate the DRM output, export the `XERUNE_ROTATION` environment variable:
 ```bash
 export XERUNE_ROTATION=90
 ```
+
+---
+
+## 6. WebAssembly & Browser Deployment
+
+Xerune applications can compile to WebAssembly to run directly in web browsers or inside **Xerune Studio** (a web-based live inspector).
+
+### 1. Build WASM Bindings
+```bash
+cd studio
+wasm-pack build --target web
+```
+
+### 2. Run Local Web Server
+```bash
+# From workspace root
+python3 -m http.server 8000
+```
+
+### 3. Open in Browser
+- **Studio with live state inspector**: `http://localhost:8000/studio/index.html`
+- **Standalone full-screen web runner**: `http://localhost:8000/examples/standalone.html?app=music_player`
