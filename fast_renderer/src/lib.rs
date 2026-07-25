@@ -112,6 +112,9 @@ impl<'a> TextMeasurer for FastMeasurer<'a> {
         let result = match &self.fonts {
             #[cfg(feature = "std")]
             FontSource::Ttf(ttf_fonts) => {
+                if ttf_fonts.is_empty() {
+                    return (0.0, 0.0);
+                }
                 let font_index = if weight > 0 && ttf_fonts.len() > 1 { 1 } else { 0 };
 
                 let mut layout = fontdue::layout::Layout::new(fontdue::layout::CoordinateSystem::PositiveYDown);
@@ -574,6 +577,9 @@ impl<'a> Renderer for FastRenderer<'a> {
                     match &self.fonts {
                         #[cfg(feature = "std")]
                         FontSource::Ttf(ttf_fonts) => {
+                            if ttf_fonts.is_empty() {
+                                continue;
+                            }
                             let font_index = if *weight > 0 && ttf_fonts.len() > 1 { 1 } else { 0 };
 
                             {
@@ -612,8 +618,8 @@ impl<'a> Renderer for FastRenderer<'a> {
 
                                     if let Some(cg) = color_glyph {
                                         self.glyph_cache.insert(cache_key, cg);
-                                    } else {
-                                        let (metrics, bitmap) = ttf_fonts[glyph.font_index].rasterize_indexed(glyph.key.glyph_index, glyph.key.px);
+                                     } else if let Some(font) = ttf_fonts.get(glyph.font_index) {
+                                        let (metrics, bitmap) = font.rasterize_indexed(glyph.key.glyph_index, glyph.key.px);
                                         if metrics.width > 0 && metrics.height > 0 {
                                             self.glyph_cache.insert(
                                                 cache_key,
@@ -824,16 +830,18 @@ impl<'a> Renderer for FastRenderer<'a> {
                                 if let Ok(png_pixmap) = tiny_skia::Pixmap::decode_png(&data) {
                                     let w = png_pixmap.width();
                                     let h = png_pixmap.height();
-                                    let mut pixels = Vec::with_capacity((w * h) as usize);
-                                    for chunk in png_pixmap.data().chunks_exact(4) {
-                                        let r = chunk[0];
-                                        let g = chunk[1];
-                                        let b = chunk[2];
-                                        let a = chunk[3];
-                                        let col = xerune::Color::new(r, g, b, a);
-                                        pixels.push(pack_color(col, self.swap_rb));
+                                    if w > 0 && h > 0 {
+                                        let mut pixels = Vec::with_capacity((w * h) as usize);
+                                        for chunk in png_pixmap.data().chunks_exact(4) {
+                                            let r = chunk[0];
+                                            let g = chunk[1];
+                                            let b = chunk[2];
+                                            let a = chunk[3];
+                                            let col = xerune::Color::new(r, g, b, a);
+                                            pixels.push(pack_color(col, self.swap_rb));
+                                        }
+                                        self.image_cache.insert(src.clone(), (w, h, pixels));
                                     }
-                                    self.image_cache.insert(src.clone(), (w, h, pixels));
                                 } else {
                                     log::warn!("Failed to decode PNG image: {}", src);
                                 }
@@ -1137,7 +1145,7 @@ pub fn blit_image(
     let end_x = (rx + rw).min(clip_x2);
     let end_y = (ry + rh).min(clip_y2);
 
-    if start_x >= end_x || start_y >= end_y || rw <= 0 || rh <= 0 {
+    if start_x >= end_x || start_y >= end_y || rw <= 0 || rh <= 0 || img_w == 0 || img_h == 0 || img_pixels.is_empty() {
         return;
     }
 
@@ -1148,13 +1156,17 @@ pub fn blit_image(
 
     for py in start_y..end_y {
         let dy_offset = py - ry;
-        let src_y = ((dy_offset as f32 * scale_y) as u32).min(img_h - 1);
+        let src_y = ((dy_offset as f32 * scale_y) as u32).min(img_h.saturating_sub(1));
         let src_row_start = (src_y * img_w) as usize;
 
         for px in start_x..end_x {
             let dx_offset = px - rx;
-            let src_x = ((dx_offset as f32 * scale_x) as u32).min(img_w - 1);
-            let pixel = img_pixels[src_row_start + src_x as usize];
+            let src_x = ((dx_offset as f32 * scale_x) as u32).min(img_w.saturating_sub(1));
+            let idx = src_row_start + src_x as usize;
+            let pixel = match img_pixels.get(idx) {
+                Some(&p) => p,
+                None => continue,
+            };
 
             let mut coverage = 1.0;
             if r_f32 > 0.0 {
@@ -1283,5 +1295,15 @@ mod tests {
             let res = try_find_color_emoji_glyph(&font_bytes, e, 34.0);
             assert!(res.is_some(), "Emoji {} failed to decode!", e);
         }
+    }
+
+    #[test]
+    fn test_blit_image_empty_buffer() {
+        let mut buffer = vec![0u32; 100];
+        let rect = Rect { x: 0.0, y: 0.0, width: 10.0, height: 10.0 };
+        // Must not panic on zero dimensions or empty pixel slice
+        blit_image(&mut buffer, 10, 10, 10, &rect, 0.0, 0, 0, &[], None, false);
+        blit_image(&mut buffer, 10, 10, 10, &rect, 0.0, 10, 0, &[], None, false);
+        blit_image(&mut buffer, 10, 10, 10, &rect, 0.0, 0, 10, &[], None, false);
     }
 }
