@@ -10,12 +10,14 @@ Ensure your `Cargo.toml` includes:
 ```toml
 [dependencies]
 xerune = { version = "0.1", features = ["winit"] } # Features: "linuxfb", "drm", "evdev", "std"
+fast_renderer = { version = "0.1" }
 ```
 
 Create a new file `src/main.rs`:
 
 ```rust
-use xerune::{Model, InputEvent, Runtime, Context, XeruneTemplate, backend::WinitBackend, backend::Backend};
+use xerune::{Model, InputEvent, Runtime, Context, XeruneTemplate, XeruneMessage, backend::WinitBackend, backend::Backend};
+use fast_renderer::{FastMeasurer, FastRenderer};
 
 // 1. Define application state
 #[derive(Default)]
@@ -24,7 +26,7 @@ struct Counter {
 }
 
 // 2. Define messages
-#[derive(Debug)]
+#[derive(Debug, Clone, XeruneMessage)]
 enum Message {
     Increment,
     Decrement,
@@ -46,29 +48,38 @@ enum Message {
 impl Model for Counter {
     type Message = Message;
 
-    fn update(&mut self, msg: Self::Message, _ctx: &mut Context) -> Option<Self::Message> {
+    fn update(&mut self, msg: Self::Message, _ctx: &mut Context) {
         match msg {
             Message::Increment => self.value += 1,
             Message::Decrement => self.value -= 1,
         }
-        None
     }
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let model = Counter::default();
     
-    // Create UI measures
-    let font_regular = xerune::font::DEFAULT_ROBOTO_REGULAR;
-    let font_bold = xerune::font::DEFAULT_ROBOTO_BOLD;
-    let runtime = Runtime::new(model, font_regular, font_bold);
+    // Create UI measures using the default precompiled bitmap fonts
+    let fonts = vec![xerune::font::DEFAULT_ROBOTO_REGULAR, xerune::font::DEFAULT_ROBOTO_BOLD];
+    let measurer = FastMeasurer { fonts: (&fonts).into() };
+    let runtime = Runtime::new(model, measurer);
     
+    // Setup rendering caches
+    let mut image_cache = std::collections::HashMap::new();
+    let mut glyph_cache = std::collections::HashMap::new();
+
     // Run the desktop window backend
     let backend = WinitBackend::new();
-    backend.run("Xerune Counter", 800, 600, runtime, |rt, buf, w, h| {
-        // Direct blitting callback
-        let canvases = rt.context.canvases();
-        // Custom render loop calling direct rasterizer/renderer
+    backend.run("Xerune Counter", 800, 600, runtime, move |rt, buf, w, h| {
+        let mut renderer = FastRenderer::new(
+            buf,
+            w,
+            h,
+            &fonts,
+            &mut image_cache,
+            &mut glyph_cache,
+        );
+        rt.render(&mut renderer);
     }, |_proxy| {})?;
     
     Ok(())

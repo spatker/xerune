@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-xerune = { path = "../", default-features = false }
+xerune = { version = "0.1.0", path = "../", default-features = false }
 fontdue = { version = "0.9.3", optional = true }
 tiny-skia = { version = "0.12.0", optional = true }
 ttf-parser = { version = "0.20", optional = true }
