@@ -616,6 +616,7 @@ fn compile_dom_node<'a>(
                             let mut current_style = parent_style.clone();
                             current_style.background_color = None;
                             current_style.background_gradient = None;
+                            current_style.box_shadow = None;
                             current_style.border_width = 0.0;
                             current_style.border_radius = 0.0;
                             current_style.border_color = None;
@@ -909,6 +910,7 @@ fn compile_dom_node<'a>(
                     let mut current_style = parent_style.clone();
                     current_style.background_color = None;
                     current_style.background_gradient = None;
+                    current_style.box_shadow = None;
                     current_style.border_width = 0.0;
                     current_style.border_radius = 0.0;
                     current_style.border_color = None;

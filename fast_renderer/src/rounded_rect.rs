@@ -415,3 +415,168 @@ pub fn draw_rounded_border(
         }
     }
 }
+
+pub fn draw_box_shadow(
+    buffer: &mut [u32],
+    logical_w: u32,
+    logical_h: u32,
+    physical_w: u32,
+    rect_x: i32,
+    rect_y: i32,
+    rect_w: i32,
+    rect_h: i32,
+    radius: f32,
+    offset_x: f32,
+    offset_y: f32,
+    blur_radius: f32,
+    spread_radius: f32,
+    shadow_color: xerune::Color,
+    inset: bool,
+    swap_rb: bool,
+    clip_rect: Option<xerune::Rect>,
+    rotate: bool,
+) {
+    if rect_w <= 0 || rect_h <= 0 || shadow_color.a == 0 {
+        return;
+    }
+
+    let orig_rx = rect_x as f32;
+    let orig_ry = rect_y as f32;
+    let orig_rw = rect_w as f32;
+    let orig_rh = rect_h as f32;
+
+    let sx = rect_x as f32 + offset_x - spread_radius;
+    let sy = rect_y as f32 + offset_y - spread_radius;
+    let sw = rect_w as f32 + spread_radius * 2.0;
+    let sh = rect_h as f32 + spread_radius * 2.0;
+    let s_radius = (radius + spread_radius).max(0.0);
+
+    let blur = blur_radius.max(0.0);
+    let expand = blur * 1.5;
+
+    let (min_x, min_y, max_x, max_y) = if inset {
+        (
+            orig_rx.floor() as i32,
+            orig_ry.floor() as i32,
+            (orig_rx + orig_rw).ceil() as i32,
+            (orig_ry + orig_rh).ceil() as i32,
+        )
+    } else {
+        (
+            (sx - expand).floor() as i32,
+            (sy - expand).floor() as i32,
+            (sx + sw + expand).ceil() as i32,
+            (sy + sh + expand).ceil() as i32,
+        )
+    };
+
+    let (clip_x1, clip_y1, clip_x2, clip_y2) = if let Some(cr) = clip_rect {
+        (
+            cr.x.max(0.0) as i32,
+            cr.y.max(0.0) as i32,
+            (cr.x + cr.width).min(logical_w as f32) as i32,
+            (cr.y + cr.height).min(logical_h as f32) as i32,
+        )
+    } else {
+        (0, 0, logical_w as i32, logical_h as i32)
+    };
+
+    let start_x = min_x.max(clip_x1);
+    let start_y = min_y.max(clip_y1);
+    let end_x = max_x.min(clip_x2);
+    let end_y = max_y.min(clip_y2);
+
+    if start_x >= end_x || start_y >= end_y {
+        return;
+    }
+
+    let packed = pack_color(shadow_color, swap_rb);
+    let base_a = ((packed >> 24) & 0xff) as f32;
+
+    let orig_left = orig_rx + radius;
+    let orig_right = orig_rx + orig_rw - radius;
+    let orig_top = orig_ry + radius;
+    let orig_bottom = orig_ry + orig_rh - radius;
+
+    for py in start_y..end_y {
+        let y_f = py as f32 + 0.5;
+        for px in start_x..end_x {
+            let x_f = px as f32 + 0.5;
+
+            // Check if inside the original element border box
+            let odx = if x_f < orig_left { orig_left - x_f } else if x_f > orig_right { x_f - orig_right } else { 0.0 };
+            let ody = if y_f < orig_top { orig_top - y_f } else if y_f > orig_bottom { y_f - orig_bottom } else { 0.0 };
+            let is_inside_element = if odx > 0.0 && ody > 0.0 {
+                (odx * odx + ody * ody) <= radius * radius
+            } else {
+                x_f >= orig_rx && x_f <= orig_rx + orig_rw && y_f >= orig_ry && y_f <= orig_ry + orig_rh
+            };
+
+            if !inset && is_inside_element {
+                continue;
+            }
+            if inset && !is_inside_element {
+                continue;
+            }
+
+            let box_r = s_radius.min(sw / 2.0).min(sh / 2.0).max(0.0);
+            let b_left = sx + box_r;
+            let b_right = sx + sw - box_r;
+            let b_top = sy + box_r;
+            let b_bottom = sy + sh - box_r;
+
+            let dx = if x_f < b_left { b_left - x_f } else if x_f > b_right { x_f - b_right } else { 0.0 };
+            let dy = if y_f < b_top { b_top - y_f } else if y_f > b_bottom { y_f - b_bottom } else { 0.0 };
+
+            let dist_from_edge = if dx > 0.0 && dy > 0.0 {
+                (dx * dx + dy * dy).sqrt() - box_r
+            } else if dx > 0.0 {
+                dx - box_r
+            } else if dy > 0.0 {
+                dy - box_r
+            } else {
+                let d_left = x_f - sx;
+                let d_right = (sx + sw) - x_f;
+                let d_top = y_f - sy;
+                let d_bottom = (sy + sh) - y_f;
+                -d_left.min(d_right).min(d_top).min(d_bottom)
+            };
+
+            let alpha_factor = if !inset {
+                if blur <= 0.5 {
+                    if dist_from_edge <= 0.0 { 1.0 } else { 0.0 }
+                } else {
+                    let u = (dist_from_edge / blur).clamp(-1.0, 1.0);
+                    let t = 0.5 - 0.5 * u;
+                    t * t * (3.0 - 2.0 * t)
+                }
+            } else {
+                let d_inside = -dist_from_edge;
+                if blur <= 0.5 {
+                    if d_inside <= spread_radius { 1.0 } else { 0.0 }
+                } else {
+                    let u = ((d_inside - spread_radius) / blur).clamp(-1.0, 1.0);
+                    let t = 0.5 - 0.5 * u;
+                    t * t * (3.0 - 2.0 * t)
+                }
+            };
+
+            if alpha_factor > 0.0 {
+                let final_a = (base_a * alpha_factor).round() as u32;
+                if final_a > 0 {
+                    let pixel_color = (packed & 0x00ffffff) | (final_a << 24);
+                    let idx = if rotate {
+                        (px as usize * physical_w as usize) + (physical_w as usize - 1 - py as usize)
+                    } else {
+                        (py as usize * physical_w as usize) + px as usize
+                    };
+
+                    if idx < buffer.len() {
+                        blend_pixel(&mut buffer[idx], pixel_color);
+                    }
+                }
+            }
+        }
+    }
+}
+

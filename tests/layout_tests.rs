@@ -182,7 +182,7 @@ fn test_style_selector_matching() {
 }
 
 #[derive(XeruneTemplate)]
-#[template(path = "test_template.html")]
+#[template(path = "tests/test_template.html")]
 struct TestMacroModel {
     value: String,
     items: Vec<String>,
@@ -447,3 +447,34 @@ fn test_touch_scrolling_and_clicking() {
     let handled = runtime.handle_event(InputEvent::TouchEnd { id: 2, x: 10.0, y: 0.0 });
     assert!(!handled, "TouchEnd after scrolling should not trigger click or redraw");
 }
+
+#[test]
+fn test_box_shadow_and_border_parsing() {
+    use xerune::css::parse_box_shadow;
+    use xerune::style::{ContainerStyle, BorderStyle};
+    use taffy::style::Style;
+
+    // Test box-shadow parsing
+    let shadow = parse_box_shadow("0px 4px 10px 2px rgba(0, 0, 0, 0.5)").expect("Should parse box shadow");
+    assert_eq!(shadow.offset_x, 0.0);
+    assert_eq!(shadow.offset_y, 4.0);
+    assert_eq!(shadow.blur_radius, 10.0);
+    assert_eq!(shadow.spread_radius, 2.0);
+    assert_eq!(shadow.color, Color::from_rgba8(0, 0, 0, 127));
+    assert!(!shadow.inset);
+
+    let inset_shadow = parse_box_shadow("inset 2px 2px 5px #ff0000").expect("Should parse inset shadow");
+    assert!(inset_shadow.inset);
+    assert_eq!(inset_shadow.color, Color::from_rgba8(255, 0, 0, 255));
+
+    // Test inline style parsing for border-style and box-shadow
+    let mut style = ContainerStyle::default();
+    let mut taffy_style = Style::default();
+    css::parse_inline_style("border: 2px dashed #00ff00; box-shadow: 0px 8px 16px rgba(0,0,0,0.4);", &mut style, &mut taffy_style);
+    
+    assert_eq!(style.border_width, 2.0);
+    assert_eq!(style.border_style, BorderStyle::Dashed);
+    assert_eq!(style.border_color, Some(Color::from_rgba8(0, 255, 0, 255)));
+    assert!(style.box_shadow.is_some());
+}
+

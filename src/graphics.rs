@@ -204,6 +204,25 @@ pub enum DrawCommand {
     },
     /// Pop the last active clipping boundary.
     PopClip,
+    /// Draw a box shadow.
+    DrawBoxShadow {
+        /// Layout bounds of the target container.
+        rect: Rect,
+        /// Border corner radius.
+        border_radius: f32,
+        /// Horizontal offset in pixels.
+        offset_x: f32,
+        /// Vertical offset in pixels.
+        offset_y: f32,
+        /// Blur radius in pixels.
+        blur_radius: f32,
+        /// Spread radius in pixels.
+        spread_radius: f32,
+        /// Shadow color.
+        color: Color,
+        /// Inset shadow flag.
+        inset: bool,
+    },
     /// Draw a styled rectangle.
     DrawRect {
         /// Rect layout bounds.
@@ -218,6 +237,10 @@ pub enum DrawCommand {
         border_width: f32,
         /// Border outline color.
         border_color: Option<Color>,
+        /// Border line style.
+        border_style: crate::style::BorderStyle,
+        /// Flag indicating bottom-only border.
+        border_bottom_only: bool,
     },
     /// Draw a single-line text string.
     DrawText { 
@@ -277,6 +300,8 @@ pub enum DrawCommand {
         id: String,
         /// Bounding box.
         rect: Rect,
+        /// Border corner radius.
+        border_radius: f32,
     },
 }
 
@@ -294,6 +319,15 @@ impl DrawCommand {
         match self {
             DrawCommand::Clip { rect } => Some(apply_pad(*rect)),
             DrawCommand::PopClip => None,
+            DrawCommand::DrawBoxShadow { rect, offset_x, offset_y, blur_radius, spread_radius, .. } => {
+                let expand = blur_radius.abs() + spread_radius.max(0.0) + pad;
+                Some(Rect {
+                    x: rect.x + offset_x - expand,
+                    y: rect.y + offset_y - expand,
+                    width: rect.width + expand * 2.0,
+                    height: rect.height + expand * 2.0,
+                })
+            }
             DrawCommand::DrawRect { rect, .. } => Some(apply_pad(*rect)),
             DrawCommand::DrawText { rect, .. } => Some(apply_pad(*rect)),
             DrawCommand::DrawImage { rect, .. } => Some(apply_pad(*rect)),

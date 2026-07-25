@@ -102,6 +102,36 @@ pub enum AnimationIterationCount {
     Count(f32),
 }
 
+/// Border style option.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BorderStyle {
+    /// Solid line border.
+    Solid,
+    /// Dashed line border.
+    Dashed,
+    /// Dotted line border.
+    Dotted,
+    /// No border.
+    None,
+}
+
+/// Representation of a CSS box shadow.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BoxShadow {
+    /// Horizontal offset in pixels.
+    pub offset_x: f32,
+    /// Vertical offset in pixels.
+    pub offset_y: f32,
+    /// Blur radius in pixels.
+    pub blur_radius: f32,
+    /// Spread radius in pixels.
+    pub spread_radius: f32,
+    /// Shadow color.
+    pub color: Color,
+    /// Inset shadow flag.
+    pub inset: bool,
+}
+
 /// The resolved styling properties of an HTML container element.
 #[derive(Debug, Clone)]
 pub struct ContainerStyle {
@@ -119,6 +149,12 @@ pub struct ContainerStyle {
     pub border_width: f32,
     /// Optional border stroke color.
     pub border_color: Option<Color>,
+    /// Border line style.
+    pub border_style: BorderStyle,
+    /// Flag indicating whether only the bottom border should be rendered.
+    pub border_bottom_only: bool,
+    /// Optional CSS box shadow.
+    pub box_shadow: Option<BoxShadow>,
     /// Optional linear background gradient.
     pub background_gradient: Option<LinearGradient>,
     /// Bounding box overflow behavior.
@@ -202,6 +238,9 @@ impl Default for ContainerStyle {
             border_width: 0.0,
 
             border_color: None,
+            border_style: BorderStyle::Solid,
+            border_bottom_only: false,
+            box_shadow: None,
             background_gradient: None,
             overflow: Overflow::Visible,
             display: Display::Block,

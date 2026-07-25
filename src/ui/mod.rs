@@ -551,6 +551,20 @@ fn traverse_layout(
                 return;
             }
             overflow = style.overflow;
+
+            if let Some(ref bs) = style.box_shadow {
+                commands.push(DrawCommand::DrawBoxShadow {
+                    rect,
+                    border_radius: style.border_radius,
+                    offset_x: bs.offset_x,
+                    offset_y: bs.offset_y,
+                    blur_radius: bs.blur_radius,
+                    spread_radius: bs.spread_radius,
+                    color: bs.color,
+                    inset: bs.inset,
+                });
+            }
+
             if style.background_color.is_some() || style.background_gradient.is_some() || style.border_width > 0.0 {
                  commands.push(DrawCommand::DrawRect {
                     rect,
@@ -559,6 +573,8 @@ fn traverse_layout(
                     border_radius: style.border_radius,
                     border_width: style.border_width,
                     border_color: style.border_color,
+                    border_style: style.border_style,
+                    border_bottom_only: style.border_bottom_only,
                 });
             }
         }
@@ -602,10 +618,21 @@ fn traverse_layout(
                     color: style.color,
                 });
             },
-            RenderData::Canvas(id, _) => {
+            RenderData::Canvas(id, style) => {
+                let canvas_rect = if style.border_width > 0.0 {
+                    Rect {
+                        x: rect.x + style.border_width,
+                        y: rect.y + style.border_width,
+                        width: (rect.width - 2.0 * style.border_width).max(1.0),
+                        height: (rect.height - 2.0 * style.border_width).max(1.0),
+                    }
+                } else {
+                    rect
+                };
                 commands.push(DrawCommand::DrawCanvas {
                     id: id.clone(),
-                    rect,
+                    rect: canvas_rect,
+                    border_radius: style.border_radius,
                 });
             },
             RenderData::TextInput(id, text, style) => {
@@ -621,6 +648,8 @@ fn traverse_layout(
                     border_radius: style.border_radius,
                     border_width: if is_focused { focus_outline_width } else { style.border_width },
                     border_color: if is_focused { focus_outline_color } else { style.border_color },
+                    border_style: style.border_style,
+                    border_bottom_only: false,
                 });
 
                 if let Some(t) = text {

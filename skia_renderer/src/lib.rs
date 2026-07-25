@@ -249,6 +249,7 @@ impl<'a> Renderer for TinySkiaRenderer<'a> {
             let item_rect = match command {
                 DrawCommand::Clip { rect } => Some(*rect),
                 DrawCommand::PopClip => None,
+                DrawCommand::DrawBoxShadow { rect, .. } => Some(*rect),
                 DrawCommand::DrawRect { rect, .. } => Some(*rect),
                 DrawCommand::DrawText { rect, .. } => Some(*rect),
                 DrawCommand::DrawImage { rect, .. } => Some(*rect),
@@ -345,7 +346,29 @@ impl<'a> Renderer for TinySkiaRenderer<'a> {
                         }
                     }
                 }
-                DrawCommand::DrawRect { rect, color, gradient, border_radius, border_width, border_color } => {
+                DrawCommand::DrawBoxShadow { rect, border_radius, offset_x, offset_y, blur_radius: _, spread_radius, color, inset: _ } => {
+                    profile!("render_box_shadow");
+                    let sx = rect.x + offset_x - spread_radius;
+                    let sy = rect.y + offset_y - spread_radius;
+                    let sw = rect.width + spread_radius * 2.0;
+                    let sh = rect.height + spread_radius * 2.0;
+                    let s_radius = (border_radius + spread_radius).max(0.0);
+
+                    if let Some(r) = tiny_skia::Rect::from_xywh(sx, sy, sw, sh) {
+                        let mut paint = tiny_skia::Paint::default();
+                        paint.set_color(self.to_skia_color(*color));
+                        paint.anti_alias = true;
+
+                        if s_radius > 0.0 {
+                            if let Some(path) = rounded_rect_path(r, s_radius) {
+                                self.pixmap.fill_path(&path, &paint, tiny_skia::FillRule::Winding, self.transform, mask_to_use);
+                            }
+                        } else {
+                            self.pixmap.fill_rect(r, &paint, self.transform, mask_to_use);
+                        }
+                    }
+                }
+                DrawCommand::DrawRect { rect, color, gradient, border_radius, border_width, border_color, border_style, border_bottom_only: _ } => {
                     profile!("render_rect");
                     let r = tiny_skia::Rect::from_xywh(rect.x, rect.y, rect.width, rect.height);
                     if let Some(r) = r {
@@ -440,7 +463,7 @@ impl<'a> Renderer for TinySkiaRenderer<'a> {
                         }
 
                         // 2. Stroke (Border)
-                        if *border_width > 0.0 {
+                        if *border_width > 0.0 && *border_style != xerune::style::BorderStyle::None {
                              if let Some(bc) = border_color {
                                  let mut stroke_paint = tiny_skia::Paint::default();
                                  stroke_paint.set_color(self.to_skia_color(*bc));
@@ -448,6 +471,19 @@ impl<'a> Renderer for TinySkiaRenderer<'a> {
                                  
                                  let mut stroke = tiny_skia::Stroke::default();
                                  stroke.width = *border_width;
+                                 match border_style {
+                                     xerune::style::BorderStyle::Dashed => {
+                                         if let Some(dash) = tiny_skia::StrokeDash::new(vec![*border_width * 3.0, *border_width * 2.0], 0.0) {
+                                             stroke.dash = Some(dash);
+                                         }
+                                     }
+                                     xerune::style::BorderStyle::Dotted => {
+                                         if let Some(dash) = tiny_skia::StrokeDash::new(vec![*border_width, *border_width], 0.0) {
+                                             stroke.dash = Some(dash);
+                                         }
+                                     }
+                                     _ => {}
+                                 }
                                  
                                  if *border_radius > 0.0 {
                                      if let Some(path) = rounded_rect_path(r, *border_radius) {
@@ -645,7 +681,7 @@ impl<'a> Renderer for TinySkiaRenderer<'a> {
                 }
 
         
-                DrawCommand::DrawCanvas { id, rect } => {
+                DrawCommand::DrawCanvas { id, rect, border_radius: _ } => {
                     profile!("render_canvas");
                     if let Some(canvas) = canvases.get(id) {
                         if let Some(canvas_pixmap) = PixmapRef::from_bytes(&canvas.data, canvas.width, canvas.height) {

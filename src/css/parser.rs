@@ -286,3 +286,74 @@ pub(crate) fn parse_margin(val: &str) -> Option<taffy::geometry::Rect<LengthPerc
         _ => None
     }
 }
+
+pub fn parse_box_shadow(val: &str) -> Option<crate::style::BoxShadow> {
+    let mut s = val.trim();
+    if s.is_empty() || s == "none" {
+        return None;
+    }
+
+    let mut inset = false;
+    if s.starts_with("inset") {
+        inset = true;
+        s = s[5..].trim();
+    } else if s.ends_with("inset") {
+        inset = true;
+        s = s[..s.len() - 5].trim();
+    }
+
+    let mut color = Color::from_rgba8(0, 0, 0, 128);
+
+    if let Some(rgba_start) = s.find("rgba(").or_else(|| s.find("rgb(")) {
+        if let Some(rgba_end) = s[rgba_start..].find(')') {
+            let color_sub = &s[rgba_start..=rgba_start + rgba_end];
+            if let Some(c) = parse_hex_color(color_sub) {
+                color = c;
+            }
+            let mut prefix = s[..rgba_start].trim().to_string();
+            let suffix = s[rgba_start + rgba_end + 1..].trim();
+            if !suffix.is_empty() {
+                if !prefix.is_empty() {
+                    prefix.push(' ');
+                }
+                prefix.push_str(suffix);
+            }
+            let parts: Vec<&str> = prefix.split_whitespace().collect();
+            let lengths: Vec<f32> = parts.iter().filter_map(|p| parse_px(p)).collect();
+            if lengths.len() >= 2 {
+                return Some(crate::style::BoxShadow {
+                    offset_x: lengths[0],
+                    offset_y: lengths[1],
+                    blur_radius: if lengths.len() > 2 { lengths[2] } else { 0.0 },
+                    spread_radius: if lengths.len() > 3 { lengths[3] } else { 0.0 },
+                    color,
+                    inset,
+                });
+            }
+        }
+    }
+
+    let parts: Vec<&str> = s.split_whitespace().collect();
+    let mut num_parts = Vec::new();
+    for part in parts {
+        if let Some(c) = parse_hex_color(part) {
+            color = c;
+        } else if part != "inset" {
+            num_parts.push(part);
+        }
+    }
+    let lengths: Vec<f32> = num_parts.iter().filter_map(|p| parse_px(p)).collect();
+    if lengths.len() >= 2 {
+        Some(crate::style::BoxShadow {
+            offset_x: lengths[0],
+            offset_y: lengths[1],
+            blur_radius: if lengths.len() > 2 { lengths[2] } else { 0.0 },
+            spread_radius: if lengths.len() > 3 { lengths[3] } else { 0.0 },
+            color,
+            inset,
+        })
+    } else {
+        None
+    }
+}
+

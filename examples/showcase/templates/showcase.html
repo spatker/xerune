@@ -20,16 +20,17 @@
         margin-bottom: 40px;
     }
     .header-title {
-        font-size: 36px;
+        font-size: 34px;
         margin: 0;
         font-weight: bold;
         color: #ffffff;
     }
     .header-version {
-        padding: 5px 15px;
+        padding: 6px 18px;
         background-color: rgba(255,255,255,0.1);
         border-radius: 20px;
-        border: 1px solid rgba(255,255,255,0.2);
+        border: 2px solid rgba(255,255,255,0.3);
+        box-shadow: 0px 4px 12px rgba(0, 0, 0, 0.3);
     }
     .header-version p {
         margin: 0;
@@ -44,9 +45,10 @@
     .status-card {
         flex-grow: 1;
         padding: 25px;
-        background-color: rgba(255,255,255,0.05);
+        background-color: rgba(255,255,255,0.06);
         border-radius: 16px;
-        border: 1px solid rgba(255,255,255,0.1);
+        border: 2px solid rgba(255,255,255,0.15);
+        box-shadow: 0px 8px 24px rgba(0, 0, 0, 0.35);
     }
     .status-card.mr {
         margin-right: 20px;
@@ -67,12 +69,14 @@
         background-color: rgba(0,255,0,0.2);
         border-radius: 50%;
         margin-right: 12px;
+        border: 1px solid #00ff00;
     }
     .indicator-inner {
         width: 10px;
         height: 10px;
         border-radius: 5px;
         background-color: #00ff00;
+        box-shadow: 0px 0px 8px #00ff00;
     }
     .status-value {
         font-size: 24px;
@@ -116,7 +120,8 @@
         padding: 25px;
         background-color: rgba(255,255,255,0.05);
         border-radius: 16px;
-        border: 1px solid rgba(255,255,255,0.1);
+        border: 2px solid rgba(255,255,255,0.15);
+        box-shadow: 0px 10px 30px rgba(0, 0, 0, 0.4);
         margin-right: 20px;
     }
     .list-panel h2 {
@@ -128,14 +133,14 @@
         height: 200px;
         margin-bottom: 20px;
         border-radius: 8px;
-        border: 1px solid rgba(255,255,255,0.1);
+        border: 2px solid rgba(255,255,255,0.4);
+        box-shadow: 0px 4px 16px rgba(0, 0, 0, 0.3);
     }
     .process-table {
         width: 100%;
     }
     .process-table tr.header-tr {
-        border-bottom-width: 1px;
-        border-color: rgba(255,255,255,0.1);
+        border-color: rgba(255,255,255,0.2);
     }
     .process-table th {
         text-align: left;
@@ -152,7 +157,8 @@
         padding: 25px;
         background-color: rgba(255,255,255,0.05);
         border-radius: 16px;
-        border: 1px solid rgba(255,255,255,0.1);
+        border: 2px solid rgba(255,255,255,0.15);
+        box-shadow: 0px 10px 30px rgba(0, 0, 0, 0.4);
     }
     .control-panel h2 {
         font-size: 18px;
@@ -175,7 +181,8 @@
         border-radius: 10px;
         margin-bottom: 15px;
         align-items: center;
-        border-width: 0px;
+        border: 2px solid rgba(255,255,255,0.3);
+        box-shadow: 0px 6px 18px rgba(255, 138, 0, 0.35);
         color: white;
     }
     .btn-simulate span {
@@ -184,12 +191,12 @@
     .btn-add-user {
         display: flex;
         padding: 15px;
-        background-color: rgba(255,255,255,0.05);
+        background-color: rgba(255,255,255,0.08);
         border-radius: 10px;
-        border: 1px solid rgba(255,255,255,0.2);
+        border: 2px solid rgba(255,255,255,0.3);
+        box-shadow: 0px 4px 14px rgba(0, 0, 0, 0.3);
         margin-bottom: 25px;
         align-items: center;
-        border-width: 0px;
         color: white;
     }
     .btn-add-user span {
@@ -216,9 +223,9 @@
 
     <!-- Header -->
     <div class="header-row">
-        <h1 class="header-title">Xerune Dashboard</h1>
+        <h1 class="header-title">🚀 Xerune Dashboard 🎨</h1>
         <div class="header-version">
-            <p>v0.2.0</p>
+            <p>v0.2.0 ⭐</p>
         </div>
     </div>
 
@@ -226,7 +233,7 @@
     <div class="status-cards-row">
         <!-- System Status -->
         <div class="status-card mr">
-            <h2>SYSTEM STATUS</h2>
+            <h2>💻 SYSTEM STATUS</h2>
             <div class="status-indicator-row">
                 <div class="indicator-outer">
                     <div class="indicator-inner"></div>
@@ -238,10 +245,10 @@
 
         <!-- Active Users -->
         <div class="status-card">
-            <h2>ACTIVE USERS</h2>
+            <h2>👥 ACTIVE USERS</h2>
             <div class="status-users-row">
                 <span class="status-users-val">{{ user_counter }}</span>
-                <span class="status-users-change">+12%</span>
+                <span class="status-users-change">+12% 🔥</span>
             </div>
         </div>
     </div>
@@ -251,7 +258,7 @@
 
         <!-- List Panel -->
         <div class="list-panel">
-            <h2>System Processes</h2>
+            <h2>⚙️ System Processes</h2>
 
             <canvas id="load_chart" width="400" height="200" class="load-chart"></canvas>
 
@@ -273,25 +280,25 @@
 
         <!-- Control Panel -->
         <div class="control-panel">
-            <h2>Quick Controls</h2>
+            <h2>🛠️ Quick Controls</h2>
 
             <div class="controls-container">
                 <button data-on-click="increment_progress" class="btn-simulate">
-                    <span>Simulate Load (+10%)</span>
+                    <span>⚡ Simulate Load (+10%)</span>
                 </button>
 
                 <button data-on-click="increment_user_counter" class="btn-add-user">
-                    <span>Add User</span>
+                    <span>➕ Add User</span>
                 </button>
 
                 <h3>CONFIGURATIONS</h3>
                 <div class="config-checkbox-row">
                     <input type="checkbox" checked>
-                    <span>Auto-Scaling</span>
+                    <span>🔥 Auto-Scaling</span>
                 </div>
                 <div class="config-checkbox-row last">
                     <input type="checkbox">
-                    <span>Maintenance Mode</span>
+                    <span>🛡️ Maintenance Mode</span>
                 </div>
             </div>
         </div>

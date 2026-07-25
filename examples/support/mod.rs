@@ -29,6 +29,7 @@ pub fn render_frame<M, TM>(
     width: u32,
     height: u32,
     fonts_ref: &'static [fontdue::Font],
+    _font_bytes_ref: Option<&'static [&'static [u8]]>,
     caches: &mut RenderCaches,
 ) where
     M: xerune::Model + xerune::ui::TemplateLayout + 'static,
@@ -36,7 +37,7 @@ pub fn render_frame<M, TM>(
 {
     #[cfg(not(feature = "fast-renderer"))]
     {
-        let mut pixmap = tiny_skia::PixmapMut::from_bytes(
+        let pixmap = tiny_skia::PixmapMut::from_bytes(
             unsafe { std::slice::from_raw_parts_mut(buffer.as_mut_ptr() as *mut u8, buffer.len() * 4) },
             width,
             height,
@@ -61,6 +62,7 @@ pub fn render_frame<M, TM>(
             &mut caches.image_cache,
             &mut caches.glyph_cache,
         );
+        renderer.font_bytes = _font_bytes_ref;
         runtime.render(&mut renderer);
     }
 }
@@ -80,13 +82,17 @@ where
     let roboto_regular = fontdue::Font::from_bytes(font_data, fontdue::FontSettings::default()).unwrap();
     let font_data_bold = include_bytes!("../../resources/fonts/Roboto-Bold.ttf") as &[u8];
     let roboto_bold = fontdue::Font::from_bytes(font_data_bold, fontdue::FontSettings::default()).unwrap();
-    let fonts = vec![roboto_regular, roboto_bold];
+    let font_data_emoji = include_bytes!("../../resources/fonts/NotoColorEmoji.ttf") as &[u8];
+    let emoji_font_stub = fontdue::Font::from_bytes(font_data, fontdue::FontSettings::default()).unwrap();
+
+    let fonts = vec![roboto_regular, roboto_bold, emoji_font_stub];
+    let font_bytes: &'static [&'static [u8]] = Box::leak(Box::new(vec![font_data, font_data_bold, font_data_emoji]));
     let fonts_ref: &'static [fontdue::Font] = Box::leak(Box::new(fonts));
 
     let mut caches = RenderCaches::new();
     let render_fn = Box::new(
         move |runtime: &mut xerune::Runtime<M, TM>, buffer: &mut [u32], width: u32, height: u32| {
-            render_frame(runtime, buffer, width, height, fonts_ref, &mut caches);
+            render_frame(runtime, buffer, width, height, fonts_ref, Some(font_bytes), &mut caches);
         },
     );
 

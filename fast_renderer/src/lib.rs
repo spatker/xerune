@@ -13,7 +13,7 @@ use xerune::{Canvas, DrawCommand, Rect, Renderer, TextMeasurer};
 use xerune::alloc_prelude::*;
 
 use blitter::{pack_color, blend_solid_rect, blend_pixel, blend_glyph_span, div_255};
-use rounded_rect::{draw_rounded_rect, draw_rounded_border};
+use rounded_rect::{draw_rounded_rect, draw_rounded_border, draw_box_shadow};
 
 #[cfg(feature = "profile")]
 macro_rules! profile {
@@ -123,11 +123,22 @@ impl<'a> TextMeasurer for FastMeasurer<'a> {
                 let mut max_x = f32::MIN;
                 let mut max_y = f32::MIN;
 
+                let mut extra_x = 0.0f32;
                 for glyph in layout.glyphs() {
-                    let gx = glyph.x;
+                    if (glyph.parent as u32) == 0xFE0F || glyph.parent == '\u{fe0f}' {
+                        continue;
+                    }
+                    let is_emoji = (glyph.parent as u32) >= 0x2000 || glyph.key.glyph_index == 0;
+                    let gx = glyph.x + extra_x;
                     let gy = glyph.y;
-                    let gw = glyph.width as f32;
-                    let gh = glyph.height as f32;
+                    let mut gw = glyph.width as f32;
+                    let mut gh = glyph.height as f32;
+                    if is_emoji {
+                        let target_sz = glyph.key.px;
+                        gw = target_sz;
+                        gh = target_sz;
+                        extra_x += target_sz * 0.85;
+                    }
 
                     if gx < min_x { min_x = gx; }
                     if gy < min_y { min_y = gy; }
@@ -187,6 +198,79 @@ pub struct CachedGlyph {
     pub width: u32,
     pub height: u32,
     pub bitmap: Vec<u8>,
+    pub rgba_bitmap: Option<Vec<u32>>,
+    pub is_color: bool,
+}
+
+#[cfg(feature = "std")]
+fn try_find_color_emoji_glyph(font_bytes_slice: &[&[u8]], c: char, target_size: f32) -> Option<CachedGlyph> {
+    for fb in font_bytes_slice {
+        let face = match ttf_parser::Face::parse(fb, 0) {
+            Ok(f) => f,
+            Err(_) => continue,
+        };
+        let glyph_id = match face.glyph_index(c) {
+            Some(gid) => gid,
+            None => continue,
+        };
+        let img = match face.glyph_raster_image(glyph_id, (target_size * 2.0) as u16)
+            .or_else(|| face.glyph_raster_image(glyph_id, 0)) {
+            Some(i) => i,
+            None => continue,
+        };
+        let mut decoder = png::Decoder::new(img.data);
+        decoder.set_transformations(png::Transformations::EXPAND);
+        let mut reader = match decoder.read_info() {
+            Ok(r) => r,
+            Err(_) => continue,
+        };
+        let mut buf = vec![0; reader.output_buffer_size()];
+        let info = match reader.next_frame(&mut buf) {
+            Ok(i) => i,
+            Err(_) => continue,
+        };
+
+        let img_w = info.width;
+        let img_h = info.height;
+        if img_w == 0 || img_h == 0 {
+            continue;
+        }
+
+        let mut rgba_pixels = Vec::with_capacity((img_w * img_h) as usize);
+        let bytes = &buf[..info.buffer_size()];
+
+        match info.color_type {
+            png::ColorType::Rgba => {
+                for chunk in bytes.chunks_exact(4) {
+                    let r = chunk[0] as u32;
+                    let g = chunk[1] as u32;
+                    let b = chunk[2] as u32;
+                    let a = chunk[3] as u32;
+                    let argb = (a << 24) | (r << 16) | (g << 8) | b;
+                    rgba_pixels.push(argb);
+                }
+            }
+            png::ColorType::Rgb => {
+                for chunk in bytes.chunks_exact(3) {
+                    let r = chunk[0] as u32;
+                    let g = chunk[1] as u32;
+                    let b = chunk[2] as u32;
+                    let argb = (255 << 24) | (r << 16) | (g << 8) | b;
+                    rgba_pixels.push(argb);
+                }
+            }
+            _ => continue,
+        }
+
+        return Some(CachedGlyph {
+            width: img_w,
+            height: img_h,
+            bitmap: Vec::new(),
+            rgba_bitmap: Some(rgba_pixels),
+            is_color: true,
+        });
+    }
+    None
 }
 
 pub struct FastRenderer<'a> {
@@ -196,6 +280,7 @@ pub struct FastRenderer<'a> {
     pub physical_width: u32,
     pub physical_height: u32,
     pub fonts: FontSource<'a>,
+    pub font_bytes: Option<&'a [&'a [u8]]>,
     pub clip_stack: Vec<Rect>,
     pub swap_rb: bool,
     pub rotate: bool,
@@ -223,6 +308,7 @@ impl<'a> FastRenderer<'a> {
             physical_width: width,
             physical_height: height,
             fonts: fonts.into(),
+            font_bytes: None,
             clip_stack: Vec::new(),
             swap_rb: false,
             rotate: false,
@@ -357,6 +443,40 @@ impl<'a> Renderer for FastRenderer<'a> {
                     profile!("render_pop_clip");
                     self.clip_stack.pop();
                 }
+                DrawCommand::DrawBoxShadow {
+                    rect,
+                    border_radius,
+                    offset_x,
+                    offset_y,
+                    blur_radius,
+                    spread_radius,
+                    color,
+                    inset,
+                } => {
+                    profile!("render_box_shadow");
+                    let local_rect = self.translate_rect(rect);
+                    let clip = self.get_clip_rect();
+                    draw_box_shadow(
+                        self.buffer,
+                        self.width,
+                        self.height,
+                        self.physical_width,
+                        local_rect.x as i32,
+                        local_rect.y as i32,
+                        local_rect.width as i32,
+                        local_rect.height as i32,
+                        *border_radius,
+                        *offset_x,
+                        *offset_y,
+                        *blur_radius,
+                        *spread_radius,
+                        *color,
+                        *inset,
+                        self.swap_rb,
+                        clip,
+                        self.rotate,
+                    );
+                }
                 DrawCommand::DrawRect {
                     rect,
                     color,
@@ -364,6 +484,8 @@ impl<'a> Renderer for FastRenderer<'a> {
                     border_radius,
                     border_width,
                     border_color,
+                    border_style: _,
+                    border_bottom_only,
                 } => {
                     profile!("render_rect");
                     let local_rect = self.translate_rect(rect);
@@ -390,22 +512,40 @@ impl<'a> Renderer for FastRenderer<'a> {
 
                     if *border_width > 0.0 {
                         if let Some(bc) = border_color {
-                            draw_rounded_border(
-                                self.buffer,
-                                self.width,
-                                self.height,
-                                self.physical_width,
-                                local_rect.x as i32,
-                                local_rect.y as i32,
-                                local_rect.width as i32,
-                                local_rect.height as i32,
-                                *border_radius,
-                                *border_width,
-                                *bc,
-                                self.swap_rb,
-                                clip,
-                                self.rotate,
-                            );
+                            if *border_bottom_only {
+                                let bw = border_width.round() as i32;
+                                let packed_border = pack_color(*bc, self.swap_rb);
+                                blend_solid_rect(
+                                    self.buffer,
+                                    self.width,
+                                    self.height,
+                                    self.physical_width,
+                                    local_rect.x as i32,
+                                    local_rect.y as i32 + local_rect.height as i32 - bw,
+                                    local_rect.width as i32,
+                                    bw,
+                                    packed_border,
+                                    clip,
+                                    self.rotate,
+                                );
+                            } else {
+                                draw_rounded_border(
+                                    self.buffer,
+                                    self.width,
+                                    self.height,
+                                    self.physical_width,
+                                    local_rect.x as i32,
+                                    local_rect.y as i32,
+                                    local_rect.width as i32,
+                                    local_rect.height as i32,
+                                    *border_radius,
+                                    *border_width,
+                                    *bc,
+                                    self.swap_rb,
+                                    clip,
+                                    self.rotate,
+                                );
+                            }
                         }
                     }
                 }
@@ -448,29 +588,60 @@ impl<'a> Renderer for FastRenderer<'a> {
                             let g = (packed_color >> 8) & 0xff;
                             let b = packed_color & 0xff;
 
+                            let mut extra_x: f32 = 0.0;
                             for glyph in self.layout.glyphs() {
+                                if (glyph.parent as u32) == 0xFE0F || glyph.parent == '\u{fe0f}' {
+                                    continue;
+                                }
                                 let sub_px = (glyph.key.px * 16.0) as u32;
-                                let cache_key = (glyph.font_index, glyph.key.glyph_index, sub_px);
+                                let is_emoji = (glyph.parent as u32) >= 0x2000 || glyph.key.glyph_index == 0;
+                                let cache_key = if is_emoji {
+                                    let emoji_id = ((glyph.parent as u32) ^ ((glyph.parent as u32) >> 16)) as u16;
+                                    (0xffff_usize, emoji_id, sub_px)
+                                } else {
+                                    (glyph.font_index, glyph.key.glyph_index, sub_px)
+                                };
 
                                 if !self.glyph_cache.contains_key(&cache_key) {
-                                    let (metrics, bitmap) = ttf_fonts[glyph.font_index].rasterize_indexed(glyph.key.glyph_index, glyph.key.px);
-                                    if metrics.width > 0 && metrics.height > 0 {
-                                        self.glyph_cache.insert(
-                                            cache_key,
-                                            CachedGlyph {
-                                                width: metrics.width as u32,
-                                                height: metrics.height as u32,
-                                                bitmap,
-                                            },
-                                        );
+                                    let mut color_glyph = None;
+                                    if is_emoji {
+                                        if let Some(fbs) = self.font_bytes {
+                                            color_glyph = try_find_color_emoji_glyph(fbs, glyph.parent, glyph.key.px);
+                                        }
+                                    }
+
+                                    if let Some(cg) = color_glyph {
+                                        self.glyph_cache.insert(cache_key, cg);
+                                    } else {
+                                        let (metrics, bitmap) = ttf_fonts[glyph.font_index].rasterize_indexed(glyph.key.glyph_index, glyph.key.px);
+                                        if metrics.width > 0 && metrics.height > 0 {
+                                            self.glyph_cache.insert(
+                                                cache_key,
+                                                CachedGlyph {
+                                                    width: metrics.width as u32,
+                                                    height: metrics.height as u32,
+                                                    bitmap,
+                                                    rgba_bitmap: None,
+                                                    is_color: false,
+                                                },
+                                            );
+                                        }
                                     }
                                 }
 
                                 if let Some(cached) = self.glyph_cache.get(&cache_key) {
-                                    let gx = (local_rect.x + glyph.x) as i32;
-                                    let gy = (local_rect.y + glyph.y) as i32;
-                                    let gw = cached.width as i32;
-                                    let gh = cached.height as i32;
+                                    let gx = (local_rect.x + glyph.x + extra_x) as i32;
+                                    let gy = if cached.is_color {
+                                        (local_rect.y + glyph.key.px * 0.10) as i32
+                                    } else {
+                                        (local_rect.y + glyph.y) as i32
+                                    };
+                                    let target_sz = glyph.key.px.round().max(1.0) as i32;
+                                    if cached.is_color {
+                                        extra_x += glyph.key.px * 0.85;
+                                    }
+                                    let gw = if cached.is_color { target_sz } else { cached.width as i32 };
+                                    let gh = if cached.is_color { target_sz } else { cached.height as i32 };
 
                                     let start_x = gx.max(clip_x1);
                                     let start_y = gy.max(clip_y1);
@@ -478,7 +649,37 @@ impl<'a> Renderer for FastRenderer<'a> {
                                     let end_y = (gy + gh).min(clip_y2);
 
                                     if start_x < end_x && start_y < end_y {
-                                        if self.rotate {
+                                        if cached.is_color {
+                                            if let Some(ref rgba) = cached.rgba_bitmap {
+                                                for y in start_y..end_y {
+                                                    let src_y = (((y - gy) as usize * cached.height as usize) / target_sz as usize).min(cached.height as usize - 1);
+                                                    let src_row_offset = src_y * cached.width as usize;
+                                                    for x in start_x..end_x {
+                                                        let src_x = (((x - gx) as usize * cached.width as usize) / target_sz as usize).min(cached.width as usize - 1);
+                                                        let color_pixel = rgba[src_row_offset + src_x];
+                                                        let sa = (color_pixel >> 24) & 0xff;
+                                                        if sa > 0 {
+                                                            let idx = if self.rotate {
+                                                                (x as usize * self.physical_width as usize) + (self.physical_width as usize - 1 - y as usize)
+                                                            } else {
+                                                                (y as usize * self.physical_width as usize) + x as usize
+                                                            };
+                                                            if idx < self.buffer.len() {
+                                                                let final_color = if self.swap_rb {
+                                                                    let sr = (color_pixel >> 16) & 0xff;
+                                                                    let sg = (color_pixel >> 8) & 0xff;
+                                                                    let sb = color_pixel & 0xff;
+                                                                    (sa << 24) | (sb << 16) | (sg << 8) | sr
+                                                                } else {
+                                                                    color_pixel
+                                                                };
+                                                                blend_pixel(&mut self.buffer[idx], final_color);
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        } else if self.rotate {
                                             for y in start_y..end_y {
                                                 let src_y = (y - gy) as usize;
                                                 let src_row_offset = src_y * cached.width as usize;
@@ -865,7 +1066,7 @@ impl<'a> Renderer for FastRenderer<'a> {
                         );
                     }
                 }
-                DrawCommand::DrawCanvas { id, rect } => {
+                DrawCommand::DrawCanvas { id, rect, border_radius } => {
                     profile!("render_canvas");
                     let local_rect = self.translate_rect(rect);
                     if let Some(canvas) = canvases.get(id) {
@@ -886,7 +1087,7 @@ impl<'a> Renderer for FastRenderer<'a> {
                             self.height,
                             self.physical_width,
                             &local_rect,
-                            0.0,
+                            *border_radius,
                             canvas.width,
                             canvas.height,
                             &pixels,
@@ -1065,6 +1266,22 @@ impl F32Ext for f32 {
                 val = 0.5 * (val + self / val);
             }
             val
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_emoji_decoding() {
+        let emoji_bytes = include_bytes!("../../resources/fonts/NotoColorEmoji.ttf");
+        let font_bytes = [emoji_bytes.as_slice()];
+        let emojis = ['🚀', '🎨', '⭐', '💻', '👥', '🔥', '⚙', '🛠', '⚡', '➕', '🛡'];
+        for e in emojis {
+            let res = try_find_color_emoji_glyph(&font_bytes, e, 34.0);
+            assert!(res.is_some(), "Emoji {} failed to decode!", e);
         }
     }
 }

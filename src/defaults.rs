@@ -49,9 +49,11 @@ pub fn get_default_style(tag: &str, parent_style: &ContainerStyle) -> StyleBundl
     // Reset non-inherited CSS properties
     bundle.container_style.background_color = None;
     bundle.container_style.background_gradient = None;
+    bundle.container_style.box_shadow = None;
     bundle.container_style.border_radius = 0.0;
     bundle.container_style.border_width = 0.0;
     bundle.container_style.border_color = None;
+    bundle.container_style.border_bottom_only = false;
     bundle.container_style.overflow = crate::Overflow::Visible;
     bundle.container_style.order = 0;
     bundle.container_style.flex_direction = FlexDirection::Row;
@@ -82,7 +84,8 @@ pub fn get_default_style(tag: &str, parent_style: &ContainerStyle) -> StyleBundl
     bundle.container_style.animation_play_state = Arc::from("running");
 
     bundle.container_style.display = match tag {
-        "div" | "body" | "p" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "ul" | "li" | "table" | "tbody" | "thead" | "tfoot" | "tr" => Display::Block,
+        "tr" => Display::Flex,
+        "div" | "body" | "p" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "ul" | "li" | "table" | "tbody" | "thead" | "tfoot" => Display::Block,
         _ => Display::InlineBlock,
     };
 
@@ -206,7 +209,6 @@ pub fn get_default_style(tag: &str, parent_style: &ContainerStyle) -> StyleBundl
                 top: length(2.0), bottom: length(2.0)
             };
             bundle.taffy_style.align_items = Some(AlignItems::Center);
-            bundle.taffy_style.justify_content = Some(JustifyContent::Center);
             bundle.container_style.background_color = Some(crate::Color::from_rgba8(220, 220, 220, 255));
             bundle.container_style.border_radius = 4.0;
             bundle.container_style.border_width = 1.0;

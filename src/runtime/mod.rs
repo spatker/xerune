@@ -365,7 +365,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
         }
 
         for cmd in &commands {
-            if let DrawCommand::DrawCanvas { id, rect } = cmd {
+            if let DrawCommand::DrawCanvas { id, rect, .. } = cmd {
                 if let Some(canvas) = self.context.canvases.get(id) {
                     if canvas.dirty {
                         dirty_region = match dirty_region {

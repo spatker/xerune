@@ -3,7 +3,7 @@
 pub(crate) mod parser;
 pub(crate) mod animation;
 
-pub use parser::{parse_hex_color, parse_px, parse_dimension, parse_length_percentage, parse_length_percentage_auto};
+pub use parser::{parse_hex_color, parse_px, parse_dimension, parse_length_percentage, parse_length_percentage_auto, parse_box_shadow};
 use parser::{parse_padding, parse_margin};
 pub use animation::{Keyframe, KeyframesAnimation, parse_duration_sec, parse_animation_shorthand};
 #[cfg(feature = "std")]
@@ -192,6 +192,22 @@ pub fn apply_declaration(prop: &str, val: &str, current_style: &mut ContainerSty
                 }
             }
         }
+        "box-shadow" => {
+            if let Some(bs) = parser::parse_box_shadow(val) {
+                current_style.box_shadow = Some(bs);
+            } else if val.trim() == "none" {
+                current_style.box_shadow = None;
+            }
+        }
+        "border-style" => {
+            match val.trim() {
+                "solid" => current_style.border_style = crate::style::BorderStyle::Solid,
+                "dashed" => current_style.border_style = crate::style::BorderStyle::Dashed,
+                "dotted" => current_style.border_style = crate::style::BorderStyle::Dotted,
+                "none" => current_style.border_style = crate::style::BorderStyle::None,
+                _ => {}
+            }
+        }
         "border-radius" => {
             if let Some(r) = parse_px(val) {
                 current_style.border_radius = r;
@@ -201,23 +217,56 @@ pub fn apply_declaration(prop: &str, val: &str, current_style: &mut ContainerSty
                  }
             }
         }
-        "border-width" => {
+        "border-width" | "border-top-width" | "border-bottom-width" | "border-left-width" | "border-right-width" => {
             if let Some(w) = parse_px(val) {
                 current_style.border_width = w;
+                if prop == "border-bottom-width" {
+                    current_style.border_bottom_only = true;
+                }
             }
         }
-        "border-color" => {
+        "border-color" | "border-top-color" | "border-bottom-color" | "border-left-color" | "border-right-color" => {
             if let Some(c) = parse_hex_color(val) {
                 current_style.border_color = Some(c);
             }
         }
-        "border" => {
-            let parts: Vec<&str> = val.split_whitespace().collect();
-            for part in parts {
-                if let Some(w) = parse_px(part) {
-                    current_style.border_width = w;
-                } else if let Some(c) = parse_hex_color(part) {
-                     current_style.border_color = Some(c);
+        "border" | "border-top" | "border-bottom" | "border-left" | "border-right" => {
+            if prop == "border-bottom" {
+                current_style.border_bottom_only = true;
+            }
+            let val_clean = val.trim();
+            if let Some(rgba_start) = val_clean.find("rgba(").or_else(|| val_clean.find("rgb(")) {
+                if let Some(rgba_end) = val_clean[rgba_start..].find(')') {
+                    let color_sub = &val_clean[rgba_start..=rgba_start + rgba_end];
+                    if let Some(c) = parse_hex_color(color_sub) {
+                        current_style.border_color = Some(c);
+                    }
+                    let mut remaining = val_clean[..rgba_start].to_string();
+                    remaining.push_str(&val_clean[rgba_start + rgba_end + 1..]);
+                    for part in remaining.split_whitespace() {
+                        if part == "solid" { current_style.border_style = crate::style::BorderStyle::Solid; }
+                        else if part == "dashed" { current_style.border_style = crate::style::BorderStyle::Dashed; }
+                        else if part == "dotted" { current_style.border_style = crate::style::BorderStyle::Dotted; }
+                        else if part == "none" { current_style.border_style = crate::style::BorderStyle::None; }
+                        else if let Some(w) = parse_px(part) { current_style.border_width = w; }
+                    }
+                }
+            } else {
+                let parts: Vec<&str> = val.split_whitespace().collect();
+                for part in parts {
+                    if part == "solid" {
+                        current_style.border_style = crate::style::BorderStyle::Solid;
+                    } else if part == "dashed" {
+                        current_style.border_style = crate::style::BorderStyle::Dashed;
+                    } else if part == "dotted" {
+                        current_style.border_style = crate::style::BorderStyle::Dotted;
+                    } else if part == "none" {
+                        current_style.border_style = crate::style::BorderStyle::None;
+                    } else if let Some(w) = parse_px(part) {
+                        current_style.border_width = w;
+                    } else if let Some(c) = parse_hex_color(part) {
+                        current_style.border_color = Some(c);
+                    }
                 }
             }
         }
