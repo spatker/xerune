@@ -1,5 +1,14 @@
 #[cfg(target_arch = "x86_64")]
-use std::arch::x86_64::*;
+use core::arch::x86_64::*;
+
+#[cfg(target_arch = "x86")]
+use core::arch::x86::*;
+
+#[cfg(target_arch = "aarch64")]
+use core::arch::aarch64::*;
+
+#[cfg(all(target_arch = "arm", target_feature = "neon"))]
+use core::arch::arm::*;
 
 #[inline(always)]
 pub fn div_255(x: u32) -> u32 {
@@ -54,7 +63,7 @@ pub fn blend_solid_span(dst: &mut [u32], color: u32) {
         
         let mut chunks_std = dst;
         
-        #[cfg(target_arch = "x86_64")]
+        #[cfg(any(target_arch = "x86_64", target_arch = "x86"))]
         {
             let (simd_slice, remainder) = chunks_std.split_at_mut(chunks_std.len() - chunks_std.len() % 4);
             chunks_std = remainder;
@@ -91,9 +100,8 @@ pub fn blend_solid_span(dst: &mut [u32], color: u32) {
             }
         }
         
-        #[cfg(target_arch = "aarch64")]
+        #[cfg(any(target_arch = "aarch64", all(target_arch = "arm", target_feature = "neon")))]
         {
-            use std::arch::aarch64::*;
             let (simd_slice, remainder) = chunks_std.split_at_mut(chunks_std.len() - chunks_std.len() % 4);
             chunks_std = remainder;
             
@@ -213,7 +221,7 @@ pub fn blend_glyph_span(dst: &mut [u32], coverage: &[u8], color: u32) {
     let mut chunks_dst = dst;
     let mut chunks_cov = coverage;
 
-    #[cfg(target_arch = "x86_64")]
+    #[cfg(any(target_arch = "x86_64", target_arch = "x86"))]
     {
         let len = chunks_dst.len().min(chunks_cov.len());
         let simd_len = len - len % 4;
@@ -280,9 +288,8 @@ pub fn blend_glyph_span(dst: &mut [u32], coverage: &[u8], color: u32) {
         }
     }
 
-    #[cfg(target_arch = "aarch64")]
+    #[cfg(any(target_arch = "aarch64", all(target_arch = "arm", target_feature = "neon")))]
     {
-        use std::arch::aarch64::*;
         let len = chunks_dst.len().min(chunks_cov.len());
         let simd_len = len - len % 4;
         let (simd_dst, rem_dst) = chunks_dst.split_at_mut(simd_len);
