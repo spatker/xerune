@@ -4,19 +4,14 @@ use serde::{Serialize, Deserialize};
 use tiny_skia::{PixmapMut, Paint, Color, Transform, Rect};
 use xerune::{Runtime, Model, XeruneMessage, XeruneTemplate};
 
+
+
 #[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm")))]
-#[cfg(not(feature = "fast-renderer"))]
-use skia_renderer::TinySkiaMeasurer;
-#[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm")))]
-#[cfg(feature = "fast-renderer")]
 use fast_renderer::FastMeasurer;
 
 #[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm")))]
-#[cfg(not(feature = "fast-renderer"))]
-pub type Measurer = TinySkiaMeasurer<'static>;
-#[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm")))]
-#[cfg(feature = "fast-renderer")]
 pub type Measurer = FastMeasurer<'static>;
+
 
 struct LcgRng {
     state: u64,
@@ -170,12 +165,10 @@ impl Model for ShowcaseModel {
 #[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm")))]
 pub fn run_native(render_frame: impl FnMut(&mut Runtime<ShowcaseModel, Measurer>, &mut [u32], u32, u32) + 'static, fonts_ref: &'static [Font]) -> anyhow::Result<()> {
     let model = ShowcaseModel::default();
-    #[cfg(not(feature = "fast-renderer"))]
-    let measurer = TinySkiaMeasurer { fonts: fonts_ref };
-    #[cfg(feature = "fast-renderer")]
     let measurer = FastMeasurer { fonts: fonts_ref.into() };
     
     let mut runtime = Runtime::new(model, measurer);
+
     runtime.set_interval("tick".to_string(), 300);
 
     #[cfg(not(any(

@@ -54,7 +54,8 @@ Once the Taffy tree computes the relative position and dimensions of every eleme
    - `DrawImage`: Blits raw images.
    - `DrawCanvas`: Blits custom user-drawn Canvas buffers.
 3. **Clip Rectangles**: Overflows are restricted by generating `Clip` and `PopClip` commands.
-4. **Execution**: The renderer implementation (e.g., skia_renderer) executes the commands onto the screen buffer.
+4. **Execution**: The renderer implementation (e.g., fast_renderer) executes the commands onto the screen buffer.
+
 
 ---
 

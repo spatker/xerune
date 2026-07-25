@@ -3,18 +3,11 @@ use fontdue::Font;
 use xerune::{Runtime, Model, XeruneMessage, XeruneTemplate};
 
 #[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm")))]
-#[cfg(not(feature = "fast-renderer"))]
-use skia_renderer::TinySkiaMeasurer;
-#[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm")))]
-#[cfg(feature = "fast-renderer")]
 use fast_renderer::FastMeasurer;
 
 #[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm")))]
-#[cfg(not(feature = "fast-renderer"))]
-pub type Measurer = TinySkiaMeasurer<'static>;
-#[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm")))]
-#[cfg(feature = "fast-renderer")]
 pub type Measurer = FastMeasurer<'static>;
+
 
 #[derive(XeruneTemplate, serde::Serialize, serde::Deserialize)]
 #[template(path = "todo_list.html")]
@@ -128,9 +121,6 @@ impl Model for TodoList {
 #[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm")))]
 pub fn run_native(render_frame: impl FnMut(&mut Runtime<TodoList, Measurer>, &mut [u32], u32, u32) + 'static, fonts_ref: &'static [Font]) -> anyhow::Result<()> {
     let todo_list = TodoList::default();
-    #[cfg(not(feature = "fast-renderer"))]
-    let measurer = TinySkiaMeasurer { fonts: fonts_ref };
-    #[cfg(feature = "fast-renderer")]
     let measurer = FastMeasurer { fonts: fonts_ref.into() };
     
     let runtime = Runtime::new(todo_list, measurer);

@@ -6,8 +6,9 @@ publish = false
 
 [dependencies]
 xerune = { path = "..", features = ["dynamic-parser"] }
-skia_renderer = { path = "../skia_renderer" }
+fast_renderer = { path = "../fast_renderer" }
 tiny-skia = "0.12.0"
+
 fontdue = "0.9.3"
 glob = "0.3.1"
 regex = "1.10"

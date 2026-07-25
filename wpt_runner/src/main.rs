@@ -13,7 +13,8 @@ use tiny_skia::Pixmap;
 
 use taffy::prelude::NodeId;
 use xerune::{Context, Model, Runtime, Ui, RenderData};
-use skia_renderer::{TinySkiaMeasurer, TinySkiaRenderer};
+use fast_renderer::{FastMeasurer, FastRenderer};
+
 
 const WIDTH: u32 = 800;
 const HEIGHT: u32 = 600;
@@ -233,7 +234,7 @@ fn render_html_to_pixmap(html: &str, fonts: &'static [fontdue::Font]) -> Result<
     let mut pixmap = Pixmap::new(WIDTH, HEIGHT).ok_or_else(|| "Failed to create Pixmap".to_string())?;
     pixmap.fill(tiny_skia::Color::WHITE);
 
-    let measurer = TinySkiaMeasurer { fonts };
+    let measurer = FastMeasurer { fonts: fonts.into() };
     let model = RawHtmlModel { html: html.to_string() };
     
     // Use a catch_unwind to handle any potential layout engine panics gracefully
@@ -242,18 +243,25 @@ fn render_html_to_pixmap(html: &str, fonts: &'static [fontdue::Font]) -> Result<
         runtime.set_size(WIDTH as f32, HEIGHT as f32);
         
         let mut image_cache = HashMap::new();
-        let mut gradient_cache = HashMap::new();
         let mut glyph_cache = HashMap::new();
         
-        let mut renderer = TinySkiaRenderer::new(
-            pixmap.as_mut(),
+        // Convert pixmap ARGB bytes to u32 slice for FastRenderer
+        let data_bytes = pixmap.data_mut();
+        let buffer = unsafe {
+            std::slice::from_raw_parts_mut(data_bytes.as_mut_ptr() as *mut u32, data_bytes.len() / 4)
+        };
+        
+        let mut renderer = FastRenderer::new(
+            buffer,
+            WIDTH,
+            HEIGHT,
             fonts,
             &mut image_cache,
-            &mut gradient_cache,
             &mut glyph_cache,
         );
         
         runtime.render(&mut renderer);
+
 
         // Debug printing of the layout tree
         println!("=== Layout Tree ===");
@@ -495,8 +503,9 @@ fn check_all_nodes(node_id: NodeId, ui: &Ui, errors: &mut Vec<String>) {
 }
 
 fn run_attribute_test(html: &str, fonts: &'static [fontdue::Font]) -> Result<Vec<String>, String> {
-    let measurer = TinySkiaMeasurer { fonts };
+    let measurer = FastMeasurer { fonts: fonts.into() };
     let model = RawHtmlModel { html: html.to_string() };
+
     
     let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let mut runtime = Runtime::new(model, measurer);

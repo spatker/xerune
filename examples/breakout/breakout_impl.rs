@@ -6,18 +6,11 @@ use std::f32::consts::PI;
 use xerune::{Runtime, Model, XeruneMessage, XeruneTemplate};
 
 #[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm")))]
-#[cfg(not(feature = "fast-renderer"))]
-use skia_renderer::TinySkiaMeasurer;
-#[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm")))]
-#[cfg(feature = "fast-renderer")]
 use fast_renderer::FastMeasurer;
 
 #[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm")))]
-#[cfg(not(feature = "fast-renderer"))]
-pub type Measurer = TinySkiaMeasurer<'static>;
-#[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm")))]
-#[cfg(feature = "fast-renderer")]
 pub type Measurer = FastMeasurer<'static>;
+
 
 const GAME_WIDTH: f32 = 800.0;
 const GAME_HEIGHT: f32 = 480.0;
@@ -279,9 +272,6 @@ impl Model for BreakoutModel {
 #[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm")))]
 pub fn run_native(render_frame: impl FnMut(&mut Runtime<BreakoutModel, Measurer>, &mut [u32], u32, u32) + 'static, fonts_ref: &'static [Font]) -> anyhow::Result<()> {
     let model = BreakoutModel::default();
-    #[cfg(not(feature = "fast-renderer"))]
-    let measurer = TinySkiaMeasurer { fonts: fonts_ref };
-    #[cfg(feature = "fast-renderer")]
     let measurer = FastMeasurer { fonts: fonts_ref.into() };
     
     let mut runtime = Runtime::new(model, measurer);

@@ -17,7 +17,8 @@ Xerune follows a strict Model-View-Update (Elm-style) architecture:
 - **ContainerStyle**: The structure holding CSS styling properties like background color, gradients, borders, font configuration, animations, etc.
 - **NodeMetadata**: Holds HTML-level attributes and states of processed nodes (tag name, class, id, checked/value state, children, etc.).
 - **DrawCommand**: Hardware-agnostic drawing primitives (rectangles, text, images, checkboxes, sliders, progress bars, custom canvas viewports).
-- **Renderer**: The trait implementing graphic rendering and text measurement. The workspace contains a reference `fast_renderer` and `skia_renderer` (TinySkia-based) to draw these commands.
+- **Renderer**: The trait implementing graphic rendering and text measurement. The workspace contains the native `fast_renderer` to draw these commands directly to pixel buffers.
+
 - **Backends**: System/display integration layers (e.g., `WinitBackend` using softbuffer, or direct Linux hardware access via `LinuxFbBackend` and `DrmBackend` using evdev).
 
 ## Module Responsibilities

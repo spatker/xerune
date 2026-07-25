@@ -1,5 +1,6 @@
 [workspace]
-members = ["skia_renderer", "wpt_runner", "fast_renderer", "xerune_derive", "studio"]
+members = ["wpt_runner", "fast_renderer", "xerune_derive", "studio"]
+
 
 [package]
 name = "xerune"
@@ -28,8 +29,8 @@ std = [
     "dep:env_logger",
 ]
 profile = ["dep:coarse-prof"]
-fast-renderer = []
 dynamic-parser = ["dep:html5ever", "dep:markup5ever", "dep:markup5ever_rcdom", "std"]
+
 drm = ["dep:drm", "dep:drm-fourcc", "dep:libc", "std"]
 linuxfb = ["dep:linuxfb", "dep:libc", "std"]
 evdev = ["dep:evdev", "dep:libc", "std"]
@@ -68,8 +69,9 @@ winit = "0.29.15"
 softbuffer = "0.4.1"
 tiny-skia = "0.12.0"
 fontdue = "0.9.3"
-skia_renderer = { path = "skia_renderer", features = ["profile"] }
 fast_renderer = { path = "fast_renderer", features = ["profile"] }
+
+
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 # For the embedded backend in examples
