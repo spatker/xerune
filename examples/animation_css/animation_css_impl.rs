@@ -32,19 +32,19 @@ pub fn run_native(render_frame: impl FnMut(&mut Runtime<AnimationCssModel, Measu
     )))]
     {
         use xerune::backend::Backend;
-        xerune::backend::WinitBackend::new().run("Xerune Native CSS Animations", 800, 600, runtime, render_frame, |_| {})?
+        xerune::backend::WinitBackend::new().run("Xerune Native CSS Animations", 800, 480, runtime, render_frame, |_| {})?
     }
 
     #[cfg(all(target_os = "linux", feature = "linuxfb", feature = "evdev", not(feature = "drm")))]
     {
         use xerune::backend::Backend;
-        xerune::backend::LinuxFbBackend::new().run("Xerune Native CSS Animations", 800, 600, runtime, render_frame, |_| {})?;
+        xerune::backend::LinuxFbBackend::new().run("Xerune Native CSS Animations", 800, 480, runtime, render_frame, |_| {})?;
     }
 
     #[cfg(all(target_os = "linux", feature = "drm", feature = "evdev"))]
     {
         use xerune::backend::Backend;
-        xerune::backend::DrmBackend::new().run("Xerune Native CSS Animations", 800, 600, runtime, render_frame, |_| {})?;
+        xerune::backend::DrmBackend::new().run("Xerune Native CSS Animations", 800, 480, runtime, render_frame, |_| {})?;
     }
 
     Ok(())

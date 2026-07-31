@@ -6,6 +6,10 @@ use xerune::{Runtime, Model, XeruneMessage, XeruneTemplate};
 #[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm")))]
 use fast_renderer::FastMeasurer;
 
+#[cfg(all(not(target_arch = "wasm32"), target_os = "linux"))]
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 #[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm")))]
 pub type Measurer = FastMeasurer<'static>;
 
@@ -63,7 +67,7 @@ impl AnimationModel {
         for i in 0..count {
             items.push(Item {
                 x: rng.next_f32() * 780.0,
-                y: rng.next_f32() * 580.0,
+                y: rng.next_f32() * 460.0,
                 vx: (rng.next_f32() - 0.5) * 5.0,
                 vy: (rng.next_f32() - 0.5) * 5.0,
                 size: 10.0 + rng.next_f32() * 30.0,
@@ -109,7 +113,7 @@ impl Model for AnimationModel {
                     item.y += item.vy;
                     
                     if item.x < 0.0 || item.x > 780.0 { item.vx *= -1.0; }
-                    if item.y < 0.0 || item.y > 580.0 { item.vy *= -1.0; }
+                    if item.y < 0.0 || item.y > 460.0 { item.vy *= -1.0; }
                 }
                 
                 self.frame_count += 1;
@@ -146,19 +150,19 @@ pub fn run_native(render_frame: impl FnMut(&mut Runtime<AnimationModel, Measurer
     )))]
     {
         use xerune::backend::Backend;
-        xerune::backend::WinitBackend::new().run("Xerune Animation Benchmark", 800, 600, runtime, render_frame, |_| {})?
+        xerune::backend::WinitBackend::new().run("Xerune Animation Benchmark", 800, 480, runtime, render_frame, |_| {})?
     }
 
     #[cfg(all(target_os = "linux", feature = "linuxfb", feature = "evdev", not(feature = "drm")))]
     {
         use xerune::backend::Backend;
-        xerune::backend::LinuxFbBackend::new().run("Xerune Animation Benchmark", 800, 600, runtime, render_frame, |_| {})?;
+        xerune::backend::LinuxFbBackend::new().run("Xerune Animation Benchmark", 800, 480, runtime, render_frame, |_| {})?;
     }
 
     #[cfg(all(target_os = "linux", feature = "drm", feature = "evdev"))]
     {
         use xerune::backend::Backend;
-        xerune::backend::DrmBackend::new().run("Xerune Animation Benchmark", 800, 600, runtime, render_frame, |_| {})?;
+        xerune::backend::DrmBackend::new().run("Xerune Animation Benchmark", 800, 480, runtime, render_frame, |_| {})?;
     }
 
     Ok(())
