@@ -185,30 +185,35 @@ impl Model for MusicPlayerModel {
                  self.current_track_index = None;
              },
              Msg::PlayPause => {
+                 if self.current_track_index.is_none() && !self.tracks.is_empty() {
+                     self.current_track_index = Some(self.active_list_index);
+                 }
                  self.is_playing = !self.is_playing;
                  if self.is_playing {
                      self.last_tick = xerune::runtime::time::Instant::now();
                  }
              },
              Msg::Next => {
-                 if let Some(mut idx) = self.current_track_index {
-                     idx = (idx + 1) % self.tracks.len();
-                     self.current_track_index = Some(idx);
-                     self.elapsed_seconds = 0;
-                     self.last_tick = xerune::runtime::time::Instant::now();
-                 }
+                 let next_idx = match self.current_track_index {
+                     Some(idx) => (idx + 1) % self.tracks.len(),
+                     None => self.active_list_index,
+                 };
+                 self.current_track_index = Some(next_idx);
+                 self.active_list_index = next_idx;
+                 self.is_playing = true;
+                 self.elapsed_seconds = 0;
+                 self.last_tick = xerune::runtime::time::Instant::now();
              },
              Msg::Prev => {
-                  if let Some(mut idx) = self.current_track_index {
-                     if idx > 0 {
-                         idx -= 1;
-                     } else {
-                         idx = self.tracks.len() - 1;
-                     }
-                     self.current_track_index = Some(idx);
-                     self.elapsed_seconds = 0;
-                     self.last_tick = xerune::runtime::time::Instant::now();
-                 }
+                 let prev_idx = match self.current_track_index {
+                     Some(idx) => if idx > 0 { idx - 1 } else { self.tracks.len() - 1 },
+                     None => self.active_list_index,
+                 };
+                 self.current_track_index = Some(prev_idx);
+                 self.active_list_index = prev_idx;
+                 self.is_playing = true;
+                 self.elapsed_seconds = 0;
+                 self.last_tick = xerune::runtime::time::Instant::now();
              },
              Msg::HoverTrack(id_str) => {
                  self.hovered_track = id_str;
@@ -218,23 +223,28 @@ impl Model for MusicPlayerModel {
              },
              Msg::KeyDown(key) => {
                  match key.as_str() {
-                     "ArrowUp" => {
+                     "KEY_UP" | "ArrowUp" => {
                          if self.active_list_index > 0 {
                              self.active_list_index -= 1;
                              context.scroll_into_view(&format!("select_track:{}", self.tracks[self.active_list_index].id));
                          }
                      }
-                     "ArrowDown" => {
+                     "KEY_DOWN" | "ArrowDown" => {
                          if self.active_list_index + 1 < self.tracks.len() {
                              self.active_list_index += 1;
                              context.scroll_into_view(&format!("select_track:{}", self.tracks[self.active_list_index].id));
                          }
                      }
-                     "Enter" | "Space" => {
-                         let id = self.tracks[self.active_list_index].id.clone();
-                         self.update(Msg::SelectTrack(id), context);
+                     "KEY_PLAYPAUSE" | "MediaPlayPause" | "Enter" | "Space" | "KEY_MUTE" => {
+                         self.update(Msg::PlayPause, context);
                      }
-                     "Escape" => {
+                     "KEY_NEXTSONG" | "MediaTrackNext" | "ArrowRight" | "KEY_VOLUMEUP" => {
+                         self.update(Msg::Next, context);
+                     }
+                     "KEY_PREVIOUSSONG" | "MediaTrackPrevious" | "ArrowLeft" | "KEY_VOLUMEDOWN" => {
+                         self.update(Msg::Prev, context);
+                     }
+                     "KEY_SUSPEND" | "Escape" => {
                          self.update(Msg::Back, context);
                      }
                      _ => {}

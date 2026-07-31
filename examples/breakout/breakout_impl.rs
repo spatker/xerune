@@ -154,8 +154,20 @@ impl Model for BreakoutModel {
 
                 // --- Paddle Movement ---
                 let mut paddle_dir = 0.0;
-                if self.keys_held.contains("ArrowLeft") { paddle_dir -= 1.0; }
-                if self.keys_held.contains("ArrowRight") { paddle_dir += 1.0; }
+                if self.keys_held.contains("ArrowLeft") 
+                    || self.keys_held.contains("KEY_PREVIOUSSONG") 
+                    || self.keys_held.contains("KEY_LEFT") 
+                    || self.keys_held.contains("KEY_VOLUMEDOWN") 
+                { 
+                    paddle_dir -= 1.0; 
+                }
+                if self.keys_held.contains("ArrowRight") 
+                    || self.keys_held.contains("KEY_NEXTSONG") 
+                    || self.keys_held.contains("KEY_RIGHT") 
+                    || self.keys_held.contains("KEY_VOLUMEUP") 
+                { 
+                    paddle_dir += 1.0; 
+                }
 
                 self.paddle_x += paddle_dir * PADDLE_SPEED * dt;
                 self.paddle_x = self.paddle_x.clamp(0.0, GAME_WIDTH - PADDLE_WIDTH);
@@ -260,6 +272,12 @@ impl Model for BreakoutModel {
                 self.particles.retain(|p| p.life > 0.0);
             },
             Msg::KeyDown(key) => {
+                if self.game_over || self.won {
+                    if matches!(key.as_str(), "KEY_PLAYPAUSE" | "KEY_UP" | "Space" | "Enter" | "KEY_NEXTSONG" | "KEY_PREVIOUSSONG") {
+                        *self = BreakoutModel::default();
+                        return;
+                    }
+                }
                 self.keys_held.insert(key);
             },
             Msg::KeyUp(key) => {

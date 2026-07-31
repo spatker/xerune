@@ -50,52 +50,53 @@ pub struct TouchCalibration {
 }
 
 fn spawn_input_thread() -> (Receiver<evdev::InputEvent>, Option<TouchCalibration>) {
-    let mut touch_device: Option<evdev::Device> = None;
-    for id in 0..10 {
+    let mut calibration = None;
+    let mut open_devices = Vec::new();
+
+    for id in 0..32 {
         let path = format!("/dev/input/event{}", id);
         if let Ok(dev) = evdev::Device::open(&path) {
-            let axes = dev.supported_absolute_axes().unwrap_or_default();
-            if axes.contains(evdev::AbsoluteAxisType::ABS_MT_POSITION_X) || axes.contains(evdev::AbsoluteAxisType::ABS_X) {
-                println!("Found touch device: {} ({})", dev.name().unwrap_or("?"), path);
-                touch_device = Some(dev);
-                break;
-            }
-        }
-    }
-    
-    let mut calibration = None;
-    if let Some(ref dev) = touch_device {
-        if let Ok(abs_state) = dev.get_abs_state() {
-            let x_info = &abs_state[evdev::AbsoluteAxisType::ABS_MT_POSITION_X.0 as usize];
-            let y_info = &abs_state[evdev::AbsoluteAxisType::ABS_MT_POSITION_Y.0 as usize];
-            let (mut xm, mut xM) = (x_info.minimum as f32, x_info.maximum as f32);
-            let (mut ym, mut yM) = (y_info.minimum as f32, y_info.maximum as f32);
+            println!("Opened input device: {} ({})", dev.name().unwrap_or("?"), path);
             
-            if xM - xm <= 0.0 {
-                let x_info_fallback = &abs_state[evdev::AbsoluteAxisType::ABS_X.0 as usize];
-                xm = x_info_fallback.minimum as f32;
-                xM = x_info_fallback.maximum as f32;
+            if calibration.is_none() {
+                let axes = dev.supported_absolute_axes().unwrap_or_default();
+                if axes.contains(evdev::AbsoluteAxisType::ABS_MT_POSITION_X) || axes.contains(evdev::AbsoluteAxisType::ABS_X) {
+                    if let Ok(abs_state) = dev.get_abs_state() {
+                        let x_info = &abs_state[evdev::AbsoluteAxisType::ABS_MT_POSITION_X.0 as usize];
+                        let y_info = &abs_state[evdev::AbsoluteAxisType::ABS_MT_POSITION_Y.0 as usize];
+                        let (mut xm, mut xM) = (x_info.minimum as f32, x_info.maximum as f32);
+                        let (mut ym, mut yM) = (y_info.minimum as f32, y_info.maximum as f32);
+                        
+                        if xM - xm <= 0.0 {
+                            let x_info_fallback = &abs_state[evdev::AbsoluteAxisType::ABS_X.0 as usize];
+                            xm = x_info_fallback.minimum as f32;
+                            xM = x_info_fallback.maximum as f32;
+                        }
+                        if yM - ym <= 0.0 {
+                            let y_info_fallback = &abs_state[evdev::AbsoluteAxisType::ABS_Y.0 as usize];
+                            ym = y_info_fallback.minimum as f32;
+                            yM = y_info_fallback.maximum as f32;
+                        }
+                        
+                        if xM - xm > 0.0 && yM - ym > 0.0 {
+                            calibration = Some(TouchCalibration {
+                                x_min: xm,
+                                x_max: xM,
+                                y_min: ym,
+                                y_max: yM,
+                            });
+                            println!("Touch screen calibration: X=[{}, {}], Y=[{}, {}]", xm, xM, ym, yM);
+                        }
+                    }
+                }
             }
-            if yM - ym <= 0.0 {
-                let y_info_fallback = &abs_state[evdev::AbsoluteAxisType::ABS_Y.0 as usize];
-                ym = y_info_fallback.minimum as f32;
-                yM = y_info_fallback.maximum as f32;
-            }
-            
-            if xM - xm > 0.0 && yM - ym > 0.0 {
-                calibration = Some(TouchCalibration {
-                    x_min: xm,
-                    x_max: xM,
-                    y_min: ym,
-                    y_max: yM,
-                });
-                println!("Touch screen calibration: X=[{}, {}], Y=[{}, {}]", xm, xM, ym, yM);
-            }
+            open_devices.push(dev);
         }
     }
     
     let (tx, rx) = channel();
-    if let Some(mut dev) = touch_device {
+    for mut dev in open_devices {
+        let tx = tx.clone();
         thread::spawn(move || {
             loop {
                 match dev.fetch_events() {
@@ -373,6 +374,14 @@ impl Backend for DrmBackend {
                     evdev::InputEventKind::Key(evdev::Key::BTN_LEFT) => {
                         if ev.value() == 1 {
                             dirty |= runtime.handle_event(InputEvent::Click { x: mouse_x, y: mouse_y });
+                        }
+                    },
+                    evdev::InputEventKind::Key(key) => {
+                        let key_name = format!("{:?}", key);
+                        if ev.value() == 1 || ev.value() == 2 {
+                            dirty |= runtime.handle_event(InputEvent::KeyDown(key_name));
+                        } else if ev.value() == 0 {
+                            dirty |= runtime.handle_event(InputEvent::KeyUp(key_name));
                         }
                     },
                     _ => {}
