@@ -126,10 +126,14 @@ pub fn draw_rounded_rect(
     let r_min_sq = if r_min > 0.0 { r_min * r_min } else { 0.0 };
     let r_max_sq = r_max * r_max;
 
+    let use_small_table = r_i32 <= 16;
     let use_table = r_i32 <= 64;
-    let mut corner_cov = [0.0f32; 64 * 64];
-    if use_table {
+    let mut corner_cov_small = [0.0f32; 16 * 16];
+    let mut corner_cov_large = Vec::new();
+
+    if use_small_table {
         for dy_idx in 0..r_i32 {
+            let row_off = dy_idx as usize * 16;
             for dx_idx in 0..r_i32 {
                 let dx = dx_idx as f32 + 0.5 - r_f32;
                 let dy = dy_idx as f32 + 0.5 - r_f32;
@@ -141,7 +145,26 @@ pub fn draw_rounded_rect(
                 } else {
                     (r_f32 + 0.5 - d2.sqrt()).clamp(0.0, 1.0)
                 };
-                corner_cov[(dy_idx * 64 + dx_idx) as usize] = coverage;
+                corner_cov_small[row_off + dx_idx as usize] = coverage;
+            }
+        }
+    } else if use_table {
+        let size = (r_i32 * r_i32) as usize;
+        corner_cov_large.resize(size, 0.0f32);
+        for dy_idx in 0..r_i32 {
+            let row_off = dy_idx as usize * r_i32 as usize;
+            for dx_idx in 0..r_i32 {
+                let dx = dx_idx as f32 + 0.5 - r_f32;
+                let dy = dy_idx as f32 + 0.5 - r_f32;
+                let d2 = dx * dx + dy * dy;
+                let coverage = if d2 >= r_max_sq {
+                    0.0
+                } else if d2 <= r_min_sq {
+                    1.0
+                } else {
+                    (r_f32 + 0.5 - d2.sqrt()).clamp(0.0, 1.0)
+                };
+                corner_cov_large[row_off + dx_idx as usize] = coverage;
             }
         }
     }
@@ -152,63 +175,125 @@ pub fn draw_rounded_rect(
         let end_x = x2.min(clip_x2);
         let end_y = y2.min(clip_y2);
 
+        let is_left = corner_idx == 0 || corner_idx == 2;
+        let is_top = corner_idx == 0 || corner_idx == 1;
+
         for py in start_y..end_y {
-            for px in start_x..end_x {
-                let coverage = if use_table {
-                    let dx_idx = match corner_idx {
-                        0 | 2 => px - rect_x,
-                        1 | 3 => rect_x + rect_w - 1 - px,
-                        _ => 0,
-                    };
-                    let dy_idx = match corner_idx {
-                        0 | 1 => py - rect_y,
-                        2 | 3 => rect_y + rect_h - 1 - py,
-                        _ => 0,
-                    };
-                    if dx_idx >= 0 && dx_idx < 64 && dy_idx >= 0 && dy_idx < 64 {
-                        corner_cov[(dy_idx * 64 + dx_idx) as usize]
-                    } else {
-                        0.0
+            let dy_idx = if is_top { py - rect_y } else { rect_y + rect_h - 1 - py };
+            if dy_idx < 0 || dy_idx >= r_i32 { continue; }
+
+            if use_small_table {
+                let row_off = dy_idx as usize * 16;
+                for px in start_x..end_x {
+                    let dx_idx = if is_left { px - rect_x } else { rect_x + rect_w - 1 - px };
+                    if dx_idx >= 0 && dx_idx < r_i32 {
+                        let coverage = corner_cov_small[row_off + dx_idx as usize];
+                        if coverage > 0.0 {
+                            let src_color = if let Some(grad) = gradient {
+                                let t = if (grad.angle % 360.0 - 90.0).abs() < 45.0 || (grad.angle % 360.0 - 270.0).abs() < 45.0 {
+                                    (px - rect_x) as f32 / rect_w as f32
+                                } else {
+                                    (py - rect_y) as f32 / rect_h as f32
+                                };
+                                let col = sample_gradient(&grad.stops, t);
+                                pack_color(col, swap_rb)
+                            } else if let Some(col) = color {
+                                pack_color(col, swap_rb)
+                            } else {
+                                0
+                            };
+
+                            let alpha = ((src_color >> 24) & 0xff) as f32 * coverage;
+                            let packed_col = (src_color & 0x00ffffff) | ((alpha.round() as u32) << 24);
+
+                            let idx = if rotate {
+                                (px as usize * physical_w as usize) + (physical_w as usize - 1 - py as usize)
+                            } else {
+                                (py as usize * physical_w as usize) + px as usize
+                            };
+
+                            if idx < buffer.len() {
+                                blend_pixel(&mut buffer[idx], packed_col);
+                            }
+                        }
                     }
-                } else {
+                }
+            } else if use_table {
+                let row_off = dy_idx as usize * r_i32 as usize;
+                for px in start_x..end_x {
+                    let dx_idx = if is_left { px - rect_x } else { rect_x + rect_w - 1 - px };
+                    if dx_idx >= 0 && dx_idx < r_i32 {
+                        let coverage = corner_cov_large[row_off + dx_idx as usize];
+                        if coverage > 0.0 {
+                            let src_color = if let Some(grad) = gradient {
+                                let t = if (grad.angle % 360.0 - 90.0).abs() < 45.0 || (grad.angle % 360.0 - 270.0).abs() < 45.0 {
+                                    (px - rect_x) as f32 / rect_w as f32
+                                } else {
+                                    (py - rect_y) as f32 / rect_h as f32
+                                };
+                                let col = sample_gradient(&grad.stops, t);
+                                pack_color(col, swap_rb)
+                            } else if let Some(col) = color {
+                                pack_color(col, swap_rb)
+                            } else {
+                                0
+                            };
+
+                            let alpha = ((src_color >> 24) & 0xff) as f32 * coverage;
+                            let packed_col = (src_color & 0x00ffffff) | ((alpha.round() as u32) << 24);
+
+                            let idx = if rotate {
+                                (px as usize * physical_w as usize) + (physical_w as usize - 1 - py as usize)
+                            } else {
+                                (py as usize * physical_w as usize) + px as usize
+                            };
+
+                            if idx < buffer.len() {
+                                blend_pixel(&mut buffer[idx], packed_col);
+                            }
+                        }
+                    }
+                }
+            } else {
+                for px in start_x..end_x {
                     let dx = px as f32 + 0.5 - cx;
                     let dy = py as f32 + 0.5 - cy;
                     let d2 = dx * dx + dy * dy;
-                    if d2 >= r_max_sq {
+                    let coverage = if d2 >= r_max_sq {
                         0.0
                     } else if d2 <= r_min_sq {
                         1.0
                     } else {
                         (r_f32 + 0.5 - d2.sqrt()).clamp(0.0, 1.0)
-                    }
-                };
-                
-                if coverage > 0.0 {
-                    let src_color = if let Some(grad) = gradient {
-                        let t = if (grad.angle % 360.0 - 90.0).abs() < 45.0 || (grad.angle % 360.0 - 270.0).abs() < 45.0 {
-                            (px - rect_x) as f32 / rect_w as f32
+                    };
+
+                    if coverage > 0.0 {
+                        let src_color = if let Some(grad) = gradient {
+                            let t = if (grad.angle % 360.0 - 90.0).abs() < 45.0 || (grad.angle % 360.0 - 270.0).abs() < 45.0 {
+                                (px - rect_x) as f32 / rect_w as f32
+                            } else {
+                                (py - rect_y) as f32 / rect_h as f32
+                            };
+                            let col = sample_gradient(&grad.stops, t);
+                            pack_color(col, swap_rb)
+                        } else if let Some(col) = color {
+                            pack_color(col, swap_rb)
                         } else {
-                            (py - rect_y) as f32 / rect_h as f32
+                            0
                         };
-                        let col = sample_gradient(&grad.stops, t);
-                        pack_color(col, swap_rb)
-                    } else if let Some(col) = color {
-                        pack_color(col, swap_rb)
-                    } else {
-                        0
-                    };
 
-                    let alpha = ((src_color >> 24) & 0xff) as f32 * coverage;
-                    let packed_col = (src_color & 0x00ffffff) | ((alpha.round() as u32) << 24);
+                        let alpha = ((src_color >> 24) & 0xff) as f32 * coverage;
+                        let packed_col = (src_color & 0x00ffffff) | ((alpha.round() as u32) << 24);
 
-                    let idx = if rotate {
-                        (px as usize * physical_w as usize) + (physical_w as usize - 1 - py as usize)
-                    } else {
-                        (py as usize * physical_w as usize) + px as usize
-                    };
+                        let idx = if rotate {
+                            (px as usize * physical_w as usize) + (physical_w as usize - 1 - py as usize)
+                        } else {
+                            (py as usize * physical_w as usize) + px as usize
+                        };
 
-                    if idx < buffer.len() {
-                        blend_pixel(&mut buffer[idx], packed_col);
+                        if idx < buffer.len() {
+                            blend_pixel(&mut buffer[idx], packed_col);
+                        }
                     }
                 }
             }
@@ -334,10 +419,14 @@ pub fn draw_rounded_border(
     let r_in_min_sq = if r_in_min > 0.0 { r_in_min * r_in_min } else { 0.0 };
     let r_in_max_sq = r_in_max * r_in_max;
 
+    let use_small_table = r_i32 <= 16;
     let use_table = r_i32 <= 64;
-    let mut corner_cov = [0.0f32; 64 * 64];
-    if use_table {
+    let mut corner_cov_small = [0.0f32; 16 * 16];
+    let mut corner_cov_large = Vec::new();
+
+    if use_small_table {
         for dy_idx in 0..r_i32 {
+            let row_off = dy_idx as usize * 16;
             for dx_idx in 0..r_i32 {
                 let dx = dx_idx as f32 + 0.5 - r_f32;
                 let dy = dy_idx as f32 + 0.5 - r_f32;
@@ -352,7 +441,29 @@ pub fn draw_rounded_border(
                     let cov_in = (d - r_in + 0.5).clamp(0.0, 1.0);
                     cov_out * cov_in
                 };
-                corner_cov[(dy_idx * 64 + dx_idx) as usize] = coverage;
+                corner_cov_small[row_off + dx_idx as usize] = coverage;
+            }
+        }
+    } else if use_table {
+        let size = (r_i32 * r_i32) as usize;
+        corner_cov_large.resize(size, 0.0f32);
+        for dy_idx in 0..r_i32 {
+            let row_off = dy_idx as usize * r_i32 as usize;
+            for dx_idx in 0..r_i32 {
+                let dx = dx_idx as f32 + 0.5 - r_f32;
+                let dy = dy_idx as f32 + 0.5 - r_f32;
+                let d2 = dx * dx + dy * dy;
+                let coverage = if d2 >= r_max_sq || d2 <= r_in_min_sq {
+                    0.0
+                } else if d2 <= r_min_sq && d2 >= r_in_max_sq {
+                    1.0
+                } else {
+                    let d = d2.sqrt();
+                    let cov_out = (r_f32 + 0.5 - d).clamp(0.0, 1.0);
+                    let cov_in = (d - r_in + 0.5).clamp(0.0, 1.0);
+                    cov_out * cov_in
+                };
+                corner_cov_large[row_off + dx_idx as usize] = coverage;
             }
         }
     }
@@ -365,7 +476,7 @@ pub fn draw_rounded_border(
 
         for py in start_y..end_y {
             for px in start_x..end_x {
-                let coverage = if use_table {
+                let coverage = if use_small_table {
                     let dx_idx = match corner_idx {
                         0 | 2 => px - rect_x,
                         1 | 3 => rect_x + rect_w - 1 - px,
@@ -376,8 +487,24 @@ pub fn draw_rounded_border(
                         2 | 3 => rect_y + rect_h - 1 - py,
                         _ => 0,
                     };
-                    if dx_idx >= 0 && dx_idx < 64 && dy_idx >= 0 && dy_idx < 64 {
-                        corner_cov[(dy_idx * 64 + dx_idx) as usize]
+                    if dx_idx >= 0 && dx_idx < r_i32 && dy_idx >= 0 && dy_idx < r_i32 {
+                        corner_cov_small[(dy_idx * 16 + dx_idx) as usize]
+                    } else {
+                        0.0
+                    }
+                } else if use_table {
+                    let dx_idx = match corner_idx {
+                        0 | 2 => px - rect_x,
+                        1 | 3 => rect_x + rect_w - 1 - px,
+                        _ => 0,
+                    };
+                    let dy_idx = match corner_idx {
+                        0 | 1 => py - rect_y,
+                        2 | 3 => rect_y + rect_h - 1 - py,
+                        _ => 0,
+                    };
+                    if dx_idx >= 0 && dx_idx < r_i32 && dy_idx >= 0 && dy_idx < r_i32 {
+                        corner_cov_large[(dy_idx * r_i32 + dx_idx) as usize]
                     } else {
                         0.0
                     }
