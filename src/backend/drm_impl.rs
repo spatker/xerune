@@ -118,6 +118,12 @@ fn spawn_input_thread() -> (Receiver<evdev::InputEvent>, Option<TouchCalibration
     (rx, calibration)
 }
 
+#[cfg(all(target_arch = "arm", target_feature = "neon"))]
+use core::arch::arm::*;
+
+#[cfg(target_arch = "aarch64")]
+use core::arch::aarch64::*;
+
 fn blit_rotated(
     local_buffer: &[u32],
     draw_slice: &mut [u32],
@@ -127,37 +133,76 @@ fn blit_rotated(
     disp_h: u32,
     rotation: u32,
 ) {
+    let lw = logical_w as usize;
+    let lh = logical_h as usize;
+    let dw = disp_w as usize;
+    let dh = disp_h as usize;
+
+    const BLOCK: usize = 32;
+    let mut block_buf = [0u32; BLOCK * BLOCK];
+
     match rotation {
         90 => {
-            for py in 0..disp_h as usize {
-                let dst_offset = py * disp_w as usize;
-                for px in 0..disp_w as usize {
-                    let x = py;
-                    let y = disp_w as usize - 1 - px;
-                    let src_idx = y * logical_w as usize + x;
-                    draw_slice[dst_offset + px] = local_buffer[src_idx];
+            for ty in (0..dh).step_by(BLOCK) {
+                let ty_end = (ty + BLOCK).min(dh);
+                let bh = ty_end - ty;
+                for tx in (0..dw).step_by(BLOCK) {
+                    let tx_end = (tx + BLOCK).min(dw);
+                    let bw = tx_end - tx;
+
+                    for py in 0..bh {
+                        let y_p = ty + py;
+                        let x_l = y_p;
+                        let block_row = py * BLOCK;
+                        for px in 0..bw {
+                            let x_p = tx + px;
+                            let y_l = (lh - 1) - x_p;
+                            block_buf[block_row + px] = local_buffer[y_l * lw + x_l];
+                        }
+                    }
+
+                    for py in 0..bh {
+                        let dst_offset = (ty + py) * dw + tx;
+                        let src_offset = py * BLOCK;
+                        draw_slice[dst_offset..dst_offset + bw].copy_from_slice(&block_buf[src_offset..src_offset + bw]);
+                    }
                 }
             }
         }
         180 => {
-            for py in 0..disp_h as usize {
-                let dst_offset = py * disp_w as usize;
-                let src_y = logical_h as usize - 1 - py;
-                let src_row_offset = src_y * logical_w as usize;
-                for px in 0..disp_w as usize {
-                    let src_x = logical_w as usize - 1 - px;
-                    draw_slice[dst_offset + px] = local_buffer[src_row_offset + src_x];
+            for py in 0..dh {
+                let dst_offset = py * dw;
+                let src_y = (lh - 1 - py) * lw;
+                for px in 0..dw {
+                    let src_x = lw - 1 - px;
+                    draw_slice[dst_offset + px] = local_buffer[src_y + src_x];
                 }
             }
         }
         270 => {
-            for py in 0..disp_h as usize {
-                let dst_offset = py * disp_w as usize;
-                for px in 0..disp_w as usize {
-                    let x = logical_w as usize - 1 - py;
-                    let y = px;
-                    let src_idx = y * logical_w as usize + x;
-                    draw_slice[dst_offset + px] = local_buffer[src_idx];
+            for ty in (0..dh).step_by(BLOCK) {
+                let ty_end = (ty + BLOCK).min(dh);
+                let bh = ty_end - ty;
+                for tx in (0..dw).step_by(BLOCK) {
+                    let tx_end = (tx + BLOCK).min(dw);
+                    let bw = tx_end - tx;
+
+                    for py in 0..bh {
+                        let y_p = ty + py;
+                        let x_l = (lw - 1) - y_p;
+                        let block_row = py * BLOCK;
+                        for px in 0..bw {
+                            let x_p = tx + px;
+                            let y_l = x_p;
+                            block_buf[block_row + px] = local_buffer[y_l * lw + x_l];
+                        }
+                    }
+
+                    for py in 0..bh {
+                        let dst_offset = (ty + py) * dw + tx;
+                        let src_offset = py * BLOCK;
+                        draw_slice[dst_offset..dst_offset + bw].copy_from_slice(&block_buf[src_offset..src_offset + bw]);
+                    }
                 }
             }
         }
@@ -317,11 +362,17 @@ impl Backend for DrmBackend {
         
         let mut force_redraw = true;
         let mut current_fb = fb1;
-        
-        let mut local_buffer = vec![0u32; (w * h) as usize];
-        
+        let mut local_buffer = vec![0xFF222222u32; (w * h) as usize];
+        let mut pending_flip = false;
+
         loop {
             let frame_start = Instant::now();
+
+            if pending_flip {
+                wait_for_page_flip(&card)?;
+                pending_flip = false;
+            }
+
             let mut dirty = force_redraw;
             force_redraw = false;
 
@@ -404,31 +455,30 @@ impl Backend for DrmBackend {
             
             // Draw
             if dirty {
-                // Determine draw target (the back buffer)
                 let (target_fb, draw_slice) = if current_fb == fb1 {
                     (fb2, map2.as_mut())
                 } else {
                     (fb1, map1.as_mut())
                 };
-                
-                local_buffer.fill(0xFF222222);
+
                 render_fn(&mut runtime, &mut local_buffer, w, h);
-                
-                // Blit from local_buffer to physical dumb buffer (draw_slice) with rotation!
+
                 let draw_slice_u32 = unsafe {
                     std::slice::from_raw_parts_mut(
                         draw_slice.as_mut_ptr() as *mut u32,
                         draw_slice.len() / 4,
                     )
                 };
+
+                #[cfg(feature = "profile")]
+                coarse_prof::profile!("blit_rotated");
                 blit_rotated(&local_buffer, draw_slice_u32, w, h, disp_w as u32, disp_h as u32, rotation);
-                
-                // Perform hardware page flip
+
                 loop {
                     match card.page_flip(crtc_handle, target_fb, drm::control::PageFlipFlags::EVENT, None) {
                         Ok(_) => {
-                            wait_for_page_flip(&card)?;
                             current_fb = target_fb;
+                            pending_flip = true;
                             break;
                         }
                         Err(e) => {
@@ -442,19 +492,13 @@ impl Backend for DrmBackend {
                     }
                 }
             }
-            
-            // Frame limiting and dynamic sleeping
-            let elapsed = frame_start.elapsed();
-            let mut sleep_duration = tick_res.next_tick_in.saturating_sub(elapsed);
-            if dirty {
-                let target_duration = std::time::Duration::from_nanos((1_000_000_000.0 / runtime.target_fps as f64) as u64);
-                let min_sleep = target_duration.saturating_sub(elapsed);
-                if min_sleep > sleep_duration {
-                    sleep_duration = min_sleep;
+
+            if !dirty {
+                let elapsed = frame_start.elapsed();
+                let sleep_duration = tick_res.next_tick_in.saturating_sub(elapsed);
+                if !sleep_duration.is_zero() {
+                    thread::sleep(sleep_duration);
                 }
-            }
-            if !sleep_duration.is_zero() {
-                thread::sleep(sleep_duration);
             }
         }
     }

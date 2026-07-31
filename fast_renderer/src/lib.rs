@@ -386,7 +386,7 @@ impl<'a> TextMeasurer for FastRenderer<'a> {
 }
 
 impl<'a> Renderer for FastRenderer<'a> {
-    fn render(&mut self, commands: &[DrawCommand], canvases: &HashMap<String, Canvas>, dirty_rect: Option<Rect>) {
+    fn render(&mut self, commands: &[DrawCommand], canvases: &HashMap<String, Canvas>, _dirty_rect: Option<Rect>) {
         profile!("render_full");
         
         let tile_rect = Rect {
@@ -396,13 +396,7 @@ impl<'a> Renderer for FastRenderer<'a> {
             height: self.height as f32,
         };
 
-        let active_clip = match dirty_rect {
-            Some(dr) => match tile_rect.intersect(&dr) {
-                Some(intersected) => intersected,
-                None => return, // No overlap between this tile and the dirty region
-            },
-            None => tile_rect,
-        };
+        let active_clip = tile_rect;
 
         let local_base_clip = Rect {
             x: active_clip.x - self.x_offset as f32,
@@ -417,7 +411,7 @@ impl<'a> Renderer for FastRenderer<'a> {
             let cmd_bounds = command.bounds();
 
             if let Some(cb) = cmd_bounds {
-                if !cb.intersects(&active_clip) {
+                if !cb.intersects(&tile_rect) {
                     continue;
                 }
             }

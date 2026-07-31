@@ -189,11 +189,17 @@ pub fn blend_solid_rect(
     }
 
     if rotate {
-        for y in start_y..end_y {
-            for x in start_x..end_x {
-                let idx = (x as usize * physical_w as usize) + (physical_w as usize - 1 - y as usize);
-                if idx < buffer.len() {
-                    blend_pixel(&mut buffer[idx], color);
+        let span_len = (end_y - start_y) as usize;
+        let pw = physical_w as usize;
+        let a = (color >> 24) & 0xff;
+        for x in start_x..end_x {
+            let start_idx = (x as usize * pw) + (pw - end_y as usize);
+            if start_idx + span_len <= buffer.len() {
+                let dst_span = &mut buffer[start_idx..start_idx + span_len];
+                if a == 255 {
+                    dst_span.fill(color);
+                } else {
+                    blend_solid_span(dst_span, color);
                 }
             }
         }

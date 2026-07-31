@@ -82,7 +82,7 @@ impl Backend for LinuxFbBackend {
         let mut force_redraw = true;
         let mut active_page = 0;
 
-        let mut local_buffer = vec![0u32; (w * h) as usize];
+        let mut local_buffer = vec![0xFF222222u32; (w * h) as usize];
 
         loop {
             let frame_start = Instant::now();
@@ -182,7 +182,6 @@ impl Backend for LinuxFbBackend {
                         &mut fb_mmap[0..page_size]
                     };
 
-                    local_buffer.fill(0xFF222222);
                     render_fn(&mut runtime, &mut local_buffer, w, h);
                     
                     // Copy from local_buffer to physical framebuffer (draw_slice) with rotation!
@@ -208,7 +207,6 @@ impl Backend for LinuxFbBackend {
                     }
                 } else if bytes_per_pixel == 2 {
                     // 16-bit support
-                    local_buffer.fill(0xFF222222);
                     render_fn(&mut runtime, &mut local_buffer, w, h);
                     
                     // Blit 16-bit fallback directly
@@ -344,37 +342,76 @@ fn blit_rotated(
     disp_h: u32,
     rotation: u32,
 ) {
+    let lw = logical_w as usize;
+    let lh = logical_h as usize;
+    let dw = disp_w as usize;
+    let dh = disp_h as usize;
+
+    const BLOCK: usize = 32;
+    let mut block_buf = [0u32; BLOCK * BLOCK];
+
     match rotation {
         90 => {
-            for py in 0..disp_h as usize {
-                let dst_offset = py * disp_w as usize;
-                for px in 0..disp_w as usize {
-                    let x = py;
-                    let y = disp_w as usize - 1 - px;
-                    let src_idx = y * logical_w as usize + x;
-                    draw_slice[dst_offset + px] = local_buffer[src_idx];
+            for ty in (0..dh).step_by(BLOCK) {
+                let ty_end = (ty + BLOCK).min(dh);
+                let bh = ty_end - ty;
+                for tx in (0..dw).step_by(BLOCK) {
+                    let tx_end = (tx + BLOCK).min(dw);
+                    let bw = tx_end - tx;
+
+                    for py in 0..bh {
+                        let y_p = ty + py;
+                        let x_l = y_p;
+                        let block_row = py * BLOCK;
+                        for px in 0..bw {
+                            let x_p = tx + px;
+                            let y_l = (lh - 1) - x_p;
+                            block_buf[block_row + px] = local_buffer[y_l * lw + x_l];
+                        }
+                    }
+
+                    for py in 0..bh {
+                        let dst_offset = (ty + py) * dw + tx;
+                        let src_offset = py * BLOCK;
+                        draw_slice[dst_offset..dst_offset + bw].copy_from_slice(&block_buf[src_offset..src_offset + bw]);
+                    }
                 }
             }
         }
         180 => {
-            for py in 0..disp_h as usize {
-                let dst_offset = py * disp_w as usize;
-                let src_y = logical_h as usize - 1 - py;
-                let src_row_offset = src_y * logical_w as usize;
-                for px in 0..disp_w as usize {
-                    let src_x = logical_w as usize - 1 - px;
-                    draw_slice[dst_offset + px] = local_buffer[src_row_offset + src_x];
+            for py in 0..dh {
+                let dst_offset = py * dw;
+                let src_y = (lh - 1 - py) * lw;
+                for px in 0..dw {
+                    let src_x = lw - 1 - px;
+                    draw_slice[dst_offset + px] = local_buffer[src_y + src_x];
                 }
             }
         }
         270 => {
-            for py in 0..disp_h as usize {
-                let dst_offset = py * disp_w as usize;
-                for px in 0..disp_w as usize {
-                    let x = logical_w as usize - 1 - py;
-                    let y = px;
-                    let src_idx = y * logical_w as usize + x;
-                    draw_slice[dst_offset + px] = local_buffer[src_idx];
+            for ty in (0..dh).step_by(BLOCK) {
+                let ty_end = (ty + BLOCK).min(dh);
+                let bh = ty_end - ty;
+                for tx in (0..dw).step_by(BLOCK) {
+                    let tx_end = (tx + BLOCK).min(dw);
+                    let bw = tx_end - tx;
+
+                    for py in 0..bh {
+                        let y_p = ty + py;
+                        let x_l = (lw - 1) - y_p;
+                        let block_row = py * BLOCK;
+                        for px in 0..bw {
+                            let x_p = tx + px;
+                            let y_l = x_p;
+                            block_buf[block_row + px] = local_buffer[y_l * lw + x_l];
+                        }
+                    }
+
+                    for py in 0..bh {
+                        let dst_offset = (ty + py) * dw + tx;
+                        let src_offset = py * BLOCK;
+                        draw_slice[dst_offset..dst_offset + bw].copy_from_slice(&block_buf[src_offset..src_offset + bw]);
+                    }
                 }
             }
         }
