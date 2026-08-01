@@ -87,6 +87,7 @@ impl Backend for WinitBackend {
                 }
                 Event::UserEvent(msg) => {
                     if runtime.handle_event(InputEvent::Message(msg)) {
+                        next_trigger = std::time::Instant::now();
                         window_clone.request_redraw();
                     }
                 },
@@ -134,12 +135,14 @@ impl Backend for WinitBackend {
                             mouse_x = position.x as f32;
                             mouse_y = position.y as f32;
                             if runtime.handle_event(InputEvent::Hover { x: mouse_x, y: mouse_y }) {
+                                next_trigger = std::time::Instant::now();
                                 window_clone.request_redraw();
                             }
                         },
                         WindowEvent::MouseInput { state, button: MouseButton::Left, .. } => {
                             if state == ElementState::Pressed {
                                  if runtime.handle_event(InputEvent::Click { x: mouse_x, y: mouse_y }) {
+                                    next_trigger = std::time::Instant::now();
                                     window_clone.request_redraw();
                                  }
                             }
@@ -150,6 +153,7 @@ impl Backend for WinitBackend {
                                 MouseScrollDelta::PixelDelta(pos) => (pos.x as f32, pos.y as f32),
                             };
                             if runtime.handle_event(InputEvent::Scroll { x: mouse_x, y: mouse_y, delta_x: dx, delta_y: dy }) {
+                                next_trigger = std::time::Instant::now();
                                 window_clone.request_redraw();
                             }
                         },
@@ -164,6 +168,7 @@ impl Backend for WinitBackend {
                                 winit::event::TouchPhase::Cancelled => InputEvent::TouchCancel { id, x, y },
                             };
                             if runtime.handle_event(input_event) {
+                                next_trigger = std::time::Instant::now();
                                 window_clone.request_redraw();
                             }
                         },
@@ -193,6 +198,7 @@ impl Backend for WinitBackend {
                             }
 
                             if redraw {
+                                next_trigger = std::time::Instant::now();
                                 window_clone.request_redraw();
                             }
                         },

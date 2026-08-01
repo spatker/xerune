@@ -158,6 +158,8 @@ impl Model for BreakoutModel {
                     || self.keys_held.contains("KEY_PREVIOUSSONG") 
                     || self.keys_held.contains("KEY_LEFT") 
                     || self.keys_held.contains("KEY_VOLUMEDOWN") 
+                    || self.keys_held.contains("Prev")
+                    || self.keys_held.contains("Left")
                 { 
                     paddle_dir -= 1.0; 
                 }
@@ -165,6 +167,8 @@ impl Model for BreakoutModel {
                     || self.keys_held.contains("KEY_NEXTSONG") 
                     || self.keys_held.contains("KEY_RIGHT") 
                     || self.keys_held.contains("KEY_VOLUMEUP") 
+                    || self.keys_held.contains("Next")
+                    || self.keys_held.contains("Right")
                 { 
                     paddle_dir += 1.0; 
                 }

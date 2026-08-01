@@ -123,6 +123,10 @@ impl MusicPlayerModel {
         }
     }
 
+    fn ensure_ticking(&self, context: &mut xerune::Context) {
+        context.set_timeout("tick".to_string(), 33);
+    }
+
     fn format_time(seconds: u64) -> String {
         let min = seconds / 60;
         let sec = seconds % 60;
@@ -149,6 +153,7 @@ impl MusicPlayerModel {
 
 #[derive(Debug, Clone, PartialEq, XeruneMessage)]
 pub enum Msg {
+    #[xerune(prefix = "select_track:")]
     SelectTrack(String),
     Back,
     Stop,
@@ -156,6 +161,7 @@ pub enum Msg {
     Next,
     Prev,
     Tick,
+    #[xerune(prefix = "hover_track:")]
     HoverTrack(String),
     UnhoverTrack,
     #[xerune(prefix = "keydown:")]
@@ -171,18 +177,22 @@ impl Model for MusicPlayerModel {
              Msg::SelectTrack(id_str) => {
                  if let Some(index) = self.tracks.iter().position(|t| t.id == id_str) {
                      self.current_track_index = Some(index);
+                     self.active_list_index = index;
                      self.is_playing = true;
                      self.elapsed_seconds = 0;
                      self.last_tick = xerune::runtime::time::Instant::now();
+                     self.ensure_ticking(context);
                  }
              },
              Msg::Back => {
                  self.current_track_index = None;
+                 self.ensure_ticking(context);
              },
              Msg::Stop => {
                  self.is_playing = false;
                  self.elapsed_seconds = 0;
                  self.current_track_index = None;
+                 self.ensure_ticking(context);
              },
              Msg::PlayPause => {
                  if self.current_track_index.is_none() && !self.tracks.is_empty() {
@@ -191,6 +201,7 @@ impl Model for MusicPlayerModel {
                  self.is_playing = !self.is_playing;
                  if self.is_playing {
                      self.last_tick = xerune::runtime::time::Instant::now();
+                     self.ensure_ticking(context);
                  }
              },
              Msg::Next => {
@@ -203,6 +214,7 @@ impl Model for MusicPlayerModel {
                  self.is_playing = true;
                  self.elapsed_seconds = 0;
                  self.last_tick = xerune::runtime::time::Instant::now();
+                 self.ensure_ticking(context);
              },
              Msg::Prev => {
                  let prev_idx = match self.current_track_index {
@@ -214,6 +226,7 @@ impl Model for MusicPlayerModel {
                  self.is_playing = true;
                  self.elapsed_seconds = 0;
                  self.last_tick = xerune::runtime::time::Instant::now();
+                 self.ensure_ticking(context);
              },
              Msg::HoverTrack(id_str) => {
                  self.hovered_track = id_str;
@@ -223,28 +236,45 @@ impl Model for MusicPlayerModel {
              },
              Msg::KeyDown(key) => {
                  match key.as_str() {
-                     "KEY_UP" | "ArrowUp" => {
-                         if self.active_list_index > 0 {
+                     "Up" | "KEY_UP" | "ArrowUp" => {
+                         if self.current_track_index.is_some() {
+                             self.update(Msg::Back, context);
+                         } else if self.active_list_index > 0 {
                              self.active_list_index -= 1;
                              context.scroll_into_view(&format!("select_track:{}", self.tracks[self.active_list_index].id));
                          }
                      }
-                     "KEY_DOWN" | "ArrowDown" => {
-                         if self.active_list_index + 1 < self.tracks.len() {
+                     "Down" | "KEY_DOWN" | "ArrowDown" => {
+                         if self.current_track_index.is_none() && self.active_list_index + 1 < self.tracks.len() {
                              self.active_list_index += 1;
                              context.scroll_into_view(&format!("select_track:{}", self.tracks[self.active_list_index].id));
                          }
                      }
-                     "KEY_PLAYPAUSE" | "MediaPlayPause" | "Enter" | "Space" | "KEY_MUTE" => {
-                         self.update(Msg::PlayPause, context);
+                     "PlayPause" | "KEY_PLAYPAUSE" | "MediaPlayPause" | "Enter" | "Return" | "NumpadEnter" | "Space" => {
+                         if self.current_track_index.is_none() && !self.tracks.is_empty() {
+                             let id = self.tracks[self.active_list_index].id.clone();
+                             self.update(Msg::SelectTrack(id), context);
+                         } else {
+                             self.update(Msg::PlayPause, context);
+                         }
                      }
-                     "KEY_NEXTSONG" | "MediaTrackNext" | "ArrowRight" | "KEY_VOLUMEUP" => {
-                         self.update(Msg::Next, context);
+                     "Next" | "KEY_NEXTSONG" | "MediaTrackNext" | "ArrowRight" => {
+                         if self.current_track_index.is_none() && !self.tracks.is_empty() {
+                             let id = self.tracks[self.active_list_index].id.clone();
+                             self.update(Msg::SelectTrack(id), context);
+                         } else {
+                             self.update(Msg::Next, context);
+                         }
                      }
-                     "KEY_PREVIOUSSONG" | "MediaTrackPrevious" | "ArrowLeft" | "KEY_VOLUMEDOWN" => {
-                         self.update(Msg::Prev, context);
+                     "Prev" | "KEY_PREVIOUSSONG" | "MediaTrackPrevious" | "ArrowLeft" => {
+                         if self.current_track_index.is_none() && !self.tracks.is_empty() {
+                             let id = self.tracks[self.active_list_index].id.clone();
+                             self.update(Msg::SelectTrack(id), context);
+                         } else {
+                             self.update(Msg::Prev, context);
+                         }
                      }
-                     "KEY_SUSPEND" | "Escape" => {
+                     "Back" | "KEY_SUSPEND" | "Escape" => {
                          self.update(Msg::Back, context);
                      }
                      _ => {}
@@ -259,6 +289,7 @@ impl Model for MusicPlayerModel {
                   } else if self.transition_progress > target {
                       self.transition_progress = (self.transition_progress - 0.1).max(0.0);
                   }
+                  let is_animating = (self.transition_progress - target).abs() > 0.001;
 
                   // Update visualizer simulation using LCG Rng
                   if self.is_playing {
@@ -328,6 +359,13 @@ impl Model for MusicPlayerModel {
                          }
                      }
                  }
+
+                  let is_decaying = self.visualizer_data.iter().any(|&val| val > 2.05);
+
+                  // Schedule next tick if music is playing, view is animating, or visualizer is decaying
+                  if self.is_playing || is_animating || is_decaying {
+                      self.ensure_ticking(context);
+                  }
              }
          }
          self.update_derived_fields();
@@ -384,8 +422,7 @@ pub fn run_native(render_frame: impl FnMut(&mut Runtime<MusicPlayerModel, Measur
     let model = MusicPlayerModel::new(None);
     let measurer = FastMeasurer { fonts: fonts_ref.into() };
     
-    let mut runtime = Runtime::new(model, measurer);
-    runtime.set_interval("tick".to_string(), 33);
+    let runtime = Runtime::new(model, measurer);
 
     #[cfg(not(any(
         all(target_os = "linux", feature = "linuxfb", feature = "evdev"),
@@ -423,5 +460,7 @@ mod tests {
         assert_eq!(Msg::from_str("stop"), Ok(Msg::Stop));
         assert_eq!(Msg::from_str("next"), Ok(Msg::Next));
         assert_eq!(Msg::from_str("prev"), Ok(Msg::Prev));
+        assert_eq!(Msg::from_str("select_track:song1"), Ok(Msg::SelectTrack("song1".to_string())));
+        assert_eq!(Msg::from_str("hover_track:song1"), Ok(Msg::HoverTrack("song1".to_string())));
     }
 }

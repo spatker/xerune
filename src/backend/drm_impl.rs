@@ -365,6 +365,8 @@ impl Backend for DrmBackend {
         let mut local_buffer = vec![0xFF222222u32; (w * h) as usize];
         let mut pending_flip = false;
 
+        let mut buffered_event: Option<evdev::InputEvent> = None;
+
         loop {
             let frame_start = Instant::now();
 
@@ -377,7 +379,7 @@ impl Backend for DrmBackend {
             force_redraw = false;
 
             // Poll Input
-            while let Ok(ev) = rx_input.try_recv() {
+            while let Some(ev) = buffered_event.take().or_else(|| rx_input.try_recv().ok()) {
                 match ev.kind() {
                     evdev::InputEventKind::AbsAxis(evdev::AbsoluteAxisType::ABS_X) | evdev::InputEventKind::AbsAxis(evdev::AbsoluteAxisType::ABS_MT_POSITION_X) => {
                         let raw_val = ev.value() as f32;
@@ -428,7 +430,20 @@ impl Backend for DrmBackend {
                         }
                     },
                     evdev::InputEventKind::Key(key) => {
-                        let key_name = format!("{:?}", key);
+                        let raw_name = format!("{:?}", key);
+                        let key_name = match raw_name.as_str() {
+                            "KEY_UP" | "103" => "Up",
+                            "KEY_DOWN" | "108" => "Down",
+                            "KEY_LEFT" | "105" => "Left",
+                            "KEY_RIGHT" | "106" => "Right",
+                            "KEY_PLAYPAUSE" | "164" | "113" | "KEY_MUTE" => "PlayPause",
+                            "KEY_NEXTSONG" | "163" | "115" | "KEY_VOLUMEUP" => "Next",
+                            "KEY_PREVIOUSSONG" | "165" | "114" | "KEY_VOLUMEDOWN" => "Prev",
+                            "KEY_SUSPEND" | "205" => "Back",
+                            _ => &raw_name,
+                        }.to_string();
+
+                        eprintln!("[XERUNE DRM INPUT] Key: {:?}, name: {}, val: {}", key, key_name, ev.value());
                         if ev.value() == 1 || ev.value() == 2 {
                             dirty |= runtime.handle_event(InputEvent::KeyDown(key_name));
                         } else if ev.value() == 0 {
@@ -495,9 +510,17 @@ impl Backend for DrmBackend {
 
             if !dirty {
                 let elapsed = frame_start.elapsed();
-                let sleep_duration = tick_res.next_tick_in.saturating_sub(elapsed);
-                if !sleep_duration.is_zero() {
-                    thread::sleep(sleep_duration);
+                let is_idle = tick_res.next_tick_in > std::time::Duration::from_secs(3600);
+                if is_idle {
+                    if let Ok(ev) = rx_input.recv() {
+                        buffered_event = Some(ev);
+                    }
+                } else if let Some(sleep_dur) = tick_res.next_tick_in.checked_sub(elapsed) {
+                    if !sleep_dur.is_zero() {
+                        if let Ok(ev) = rx_input.recv_timeout(sleep_dur) {
+                            buffered_event = Some(ev);
+                        }
+                    }
                 }
             }
         }

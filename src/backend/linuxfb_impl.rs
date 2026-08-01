@@ -84,13 +84,15 @@ impl Backend for LinuxFbBackend {
 
         let mut local_buffer = vec![0xFF222222u32; (w * h) as usize];
 
+        let mut buffered_event: Option<evdev::InputEvent> = None;
+
         loop {
             let frame_start = Instant::now();
             let mut dirty = force_redraw;
             force_redraw = false;
 
             // Poll Input
-            while let Ok(ev) = rx_input.try_recv() {
+            while let Some(ev) = buffered_event.take().or_else(|| rx_input.try_recv().ok()) {
                 match ev.kind() {
                     InputEventKind::AbsAxis(AbsoluteAxisType::ABS_X) | InputEventKind::AbsAxis(AbsoluteAxisType::ABS_MT_POSITION_X) => {
                         let raw_val = ev.value() as f32;
@@ -137,7 +139,20 @@ impl Backend for LinuxFbBackend {
                         }
                     },
                     InputEventKind::Key(key) => {
-                        let key_name = format!("{:?}", key);
+                        let raw_name = format!("{:?}", key);
+                        let key_name = match raw_name.as_str() {
+                            "KEY_UP" | "103" => "Up",
+                            "KEY_DOWN" | "108" => "Down",
+                            "KEY_LEFT" | "105" => "Left",
+                            "KEY_RIGHT" | "106" => "Right",
+                            "KEY_PLAYPAUSE" | "164" | "113" | "KEY_MUTE" => "PlayPause",
+                            "KEY_NEXTSONG" | "163" | "115" | "KEY_VOLUMEUP" => "Next",
+                            "KEY_PREVIOUSSONG" | "165" | "114" | "KEY_VOLUMEDOWN" => "Prev",
+                            "KEY_SUSPEND" | "205" => "Back",
+                            _ => &raw_name,
+                        }.to_string();
+
+                        eprintln!("[XERUNE FB INPUT] Key: {:?}, name: {}, val: {}", key, key_name, ev.value());
                         if ev.value() == 1 || ev.value() == 2 {
                             dirty |= runtime.handle_event(InputEvent::KeyDown(key_name));
                         } else if ev.value() == 0 {
@@ -235,17 +250,20 @@ impl Backend for LinuxFbBackend {
             }
             
             // Frame limiting and dynamic sleeping
-            let elapsed = frame_start.elapsed();
-            let mut sleep_duration = tick_res.next_tick_in.saturating_sub(elapsed);
-            if dirty {
-                let target_duration = std::time::Duration::from_nanos((1_000_000_000.0 / runtime.target_fps as f64) as u64);
-                let min_sleep = target_duration.saturating_sub(elapsed);
-                if min_sleep > sleep_duration {
-                    sleep_duration = min_sleep;
+            if !dirty {
+                let elapsed = frame_start.elapsed();
+                let is_idle = tick_res.next_tick_in > std::time::Duration::from_secs(3600);
+                if is_idle {
+                    if let Ok(ev) = rx_input.recv() {
+                        buffered_event = Some(ev);
+                    }
+                } else if let Some(sleep_dur) = tick_res.next_tick_in.checked_sub(elapsed) {
+                    if !sleep_dur.is_zero() {
+                        if let Ok(ev) = rx_input.recv_timeout(sleep_dur) {
+                            buffered_event = Some(ev);
+                        }
+                    }
                 }
-            }
-            if !sleep_duration.is_zero() {
-                thread::sleep(sleep_duration);
             }
         }
     }
@@ -418,5 +436,17 @@ fn blit_rotated(
         _ => {
             draw_slice.copy_from_slice(local_buffer);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_evdev_key_debug_format() {
+        assert_eq!(format!("{:?}", evdev::Key::KEY_UP), "KEY_UP");
+        assert_eq!(format!("{:?}", evdev::Key::KEY_DOWN), "KEY_DOWN");
+        assert_eq!(format!("{:?}", evdev::Key::KEY_PLAYPAUSE), "KEY_PLAYPAUSE");
     }
 }

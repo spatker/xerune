@@ -447,9 +447,25 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
         self.tick_with_time(now)
     }
 
+    fn drain_pending_timers(&mut self) {
+        let new_timers = core::mem::take(&mut self.context.pending_timers);
+        for mut timer in new_timers {
+            if !timer.is_recurring {
+                if self.timers.iter().any(|t| !t.is_recurring && t.message == timer.message) {
+                    continue;
+                }
+            }
+            timer.id = self.next_timer_id;
+            self.next_timer_id += 1;
+            self.timers.push(timer);
+        }
+    }
+
     /// Evaluates animations and timers using the specified Instant time.
     pub fn tick_with_time(&mut self, now: Instant) -> TickResult {
         let mut needs_redraw = false;
+
+        self.drain_pending_timers();
 
         let mut triggered_messages = Vec::new();
         for timer in &mut self.timers {
@@ -465,13 +481,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
 
         if !triggered_messages.is_empty() {
             needs_redraw |= self.handle_messages(triggered_messages);
-        }
-
-        let new_timers = core::mem::take(&mut self.context.pending_timers);
-        for mut timer in new_timers {
-            timer.id = self.next_timer_id;
-            self.next_timer_id += 1;
-            self.timers.push(timer);
+            self.drain_pending_timers();
         }
 
         let dt = now.duration_since(self.last_tick_time);
