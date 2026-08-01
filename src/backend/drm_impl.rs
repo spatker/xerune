@@ -1,9 +1,13 @@
-use crate::{Model, InputEvent, Runtime, TextMeasurer};
-use super::{Backend, BackendError, MpscProxy};
-use std::time::Instant;
+use crate::{Model, Runtime, TextMeasurer};
+use super::{
+    Backend, BackendError, MpscProxy,
+    input::{EvdevInputSource, SurfaceInfo},
+    common_loop::{FramePresenter, run_embedded_event_loop},
+    render_utils::blit_rotated,
+};
 use std::fs::File;
 use std::os::fd::{AsFd, BorrowedFd, AsRawFd};
-use std::sync::mpsc::{channel, Receiver};
+use std::sync::mpsc::channel;
 use std::thread;
 
 use drm::control::Device as ControlDevice;
@@ -33,191 +37,6 @@ impl Card {
             }
         }
         Err(BackendError::Init("No DRM card device found".to_string()))
-    }
-}
-
-/// Input touch screen bounds calibration values.
-#[derive(Debug, Clone)]
-pub struct TouchCalibration {
-    /// Minimum X coordinate bound.
-    pub x_min: f32,
-    /// Maximum X coordinate bound.
-    pub x_max: f32,
-    /// Minimum Y coordinate bound.
-    pub y_min: f32,
-    /// Maximum Y coordinate bound.
-    pub y_max: f32,
-}
-
-fn spawn_input_thread() -> (Receiver<evdev::InputEvent>, Option<TouchCalibration>) {
-    let mut calibration = None;
-    let mut open_devices = Vec::new();
-
-    for id in 0..32 {
-        let path = format!("/dev/input/event{}", id);
-        if let Ok(dev) = evdev::Device::open(&path) {
-            println!("Opened input device: {} ({})", dev.name().unwrap_or("?"), path);
-            
-            if calibration.is_none() {
-                let axes = dev.supported_absolute_axes().unwrap_or_default();
-                if axes.contains(evdev::AbsoluteAxisType::ABS_MT_POSITION_X) || axes.contains(evdev::AbsoluteAxisType::ABS_X) {
-                    if let Ok(abs_state) = dev.get_abs_state() {
-                        let x_info = &abs_state[evdev::AbsoluteAxisType::ABS_MT_POSITION_X.0 as usize];
-                        let y_info = &abs_state[evdev::AbsoluteAxisType::ABS_MT_POSITION_Y.0 as usize];
-                        let (mut xm, mut xM) = (x_info.minimum as f32, x_info.maximum as f32);
-                        let (mut ym, mut yM) = (y_info.minimum as f32, y_info.maximum as f32);
-                        
-                        if xM - xm <= 0.0 {
-                            let x_info_fallback = &abs_state[evdev::AbsoluteAxisType::ABS_X.0 as usize];
-                            xm = x_info_fallback.minimum as f32;
-                            xM = x_info_fallback.maximum as f32;
-                        }
-                        if yM - ym <= 0.0 {
-                            let y_info_fallback = &abs_state[evdev::AbsoluteAxisType::ABS_Y.0 as usize];
-                            ym = y_info_fallback.minimum as f32;
-                            yM = y_info_fallback.maximum as f32;
-                        }
-                        
-                        if xM - xm > 0.0 && yM - ym > 0.0 {
-                            calibration = Some(TouchCalibration {
-                                x_min: xm,
-                                x_max: xM,
-                                y_min: ym,
-                                y_max: yM,
-                            });
-                            println!("Touch screen calibration: X=[{}, {}], Y=[{}, {}]", xm, xM, ym, yM);
-                        }
-                    }
-                }
-            }
-            open_devices.push(dev);
-        }
-    }
-    
-    let (tx, rx) = channel();
-    for mut dev in open_devices {
-        let tx = tx.clone();
-        thread::spawn(move || {
-            loop {
-                match dev.fetch_events() {
-                    Ok(events) => {
-                        for ev in events {
-                            let _ = tx.send(ev);
-                        }
-                    },
-                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                        thread::sleep(std::time::Duration::from_millis(16));
-                    },
-                    Err(_) => {
-                        thread::sleep(std::time::Duration::from_secs(1));
-                    }
-                }
-            }
-        });
-    }
-    (rx, calibration)
-}
-
-#[cfg(all(target_arch = "arm", target_feature = "neon"))]
-use core::arch::arm::*;
-
-#[cfg(target_arch = "aarch64")]
-use core::arch::aarch64::*;
-
-fn blit_rotated(
-    local_buffer: &[u32],
-    draw_slice: &mut [u32],
-    logical_w: u32,
-    logical_h: u32,
-    disp_w: u32,
-    disp_h: u32,
-    rotation: u32,
-) {
-    let lw = logical_w as usize;
-    let lh = logical_h as usize;
-    let dw = disp_w as usize;
-    let dh = disp_h as usize;
-
-    const BLOCK: usize = 32;
-    let mut block_buf = [0u32; BLOCK * BLOCK];
-
-    match rotation {
-        90 => {
-            for ty in (0..dh).step_by(BLOCK) {
-                let ty_end = (ty + BLOCK).min(dh);
-                let bh = ty_end - ty;
-                for tx in (0..dw).step_by(BLOCK) {
-                    let tx_end = (tx + BLOCK).min(dw);
-                    let bw = tx_end - tx;
-
-                    for py in 0..bh {
-                        let y_p = ty + py;
-                        let x_l = y_p;
-                        let block_row = py * BLOCK;
-                        for px in 0..bw {
-                            let x_p = tx + px;
-                            let y_l = (lh - 1) - x_p;
-                            block_buf[block_row + px] = local_buffer[y_l * lw + x_l];
-                        }
-                    }
-
-                    for py in 0..bh {
-                        let dst_offset = (ty + py) * dw + tx;
-                        let src_offset = py * BLOCK;
-                        draw_slice[dst_offset..dst_offset + bw].copy_from_slice(&block_buf[src_offset..src_offset + bw]);
-                    }
-                }
-            }
-        }
-        180 => {
-            for py in 0..dh {
-                let dst_offset = py * dw;
-                let src_y = (lh - 1 - py) * lw;
-                for px in 0..dw {
-                    let src_x = lw - 1 - px;
-                    draw_slice[dst_offset + px] = local_buffer[src_y + src_x];
-                }
-            }
-        }
-        270 => {
-            for ty in (0..dh).step_by(BLOCK) {
-                let ty_end = (ty + BLOCK).min(dh);
-                let bh = ty_end - ty;
-                for tx in (0..dw).step_by(BLOCK) {
-                    let tx_end = (tx + BLOCK).min(dw);
-                    let bw = tx_end - tx;
-
-                    for py in 0..bh {
-                        let y_p = ty + py;
-                        let x_l = (lw - 1) - y_p;
-                        let block_row = py * BLOCK;
-                        for px in 0..bw {
-                            let x_p = tx + px;
-                            let y_l = x_p;
-                            block_buf[block_row + px] = local_buffer[y_l * lw + x_l];
-                        }
-                    }
-
-                    for py in 0..bh {
-                        let dst_offset = (ty + py) * dw + tx;
-                        let src_offset = py * BLOCK;
-                        draw_slice[dst_offset..dst_offset + bw].copy_from_slice(&block_buf[src_offset..src_offset + bw]);
-                    }
-                }
-            }
-        }
-        _ => {
-            draw_slice.copy_from_slice(local_buffer);
-        }
-    }
-}
-
-fn map_touch_to_logical(touch_x: f32, touch_y: f32, disp_w: f32, disp_h: f32, rotation: u32) -> (f32, f32) {
-    match rotation {
-        90 => (touch_y, disp_w - 1.0 - touch_x),
-        180 => (disp_w - 1.0 - touch_x, disp_h - 1.0 - touch_y),
-        270 => (disp_h - 1.0 - touch_y, touch_x),
-        _ => (touch_x, touch_y),
     }
 }
 
@@ -255,6 +74,77 @@ fn wait_for_page_flip(card: &Card) -> Result<(), BackendError> {
     Ok(())
 }
 
+struct DrmPresenter<M1, M2> {
+    card: Card,
+    crtc_handle: drm::control::crtc::Handle,
+    fb1: drm::control::framebuffer::Handle,
+    fb2: drm::control::framebuffer::Handle,
+    map1: M1,
+    map2: M2,
+    current_fb: drm::control::framebuffer::Handle,
+    pending_flip: bool,
+}
+
+impl<M1, M2> FramePresenter for DrmPresenter<M1, M2>
+where
+    M1: std::ops::DerefMut<Target = [u8]>,
+    M2: std::ops::DerefMut<Target = [u8]>,
+{
+    fn prepare_frame(&mut self) -> Result<(), BackendError> {
+        if self.pending_flip {
+            wait_for_page_flip(&self.card)?;
+            self.pending_flip = false;
+        }
+        Ok(())
+    }
+
+    fn present(&mut self, local_buffer: &[u32], surface: &SurfaceInfo) -> Result<(), BackendError> {
+        let (target_fb, draw_slice) = if self.current_fb == self.fb1 {
+            (self.fb2, self.map2.as_mut())
+        } else {
+            (self.fb1, self.map1.as_mut())
+        };
+
+        let draw_slice_u32 = unsafe {
+            std::slice::from_raw_parts_mut(
+                draw_slice.as_mut_ptr() as *mut u32,
+                draw_slice.len() / 4,
+            )
+        };
+
+        #[cfg(feature = "profile")]
+        coarse_prof::profile!("blit_rotated");
+        blit_rotated(
+            local_buffer,
+            draw_slice_u32,
+            surface.logical_w,
+            surface.logical_h,
+            surface.disp_w,
+            surface.disp_h,
+            surface.rotation,
+        );
+
+        loop {
+            match self.card.page_flip(self.crtc_handle, target_fb, drm::control::PageFlipFlags::EVENT, None) {
+                Ok(_) => {
+                    self.current_fb = target_fb;
+                    self.pending_flip = true;
+                    break;
+                }
+                Err(e) => {
+                    let err_raw = std::io::Error::from(e);
+                    if err_raw.kind() == std::io::ErrorKind::WouldBlock || err_raw.raw_os_error() == Some(libc::EBUSY) {
+                        thread::sleep(std::time::Duration::from_millis(1));
+                    } else {
+                        return Err(BackendError::Run(format!("Failed to page flip: {:?}", err_raw)));
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
 /// Backend implementation for direct rendering manager (DRM/KMS) display drivers.
 pub struct DrmBackend;
 
@@ -273,8 +163,8 @@ impl Backend for DrmBackend {
         _title: &str,
         _width: u32,
         _height: u32,
-        mut runtime: Runtime<M, TM>,
-        mut render_fn: F,
+        runtime: Runtime<M, TM>,
+        render_fn: F,
         setup: impl FnOnce(Self::Proxy) + 'static,
     ) -> Result<(), BackendError>
     where
@@ -286,7 +176,7 @@ impl Backend for DrmBackend {
         let card = Card::open_dri_card()?;
         
         // Acquire DRM Master capability
-        let _ = card.acquire_master_lock(); // Ignore failure if already master
+        let _ = card.acquire_master_lock();
         
         let resources = card.resource_handles()
             .map_err(|e| BackendError::Init(format!("Failed to get DRM resources: {:?}", e)))?;
@@ -307,7 +197,6 @@ impl Backend for DrmBackend {
             
         let (disp_w, disp_h) = mode.size();
         
-        // Parse rotation option
         let rotation = std::env::var("XERUNE_ROTATION")
             .ok()
             .and_then(|s| s.parse::<u32>().ok())
@@ -326,7 +215,6 @@ impl Backend for DrmBackend {
             resources.crtcs().get(0).copied().expect("No CRTCs found")
         });
         
-        // Allocate two dumb buffers for double buffering
         let fmt = DrmFourcc::Argb8888;
         let mut db1 = card.create_dumb_buffer((disp_w as u32, disp_h as u32), fmt, 32)
             .map_err(|e| BackendError::Init(format!("Failed to create dumb buffer 1: {:?}", e)))?;
@@ -338,191 +226,37 @@ impl Backend for DrmBackend {
         let fb2 = card.add_framebuffer(&db2, 32, 32)
             .map_err(|e| BackendError::Init(format!("Failed to add framebuffer 2: {:?}", e)))?;
             
-        let mut map1 = card.map_dumb_buffer(&mut db1)
+        let map1 = card.map_dumb_buffer(&mut db1)
             .map_err(|e| BackendError::Init(format!("Failed to map dumb buffer 1: {:?}", e)))?;
-        let mut map2 = card.map_dumb_buffer(&mut db2)
+        let map2 = card.map_dumb_buffer(&mut db2)
             .map_err(|e| BackendError::Init(format!("Failed to map dumb buffer 2: {:?}", e)))?;
             
         // Initial modeset
         card.set_crtc(crtc_handle, Some(fb1), (0, 0), &[connector.handle()], Some(mode))
             .map_err(|e| BackendError::Init(format!("Failed to perform initial modeset: {:?}", e)))?;
             
-        let (rx_input, calibration) = spawn_input_thread();
-        
-        runtime.set_size(w as f32, h as f32);
-        
         let (msg_tx, msg_rx) = channel::<String>();
         setup(MpscProxy { sender: msg_tx });
         
-        let mut mouse_x = 0.0;
-        let mut mouse_y = 0.0;
-        let mut touch_x = 0.0;
-        let mut touch_y = 0.0;
-        let mut touch_down = false;
-        
-        let mut force_redraw = true;
-        let mut current_fb = fb1;
-        let mut local_buffer = vec![0xFF222222u32; (w * h) as usize];
-        let mut pending_flip = false;
+        let input_source = EvdevInputSource::new();
+        let presenter = DrmPresenter {
+            card,
+            crtc_handle,
+            fb1,
+            fb2,
+            map1,
+            map2,
+            current_fb: fb1,
+            pending_flip: false,
+        };
+        let surface = SurfaceInfo {
+            logical_w: w,
+            logical_h: h,
+            disp_w: disp_w as u32,
+            disp_h: disp_h as u32,
+            rotation,
+        };
 
-        let mut buffered_event: Option<evdev::InputEvent> = None;
-
-        loop {
-            let frame_start = Instant::now();
-
-            if pending_flip {
-                wait_for_page_flip(&card)?;
-                pending_flip = false;
-            }
-
-            let mut dirty = force_redraw;
-            force_redraw = false;
-
-            // Poll Input
-            while let Some(ev) = buffered_event.take().or_else(|| rx_input.try_recv().ok()) {
-                match ev.kind() {
-                    evdev::InputEventKind::AbsAxis(evdev::AbsoluteAxisType::ABS_X) | evdev::InputEventKind::AbsAxis(evdev::AbsoluteAxisType::ABS_MT_POSITION_X) => {
-                        let raw_val = ev.value() as f32;
-                        if let Some(ref cal) = calibration {
-                            touch_x = ((raw_val - cal.x_min) / (cal.x_max - cal.x_min) * disp_w as f32).clamp(0.0, disp_w as f32 - 1.0);
-                        } else {
-                            touch_x = raw_val;
-                        }
-                        let (mx, my) = map_touch_to_logical(touch_x, touch_y, disp_w as f32, disp_h as f32, rotation);
-                        mouse_x = mx;
-                        mouse_y = my;
-                        
-                        if touch_down {
-                            dirty |= runtime.handle_event(InputEvent::TouchMove { id: 0, x: mouse_x, y: mouse_y });
-                        } else {
-                            dirty |= runtime.handle_event(InputEvent::Hover { x: mouse_x, y: mouse_y });
-                        }
-                    },
-                    evdev::InputEventKind::AbsAxis(evdev::AbsoluteAxisType::ABS_Y) | evdev::InputEventKind::AbsAxis(evdev::AbsoluteAxisType::ABS_MT_POSITION_Y) => {
-                        let raw_val = ev.value() as f32;
-                        if let Some(ref cal) = calibration {
-                            touch_y = ((raw_val - cal.y_min) / (cal.y_max - cal.y_min) * disp_h as f32).clamp(0.0, disp_h as f32 - 1.0);
-                        } else {
-                            touch_y = raw_val;
-                        }
-                        let (mx, my) = map_touch_to_logical(touch_x, touch_y, disp_w as f32, disp_h as f32, rotation);
-                        mouse_x = mx;
-                        mouse_y = my;
-                        
-                        if touch_down {
-                            dirty |= runtime.handle_event(InputEvent::TouchMove { id: 0, x: mouse_x, y: mouse_y });
-                        } else {
-                            dirty |= runtime.handle_event(InputEvent::Hover { x: mouse_x, y: mouse_y });
-                        }
-                    },
-                    evdev::InputEventKind::Key(evdev::Key::BTN_TOUCH) => {
-                        if ev.value() == 1 {
-                            touch_down = true;
-                            dirty |= runtime.handle_event(InputEvent::TouchStart { id: 0, x: mouse_x, y: mouse_y });
-                        } else {
-                            touch_down = false;
-                            dirty |= runtime.handle_event(InputEvent::TouchEnd { id: 0, x: mouse_x, y: mouse_y });
-                        }
-                    },
-                    evdev::InputEventKind::Key(evdev::Key::BTN_LEFT) => {
-                        if ev.value() == 1 {
-                            dirty |= runtime.handle_event(InputEvent::Click { x: mouse_x, y: mouse_y });
-                        }
-                    },
-                    evdev::InputEventKind::Key(key) => {
-                        let raw_name = format!("{:?}", key);
-                        let key_name = match raw_name.as_str() {
-                            "KEY_UP" | "103" => "Up",
-                            "KEY_DOWN" | "108" => "Down",
-                            "KEY_LEFT" | "105" => "Left",
-                            "KEY_RIGHT" | "106" => "Right",
-                            "KEY_PLAYPAUSE" | "164" | "113" | "KEY_MUTE" => "PlayPause",
-                            "KEY_NEXTSONG" | "163" | "115" | "KEY_VOLUMEUP" => "Next",
-                            "KEY_PREVIOUSSONG" | "165" | "114" | "KEY_VOLUMEDOWN" => "Prev",
-                            "KEY_SUSPEND" | "205" => "Back",
-                            _ => &raw_name,
-                        }.to_string();
-
-                        eprintln!("[XERUNE DRM INPUT] Key: {:?}, name: {}, val: {}", key, key_name, ev.value());
-                        if ev.value() == 1 || ev.value() == 2 {
-                            dirty |= runtime.handle_event(InputEvent::KeyDown(key_name));
-                        } else if ev.value() == 0 {
-                            dirty |= runtime.handle_event(InputEvent::KeyUp(key_name));
-                        }
-                    },
-                    _ => {}
-                }
-            }
-
-            // Process Custom Messages
-            let mut messages = Vec::new();
-            while let Ok(msg) = msg_rx.try_recv() {
-                messages.push(msg);
-                if messages.len() > 300 { break; }
-            }
-            if !messages.is_empty() {
-                dirty |= runtime.handle_messages(messages);
-            }
-
-            // Update
-            let tick_res = runtime.tick();
-            dirty |= tick_res.needs_redraw;
-            
-            // Draw
-            if dirty {
-                let (target_fb, draw_slice) = if current_fb == fb1 {
-                    (fb2, map2.as_mut())
-                } else {
-                    (fb1, map1.as_mut())
-                };
-
-                render_fn(&mut runtime, &mut local_buffer, w, h);
-
-                let draw_slice_u32 = unsafe {
-                    std::slice::from_raw_parts_mut(
-                        draw_slice.as_mut_ptr() as *mut u32,
-                        draw_slice.len() / 4,
-                    )
-                };
-
-                #[cfg(feature = "profile")]
-                coarse_prof::profile!("blit_rotated");
-                blit_rotated(&local_buffer, draw_slice_u32, w, h, disp_w as u32, disp_h as u32, rotation);
-
-                loop {
-                    match card.page_flip(crtc_handle, target_fb, drm::control::PageFlipFlags::EVENT, None) {
-                        Ok(_) => {
-                            current_fb = target_fb;
-                            pending_flip = true;
-                            break;
-                        }
-                        Err(e) => {
-                            let err_raw = std::io::Error::from(e);
-                            if err_raw.kind() == std::io::ErrorKind::WouldBlock || err_raw.raw_os_error() == Some(libc::EBUSY) {
-                                thread::sleep(std::time::Duration::from_millis(1));
-                            } else {
-                                return Err(BackendError::Run(format!("Failed to page flip: {:?}", err_raw)));
-                            }
-                        }
-                    }
-                }
-            }
-
-            if !dirty {
-                let elapsed = frame_start.elapsed();
-                let is_idle = tick_res.next_tick_in > std::time::Duration::from_secs(3600);
-                if is_idle {
-                    if let Ok(ev) = rx_input.recv() {
-                        buffered_event = Some(ev);
-                    }
-                } else if let Some(sleep_dur) = tick_res.next_tick_in.checked_sub(elapsed) {
-                    if !sleep_dur.is_zero() {
-                        if let Ok(ev) = rx_input.recv_timeout(sleep_dur) {
-                            buffered_event = Some(ev);
-                        }
-                    }
-                }
-            }
-        }
+        run_embedded_event_loop(runtime, render_fn, input_source, presenter, surface, msg_rx)
     }
 }

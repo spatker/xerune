@@ -1,6 +1,15 @@
 #[cfg(feature = "winit")]
 pub(crate) mod winit_impl;
 
+/// Hardware input abstraction interface.
+pub mod input;
+
+#[cfg(all(target_os = "linux", feature = "evdev"))]
+pub(crate) mod common_loop;
+
+#[cfg(all(target_os = "linux", feature = "evdev"))]
+pub(crate) mod render_utils;
+
 #[cfg(all(target_os = "linux", feature = "linuxfb", feature = "evdev"))]
 pub(crate) mod linuxfb_impl;
 
