@@ -49,14 +49,9 @@ where
                 &mut self.fb_mmap[0..page_size]
             };
 
-            let draw_slice_u32 = unsafe {
-                std::slice::from_raw_parts_mut(
-                    draw_slice.as_mut_ptr() as *mut u32,
-                    draw_slice.len() / 4,
-                )
-            };
-
-            draw_slice_u32.copy_from_slice(local_buffer);
+            let local_bytes: &[u8] = bytemuck::cast_slice(local_buffer);
+            let copy_len = local_bytes.len().min(draw_slice.len());
+            draw_slice[..copy_len].copy_from_slice(&local_bytes[..copy_len]);
 
             if self.double_buffered && mmap_len >= page_size * 2 {
                 if let Err(e) = self.fb.set_offset(0, y_offset) {
@@ -105,7 +100,7 @@ impl Backend for LinuxFbBackend {
         TM: TextMeasurer + 'static,
         F: FnMut(&mut Runtime<M, TM>, &mut [u32], u32, u32) + 'static,
     {
-        println!("Initializing Framebuffer Backend...");
+        log::info!("Initializing Framebuffer Backend...");
         let mut fb = Framebuffer::new("/dev/fb0")
             .map_err(|e| BackendError::Init(format!("Failed to open framebuffer: {:?}", e)))?;
         
@@ -115,22 +110,19 @@ impl Backend for LinuxFbBackend {
         
         let rotate = fb_w < fb_h || std::env::var("XERUNE_ROTATION").map(|s| s == "90" || s == "270").unwrap_or(false);
         let rotation = if rotate { 90 } else { 0 };
-        if rotate && std::env::var("XERUNE_ROTATION").is_err() {
-            unsafe { std::env::set_var("XERUNE_ROTATION", "90"); }
-        }
         let (w, h) = if rotate { (fb_h, fb_w) } else { (fb_w, fb_h) };
         
         let layout = fb.get_pixel_layout();
         let fb_is_bgra = layout.blue.offset < layout.red.offset;
-        println!("Framebuffer: {}x{} @ {}bpp, is_bgra: {}", fb_w, fb_h, bpp, fb_is_bgra);
+        log::info!("Framebuffer: {}x{} @ {}bpp, is_bgra: {}", fb_w, fb_h, bpp, fb_is_bgra);
         
         let mut double_buffered = false;
         if let Err(e) = fb.set_virtual_size(fb_w, fb_h * 2) {
-            println!("Warning: Could not set virtual size for hardware double buffering: {:?}", e);
+            log::warn!("Could not set virtual size for hardware double buffering: {:?}", e);
         } else {
              let (vw, vh) = fb.get_virtual_size();
              if vh >= fb_h * 2 {
-                 println!("Hardware Double Buffering activated seamlessly (Virtual size: {}x{})", vw, vh);
+                 log::info!("Hardware Double Buffering activated seamlessly (Virtual size: {}x{})", vw, vh);
                  double_buffered = true;
              }
         }

@@ -1298,8 +1298,8 @@ mod tests {
         let mut buffer = vec![0u32; 100];
         let rect = Rect { x: 0.0, y: 0.0, width: 10.0, height: 10.0 };
         // Must not panic on zero dimensions or empty pixel slice
-        blit_image(&mut buffer, 10, 10, 10, &rect, 0.0, 0, 0, &[], None, false);
-        blit_image(&mut buffer, 10, 10, 10, &rect, 0.0, 10, 0, &[], None, false);
-        blit_image(&mut buffer, 10, 10, 10, &rect, 0.0, 0, 10, &[], None, false);
+        blit_image(&mut buffer, 10, 10, 10, &rect, 0.0, 0, 0, &[], None, 0);
+        blit_image(&mut buffer, 10, 10, 10, &rect, 0.0, 10, 0, &[], None, 0);
+        blit_image(&mut buffer, 10, 10, 10, &rect, 0.0, 0, 10, &[], None, 0);
     }
 }

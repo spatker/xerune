@@ -162,7 +162,7 @@ fn spawn_input_thread() -> (Receiver<evdev::InputEvent>, Option<TouchCalibration
     for id in 0..32 {
         let path = format!("/dev/input/event{}", id);
         if let Ok(dev) = Device::open(&path) {
-            println!("Opened input device: {} ({})", dev.name().unwrap_or("?"), path);
+            log::info!("Opened input device: {} ({})", dev.name().unwrap_or("?"), path);
             
             if calibration.is_none() {
                 let axes = dev.supported_absolute_axes().unwrap_or_default();
@@ -191,7 +191,7 @@ fn spawn_input_thread() -> (Receiver<evdev::InputEvent>, Option<TouchCalibration
                                 y_min: ym,
                                 y_max: y_m,
                             });
-                            println!("Touch screen calibration: X=[{}, {}], Y=[{}, {}]", xm, x_m, ym, y_m);
+                            log::info!("Touch screen calibration: X=[{}, {}], Y=[{}, {}]", xm, x_m, ym, y_m);
                         }
                     }
                 }
@@ -201,21 +201,49 @@ fn spawn_input_thread() -> (Receiver<evdev::InputEvent>, Option<TouchCalibration
     }
     
     let (tx, rx) = channel();
-    for mut dev in open_devices {
-        let tx = tx.clone();
+    if !open_devices.is_empty() {
+        use std::os::fd::AsRawFd;
         thread::spawn(move || {
+            let mut pollfds: Vec<libc::pollfd> = open_devices
+                .iter()
+                .map(|dev| libc::pollfd {
+                    fd: dev.as_raw_fd(),
+                    events: libc::POLLIN,
+                    revents: 0,
+                })
+                .collect();
+
             loop {
-                match dev.fetch_events() {
-                    Ok(events) => {
-                        for ev in events {
-                            let _ = tx.send(ev);
+                for pfd in &mut pollfds {
+                    pfd.revents = 0;
+                }
+                let ret = unsafe { libc::poll(pollfds.as_mut_ptr(), pollfds.len() as libc::nfds_t, -1) };
+                if ret < 0 {
+                    let err = std::io::Error::last_os_error();
+                    if err.kind() == std::io::ErrorKind::Interrupted {
+                        continue;
+                    }
+                    log::error!("[XERUNE EVDEV] Poll error in input thread: {}", err);
+                    thread::sleep(std::time::Duration::from_millis(100));
+                    continue;
+                }
+                if ret > 0 {
+                    for (idx, pfd) in pollfds.iter().enumerate() {
+                        if pfd.revents & (libc::POLLIN | libc::POLLERR | libc::POLLHUP) != 0 {
+                            match open_devices[idx].fetch_events() {
+                                Ok(events) => {
+                                    for ev in events {
+                                        if tx.send(ev).is_err() {
+                                            return;
+                                        }
+                                    }
+                                }
+                                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
+                                Err(e) => {
+                                    log::warn!("[XERUNE EVDEV] Error fetching events from device: {:?}", e);
+                                }
+                            }
                         }
-                    },
-                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                        thread::sleep(std::time::Duration::from_millis(16));
-                    },
-                    Err(_) => {
-                        thread::sleep(std::time::Duration::from_secs(1));
                     }
                 }
             }
@@ -223,6 +251,7 @@ fn spawn_input_thread() -> (Receiver<evdev::InputEvent>, Option<TouchCalibration
     }
     (rx, calibration)
 }
+
 
 #[cfg(test)]
 mod tests {

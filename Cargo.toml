@@ -62,6 +62,7 @@ drm-fourcc = { version = "2.2", optional = true }
 evdev = { version = "0.12", optional = true }
 libc = { version = "0.2", optional = true }
 simplecss = { version = "0.2.2", optional = true }
+bytemuck = { version = "1.14", default-features = false }
 
 [dev-dependencies]
 coarse-prof = "0.2.6"

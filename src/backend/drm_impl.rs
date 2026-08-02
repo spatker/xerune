@@ -31,7 +31,7 @@ impl Card {
         for i in 0..5 {
             let path = format!("/dev/dri/card{}", i);
             if let Ok(file) = std::fs::OpenOptions::new().read(true).write(true).open(&path) {
-                println!("Opened DRM device: {}", path);
+                log::info!("Opened DRM device: {}", path);
                 return Ok(Card(file));
             }
         }
@@ -105,14 +105,9 @@ where
             (self.fb1, self.map1.as_mut())
         };
 
-        let draw_slice_u32 = unsafe {
-            std::slice::from_raw_parts_mut(
-                draw_slice.as_mut_ptr() as *mut u32,
-                draw_slice.len() / 4,
-            )
-        };
-
-        draw_slice_u32.copy_from_slice(local_buffer);
+        let local_bytes: &[u8] = bytemuck::cast_slice(local_buffer);
+        let copy_len = local_bytes.len().min(draw_slice.len());
+        draw_slice[..copy_len].copy_from_slice(&local_bytes[..copy_len]);
 
         loop {
             match self.card.page_flip(self.crtc_handle, target_fb, drm::control::PageFlipFlags::EVENT, None) {
@@ -162,7 +157,7 @@ impl Backend for DrmBackend {
         TM: TextMeasurer + 'static,
         F: FnMut(&mut Runtime<M, TM>, &mut [u32], u32, u32) + 'static,
     {
-        println!("Initializing DRM/KMS Backend...");
+        log::info!("Initializing DRM/KMS Backend...");
         let card = Card::open_dri_card()?;
         
         // Acquire DRM Master capability
@@ -193,7 +188,7 @@ impl Backend for DrmBackend {
             .unwrap_or(0);
         let rotate = rotation == 90 || rotation == 270;
         let (w, h) = if rotate { (disp_h as u32, disp_w as u32) } else { (disp_w as u32, disp_h as u32) };
-        println!("DRM Display: {}x{} (mode: {}, rotation: {}), logical size: {}x{}", disp_w, disp_h, mode.name().to_string_lossy(), rotation, w, h);
+        log::info!("DRM Display: {}x{} (mode: {}, rotation: {}), logical size: {}x{}", disp_w, disp_h, mode.name().to_string_lossy(), rotation, w, h);
         
         let encoder_handle = connector.current_encoder().unwrap_or_else(|| {
             connector.encoders().get(0).copied().expect("No encoders found")

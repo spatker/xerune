@@ -2884,6 +2884,7 @@ name = "xerune"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bytemuck",
  "coarse-prof",
  "csscolorparser",
  "drm 0.12.0",
