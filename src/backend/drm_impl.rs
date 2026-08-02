@@ -3,7 +3,6 @@ use super::{
     Backend, BackendError, MpscProxy,
     input::{EvdevInputSource, SurfaceInfo},
     common_loop::{FramePresenter, run_embedded_event_loop},
-    render_utils::blit_rotated,
 };
 use std::fs::File;
 use std::os::fd::{AsFd, BorrowedFd, AsRawFd};
@@ -94,7 +93,7 @@ where
         Ok(())
     }
 
-    fn present(&mut self, local_buffer: &[u32], surface: &SurfaceInfo) -> Result<(), BackendError> {
+    fn present(&mut self, local_buffer: &[u32], _surface: &SurfaceInfo) -> Result<(), BackendError> {
         if self.pending_flip {
             wait_for_page_flip(&self.card)?;
             self.pending_flip = false;
@@ -113,17 +112,7 @@ where
             )
         };
 
-        #[cfg(feature = "profile")]
-        coarse_prof::profile!("blit_rotated");
-        blit_rotated(
-            local_buffer,
-            draw_slice_u32,
-            surface.logical_w,
-            surface.logical_h,
-            surface.disp_w,
-            surface.disp_h,
-            surface.rotation,
-        );
+        draw_slice_u32.copy_from_slice(local_buffer);
 
         loop {
             match self.card.page_flip(self.crtc_handle, target_fb, drm::control::PageFlipFlags::EVENT, None) {

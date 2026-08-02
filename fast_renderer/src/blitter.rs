@@ -155,6 +155,16 @@ pub fn blend_solid_span(dst: &mut [u32], color: u32) {
     }
 }
 
+#[inline(always)]
+pub fn calc_pixel_index(x: i32, y: i32, rotation: u32, physical_w: u32, logical_w: u32, logical_h: u32) -> usize {
+    match rotation {
+        90 => (x as usize * physical_w as usize) + (physical_w as usize - 1 - y as usize),
+        180 => ((logical_h as usize - 1 - y as usize) * physical_w as usize) + (physical_w as usize - 1 - x as usize),
+        270 => ((logical_w as usize - 1 - x as usize) * physical_w as usize) + (y as usize),
+        _ => (y as usize * physical_w as usize) + (x as usize),
+    }
+}
+
 pub fn blend_solid_rect(
     buffer: &mut [u32],
     logical_w: u32,
@@ -166,7 +176,7 @@ pub fn blend_solid_rect(
     rect_h: i32,
     color: u32,
     clip_rect: Option<xerune::Rect>,
-    rotate: bool,
+    rotation: u32,
 ) {
     let (clip_x1, clip_y1, clip_x2, clip_y2) = if let Some(cr) = clip_rect {
         (
@@ -188,27 +198,69 @@ pub fn blend_solid_rect(
         return;
     }
 
-    if rotate {
-        let span_len = (end_y - start_y) as usize;
-        let pw = physical_w as usize;
-        let a = (color >> 24) & 0xff;
-        for x in start_x..end_x {
-            let start_idx = (x as usize * pw) + (pw - end_y as usize);
-            if start_idx + span_len <= buffer.len() {
-                let dst_span = &mut buffer[start_idx..start_idx + span_len];
-                if a == 255 {
-                    dst_span.fill(color);
-                } else {
-                    blend_solid_span(dst_span, color);
+    let a = (color >> 24) & 0xff;
+    let pw = physical_w as usize;
+
+    match rotation {
+        90 => {
+            let span_len = (end_y - start_y) as usize;
+            for x in start_x..end_x {
+                let start_idx = (x as usize * pw) + (pw - end_y as usize);
+                if start_idx + span_len <= buffer.len() {
+                    let dst_span = &mut buffer[start_idx..start_idx + span_len];
+                    if a == 255 {
+                        dst_span.fill(color);
+                    } else {
+                        blend_solid_span(dst_span, color);
+                    }
                 }
             }
         }
-    } else {
-        let span_w = (end_x - start_x) as usize;
-        for y in start_y..end_y {
-            let start_idx = (y * physical_w as i32 + start_x) as usize;
-            let dst_span = &mut buffer[start_idx..start_idx + span_w];
-            blend_solid_span(dst_span, color);
+        270 => {
+            let span_len = (end_y - start_y) as usize;
+            let lw = logical_w as usize;
+            for x in start_x..end_x {
+                let py = lw - 1 - x as usize;
+                let start_idx = py * pw + start_y as usize;
+                if start_idx + span_len <= buffer.len() {
+                    let dst_span = &mut buffer[start_idx..start_idx + span_len];
+                    if a == 255 {
+                        dst_span.fill(color);
+                    } else {
+                        blend_solid_span(dst_span, color);
+                    }
+                }
+            }
+        }
+        180 => {
+            let span_w = (end_x - start_x) as usize;
+            let lh = logical_h as usize;
+            for y in start_y..end_y {
+                let py = lh - 1 - y as usize;
+                let start_idx = py * pw + (pw - end_x as usize);
+                if start_idx + span_w <= buffer.len() {
+                    let dst_span = &mut buffer[start_idx..start_idx + span_w];
+                    if a == 255 {
+                        dst_span.fill(color);
+                    } else {
+                        blend_solid_span(dst_span, color);
+                    }
+                }
+            }
+        }
+        _ => {
+            let span_w = (end_x - start_x) as usize;
+            for y in start_y..end_y {
+                let start_idx = (y as usize * pw) + start_x as usize;
+                if start_idx + span_w <= buffer.len() {
+                    let dst_span = &mut buffer[start_idx..start_idx + span_w];
+                    if a == 255 {
+                        dst_span.fill(color);
+                    } else {
+                        blend_solid_span(dst_span, color);
+                    }
+                }
+            }
         }
     }
 }

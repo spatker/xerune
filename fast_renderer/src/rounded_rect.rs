@@ -1,4 +1,4 @@
-use crate::blitter::{pack_color, blend_solid_rect, blend_pixel};
+use crate::blitter::{pack_color, blend_solid_rect, blend_pixel, calc_pixel_index};
 use crate::gradient::{draw_gradient_rect, sample_gradient};
 #[cfg(not(feature = "std"))]
 use crate::F32Ext;
@@ -16,7 +16,7 @@ pub fn draw_rounded_rect(
     gradient: Option<&xerune::LinearGradient>,
     swap_rb: bool,
     clip_rect: Option<xerune::Rect>,
-    rotate: bool,
+    rotation: u32,
 ) {
     if rect_w <= 0 || rect_h <= 0 {
         return;
@@ -24,10 +24,10 @@ pub fn draw_rounded_rect(
 
     if radius <= 0.0 {
         if let Some(grad) = gradient {
-            draw_gradient_rect(buffer, logical_w, logical_h, physical_w, rect_x, rect_y, rect_w, rect_h, grad, swap_rb, clip_rect, rotate);
+            draw_gradient_rect(buffer, logical_w, logical_h, physical_w, rect_x, rect_y, rect_w, rect_h, grad, swap_rb, clip_rect, rotation);
         } else if let Some(col) = color {
             let packed = pack_color(col, swap_rb);
-            blend_solid_rect(buffer, logical_w, logical_h, physical_w, rect_x, rect_y, rect_w, rect_h, packed, clip_rect, rotate);
+            blend_solid_rect(buffer, logical_w, logical_h, physical_w, rect_x, rect_y, rect_w, rect_h, packed, clip_rect, rotation);
         }
         return;
     }
@@ -40,10 +40,10 @@ pub fn draw_rounded_rect(
     let center_h = rect_h - 2 * r_i32;
     if center_h > 0 {
         if let Some(grad) = gradient {
-            draw_gradient_rect(buffer, logical_w, logical_h, physical_w, rect_x, center_y, rect_w, center_h, grad, swap_rb, clip_rect, rotate);
+            draw_gradient_rect(buffer, logical_w, logical_h, physical_w, rect_x, center_y, rect_w, center_h, grad, swap_rb, clip_rect, rotation);
         } else if let Some(col) = color {
             let packed = pack_color(col, swap_rb);
-            blend_solid_rect(buffer, logical_w, logical_h, physical_w, rect_x, center_y, rect_w, center_h, packed, clip_rect, rotate);
+            blend_solid_rect(buffer, logical_w, logical_h, physical_w, rect_x, center_y, rect_w, center_h, packed, clip_rect, rotation);
         }
     }
 
@@ -52,10 +52,10 @@ pub fn draw_rounded_rect(
     let top_w = rect_w - 2 * r_i32;
     if top_w > 0 && r_i32 > 0 {
         if let Some(grad) = gradient {
-            draw_gradient_rect(buffer, logical_w, logical_h, physical_w, top_x, rect_y, top_w, r_i32, grad, swap_rb, clip_rect, rotate);
+            draw_gradient_rect(buffer, logical_w, logical_h, physical_w, top_x, rect_y, top_w, r_i32, grad, swap_rb, clip_rect, rotation);
         } else if let Some(col) = color {
             let packed = pack_color(col, swap_rb);
-            blend_solid_rect(buffer, logical_w, logical_h, physical_w, top_x, rect_y, top_w, r_i32, packed, clip_rect, rotate);
+            blend_solid_rect(buffer, logical_w, logical_h, physical_w, top_x, rect_y, top_w, r_i32, packed, clip_rect, rotation);
         }
     }
 
@@ -63,10 +63,10 @@ pub fn draw_rounded_rect(
     let bottom_y = rect_y + rect_h - r_i32;
     if top_w > 0 && r_i32 > 0 {
         if let Some(grad) = gradient {
-            draw_gradient_rect(buffer, logical_w, logical_h, physical_w, top_x, bottom_y, top_w, r_i32, grad, swap_rb, clip_rect, rotate);
+            draw_gradient_rect(buffer, logical_w, logical_h, physical_w, top_x, bottom_y, top_w, r_i32, grad, swap_rb, clip_rect, rotation);
         } else if let Some(col) = color {
             let packed = pack_color(col, swap_rb);
-            blend_solid_rect(buffer, logical_w, logical_h, physical_w, top_x, bottom_y, top_w, r_i32, packed, clip_rect, rotate);
+            blend_solid_rect(buffer, logical_w, logical_h, physical_w, top_x, bottom_y, top_w, r_i32, packed, clip_rect, rotation);
         }
     }
 
@@ -206,11 +206,7 @@ pub fn draw_rounded_rect(
                             let alpha = ((src_color >> 24) & 0xff) as f32 * coverage;
                             let packed_col = (src_color & 0x00ffffff) | ((alpha.round() as u32) << 24);
 
-                            let idx = if rotate {
-                                (px as usize * physical_w as usize) + (physical_w as usize - 1 - py as usize)
-                            } else {
-                                (py as usize * physical_w as usize) + px as usize
-                            };
+                            let idx = calc_pixel_index(px, py, rotation, physical_w, logical_w, logical_h);
 
                             if idx < buffer.len() {
                                 blend_pixel(&mut buffer[idx], packed_col);
@@ -242,11 +238,7 @@ pub fn draw_rounded_rect(
                             let alpha = ((src_color >> 24) & 0xff) as f32 * coverage;
                             let packed_col = (src_color & 0x00ffffff) | ((alpha.round() as u32) << 24);
 
-                            let idx = if rotate {
-                                (px as usize * physical_w as usize) + (physical_w as usize - 1 - py as usize)
-                            } else {
-                                (py as usize * physical_w as usize) + px as usize
-                            };
+                            let idx = calc_pixel_index(px, py, rotation, physical_w, logical_w, logical_h);
 
                             if idx < buffer.len() {
                                 blend_pixel(&mut buffer[idx], packed_col);
@@ -285,11 +277,7 @@ pub fn draw_rounded_rect(
                         let alpha = ((src_color >> 24) & 0xff) as f32 * coverage;
                         let packed_col = (src_color & 0x00ffffff) | ((alpha.round() as u32) << 24);
 
-                        let idx = if rotate {
-                            (px as usize * physical_w as usize) + (physical_w as usize - 1 - py as usize)
-                        } else {
-                            (py as usize * physical_w as usize) + px as usize
-                        };
+                        let idx = calc_pixel_index(px, py, rotation, physical_w, logical_w, logical_h);
 
                         if idx < buffer.len() {
                             blend_pixel(&mut buffer[idx], packed_col);
@@ -315,7 +303,7 @@ pub fn draw_rounded_border(
     border_color: xerune::Color,
     swap_rb: bool,
     clip_rect: Option<xerune::Rect>,
-    rotate: bool,
+    rotation: u32,
 ) {
     if rect_w <= 0 || rect_h <= 0 || border_width <= 0.0 {
         return;
@@ -326,13 +314,13 @@ pub fn draw_rounded_border(
     if radius <= 0.0 {
         let bw = border_width.round() as i32;
         // Top
-        blend_solid_rect(buffer, logical_w, logical_h, physical_w, rect_x, rect_y, rect_w, bw, packed_border, clip_rect, rotate);
+        blend_solid_rect(buffer, logical_w, logical_h, physical_w, rect_x, rect_y, rect_w, bw, packed_border, clip_rect, rotation);
         // Bottom
-        blend_solid_rect(buffer, logical_w, logical_h, physical_w, rect_x, rect_y + rect_h - bw, rect_w, bw, packed_border, clip_rect, rotate);
+        blend_solid_rect(buffer, logical_w, logical_h, physical_w, rect_x, rect_y + rect_h - bw, rect_w, bw, packed_border, clip_rect, rotation);
         // Left
-        blend_solid_rect(buffer, logical_w, logical_h, physical_w, rect_x, rect_y + bw, bw, rect_h - 2 * bw, packed_border, clip_rect, rotate);
+        blend_solid_rect(buffer, logical_w, logical_h, physical_w, rect_x, rect_y + bw, bw, rect_h - 2 * bw, packed_border, clip_rect, rotation);
         // Right
-        blend_solid_rect(buffer, logical_w, logical_h, physical_w, rect_x + rect_w - bw, rect_y + bw, bw, rect_h - 2 * bw, packed_border, clip_rect, rotate);
+        blend_solid_rect(buffer, logical_w, logical_h, physical_w, rect_x + rect_w - bw, rect_y + bw, bw, rect_h - 2 * bw, packed_border, clip_rect, rotation);
         return;
     }
 
@@ -344,17 +332,17 @@ pub fn draw_rounded_border(
     // Straight segments
     let top_w = rect_w - 2 * r_i32;
     if top_w > 0 && bw_i32 > 0 {
-        blend_solid_rect(buffer, logical_w, logical_h, physical_w, rect_x + r_i32, rect_y, top_w, bw_i32, packed_border, clip_rect, rotate);
+        blend_solid_rect(buffer, logical_w, logical_h, physical_w, rect_x + r_i32, rect_y, top_w, bw_i32, packed_border, clip_rect, rotation);
     }
     if top_w > 0 && bw_i32 > 0 {
-        blend_solid_rect(buffer, logical_w, logical_h, physical_w, rect_x + r_i32, rect_y + rect_h - bw_i32, top_w, bw_i32, packed_border, clip_rect, rotate);
+        blend_solid_rect(buffer, logical_w, logical_h, physical_w, rect_x + r_i32, rect_y + rect_h - bw_i32, top_w, bw_i32, packed_border, clip_rect, rotation);
     }
     let side_h = rect_h - 2 * r_i32;
     if side_h > 0 && bw_i32 > 0 {
-        blend_solid_rect(buffer, logical_w, logical_h, physical_w, rect_x, rect_y + r_i32, bw_i32, side_h, packed_border, clip_rect, rotate);
+        blend_solid_rect(buffer, logical_w, logical_h, physical_w, rect_x, rect_y + r_i32, bw_i32, side_h, packed_border, clip_rect, rotation);
     }
     if side_h > 0 && bw_i32 > 0 {
-        blend_solid_rect(buffer, logical_w, logical_h, physical_w, rect_x + rect_w - bw_i32, rect_y + r_i32, bw_i32, side_h, packed_border, clip_rect, rotate);
+        blend_solid_rect(buffer, logical_w, logical_h, physical_w, rect_x + rect_w - bw_i32, rect_y + r_i32, bw_i32, side_h, packed_border, clip_rect, rotation);
     }
 
     // Corner arcs
@@ -528,11 +516,7 @@ pub fn draw_rounded_border(
                     let alpha = ((packed_border >> 24) & 0xff) as f32 * coverage;
                     let packed_col = (packed_border & 0x00ffffff) | ((alpha.round() as u32) << 24);
 
-                    let idx = if rotate {
-                        (px as usize * physical_w as usize) + (physical_w as usize - 1 - py as usize)
-                    } else {
-                        (py as usize * physical_w as usize) + px as usize
-                    };
+                    let idx = calc_pixel_index(px, py, rotation, physical_w, logical_w, logical_h);
 
                     if idx < buffer.len() {
                         blend_pixel(&mut buffer[idx], packed_col);
@@ -561,7 +545,7 @@ pub fn draw_box_shadow(
     inset: bool,
     swap_rb: bool,
     clip_rect: Option<xerune::Rect>,
-    rotate: bool,
+    rotation: u32,
 ) {
     if rect_w <= 0 || rect_h <= 0 || shadow_color.a == 0 {
         return;
@@ -692,11 +676,7 @@ pub fn draw_box_shadow(
                 let final_a = (base_a * alpha_factor).round() as u32;
                 if final_a > 0 {
                     let pixel_color = (packed & 0x00ffffff) | (final_a << 24);
-                    let idx = if rotate {
-                        (px as usize * physical_w as usize) + (physical_w as usize - 1 - py as usize)
-                    } else {
-                        (py as usize * physical_w as usize) + px as usize
-                    };
+                    let idx = calc_pixel_index(px, py, rotation, physical_w, logical_w, logical_h);
 
                     if idx < buffer.len() {
                         blend_pixel(&mut buffer[idx], pixel_color);

@@ -3,7 +3,6 @@ use super::{
     Backend, BackendError, MpscProxy,
     input::{EvdevInputSource, SurfaceInfo},
     common_loop::{FramePresenter, run_embedded_event_loop},
-    render_utils::blit_rotated,
 };
 use std::sync::mpsc::channel;
 use linuxfb::Framebuffer;
@@ -32,12 +31,7 @@ impl<M> FramePresenter for LinuxFbPresenter<M>
 where
     M: std::ops::DerefMut<Target = [u8]>,
 {
-    fn present(&mut self, local_buffer: &[u32], surface: &SurfaceInfo) -> Result<(), BackendError> {
-        let w = surface.logical_w;
-        let h = surface.logical_h;
-        let rotate = surface.rotation != 0;
-        let rotation = surface.rotation;
-
+    fn present(&mut self, local_buffer: &[u32], _surface: &SurfaceInfo) -> Result<(), BackendError> {
         if self.bytes_per_pixel == 4 {
             let page_size = (self.fb_w * self.fb_h * 4) as usize;
             let mmap_len = self.fb_mmap.len();
@@ -62,7 +56,7 @@ where
                 )
             };
 
-            blit_rotated(local_buffer, draw_slice_u32, w, h, self.fb_w, self.fb_h, rotation);
+            draw_slice_u32.copy_from_slice(local_buffer);
 
             if self.double_buffered && mmap_len >= page_size * 2 {
                 if let Err(e) = self.fb.set_offset(0, y_offset) {
@@ -75,22 +69,16 @@ where
             }
         } else if self.bytes_per_pixel == 2 {
             let dest_ptr = self.fb_mmap.as_mut_ptr();
-            for y in 0..h {
-                for x in 0..w {
-                    let src_idx = (y * w + x) as usize;
-                    let dest_x = if rotate { self.fb_w - 1 - y } else { x };
-                    let dest_y = if rotate { x } else { y };
-                    
-                    unsafe {
-                        let pixel = local_buffer[src_idx];
-                        let r = ((pixel >> 16) & 0xFF) as u16;
-                        let g = ((pixel >> 8) & 0xFF) as u16;
-                        let b = (pixel & 0xFF) as u16;
-                        let rgb565 = ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3);
-                        let fb_idx = (dest_y * self.fb_w + dest_x) as usize * 2;
-                        let d = dest_ptr.add(fb_idx) as *mut u16;
-                        d.write_unaligned(rgb565);
-                    }
+            let total_pixels = (self.fb_w * self.fb_h) as usize;
+            for i in 0..total_pixels.min(local_buffer.len()) {
+                unsafe {
+                    let pixel = local_buffer[i];
+                    let r = ((pixel >> 16) & 0xFF) as u16;
+                    let g = ((pixel >> 8) & 0xFF) as u16;
+                    let b = (pixel & 0xFF) as u16;
+                    let rgb565 = ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3);
+                    let d = dest_ptr.add(i * 2) as *mut u16;
+                    d.write_unaligned(rgb565);
                 }
             }
             let _ = self.fb.set_offset(0, 0);
@@ -125,8 +113,11 @@ impl Backend for LinuxFbBackend {
         let bytes_per_pixel = fb.get_bytes_per_pixel();
         let bpp = bytes_per_pixel * 8;
         
-        let rotate = fb_w < fb_h;
+        let rotate = fb_w < fb_h || std::env::var("XERUNE_ROTATION").map(|s| s == "90" || s == "270").unwrap_or(false);
         let rotation = if rotate { 90 } else { 0 };
+        if rotate && std::env::var("XERUNE_ROTATION").is_err() {
+            unsafe { std::env::set_var("XERUNE_ROTATION", "90"); }
+        }
         let (w, h) = if rotate { (fb_h, fb_w) } else { (fb_w, fb_h) };
         
         let layout = fb.get_pixel_layout();

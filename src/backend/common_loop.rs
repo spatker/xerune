@@ -36,7 +36,7 @@ where
     runtime.set_size(w as f32, h as f32);
 
     let mut force_redraw = true;
-    let mut local_buffer = vec![0xFF222222u32; (w * h) as usize];
+    let mut local_buffer = vec![0xFF222222u32; (surface.disp_w * surface.disp_h) as usize];
 
     loop {
         let frame_start = Instant::now();

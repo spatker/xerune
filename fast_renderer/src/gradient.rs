@@ -1,4 +1,4 @@
-use crate::blitter::{pack_color, blend_solid_span, blend_pixel};
+use crate::blitter::{pack_color, blend_solid_span, blend_pixel, calc_pixel_index};
 #[cfg(not(feature = "std"))]
 use crate::F32Ext;
 use xerune::alloc_prelude::Vec;
@@ -66,7 +66,7 @@ pub fn draw_gradient_rect(
     gradient: &xerune::LinearGradient,
     swap_rb: bool,
     clip_rect: Option<xerune::Rect>,
-    rotate: bool,
+    rotation: u32,
 ) {
     let (clip_x1, clip_y1, clip_x2, clip_y2) = if let Some(cr) = clip_rect {
         (
@@ -91,7 +91,7 @@ pub fn draw_gradient_rect(
     let angle_normalized = (gradient.angle % 360.0 + 360.0) % 360.0;
     let is_horizontal = (angle_normalized - 90.0).abs() < 45.0 || (angle_normalized - 270.0).abs() < 45.0;
 
-    if rotate {
+    if rotation != 0 {
         // Rotated pixel-by-pixel gradient fill
         let is_reverse = if is_horizontal {
             (angle_normalized - 270.0).abs() < 45.0
@@ -117,7 +117,7 @@ pub fn draw_gradient_rect(
 
                 let col = sample_gradient(&gradient.stops, t);
                 let color = pack_color(col, swap_rb);
-                let idx = (x as usize * physical_w as usize) + (physical_w as usize - 1 - y as usize);
+                let idx = calc_pixel_index(x, y, rotation, physical_w, logical_w, logical_h);
                 if idx < buffer.len() {
                     blend_pixel(&mut buffer[idx], color);
                 }

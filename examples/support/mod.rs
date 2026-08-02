@@ -24,6 +24,16 @@ pub fn render_frame<M, TM>(
     M: xerune::Model + xerune::ui::TemplateLayout + 'static,
     TM: xerune::TextMeasurer + 'static,
 {
+    let rotation = std::env::var("XERUNE_ROTATION")
+        .ok()
+        .and_then(|s| s.parse::<u32>().ok())
+        .unwrap_or(0);
+
+    let (phys_w, phys_h) = match rotation {
+        90 | 270 => (height, width),
+        _ => (width, height),
+    };
+
     let mut renderer = fast_renderer::FastRenderer::new(
         buffer,
         width,
@@ -32,6 +42,9 @@ pub fn render_frame<M, TM>(
         &mut caches.image_cache,
         &mut caches.glyph_cache,
     );
+    if rotation != 0 {
+        renderer = renderer.with_rotation(phys_w, phys_h, rotation);
+    }
     renderer.font_bytes = _font_bytes_ref;
     runtime.render(&mut renderer);
 }

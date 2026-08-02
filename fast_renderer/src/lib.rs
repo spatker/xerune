@@ -12,7 +12,7 @@ use fontdue::Font;
 use xerune::{Canvas, DrawCommand, Rect, Renderer, TextMeasurer};
 use xerune::alloc_prelude::*;
 
-use blitter::{pack_color, blend_solid_rect, blend_pixel, blend_glyph_span, div_255};
+use blitter::{pack_color, blend_solid_rect, blend_pixel, blend_glyph_span, div_255, calc_pixel_index};
 use rounded_rect::{draw_rounded_rect, draw_rounded_border, draw_box_shadow};
 
 #[cfg(feature = "profile")]
@@ -287,6 +287,7 @@ pub struct FastRenderer<'a> {
     pub clip_stack: Vec<Rect>,
     pub swap_rb: bool,
     pub rotate: bool,
+    pub rotation: u32,
     pub x_offset: i32,
     pub y_offset: i32,
     pub image_cache: &'a mut HashMap<String, (u32, u32, Vec<u32>)>, // (width, height, pixels)
@@ -315,6 +316,7 @@ impl<'a> FastRenderer<'a> {
             clip_stack: Vec::new(),
             swap_rb: false,
             rotate: false,
+            rotation: 0,
             x_offset: 0,
             y_offset: 0,
             image_cache,
@@ -322,6 +324,14 @@ impl<'a> FastRenderer<'a> {
             #[cfg(feature = "std")]
             layout: fontdue::layout::Layout::new(fontdue::layout::CoordinateSystem::PositiveYDown),
         }
+    }
+
+    pub fn with_rotation(mut self, physical_width: u32, physical_height: u32, rotation: u32) -> Self {
+        self.physical_width = physical_width;
+        self.physical_height = physical_height;
+        self.rotation = rotation;
+        self.rotate = rotation != 0;
+        self
     }
 
     fn get_clip_rect(&self) -> Option<Rect> {
@@ -471,7 +481,7 @@ impl<'a> Renderer for FastRenderer<'a> {
                         *inset,
                         self.swap_rb,
                         clip,
-                        self.rotate,
+                        self.rotation,
                     );
                 }
                 DrawCommand::DrawRect {
@@ -503,7 +513,7 @@ impl<'a> Renderer for FastRenderer<'a> {
                             gradient.as_ref(),
                             self.swap_rb,
                             clip,
-                            self.rotate,
+                            self.rotation,
                         );
                     }
 
@@ -523,7 +533,7 @@ impl<'a> Renderer for FastRenderer<'a> {
                                     bw,
                                     packed_border,
                                     clip,
-                                    self.rotate,
+                                    self.rotation,
                                 );
                             } else {
                                 draw_rounded_border(
@@ -540,7 +550,7 @@ impl<'a> Renderer for FastRenderer<'a> {
                                     *bc,
                                     self.swap_rb,
                                     clip,
-                                    self.rotate,
+                                    self.rotation,
                                 );
                             }
                         }
@@ -659,11 +669,7 @@ impl<'a> Renderer for FastRenderer<'a> {
                                                         let color_pixel = rgba[src_row_offset + src_x];
                                                         let sa = (color_pixel >> 24) & 0xff;
                                                         if sa > 0 {
-                                                            let idx = if self.rotate {
-                                                                (x as usize * self.physical_width as usize) + (self.physical_width as usize - 1 - y as usize)
-                                                            } else {
-                                                                (y as usize * self.physical_width as usize) + x as usize
-                                                            };
+                                                            let idx = calc_pixel_index(x, y, self.rotation, self.physical_width, self.width, self.height);
                                                             if idx < self.buffer.len() {
                                                                 let final_color = if self.swap_rb {
                                                                     let sr = (color_pixel >> 16) & 0xff;
@@ -679,7 +685,7 @@ impl<'a> Renderer for FastRenderer<'a> {
                                                     }
                                                 }
                                             }
-                                        } else if self.rotate {
+                                        } else if self.rotation != 0 {
                                             for y in start_y..end_y {
                                                 let src_y = (y - gy) as usize;
                                                 let src_row_offset = src_y * cached.width as usize;
@@ -689,7 +695,7 @@ impl<'a> Renderer for FastRenderer<'a> {
                                                     if cov > 0 {
                                                         let a = div_255(color_a * cov as u32);
                                                         if a > 0 {
-                                                            let idx = (x as usize * self.physical_width as usize) + (self.physical_width as usize - 1 - y as usize);
+                                                            let idx = calc_pixel_index(x, y, self.rotation, self.physical_width, self.width, self.height);
                                                             if idx < self.buffer.len() {
                                                                 let inv_a = 255 - a;
                                                                 let d = self.buffer[idx];
@@ -758,7 +764,7 @@ impl<'a> Renderer for FastRenderer<'a> {
                                         let end_y = (gy + gh).min(clip_y2);
 
                                         if start_x < end_x && start_y < end_y {
-                                            if self.rotate {
+                                            if self.rotation != 0 {
                                                 for y in start_y..end_y {
                                                     let src_y = (y - gy) as usize;
                                                     let src_row_offset = src_y * glyph.width as usize;
@@ -768,7 +774,7 @@ impl<'a> Renderer for FastRenderer<'a> {
                                                         if cov > 0 {
                                                             let a = div_255(color_a * cov as u32);
                                                             if a > 0 {
-                                                                let idx = (x as usize * self.physical_width as usize) + (self.physical_width as usize - 1 - y as usize);
+                                                                let idx = calc_pixel_index(x, y, self.rotation, self.physical_width, self.width, self.height);
                                                                 if idx < self.buffer.len() {
                                                                     let inv_a = 255 - a;
                                                                     let d = self.buffer[idx];
@@ -856,7 +862,7 @@ impl<'a> Renderer for FastRenderer<'a> {
                                 img_h,
                                 img_pixels,
                                 clip,
-                                self.rotate,
+                                self.rotation,
                             );
                         } else {
                             let grey = pack_color(xerune::Color::new(200, 200, 200, 255), self.swap_rb);
@@ -871,7 +877,7 @@ impl<'a> Renderer for FastRenderer<'a> {
                                 local_rect.height as i32,
                                 grey,
                                 clip,
-                                self.rotate,
+                                self.rotation,
                             );
                         }
                     }
@@ -890,7 +896,7 @@ impl<'a> Renderer for FastRenderer<'a> {
                             local_rect.height as i32,
                             grey,
                             clip,
-                            self.rotate,
+                            self.rotation,
                         );
                     }
                 }
@@ -912,7 +918,7 @@ impl<'a> Renderer for FastRenderer<'a> {
                         *color,
                         self.swap_rb,
                         clip,
-                        self.rotate,
+                        self.rotation,
                     );
                     if *checked {
                         let inset = 4;
@@ -932,7 +938,7 @@ impl<'a> Renderer for FastRenderer<'a> {
                             inner_h,
                             packed,
                             clip,
-                            self.rotate,
+                            self.rotation,
                         );
                     }
                 }
@@ -958,7 +964,7 @@ impl<'a> Renderer for FastRenderer<'a> {
                         None,
                         self.swap_rb,
                         clip,
-                        self.rotate,
+                        self.rotation,
                     );
 
                     if *value > 0.0 {
@@ -977,7 +983,7 @@ impl<'a> Renderer for FastRenderer<'a> {
                             None,
                             self.swap_rb,
                             clip,
-                            self.rotate,
+                            self.rotation,
                         );
                     }
 
@@ -1003,7 +1009,7 @@ impl<'a> Renderer for FastRenderer<'a> {
                         None,
                         self.swap_rb,
                         clip,
-                        self.rotate,
+                        self.rotation,
                     );
 
                     let shadow_color = xerune::Color::new(0, 0, 0, 50);
@@ -1021,7 +1027,7 @@ impl<'a> Renderer for FastRenderer<'a> {
                         shadow_color,
                         self.swap_rb,
                         clip,
-                        self.rotate,
+                        self.rotation,
                     );
                 }
                 DrawCommand::DrawProgress { rect, value, max, color } => {
@@ -1044,7 +1050,7 @@ impl<'a> Renderer for FastRenderer<'a> {
                         None,
                         self.swap_rb,
                         clip,
-                        self.rotate,
+                        self.rotation,
                     );
 
                     let progress = (value / max).clamp(0.0, 1.0);
@@ -1064,7 +1070,7 @@ impl<'a> Renderer for FastRenderer<'a> {
                             None,
                             self.swap_rb,
                             clip,
-                            self.rotate,
+                            self.rotation,
                         );
                     }
                 }
@@ -1094,7 +1100,7 @@ impl<'a> Renderer for FastRenderer<'a> {
                             canvas.height,
                             &pixels,
                             clip,
-                            self.rotate,
+                            self.rotation,
                         );
                     }
                 }
@@ -1116,7 +1122,7 @@ pub fn blit_image(
     img_h: u32,
     img_pixels: &[u32],
     clip: Option<Rect>,
-    rotate: bool,
+    rotation: u32,
 ) {
     let (clip_x1, clip_y1, clip_x2, clip_y2) = if let Some(cr) = clip {
         (
@@ -1202,11 +1208,7 @@ pub fn blit_image(
                     pixel
                 };
 
-                let idx = if rotate {
-                    (px as usize * physical_w as usize) + (physical_w as usize - 1 - py as usize)
-                } else {
-                    (py as usize * physical_w as usize) + px as usize
-                };
+                let idx = calc_pixel_index(px, py, rotation, physical_w, logical_w, logical_h);
 
                 if idx < buffer.len() {
                     blend_pixel(&mut buffer[idx], blended_pixel);
