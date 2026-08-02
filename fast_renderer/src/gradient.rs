@@ -91,76 +91,137 @@ pub fn draw_gradient_rect(
     let angle_normalized = (gradient.angle % 360.0 + 360.0) % 360.0;
     let is_horizontal = (angle_normalized - 90.0).abs() < 45.0 || (angle_normalized - 270.0).abs() < 45.0;
 
-    if rotation != 0 {
-        // Rotated pixel-by-pixel gradient fill
-        let is_reverse = if is_horizontal {
-            (angle_normalized - 270.0).abs() < 45.0
-        } else {
-            (angle_normalized - 0.0).abs() < 45.0 || (angle_normalized - 360.0).abs() < 45.0
-        };
+    let pw = physical_w as usize;
 
-        for y in start_y..end_y {
-            for x in start_x..end_x {
-                let t = if is_horizontal {
-                    if is_reverse {
-                        1.0 - ((x - rect_x) as f32 / rect_w as f32)
-                    } else {
-                        (x - rect_x) as f32 / rect_w as f32
-                    }
-                } else {
-                    if is_reverse {
-                        1.0 - ((y - rect_y) as f32 / rect_h as f32)
-                    } else {
-                        (y - rect_y) as f32 / rect_h as f32
-                    }
-                };
+    if is_horizontal {
+        let is_reverse = (angle_normalized - 270.0).abs() < 45.0;
+        let mut span_colors = Vec::with_capacity(rect_w as usize);
+        for dx in 0..rect_w {
+            let t = if is_reverse {
+                1.0 - (dx as f32 / rect_w as f32)
+            } else {
+                dx as f32 / rect_w as f32
+            };
+            let col = sample_gradient(&gradient.stops, t);
+            span_colors.push(pack_color(col, swap_rb));
+        }
 
-                let col = sample_gradient(&gradient.stops, t);
-                let color = pack_color(col, swap_rb);
-                let idx = calc_pixel_index(x, y, rotation, physical_w, logical_w, logical_h);
-                if idx < buffer.len() {
-                    blend_pixel(&mut buffer[idx], color);
+        match rotation {
+            90 => {
+                let span_len = (end_y - start_y) as usize;
+                for px in start_x..end_x {
+                    let color = span_colors[(px - rect_x) as usize];
+                    let start_idx = (px as usize * pw) + (pw - end_y as usize);
+                    if start_idx + span_len <= buffer.len() {
+                        let dst_span = &mut buffer[start_idx..start_idx + span_len];
+                        blend_solid_span(dst_span, color);
+                    }
+                }
+            }
+            270 => {
+                let span_len = (end_y - start_y) as usize;
+                let lw = logical_w as usize;
+                for px in start_x..end_x {
+                    let color = span_colors[(px - rect_x) as usize];
+                    let py_phys = lw - 1 - px as usize;
+                    let start_idx = py_phys * pw + start_y as usize;
+                    if start_idx + span_len <= buffer.len() {
+                        let dst_span = &mut buffer[start_idx..start_idx + span_len];
+                        blend_solid_span(dst_span, color);
+                    }
+                }
+            }
+            180 => {
+                let draw_len = (end_x - start_x) as usize;
+                let lh = logical_h as usize;
+                for py in start_y..end_y {
+                    let py_phys = lh - 1 - py as usize;
+                    let start_idx = py_phys * pw + (pw - end_x as usize);
+                    if start_idx + draw_len <= buffer.len() {
+                        for (i, px) in (start_x..end_x).rev().enumerate() {
+                            let src_color = span_colors[(px - rect_x) as usize];
+                            blend_pixel(&mut buffer[start_idx + i], src_color);
+                        }
+                    }
+                }
+            }
+            _ => {
+                let draw_w = (end_x - start_x) as usize;
+                let x_offset = (start_x - rect_x) as usize;
+                for py in start_y..end_y {
+                    let start_idx = (py as usize * pw) + start_x as usize;
+                    if start_idx + draw_w <= buffer.len() {
+                        for x_idx in 0..draw_w {
+                            let src_color = span_colors[x_offset + x_idx];
+                            blend_pixel(&mut buffer[start_idx + x_idx], src_color);
+                        }
+                    }
                 }
             }
         }
     } else {
-        // Standard horizontal or vertical contiguous gradients
-        if is_horizontal {
-            let mut span_colors = Vec::with_capacity(rect_w as usize);
-            let is_reverse = (angle_normalized - 270.0).abs() < 45.0;
-            for dx in 0..rect_w {
-                let t = if is_reverse {
-                    1.0 - (dx as f32 / rect_w as f32)
-                } else {
-                    dx as f32 / rect_w as f32
-                };
-                let col = sample_gradient(&gradient.stops, t);
-                span_colors.push(pack_color(col, swap_rb));
-            }
+        let is_reverse = (angle_normalized - 0.0).abs() < 45.0 || (angle_normalized - 360.0).abs() < 45.0;
+        let mut span_colors = Vec::with_capacity(rect_h as usize);
+        for dy in 0..rect_h {
+            let t = if is_reverse {
+                1.0 - (dy as f32 / rect_h as f32)
+            } else {
+                dy as f32 / rect_h as f32
+            };
+            let col = sample_gradient(&gradient.stops, t);
+            span_colors.push(pack_color(col, swap_rb));
+        }
 
-            let draw_w = (end_x - start_x) as usize;
-            let x_offset = (start_x - rect_x) as usize;
-            for y in start_y..end_y {
-                let start_idx = (y * physical_w as i32 + start_x) as usize;
-                for x_idx in 0..draw_w {
-                    let src_color = span_colors[x_offset + x_idx];
-                    blend_pixel(&mut buffer[start_idx + x_idx], src_color);
+        match rotation {
+            90 => {
+                let span_len = (end_y - start_y) as usize;
+                for px in start_x..end_x {
+                    let start_idx = (px as usize * pw) + (pw - end_y as usize);
+                    if start_idx + span_len <= buffer.len() {
+                        for (i, py) in (start_y..end_y).rev().enumerate() {
+                            let src_color = span_colors[(py - rect_y) as usize];
+                            blend_pixel(&mut buffer[start_idx + i], src_color);
+                        }
+                    }
                 }
             }
-        } else {
-            let is_reverse = (angle_normalized - 0.0).abs() < 45.0 || (angle_normalized - 360.0).abs() < 45.0;
-            let draw_w = (end_x - start_x) as usize;
-            for y in start_y..end_y {
-                let t = if is_reverse {
-                    1.0 - ((y - rect_y) as f32 / rect_h as f32)
-                } else {
-                    (y - rect_y) as f32 / rect_h as f32
-                };
-                let col = sample_gradient(&gradient.stops, t);
-                let color = pack_color(col, swap_rb);
-                let start_idx = (y * physical_w as i32 + start_x) as usize;
-                let dst_span = &mut buffer[start_idx..start_idx + draw_w];
-                blend_solid_span(dst_span, color);
+            270 => {
+                let span_len = (end_y - start_y) as usize;
+                let lw = logical_w as usize;
+                for px in start_x..end_x {
+                    let py_phys = lw - 1 - px as usize;
+                    let start_idx = py_phys * pw + start_y as usize;
+                    if start_idx + span_len <= buffer.len() {
+                        for (i, py) in (start_y..end_y).enumerate() {
+                            let src_color = span_colors[(py - rect_y) as usize];
+                            blend_pixel(&mut buffer[start_idx + i], src_color);
+                        }
+                    }
+                }
+            }
+            180 => {
+                let draw_w = (end_x - start_x) as usize;
+                let lh = logical_h as usize;
+                for py in start_y..end_y {
+                    let color = span_colors[(py - rect_y) as usize];
+                    let py_phys = lh - 1 - py as usize;
+                    let start_idx = py_phys * pw + (pw - end_x as usize);
+                    if start_idx + draw_w <= buffer.len() {
+                        let dst_span = &mut buffer[start_idx..start_idx + draw_w];
+                        blend_solid_span(dst_span, color);
+                    }
+                }
+            }
+            _ => {
+                let draw_w = (end_x - start_x) as usize;
+                for py in start_y..end_y {
+                    let color = span_colors[(py - rect_y) as usize];
+                    let start_idx = (py as usize * pw) + start_x as usize;
+                    if start_idx + draw_w <= buffer.len() {
+                        let dst_span = &mut buffer[start_idx..start_idx + draw_w];
+                        blend_solid_span(dst_span, color);
+                    }
+                }
             }
         }
     }
