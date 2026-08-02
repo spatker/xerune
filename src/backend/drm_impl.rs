@@ -91,14 +91,15 @@ where
     M2: std::ops::DerefMut<Target = [u8]>,
 {
     fn prepare_frame(&mut self) -> Result<(), BackendError> {
-        if self.pending_flip {
-            wait_for_page_flip(&self.card)?;
-            self.pending_flip = false;
-        }
         Ok(())
     }
 
     fn present(&mut self, local_buffer: &[u32], surface: &SurfaceInfo) -> Result<(), BackendError> {
+        if self.pending_flip {
+            wait_for_page_flip(&self.card)?;
+            self.pending_flip = false;
+        }
+
         let (target_fb, draw_slice) = if self.current_fb == self.fb1 {
             (self.fb2, self.map2.as_mut())
         } else {
