@@ -116,6 +116,11 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
         &mut self.context
     }
 
+    /// Get a reference to active timers in the runtime.
+    pub fn timers(&self) -> &[Timer] {
+        &self.timers
+    }
+
     fn sync_canvases(ui: &Ui, context: &mut Context) {
         for (node_id, data) in &ui.render_data {
             if let RenderData::Canvas(id, _style) = data {
@@ -313,6 +318,9 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
                     self.scroll_into_view(&id);
                     dirty = true;
                 }
+                crate::graphics::ContextCommand::ClearTimer(msg) => {
+                    self.timers.retain(|t| t.message != msg);
+                }
             }
         }
 
@@ -404,6 +412,16 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
     pub fn scroll_into_view(&mut self, interaction_id: &str) {
         self.ui.scroll_into_view(interaction_id);
         self.scroll_offsets = self.ui.scroll_offsets.clone();
+    }
+
+    /// Clears any active recurring or timeout timers matching the message string.
+    pub fn clear_interval(&mut self, message: &str) {
+        self.timers.retain(|t| t.message != message);
+    }
+
+    /// Clears any active recurring or timeout timers matching the message string.
+    pub fn clear_timeout(&mut self, message: &str) {
+        self.timers.retain(|t| t.message != message);
     }
 
     /// Registers a recurring interval timer.

@@ -143,14 +143,17 @@ pub enum Msg {
 impl Model for BreakoutModel {
     type Message = Msg;
 
-    fn update(&mut self, msg: Self::Message, _context: &mut xerune::Context) {
+    fn update(&mut self, msg: Self::Message, context: &mut xerune::Context) {
         match msg {
             Msg::Tick => {
                 let now = xerune::runtime::time::Instant::now();
                 let dt = now.duration_since(self.last_tick).as_secs_f32().min(0.1);
                 self.last_tick = now;
 
-                if self.game_over || self.won { return; }
+                if self.game_over || self.won {
+                    context.clear_interval("tick");
+                    return;
+                }
 
                 // --- Paddle Movement ---
                 let mut paddle_dir = 0.0;
@@ -274,11 +277,16 @@ impl Model for BreakoutModel {
                     particle.life -= 1.5 * dt;
                 }
                 self.particles.retain(|p| p.life > 0.0);
+
+                if !self.game_over && !self.won {
+                    context.set_timeout("tick".to_string(), 16);
+                }
             },
             Msg::KeyDown(key) => {
                 if self.game_over || self.won {
                     if matches!(key.as_str(), "KEY_PLAYPAUSE" | "KEY_UP" | "Space" | "Enter" | "KEY_NEXTSONG" | "KEY_PREVIOUSSONG") {
                         *self = BreakoutModel::default();
+                        context.set_timeout("tick".to_string(), 16);
                         return;
                     }
                 }
@@ -297,7 +305,7 @@ pub fn run_native(render_frame: impl FnMut(&mut Runtime<BreakoutModel, Measurer>
     let measurer = FastMeasurer { fonts: fonts_ref.into() };
     
     let mut runtime = Runtime::new(model, measurer);
-    runtime.set_interval("tick".to_string(), 16);
+    runtime.set_timeout("tick".to_string(), 16);
 
     #[cfg(not(any(
         all(target_os = "linux", feature = "linuxfb", feature = "evdev"),

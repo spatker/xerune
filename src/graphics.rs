@@ -133,6 +133,8 @@ impl Canvas {
 pub enum ContextCommand {
     /// Scroll the viewport to ensure a specific interaction element is visible.
     ScrollIntoView(String),
+    /// Clear an active timer by message name.
+    ClearTimer(String),
 }
 
 /// The context containing canvases and commands passed to Model updates.
@@ -161,6 +163,16 @@ impl Context {
     /// Schedule a command to scroll the viewport to show a specific interactive element.
     pub fn scroll_into_view(&mut self, interaction_id: &str) {
         self.commands.push(ContextCommand::ScrollIntoView(interaction_id.to_string()));
+    }
+
+    /// Clear an active recurring or timeout timer by message string.
+    pub fn clear_interval(&mut self, message: &str) {
+        self.commands.push(ContextCommand::ClearTimer(message.to_string()));
+    }
+
+    /// Clear an active timeout timer by message string.
+    pub fn clear_timeout(&mut self, message: &str) {
+        self.commands.push(ContextCommand::ClearTimer(message.to_string()));
     }
 
     /// Set an interval timer that regularly triggers a message at the specified milliseconds.

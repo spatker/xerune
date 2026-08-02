@@ -478,3 +478,27 @@ fn test_box_shadow_and_border_parsing() {
     assert!(style.box_shadow.is_some());
 }
 
+#[test]
+fn test_timer_cancellation() {
+    let model = MockModel;
+    let measurer = MockMeasurer;
+    let mut runtime = Runtime::new(model, measurer);
+
+    runtime.set_interval("tick".to_string(), 100);
+    assert_eq!(runtime.timers().len(), 1, "Should have 1 registered timer");
+
+    runtime.clear_interval("tick");
+    assert_eq!(runtime.timers().len(), 0, "Timer should be cleared by clear_interval");
+
+    // Test cancellation via context command
+    let mut context = Context::new();
+    context.set_interval("tick".to_string(), 100);
+    context.clear_interval("tick");
+    
+    runtime.model_mut().update(MockMsg::Tick, &mut context);
+    runtime.sync_view();
+
+    assert_eq!(runtime.timers().len(), 0, "Timer should be cleared when processing context commands");
+}
+
+
