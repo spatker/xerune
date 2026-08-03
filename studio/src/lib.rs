@@ -368,7 +368,7 @@ impl ShowcaseApp {
         
         let measurer = xerune::backend::browser_impl::DummyTextMeasurer;
         let mut runtime = xerune::runtime::Runtime::new(model, measurer);
-        runtime.set_interval("tick".to_string(), 300);
+        runtime.set_interval("tick".to_string(), 200);
         Self { runtime }
     }
 

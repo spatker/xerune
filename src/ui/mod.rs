@@ -490,6 +490,18 @@ impl ToDisplayString for u32 {
     }
 }
 
+impl ToDisplayString for u64 {
+    fn to_display_string(&self) -> Cow<'_, str> {
+        Cow::Owned(self.to_string())
+    }
+}
+
+impl ToDisplayString for i64 {
+    fn to_display_string(&self) -> Cow<'_, str> {
+        Cow::Owned(self.to_string())
+    }
+}
+
 impl ToDisplayString for usize {
     fn to_display_string(&self) -> Cow<'_, str> {
         Cow::Owned(self.to_string())

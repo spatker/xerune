@@ -79,7 +79,7 @@ export function initXeruneApp({ app, containerId, templateText, templateBaseDir,
         styleEl.id = "xerune-app-style";
         
         // Scope CSS rules to `#app` to prevent bleeding into the outer studio UI
-        const rawCss = styleMatch[1];
+        const rawCss = styleMatch[1].replace(/\/\*[\s\S]*?\*\//g, "");
         const scopedCss = rawCss.replace(/([^\r\n,{}]+)(,[^\r\n,{}]+)*\s*{(?:[^{}]*|{[^{}]*})*}/g, (match) => {
             const braceIdx = match.indexOf('{');
             if (braceIdx === -1) return match;

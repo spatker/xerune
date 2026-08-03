@@ -309,6 +309,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
         }
         Runtime::<M, R>::sync_canvases(&self.ui, &mut self.context);
         self.restore_scroll();
+        self.last_commands.clear();
         let mut dirty = true;
 
         let commands: Vec<_> = self.context.commands.drain(..).collect();
