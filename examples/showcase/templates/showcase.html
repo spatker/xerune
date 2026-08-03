@@ -9,34 +9,52 @@
         height: 820px;
         background: linear-gradient(160deg, #0f2027 0%, #203a43 50%, #2c5364 100%);
         color: white;
-        padding: 40px;
+        padding: 30px;
         font-family: 'Roboto', sans-serif;
+        box-sizing: border-box;
     }
+
+    /* Top Navbar Header */
     .header-row {
         display: flex;
         flex-direction: row;
         justify-content: space-between;
         align-items: center;
-        margin-bottom: 40px;
+        margin-bottom: 20px;
     }
     .header-title {
-        font-size: 34px;
+        font-size: 28px;
         margin: 0;
         font-weight: bold;
         color: #ffffff;
     }
-    .header-version {
-        padding: 6px 18px;
-        background-color: rgba(255,255,255,0.1);
+    .navbar {
+        display: flex;
+        flex-direction: row;
+        background-color: rgba(0, 0, 0, 0.3);
         border-radius: 20px;
-        border: 2px solid rgba(255,255,255,0.3);
-        box-shadow: 0px 4px 12px rgba(0, 0, 0, 0.3);
+        padding: 4px;
+        border: 2px solid rgba(255, 255, 255, 0.2);
     }
-    .header-version p {
-        margin: 0;
-        font-size: 14px;
+    .nav-btn {
+        display: flex;
+        padding: 8px 16px;
+        border-radius: 16px;
+        margin-right: 4px;
+        cursor: pointer;
+        background-color: transparent;
+        color: #aaaaaa;
+        font-size: 13px;
         font-weight: bold;
+        align-items: center;
     }
+    .nav-btn.active {
+        background: linear-gradient(90deg, #ff8a00, #e52e71);
+        color: #ffffff;
+        box-shadow: 0px 4px 12px rgba(255, 138, 0, 0.4);
+    }
+
+    /* Tab 0: Overview / Status Cards */
     .status-cards-row {
         display: flex;
         flex-direction: row;
@@ -44,7 +62,7 @@
     }
     .status-card {
         flex-grow: 1;
-        padding: 25px;
+        padding: 22px;
         background-color: rgba(255,255,255,0.06);
         border-radius: 16px;
         border: 2px solid rgba(255,255,255,0.15);
@@ -54,9 +72,9 @@
         margin-right: 20px;
     }
     .status-card h2 {
-        font-size: 16px;
+        font-size: 15px;
         color: #aaaaaa;
-        margin: 0 0 15px 0;
+        margin: 0 0 12px 0;
     }
     .status-indicator-row {
         display: flex;
@@ -96,18 +114,19 @@
         align-items: flex-end;
     }
     .status-users-val {
-        font-size: 48px;
+        font-size: 44px;
         font-weight: bold;
         margin: 0;
         line-height: 1;
         width: 120px;
     }
     .status-users-change {
-        font-size: 16px;
+        font-size: 15px;
         color: #ea5455;
         margin-left: 10px;
-        margin-bottom: 8px;
+        margin-bottom: 6px;
     }
+
     .main-grid {
         display: flex;
         flex-direction: row;
@@ -117,7 +136,7 @@
         display: flex;
         flex-direction: column;
         flex-grow: 2;
-        padding: 25px;
+        padding: 22px;
         background-color: rgba(255,255,255,0.05);
         border-radius: 16px;
         border: 2px solid rgba(255,255,255,0.15);
@@ -125,13 +144,13 @@
         margin-right: 20px;
     }
     .list-panel h2 {
-        font-size: 18px;
-        margin: 0 0 20px 0;
+        font-size: 17px;
+        margin: 0 0 15px 0;
     }
     .load-chart {
         width: 400px;
-        height: 200px;
-        margin-bottom: 20px;
+        height: 190px;
+        margin-bottom: 15px;
         border-radius: 8px;
         border: 2px solid rgba(255,255,255,0.4);
         box-shadow: 0px 4px 16px rgba(0, 0, 0, 0.3);
@@ -144,28 +163,32 @@
     }
     .process-table th {
         text-align: left;
-        padding: 8px;
+        padding: 6px;
         color: #aaa;
+        font-size: 13px;
     }
     .process-table td {
-        padding: 8px;
+        padding: 6px;
+        font-size: 13px;
     }
+
+    /* Buttons with original box shadows */
     .control-panel {
         display: flex;
         flex-direction: column;
         flex-grow: 1;
-        padding: 25px;
+        padding: 22px;
         background-color: rgba(255,255,255,0.05);
         border-radius: 16px;
         border: 2px solid rgba(255,255,255,0.15);
         box-shadow: 0px 10px 30px rgba(0, 0, 0, 0.4);
     }
     .control-panel h2 {
-        font-size: 18px;
-        margin: 0 0 20px 0;
+        font-size: 17px;
+        margin: 0 0 15px 0;
     }
     .control-panel h3 {
-        font-size: 14px;
+        font-size: 13px;
         color: #aaa;
         margin: 0 0 10px 0;
     }
@@ -176,7 +199,7 @@
     }
     .btn-simulate {
         display: flex;
-        padding: 15px;
+        padding: 14px;
         background: linear-gradient(90deg, #ff8a00, #e52e71);
         border-radius: 10px;
         margin-bottom: 15px;
@@ -184,20 +207,22 @@
         border: 2px solid rgba(255,255,255,0.3);
         box-shadow: 0px 6px 18px rgba(255, 138, 0, 0.35);
         color: white;
+        cursor: pointer;
     }
     .btn-simulate span {
         font-weight: bold;
     }
     .btn-add-user {
         display: flex;
-        padding: 15px;
+        padding: 14px;
         background-color: rgba(255,255,255,0.08);
         border-radius: 10px;
         border: 2px solid rgba(255,255,255,0.3);
         box-shadow: 0px 4px 14px rgba(0, 0, 0, 0.3);
-        margin-bottom: 25px;
+        margin-bottom: 20px;
         align-items: center;
         color: white;
+        cursor: pointer;
     }
     .btn-add-user span {
         font-weight: bold;
@@ -206,32 +231,206 @@
         display: flex;
         flex-direction: row;
         align-items: center;
-        margin-bottom: 15px;
+        margin-bottom: 12px;
+        cursor: pointer;
     }
     .config-checkbox-row.last {
         margin-bottom: 0px;
     }
     .config-checkbox-row span {
-        font-size: 14px;
+        font-size: 13px;
     }
     .config-checkbox-row input {
-        margin-right: 12px;
+        margin-right: 10px;
+    }
+
+    /* Tab 1: Gauges & HMI */
+    .hmi-container {
+        display: flex;
+        flex-direction: column;
+        flex-grow: 1;
+    }
+    .gauges-row {
+        display: flex;
+        flex-direction: row;
+        margin-bottom: 20px;
+    }
+    .gauge-card {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        flex-grow: 1;
+        padding: 30px;
+        background-color: rgba(255,255,255,0.06);
+        border-radius: 16px;
+        border: 2px solid rgba(255,255,255,0.15);
+        box-shadow: 0px 8px 24px rgba(0, 0, 0, 0.35);
+        margin-right: 20px;
+    }
+    .gauge-card.last {
+        margin-right: 0px;
+    }
+    .gauge-circle {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        width: 180px;
+        height: 180px;
+        border-radius: 90px;
+        border: 8px solid #00c6ff;
+        background: radial-gradient(circle, rgba(0,198,255,0.15) 0%, rgba(0,0,0,0.6) 100%);
+        box-shadow: 0px 0px 24px rgba(0, 198, 255, 0.4);
+        margin-bottom: 15px;
+    }
+    .gauge-circle.rpm {
+        border-color: #ffaa00;
+        background: radial-gradient(circle, rgba(255,170,0,0.15) 0%, rgba(0,0,0,0.6) 100%);
+        box-shadow: 0px 0px 24px rgba(255, 170, 0, 0.4);
+    }
+    .gauge-num {
+        font-size: 46px;
+        font-weight: bold;
+        line-height: 1;
+    }
+    .gauge-unit {
+        font-size: 14px;
+        color: #aaa;
+        margin-top: 4px;
+    }
+    .hmi-actions-row {
+        display: flex;
+        flex-direction: row;
+    }
+    .btn-hmi-accel {
+        display: flex;
+        flex-grow: 1;
+        padding: 16px;
+        background: linear-gradient(90deg, #11998e, #38ef7d);
+        border-radius: 12px;
+        align-items: center;
+        justify-content: center;
+        border: 2px solid rgba(255,255,255,0.3);
+        box-shadow: 0px 6px 18px rgba(56, 239, 125, 0.35);
+        color: white;
+        font-weight: bold;
+        margin-right: 15px;
+        cursor: pointer;
+    }
+    .btn-hmi-brake {
+        display: flex;
+        flex-grow: 1;
+        padding: 16px;
+        background: linear-gradient(90deg, #cb2d3e, #ef473a);
+        border-radius: 12px;
+        align-items: center;
+        justify-content: center;
+        border: 2px solid rgba(255,255,255,0.3);
+        box-shadow: 0px 6px 18px rgba(239, 71, 58, 0.35);
+        color: white;
+        font-weight: bold;
+        margin-right: 15px;
+        cursor: pointer;
+    }
+    .btn-hmi-engine {
+        display: flex;
+        flex-grow: 1;
+        padding: 16px;
+        background: linear-gradient(90deg, #8e2de2, #4a00e0);
+        border-radius: 12px;
+        align-items: center;
+        justify-content: center;
+        border: 2px solid rgba(255,255,255,0.3);
+        box-shadow: 0px 6px 18px rgba(142, 45, 226, 0.35);
+        color: white;
+        font-weight: bold;
+        cursor: pointer;
+    }
+
+    /* Tab 2: Medical Telemetry */
+    .medical-container {
+        display: flex;
+        flex-direction: column;
+        flex-grow: 1;
+    }
+    .vitals-row {
+        display: flex;
+        flex-direction: row;
+        margin-bottom: 20px;
+    }
+    .vital-card {
+        display: flex;
+        flex-direction: column;
+        flex-grow: 1;
+        padding: 20px;
+        background-color: rgba(0, 0, 0, 0.35);
+        border-radius: 14px;
+        border: 2px solid rgba(0, 255, 128, 0.25);
+        box-shadow: 0px 6px 20px rgba(0, 255, 128, 0.15);
+        margin-right: 15px;
+    }
+    .vital-card.last {
+        margin-right: 0px;
+    }
+    .vital-head {
+        font-size: 13px;
+        color: #aaa;
+        margin-bottom: 8px;
+    }
+    .vital-val {
+        font-size: 32px;
+        font-weight: bold;
+        color: #00ff88;
+    }
+    .ecg-card {
+        display: flex;
+        flex-direction: column;
+        padding: 20px;
+        background-color: rgba(0, 0, 0, 0.4);
+        border-radius: 16px;
+        border: 2px solid rgba(0, 255, 128, 0.3);
+        box-shadow: 0px 10px 30px rgba(0, 255, 128, 0.2);
+    }
+    .ecg-canvas {
+        width: 720px;
+        height: 200px;
+        border-radius: 8px;
+    }
+
+    /* Tab 3: Widgets Gallery */
+    .widgets-container {
+        display: flex;
+        flex-direction: row;
+        flex-grow: 1;
     }
 </style>
 
 <div class="showcase-container">
 
-    <!-- Header -->
+    <!-- Header Row with Top Navbar -->
     <div class="header-row">
         <h1 class="header-title">🚀 Xerune Dashboard 🎨</h1>
-        <div class="header-version">
-            <p>v0.2.0 ⭐</p>
+
+        <div class="navbar">
+            <div class="nav-btn {% if active_tab == 1 %}active{% endif %}" data-on-click="select_tab:1">
+                <span>💻 System</span>
+            </div>
+            <div class="nav-btn {% if active_tab == 2 %}active{% endif %}" data-on-click="select_tab:2">
+                <span>🚗 Gauges</span>
+            </div>
+            <div class="nav-btn {% if active_tab == 3 %}active{% endif %}" data-on-click="select_tab:3">
+                <span>🏥 Medical</span>
+            </div>
+            <div class="nav-btn {% if active_tab == 4 %}active{% endif %}" data-on-click="select_tab:4">
+                <span>🛠️ Controls</span>
+            </div>
         </div>
     </div>
 
-    <!-- Grid Row 1: Status Cards -->
+    <!-- TAB 1: OVERVIEW & SYSTEM LOAD -->
+    {% if active_tab == 1 %}
     <div class="status-cards-row">
-        <!-- System Status -->
         <div class="status-card mr">
             <h2>💻 SYSTEM STATUS</h2>
             <div class="status-indicator-row">
@@ -243,7 +442,6 @@
             <progress value="{{ system_load_value }}" max="100.0" class="status-progress"></progress>
         </div>
 
-        <!-- Active Users -->
         <div class="status-card">
             <h2>👥 ACTIVE USERS</h2>
             <div class="status-users-row">
@@ -253,15 +451,10 @@
         </div>
     </div>
 
-    <!-- Grid Row 2: Main Content & Controls -->
     <div class="main-grid">
-
-        <!-- List Panel -->
         <div class="list-panel">
             <h2>⚙️ System Processes</h2>
-
             <canvas id="load_chart" width="400" height="200" class="load-chart"></canvas>
-
             <table class="process-table">
                 <tr class="header-tr">
                     <th style="width: 20%;">ID</th>
@@ -278,31 +471,127 @@
             </table>
         </div>
 
-        <!-- Control Panel -->
         <div class="control-panel">
             <h2>🛠️ Quick Controls</h2>
-
             <div class="controls-container">
-                <button data-on-click="increment_progress" class="btn-simulate">
+                <div data-on-click="increment_progress" class="btn-simulate">
                     <span>⚡ Simulate Load (+10%)</span>
-                </button>
+                </div>
 
-                <button data-on-click="increment_user_counter" class="btn-add-user">
+                <div data-on-click="increment_user_counter" class="btn-add-user">
                     <span>➕ Add User</span>
-                </button>
+                </div>
 
                 <h3>CONFIGURATIONS</h3>
-                <div class="config-checkbox-row">
-                    <input type="checkbox" checked>
+                <div class="config-checkbox-row" data-on-click="toggle_auto_scale">
+                    <input type="checkbox" {% if auto_scale %}checked{% endif %}>
                     <span>🔥 Auto-Scaling</span>
                 </div>
-                <div class="config-checkbox-row last">
-                    <input type="checkbox">
+                <div class="config-checkbox-row last" data-on-click="toggle_maintenance">
+                    <input type="checkbox" {% if maintenance_mode %}checked{% endif %}>
                     <span>🛡️ Maintenance Mode</span>
                 </div>
             </div>
         </div>
-
     </div>
+    {% endif %}
+
+    <!-- TAB 2: GAUGES & HMI -->
+    {% if active_tab == 2 %}
+    <div class="hmi-container">
+        <div class="ecg-card" style="margin-bottom: 20px;">
+            <div style="display: flex; flex-direction: row; justify-content: space-between; margin-bottom: 12px; align-items: center;">
+                <h2 style="font-size: 16px; color: #00c6ff; margin: 0;">🏎️ DIGITAL COCKPIT INSTRUMENT CLUSTER</h2>
+                <span style="font-size: 13px; color: #ffaa00; font-weight: bold;">MODE: SPORT</span>
+            </div>
+            <canvas id="gauge_chart" width="720" height="260" style="width: 720px; height: 260px; border-radius: 12px; border: 2px solid rgba(0, 198, 255, 0.3);"></canvas>
+        </div>
+
+        <div class="vitals-row" style="margin-bottom: 20px;">
+            <div class="vital-card">
+                <span class="vital-head">SPEEDOMETER</span>
+                <span class="vital-val" style="color: #00c6ff;">⚡ {{ "{:.0}"|format(speed_kmh) }} <span style="font-size: 14px;">KM/H</span></span>
+            </div>
+            <div class="vital-card last">
+                <span class="vital-head">TACHOMETER</span>
+                <span class="vital-val" style="color: #ffaa00;">🔥 {{ "{:.0}"|format(engine_rpm) }} <span style="font-size: 14px;">RPM</span></span>
+            </div>
+        </div>
+
+        <div class="hmi-actions-row">
+            <div class="btn-hmi-accel" data-on-click="increment_speed">
+                <span>⚡ ACCELERATE (+10)</span>
+            </div>
+            <div class="btn-hmi-brake" data-on-click="decrement_speed">
+                <span>🛑 BRAKE (-10)</span>
+            </div>
+            <div class="btn-hmi-engine" data-on-click="toggle_engine">
+                <span>🔑 ENGINE: {% if engine_running %}ON{% else %}OFF{% endif %}</span>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- TAB 3: MEDICAL TELEMETRY -->
+    {% if active_tab == 3 %}
+    <div class="medical-container">
+        <div class="vitals-row">
+            <div class="vital-card">
+                <span class="vital-head">HEART RATE</span>
+                <span class="vital-val">❤️ {{ heart_rate_bpm }} <span style="font-size: 14px;">BPM</span></span>
+            </div>
+            <div class="vital-card">
+                <span class="vital-head">BLOOD OXYGEN</span>
+                <span class="vital-val" style="color: #00c6ff;">🫁 {{ spo2_pct }}%</span>
+            </div>
+            <div class="vital-card last">
+                <span class="vital-head">BLOOD PRESSURE</span>
+                <span class="vital-val" style="color: #ffaa00;">🩸 {{ sys_bp }}/{{ dia_bp }}</span>
+            </div>
+        </div>
+
+        <div class="ecg-card">
+            <h2 style="font-size: 16px; color: #00ff88; margin: 0 0 15px 0;">📈 REAL-TIME ECG MONITOR (CANVAS API)</h2>
+            <canvas id="ecg_chart" width="720" height="200" class="ecg-canvas"></canvas>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- TAB 4: CONTROLS & WIDGETS -->
+    {% if active_tab == 4 %}
+    <div class="widgets-container">
+        <div class="control-panel" style="margin-right: 20px;">
+            <h2>🎛️ INTERACTIVE CONTROLS</h2>
+
+            <div class="btn-simulate" data-on-click="increment_user_counter">
+                <span>➕ Increment Counter: {{ user_counter }}</span>
+            </div>
+
+            <div class="btn-add-user" data-on-click="increment_progress">
+                <span>⚡ Boost Load: {{ "{:.0}"|format(system_load_value) }}%</span>
+            </div>
+
+            <h3>CONFIGURATIONS</h3>
+            <div class="config-checkbox-row" data-on-click="toggle_auto_scale">
+                <input type="checkbox" {% if auto_scale %}checked{% endif %}>
+                <span>🔥 Auto-Scaling</span>
+            </div>
+            <div class="config-checkbox-row last" data-on-click="toggle_maintenance">
+                <input type="checkbox" {% if maintenance_mode %}checked{% endif %}>
+                <span>🛡️ Maintenance Mode</span>
+            </div>
+        </div>
+
+        <div class="list-panel">
+            <h2>📊 METRICS & TELEMETRY SUMMARY</h2>
+            <div style="font-size: 15px; line-height: 2.0; color: #d0e0f0;">
+                <p>• System Load: <strong style="color: #00ff88;">{{ "{:.1}"|format(system_load_value) }}%</strong></p>
+                <p>• Vehicle Engine: <strong style="color: #00c6ff;">{% if engine_running %}Active ({{ "{:.0}"|format(speed_kmh) }} km/h){% else %}Stopped{% endif %}</strong></p>
+                <p>• Patient Heart Rate: <strong style="color: #ffaa00;">{{ heart_rate_bpm }} BPM</strong></p>
+                <p>• Active Users: <strong style="color: #ffffff;">{{ user_counter }}</strong></p>
+            </div>
+        </div>
+    </div>
+    {% endif %}
 
 </div>
