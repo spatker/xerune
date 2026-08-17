@@ -64,6 +64,8 @@ impl InputSource for EvdevInputSource {
         let disp_h = surface.disp_h as f32;
         let rotation = surface.rotation;
 
+        let mut touch_pos_changed = false;
+
         while let Some(ev) = self.buffered_event.take().or_else(|| self.rx_input.try_recv().ok()) {
             match ev.kind() {
                 InputEventKind::AbsAxis(AbsoluteAxisType::ABS_X) | InputEventKind::AbsAxis(AbsoluteAxisType::ABS_MT_POSITION_X) => {
@@ -73,15 +75,7 @@ impl InputSource for EvdevInputSource {
                     } else {
                         self.touch_x = raw_val;
                     }
-                    let (mx, my) = map_touch_to_logical(self.touch_x, self.touch_y, disp_w, disp_h, rotation);
-                    self.mouse_x = mx;
-                    self.mouse_y = my;
-                    
-                    if self.touch_down {
-                        dirty |= runtime.handle_event(InputEvent::TouchMove { id: 0, x: self.mouse_x, y: self.mouse_y });
-                    } else {
-                        dirty |= runtime.handle_event(InputEvent::Hover { x: self.mouse_x, y: self.mouse_y });
-                    }
+                    touch_pos_changed = true;
                 },
                 InputEventKind::AbsAxis(AbsoluteAxisType::ABS_Y) | InputEventKind::AbsAxis(AbsoluteAxisType::ABS_MT_POSITION_Y) => {
                     let raw_val = ev.value() as f32;
@@ -90,17 +84,21 @@ impl InputSource for EvdevInputSource {
                     } else {
                         self.touch_y = raw_val;
                     }
-                    let (mx, my) = map_touch_to_logical(self.touch_x, self.touch_y, disp_w, disp_h, rotation);
-                    self.mouse_x = mx;
-                    self.mouse_y = my;
-                    
-                    if self.touch_down {
-                        dirty |= runtime.handle_event(InputEvent::TouchMove { id: 0, x: self.mouse_x, y: self.mouse_y });
-                    } else {
-                        dirty |= runtime.handle_event(InputEvent::Hover { x: self.mouse_x, y: self.mouse_y });
-                    }
+                    touch_pos_changed = true;
                 },
                 InputEventKind::Key(Key::BTN_TOUCH) => {
+                    if touch_pos_changed {
+                        let (mx, my) = map_touch_to_logical(self.touch_x, self.touch_y, disp_w, disp_h, rotation);
+                        self.mouse_x = mx;
+                        self.mouse_y = my;
+                        if self.touch_down {
+                            dirty |= runtime.handle_event(InputEvent::TouchMove { id: 0, x: self.mouse_x, y: self.mouse_y });
+                        } else {
+                            dirty |= runtime.handle_event(InputEvent::Hover { x: self.mouse_x, y: self.mouse_y });
+                        }
+                        touch_pos_changed = false;
+                    }
+
                     if ev.value() == 1 {
                         self.touch_down = true;
                         dirty |= runtime.handle_event(InputEvent::TouchStart { id: 0, x: self.mouse_x, y: self.mouse_y });
@@ -110,6 +108,18 @@ impl InputSource for EvdevInputSource {
                     }
                 },
                 InputEventKind::Key(Key::BTN_LEFT) => {
+                    if touch_pos_changed {
+                        let (mx, my) = map_touch_to_logical(self.touch_x, self.touch_y, disp_w, disp_h, rotation);
+                        self.mouse_x = mx;
+                        self.mouse_y = my;
+                        if self.touch_down {
+                            dirty |= runtime.handle_event(InputEvent::TouchMove { id: 0, x: self.mouse_x, y: self.mouse_y });
+                        } else {
+                            dirty |= runtime.handle_event(InputEvent::Hover { x: self.mouse_x, y: self.mouse_y });
+                        }
+                        touch_pos_changed = false;
+                    }
+
                     if ev.value() == 1 {
                         dirty |= runtime.handle_event(InputEvent::Click { x: self.mouse_x, y: self.mouse_y });
                     }
@@ -136,6 +146,17 @@ impl InputSource for EvdevInputSource {
                     }
                 },
                 _ => {}
+            }
+        }
+
+        if touch_pos_changed {
+            let (mx, my) = map_touch_to_logical(self.touch_x, self.touch_y, disp_w, disp_h, rotation);
+            self.mouse_x = mx;
+            self.mouse_y = my;
+            if self.touch_down {
+                dirty |= runtime.handle_event(InputEvent::TouchMove { id: 0, x: self.mouse_x, y: self.mouse_y });
+            } else {
+                dirty |= runtime.handle_event(InputEvent::Hover { x: self.mouse_x, y: self.mouse_y });
             }
         }
 

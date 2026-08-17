@@ -47,6 +47,7 @@ fn wait_for_page_flip(card: &Card) -> Result<(), BackendError> {
         revents: 0,
     };
     loop {
+        poll_fd.revents = 0;
         let ret = unsafe { libc::poll(&mut poll_fd, 1, -1) };
         if ret < 0 {
             let err = std::io::Error::last_os_error();
@@ -56,21 +57,15 @@ fn wait_for_page_flip(card: &Card) -> Result<(), BackendError> {
             return Err(BackendError::Run(format!("Poll error: {}", err)));
         }
         if ret > 0 {
-            break;
-        }
-    }
-    
-    let events = card.receive_events()
-        .map_err(|e| BackendError::Run(format!("Failed to receive DRM events: {:?}", e)))?;
-    for event in events {
-        match event {
-            drm::control::Event::PageFlip(_) => {
-                return Ok(());
+            let events = card.receive_events()
+                .map_err(|e| BackendError::Run(format!("Failed to receive DRM events: {:?}", e)))?;
+            for event in events {
+                if matches!(event, drm::control::Event::PageFlip(_)) {
+                    return Ok(());
+                }
             }
-            _ => {}
         }
     }
-    Ok(())
 }
 
 struct DrmPresenter<M1, M2> {
@@ -90,6 +85,10 @@ where
     M2: std::ops::DerefMut<Target = [u8]>,
 {
     fn prepare_frame(&mut self) -> Result<(), BackendError> {
+        if self.pending_flip {
+            wait_for_page_flip(&self.card)?;
+            self.pending_flip = false;
+        }
         Ok(())
     }
 

@@ -294,56 +294,72 @@ impl Ui {
         })
     }
 
+    /// Scroll a specific node directly by delta_x and delta_y. Returns true if scroll offset changed.
+    pub fn scroll_node(&mut self, node: NodeId, delta_x: f32, delta_y: f32) -> bool {
+        if let Some(RenderData::Container(style)) = self.render_data.get(&node) {
+            if style.overflow == Overflow::Scroll {
+                 let (old_sx, old_sy) = self.scroll_offsets.get(&node).copied().unwrap_or((0.0, 0.0));
+                 let mut sx = old_sx - delta_x;
+                 let mut sy = old_sy - delta_y;
+                 
+                 if let Ok(layout) = self.taffy.layout(node) {
+                     let container_width = layout.size.width;
+                     let container_height = layout.size.height;
+                     
+                     let mut content_width = 0.0f32;
+                     let mut content_height = 0.0f32;
+                     
+                     if let Ok(children) = self.taffy.children(node) {
+                         for child in children {
+                             if let Ok(child_layout) = self.taffy.layout(child) {
+                                 let right = child_layout.location.x + child_layout.size.width;
+                                 let bottom = child_layout.location.y + child_layout.size.height;
+                                 if right > content_width { content_width = right; }
+                                 if bottom > content_height { content_height = bottom; }
+                             }
+                         }
+                     }
+                     
+                     let max_sx = (content_width - container_width).max(0.0);
+                     let max_sy = (content_height - container_height).max(0.0);
+                     
+                     sx = sx.clamp(0.0, max_sx);
+                     sy = sy.clamp(0.0, max_sy);
+                 }
+
+                 self.scroll_offsets.insert(node, (sx, sy));
+                 return sx != old_sx || sy != old_sy;
+            }
+        }
+        false
+    }
+
+    /// Finds the scroll container at (x, y) if any.
+    pub fn find_scroll_container(&self, x: f32, y: f32) -> Option<NodeId> {
+        let mut curr = hit_test_recursive(&self.taffy, self.root, &self.scroll_offsets, &self.render_data, x, y, 0.0, 0.0)?;
+        loop {
+            if let Some(RenderData::Container(style)) = self.render_data.get(&curr) {
+                if style.overflow == Overflow::Scroll {
+                    return Some(curr);
+                }
+            }
+            if let Some(parent) = self.taffy.parent(curr) {
+                curr = parent;
+            } else {
+                return None;
+            }
+        }
+    }
+
     /// Handles scroll inputs by checking for a scrollable element containing coordinates (x, y)
     /// and adjusting its scroll offset by (delta_x, delta_y). Returns true if scrolled.
     pub fn handle_scroll(&mut self, x: f32, y: f32, delta_x: f32, delta_y: f32) -> bool {
         profile!("handle_scroll");
-        if let Some(mut node) = hit_test_recursive(&self.taffy, self.root, &self.scroll_offsets, &self.render_data, x, y, 0.0, 0.0) {
-            loop {
-                if let Some(RenderData::Container(style)) = self.render_data.get(&node) {
-                    if style.overflow == Overflow::Scroll {
-                         let (mut sx, mut sy) = self.scroll_offsets.get(&node).copied().unwrap_or((0.0, 0.0));
-                         sx -= delta_x;
-                         sy -= delta_y;
-                         
-                         if let Ok(layout) = self.taffy.layout(node) {
-                             let container_width = layout.size.width;
-                             let container_height = layout.size.height;
-                             
-                             let mut content_width = 0.0f32;
-                             let mut content_height = 0.0f32;
-                             
-                             if let Ok(children) = self.taffy.children(node) {
-                                 for child in children {
-                                     if let Ok(child_layout) = self.taffy.layout(child) {
-                                         let right = child_layout.location.x + child_layout.size.width;
-                                         let bottom = child_layout.location.y + child_layout.size.height;
-                                         if right > content_width { content_width = right; }
-                                         if bottom > content_height { content_height = bottom; }
-                                     }
-                                 }
-                             }
-                             
-                             let max_sx = (content_width - container_width).max(0.0);
-                             let max_sy = (content_height - container_height).max(0.0);
-                             
-                             sx = sx.clamp(0.0, max_sx);
-                             sy = sy.clamp(0.0, max_sy);
-                         }
-
-                         self.scroll_offsets.insert(node, (sx, sy));
-                         return true;
-                    }
-                }
-                
-                if let Some(parent) = self.taffy.parent(node) {
-                    node = parent;
-                } else {
-                    break;
-                }
-            }
+        if let Some(node) = self.find_scroll_container(x, y) {
+            self.scroll_node(node, delta_x, delta_y)
+        } else {
+            false
         }
-        false
     }
 
     /// Adjusts the scroll offset of scrollable parent ancestors to make the element with

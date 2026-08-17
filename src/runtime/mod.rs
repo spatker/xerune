@@ -41,6 +41,8 @@ pub struct TouchState {
     pub last_y: f32,
     /// Flags if this touch interaction has evolved into scroll offsets.
     pub has_scrolled: bool,
+    /// Target scroll container NodeId resolved for this touch stroke.
+    pub scroll_node: Option<NodeId>,
 }
 
 /// The Elm/MVU runtime engine coordinating state updates, layout, input events, and rendering.
@@ -216,6 +218,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
                     last_x: x,
                     last_y: y,
                     has_scrolled: false,
+                    scroll_node: None,
                 });
                 false
             }
@@ -233,9 +236,19 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
 
                         if state.has_scrolled || moved_x > 8.0 || moved_y > 8.0 {
                             state.has_scrolled = true;
-                            if self.ui.handle_scroll(state.start_x, state.start_y, delta_x, delta_y) {
-                                self.scroll_offsets = self.ui.scroll_offsets.clone();
-                                redraw = true;
+                            let target_node = match state.scroll_node {
+                                Some(node) => Some(node),
+                                None => {
+                                    let node = self.ui.find_scroll_container(state.start_x, state.start_y);
+                                    state.scroll_node = node;
+                                    node
+                                }
+                            };
+                            if let Some(node) = target_node {
+                                if self.ui.scroll_node(node, delta_x, delta_y) {
+                                    self.scroll_offsets = self.ui.scroll_offsets.clone();
+                                    redraw = true;
+                                }
                             }
                         }
                     }
