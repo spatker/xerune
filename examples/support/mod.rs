@@ -20,7 +20,8 @@ pub fn render_frame<M, TM>(
     fonts_ref: &'static [fontdue::Font],
     _font_bytes_ref: Option<&'static [&'static [u8]]>,
     caches: &mut RenderCaches,
-) where
+) -> Option<xerune::Rect>
+where
     M: xerune::Model + xerune::ui::TemplateLayout + 'static,
     TM: xerune::TextMeasurer + 'static,
 {
@@ -46,7 +47,7 @@ pub fn render_frame<M, TM>(
         renderer = renderer.with_rotation(phys_w, phys_h, rotation);
     }
     renderer.font_bytes = _font_bytes_ref;
-    runtime.render(&mut renderer);
+    runtime.render(&mut renderer)
 }
 
 pub fn run_native_app<M, TM, R>(runner: R) -> anyhow::Result<()>
@@ -54,7 +55,7 @@ where
     M: xerune::Model + xerune::ui::TemplateLayout + 'static,
     TM: xerune::TextMeasurer + 'static,
     R: FnOnce(
-        Box<dyn FnMut(&mut xerune::Runtime<M, TM>, &mut [u32], u32, u32) + 'static>,
+        Box<dyn FnMut(&mut xerune::Runtime<M, TM>, &mut [u32], u32, u32) -> Option<xerune::Rect> + 'static>,
         &'static [fontdue::Font],
     ) -> anyhow::Result<()>,
 {
@@ -74,7 +75,7 @@ where
     let mut caches = RenderCaches::new();
     let render_fn = Box::new(
         move |runtime: &mut xerune::Runtime<M, TM>, buffer: &mut [u32], width: u32, height: u32| {
-            render_frame(runtime, buffer, width, height, fonts_ref, Some(font_bytes), &mut caches);
+            render_frame(runtime, buffer, width, height, fonts_ref, Some(font_bytes), &mut caches)
         },
     );
 

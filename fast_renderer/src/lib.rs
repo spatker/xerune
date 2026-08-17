@@ -396,7 +396,7 @@ impl<'a> TextMeasurer for FastRenderer<'a> {
 }
 
 impl<'a> Renderer for FastRenderer<'a> {
-    fn render(&mut self, commands: &[DrawCommand], canvases: &HashMap<String, Canvas>, _dirty_rect: Option<Rect>) {
+    fn render(&mut self, commands: &[DrawCommand], canvases: &HashMap<String, Canvas>, dirty_rect: Option<Rect>) {
         profile!("render_full");
         
         let tile_rect = Rect {
@@ -406,7 +406,13 @@ impl<'a> Renderer for FastRenderer<'a> {
             height: self.height as f32,
         };
 
-        let active_clip = tile_rect;
+        let active_clip = match dirty_rect {
+            Some(dr) => match tile_rect.intersect(&dr) {
+                Some(inter) => inter,
+                None => return,
+            },
+            None => tile_rect,
+        };
 
         let local_base_clip = Rect {
             x: active_clip.x - self.x_offset as f32,
@@ -421,7 +427,7 @@ impl<'a> Renderer for FastRenderer<'a> {
             let cmd_bounds = command.bounds();
 
             if let Some(cb) = cmd_bounds {
-                if !cb.intersects(&tile_rect) {
+                if !cb.intersects(&active_clip) {
                     continue;
                 }
             }
@@ -1078,18 +1084,8 @@ impl<'a> Renderer for FastRenderer<'a> {
                     profile!("render_canvas");
                     let local_rect = self.translate_rect(rect);
                     if let Some(canvas) = canvases.get(id) {
-                        let mut pixels = Vec::with_capacity((canvas.width * canvas.height) as usize);
-                        for chunk in canvas.data.chunks_exact(4) {
-                            let r = chunk[0];
-                            let g = chunk[1];
-                            let b = chunk[2];
-                            let a = chunk[3];
-                            let col = xerune::Color::new(r, g, b, a);
-                            pixels.push(pack_color(col, self.swap_rb));
-                        }
-                        
                         let clip = self.get_clip_rect();
-                        blit_image(
+                        blit_image_rgba(
                             self.buffer,
                             self.width,
                             self.height,
@@ -1098,7 +1094,8 @@ impl<'a> Renderer for FastRenderer<'a> {
                             *border_radius,
                             canvas.width,
                             canvas.height,
-                            &pixels,
+                            &canvas.data,
+                            self.swap_rb,
                             clip,
                             self.rotation,
                         );
@@ -1108,6 +1105,122 @@ impl<'a> Renderer for FastRenderer<'a> {
         }
 
         self.clip_stack.pop();
+    }
+}
+
+pub fn blit_image_rgba(
+    buffer: &mut [u32],
+    logical_w: u32,
+    logical_h: u32,
+    physical_w: u32,
+    rect: &Rect,
+    border_radius: f32,
+    img_w: u32,
+    img_h: u32,
+    img_rgba: &[u8],
+    swap_rb: bool,
+    clip: Option<Rect>,
+    rotation: u32,
+) {
+    let (clip_x1, clip_y1, clip_x2, clip_y2) = if let Some(cr) = clip {
+        (
+            cr.x.max(0.0) as i32,
+            cr.y.max(0.0) as i32,
+            (cr.x + cr.width).min(logical_w as f32) as i32,
+            (cr.y + cr.height).min(logical_h as f32) as i32,
+        )
+    } else {
+        (0, 0, logical_w as i32, logical_h as i32)
+    };
+
+    let rx = rect.x as i32;
+    let ry = rect.y as i32;
+    let rw = rect.width as i32;
+    let rh = rect.height as i32;
+
+    let start_x = rx.max(clip_x1);
+    let start_y = ry.max(clip_y1);
+    let end_x = (rx + rw).min(clip_x2);
+    let end_y = (ry + rh).min(clip_y2);
+
+    if start_x >= end_x || start_y >= end_y || rw <= 0 || rh <= 0 || img_w == 0 || img_h == 0 || img_rgba.is_empty() {
+        return;
+    }
+
+    let scale_x = img_w as f32 / rw as f32;
+    let scale_y = img_h as f32 / rh as f32;
+
+    let r_f32 = border_radius.min(rw as f32 / 2.0).min(rh as f32 / 2.0).max(0.0);
+
+    for py in start_y..end_y {
+        let dy_offset = py - ry;
+        let src_y = ((dy_offset as f32 * scale_y) as u32).min(img_h.saturating_sub(1));
+        let src_row_start = (src_y * img_w) as usize;
+
+        for px in start_x..end_x {
+            let dx_offset = px - rx;
+            let src_x = ((dx_offset as f32 * scale_x) as u32).min(img_w.saturating_sub(1));
+            let idx = (src_row_start + src_x as usize) * 4;
+            if idx + 3 >= img_rgba.len() {
+                continue;
+            }
+            let r = img_rgba[idx] as u32;
+            let g = img_rgba[idx + 1] as u32;
+            let b = img_rgba[idx + 2] as u32;
+            let a = img_rgba[idx + 3] as u32;
+            if a == 0 {
+                continue;
+            }
+            let pixel = if swap_rb {
+                (a << 24) | (b << 16) | (g << 8) | r
+            } else {
+                (a << 24) | (r << 16) | (g << 8) | b
+            };
+
+            let mut coverage = 1.0;
+            if r_f32 > 0.0 {
+                if dx_offset < r_f32 as i32 && dy_offset < r_f32 as i32 {
+                    let cx = rx as f32 + r_f32;
+                    let cy = ry as f32 + r_f32;
+                    let dx = px as f32 + 0.5 - cx;
+                    let dy = py as f32 + 0.5 - cy;
+                    coverage = (r_f32 + 0.5 - (dx * dx + dy * dy).sqrt()).clamp(0.0, 1.0);
+                } else if dx_offset >= rw - r_f32 as i32 && dy_offset < r_f32 as i32 {
+                    let cx = rx as f32 + rw as f32 - r_f32;
+                    let cy = ry as f32 + r_f32;
+                    let dx = px as f32 + 0.5 - cx;
+                    let dy = py as f32 + 0.5 - cy;
+                    coverage = (r_f32 + 0.5 - (dx * dx + dy * dy).sqrt()).clamp(0.0, 1.0);
+                } else if dx_offset < r_f32 as i32 && dy_offset >= rh - r_f32 as i32 {
+                    let cx = rx as f32 + r_f32;
+                    let cy = ry as f32 + rh as f32 - r_f32;
+                    let dx = px as f32 + 0.5 - cx;
+                    let dy = py as f32 + 0.5 - cy;
+                    coverage = (r_f32 + 0.5 - (dx * dx + dy * dy).sqrt()).clamp(0.0, 1.0);
+                } else if dx_offset >= rw - r_f32 as i32 && dy_offset >= rh - r_f32 as i32 {
+                    let cx = rx as f32 + rw as f32 - r_f32;
+                    let cy = ry as f32 + rh as f32 - r_f32;
+                    let dx = px as f32 + 0.5 - cx;
+                    let dy = py as f32 + 0.5 - cy;
+                    coverage = (r_f32 + 0.5 - (dx * dx + dy * dy).sqrt()).clamp(0.0, 1.0);
+                }
+            }
+
+            if coverage > 0.0 {
+                let blended_pixel = if coverage < 1.0 {
+                    let a_cov = ((pixel >> 24) & 0xff) as f32 * coverage;
+                    (pixel & 0x00ffffff) | ((a_cov.round() as u32) << 24)
+                } else {
+                    pixel
+                };
+
+                let out_idx = calc_pixel_index(px, py, rotation, physical_w, logical_w, logical_h);
+
+                if out_idx < buffer.len() {
+                    blend_pixel(&mut buffer[out_idx], blended_pixel);
+                }
+            }
+        }
     }
 }
 

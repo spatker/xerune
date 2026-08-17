@@ -1,4 +1,4 @@
-use crate::blitter::{pack_color, blend_solid_span, blend_pixel, calc_pixel_index};
+use crate::blitter::{pack_color, blend_solid_span, blend_pixel};
 #[cfg(not(feature = "std"))]
 use crate::F32Ext;
 use xerune::alloc_prelude::Vec;

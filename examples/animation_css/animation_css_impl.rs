@@ -19,7 +19,7 @@ impl Model for AnimationCssModel {
 }
 
 #[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm")))]
-pub fn run_native(render_frame: impl FnMut(&mut Runtime<AnimationCssModel, Measurer>, &mut [u32], u32, u32) + 'static, fonts_ref: &'static [Font]) -> anyhow::Result<()> {
+pub fn run_native(render_frame: impl FnMut(&mut Runtime<AnimationCssModel, Measurer>, &mut [u32], u32, u32) -> Option<xerune::Rect> + 'static, fonts_ref: &'static [Font]) -> anyhow::Result<()> {
     let model = AnimationCssModel;
     let measurer = FastMeasurer { fonts: fonts_ref.into() };
     

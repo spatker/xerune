@@ -103,5 +103,5 @@ pub trait Backend {
     where
         M: crate::Model + crate::ui::TemplateLayout + 'static,
         TM: crate::TextMeasurer + 'static,
-        F: FnMut(&mut crate::Runtime<M, TM>, &mut [u32], u32, u32) + 'static;
+        F: FnMut(&mut crate::Runtime<M, TM>, &mut [u32], u32, u32) -> Option<crate::graphics::Rect> + 'static;
 }

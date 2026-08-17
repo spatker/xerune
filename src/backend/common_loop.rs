@@ -1,6 +1,6 @@
 use std::time::Instant;
 use std::sync::mpsc::Receiver;
-use crate::{Model, Runtime, TextMeasurer};
+use crate::{Model, Runtime, TextMeasurer, graphics::Rect};
 use super::{BackendError, input::{InputSource, SurfaceInfo}};
 
 /// Trait defining a display surface frame presenter.
@@ -11,7 +11,7 @@ pub trait FramePresenter {
     }
 
     /// Present/blit the rendered logical ARGB8888 buffer to the display device.
-    fn present(&mut self, local_buffer: &[u32], surface: &SurfaceInfo) -> Result<(), BackendError>;
+    fn present(&mut self, local_buffer: &[u32], surface: &SurfaceInfo, damage: Option<Rect>) -> Result<(), BackendError>;
 }
 
 /// Generic event loop for embedded Linux backends.
@@ -26,7 +26,7 @@ pub fn run_embedded_event_loop<M, TM, F, I, P>(
 where
     M: Model + crate::ui::TemplateLayout + 'static,
     TM: TextMeasurer + 'static,
-    F: FnMut(&mut Runtime<M, TM>, &mut [u32], u32, u32) + 'static,
+    F: FnMut(&mut Runtime<M, TM>, &mut [u32], u32, u32) -> Option<Rect> + 'static,
     I: InputSource,
     P: FramePresenter,
 {
@@ -44,6 +44,7 @@ where
         presenter.prepare_frame()?;
 
         let mut dirty = force_redraw;
+        let is_forced = force_redraw;
         force_redraw = false;
 
         // Poll & dispatch hardware input
@@ -67,8 +68,9 @@ where
 
         // Render and present
         if dirty {
-            render_fn(&mut runtime, &mut local_buffer, w, h);
-            presenter.present(&local_buffer, &surface)?;
+            let damage = render_fn(&mut runtime, &mut local_buffer, w, h);
+            let effective_damage = if is_forced { None } else { damage };
+            presenter.present(&local_buffer, &surface, effective_damage)?;
         }
 
         // Dynamic sleeping & idle frame pacing

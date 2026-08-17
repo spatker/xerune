@@ -17,6 +17,41 @@ impl LinuxFbBackend {
     }
 }
 
+fn logical_rect_to_phys_bounds(r: &crate::graphics::Rect, surface: &SurfaceInfo) -> (usize, usize, usize, usize) {
+    let disp_w = surface.disp_w as usize;
+    let disp_h = surface.disp_h as usize;
+    match surface.rotation {
+        90 => {
+            let p_min_y = (r.x.max(0.0) as usize).min(disp_h);
+            let p_max_y = ((r.x + r.width).ceil().max(0.0) as usize).min(disp_h);
+            let p_min_x = disp_w.saturating_sub((r.y + r.height).ceil().max(0.0) as usize).min(disp_w);
+            let p_max_x = disp_w.saturating_sub(r.y.max(0.0) as usize).min(disp_w);
+            (p_min_x, p_min_y, p_max_x, p_max_y)
+        }
+        180 => {
+            let p_min_x = disp_w.saturating_sub((r.x + r.width).ceil().max(0.0) as usize).min(disp_w);
+            let p_max_x = disp_w.saturating_sub(r.x.max(0.0) as usize).min(disp_w);
+            let p_min_y = disp_h.saturating_sub((r.y + r.height).ceil().max(0.0) as usize).min(disp_h);
+            let p_max_y = disp_h.saturating_sub(r.y.max(0.0) as usize).min(disp_h);
+            (p_min_x, p_min_y, p_max_x, p_max_y)
+        }
+        270 => {
+            let p_min_x = (r.y.max(0.0) as usize).min(disp_w);
+            let p_max_x = ((r.y + r.height).ceil().max(0.0) as usize).min(disp_w);
+            let p_min_y = disp_h.saturating_sub((r.x + r.width).ceil().max(0.0) as usize).min(disp_h);
+            let p_max_y = disp_h.saturating_sub(r.x.max(0.0) as usize).min(disp_h);
+            (p_min_x, p_min_y, p_max_x, p_max_y)
+        }
+        _ => {
+            let p_min_x = (r.x.max(0.0) as usize).min(disp_w);
+            let p_max_x = ((r.x + r.width).ceil().max(0.0) as usize).min(disp_w);
+            let p_min_y = (r.y.max(0.0) as usize).min(disp_h);
+            let p_max_y = ((r.y + r.height).ceil().max(0.0) as usize).min(disp_h);
+            (p_min_x, p_min_y, p_max_x, p_max_y)
+        }
+    }
+}
+
 struct LinuxFbPresenter<M> {
     fb: Framebuffer,
     fb_mmap: M,
@@ -25,13 +60,41 @@ struct LinuxFbPresenter<M> {
     fb_h: u32,
     double_buffered: bool,
     active_page: usize,
+    page0_needs_full: bool,
+    page1_needs_full: bool,
+    prev_damage: Option<crate::graphics::Rect>,
 }
 
 impl<M> FramePresenter for LinuxFbPresenter<M>
 where
     M: std::ops::DerefMut<Target = [u8]>,
 {
-    fn present(&mut self, local_buffer: &[u32], _surface: &SurfaceInfo) -> Result<(), BackendError> {
+    fn present(&mut self, local_buffer: &[u32], surface: &SurfaceInfo, damage: Option<crate::graphics::Rect>) -> Result<(), BackendError> {
+        let combined_damage = if self.double_buffered {
+            let target_page = if self.active_page == 0 { 1 } else { 0 };
+            let target_needs_full = if target_page == 1 {
+                let needs = self.page1_needs_full;
+                self.page1_needs_full = false;
+                needs
+            } else {
+                let needs = self.page0_needs_full;
+                self.page0_needs_full = false;
+                needs
+            };
+
+            if target_needs_full {
+                None
+            } else {
+                match (damage, self.prev_damage) {
+                    (Some(d), Some(p)) => Some(d.expand(p)),
+                    _ => None,
+                }
+            }
+        } else {
+            damage
+        };
+        self.prev_damage = damage;
+
         if self.bytes_per_pixel == 4 {
             let page_size = (self.fb_w * self.fb_h * 4) as usize;
             let mmap_len = self.fb_mmap.len();
@@ -50,8 +113,25 @@ where
             };
 
             let local_bytes: &[u8] = bytemuck::cast_slice(local_buffer);
-            let copy_len = local_bytes.len().min(draw_slice.len());
-            draw_slice[..copy_len].copy_from_slice(&local_bytes[..copy_len]);
+            let disp_w = surface.disp_w as usize;
+
+            if let Some(ref rect) = combined_damage {
+                let (min_x, min_y, max_x, max_y) = logical_rect_to_phys_bounds(rect, surface);
+                if min_x < max_x && min_y < max_y {
+                    let row_bytes = (max_x - min_x) * 4;
+                    let stride_bytes = disp_w * 4;
+                    for y in min_y..max_y {
+                        let row_offset = y * stride_bytes + min_x * 4;
+                        if row_offset + row_bytes <= draw_slice.len() && row_offset + row_bytes <= local_bytes.len() {
+                            draw_slice[row_offset..row_offset + row_bytes]
+                                .copy_from_slice(&local_bytes[row_offset..row_offset + row_bytes]);
+                        }
+                    }
+                }
+            } else {
+                let copy_len = local_bytes.len().min(draw_slice.len());
+                draw_slice[..copy_len].copy_from_slice(&local_bytes[..copy_len]);
+            }
 
             if self.double_buffered && mmap_len >= page_size * 2 {
                 if let Err(e) = self.fb.set_offset(0, y_offset) {
@@ -64,16 +144,39 @@ where
             }
         } else if self.bytes_per_pixel == 2 {
             let dest_ptr = self.fb_mmap.as_mut_ptr();
-            let total_pixels = (self.fb_w * self.fb_h) as usize;
-            for i in 0..total_pixels.min(local_buffer.len()) {
-                unsafe {
-                    let pixel = local_buffer[i];
-                    let r = ((pixel >> 16) & 0xFF) as u16;
-                    let g = ((pixel >> 8) & 0xFF) as u16;
-                    let b = (pixel & 0xFF) as u16;
-                    let rgb565 = ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3);
-                    let d = dest_ptr.add(i * 2) as *mut u16;
-                    d.write_unaligned(rgb565);
+            let fb_w = self.fb_w as usize;
+            let fb_h = self.fb_h as usize;
+
+            if let Some(ref rect) = combined_damage {
+                let (min_x, min_y, max_x, max_y) = logical_rect_to_phys_bounds(rect, surface);
+                for y in min_y..max_y.min(fb_h) {
+                    for x in min_x..max_x.min(fb_w) {
+                        let idx = y * fb_w + x;
+                        if idx < local_buffer.len() {
+                            unsafe {
+                                let pixel = local_buffer[idx];
+                                let r = ((pixel >> 16) & 0xFF) as u16;
+                                let g = ((pixel >> 8) & 0xFF) as u16;
+                                let b = (pixel & 0xFF) as u16;
+                                let rgb565 = ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3);
+                                let d = dest_ptr.add(idx * 2) as *mut u16;
+                                d.write_unaligned(rgb565);
+                            }
+                        }
+                    }
+                }
+            } else {
+                let total_pixels = fb_w * fb_h;
+                for i in 0..total_pixels.min(local_buffer.len()) {
+                    unsafe {
+                        let pixel = local_buffer[i];
+                        let r = ((pixel >> 16) & 0xFF) as u16;
+                        let g = ((pixel >> 8) & 0xFF) as u16;
+                        let b = (pixel & 0xFF) as u16;
+                        let rgb565 = ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3);
+                        let d = dest_ptr.add(i * 2) as *mut u16;
+                        d.write_unaligned(rgb565);
+                    }
                 }
             }
             let _ = self.fb.set_offset(0, 0);
@@ -98,7 +201,7 @@ impl Backend for LinuxFbBackend {
     where
         M: Model + crate::ui::TemplateLayout + 'static,
         TM: TextMeasurer + 'static,
-        F: FnMut(&mut Runtime<M, TM>, &mut [u32], u32, u32) + 'static,
+        F: FnMut(&mut Runtime<M, TM>, &mut [u32], u32, u32) -> Option<crate::graphics::Rect> + 'static,
     {
         log::info!("Initializing Framebuffer Backend...");
         let mut fb = Framebuffer::new("/dev/fb0")
@@ -143,6 +246,9 @@ impl Backend for LinuxFbBackend {
             fb_h,
             double_buffered,
             active_page: 0,
+            page0_needs_full: true,
+            page1_needs_full: true,
+            prev_damage: None,
         };
         let surface = SurfaceInfo {
             logical_w: w,

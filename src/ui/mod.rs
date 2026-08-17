@@ -18,7 +18,7 @@ use html5ever::parse_document;
 #[cfg(feature = "dynamic-parser")]
 use html5ever::tendril::TendrilSink;
 #[cfg(feature = "dynamic-parser")]
-use markup5ever_rcdom::{Handle as DomHandle, NodeData, RcDom};
+use markup5ever_rcdom::{Handle as DomHandle, RcDom};
 
 /// Representation handle to an HTML DOM node.
 #[cfg(feature = "dynamic-parser")]

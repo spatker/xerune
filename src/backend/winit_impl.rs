@@ -44,7 +44,7 @@ impl Backend for WinitBackend {
     where
         M: Model + crate::ui::TemplateLayout + 'static,
         TM: TextMeasurer + 'static,
-        F: FnMut(&mut Runtime<M, TM>, &mut [u32], u32, u32) + 'static,
+        F: FnMut(&mut Runtime<M, TM>, &mut [u32], u32, u32) -> Option<crate::graphics::Rect> + 'static,
     {
         let event_loop = winit::event_loop::EventLoopBuilder::<String>::with_user_event().build()
             .map_err(|e| BackendError::Init(e.to_string()))?;
@@ -68,9 +68,6 @@ impl Backend for WinitBackend {
         let mut mouse_x = 0.0;
         let mut mouse_y = 0.0;
         let mut next_trigger = std::time::Instant::now();
-
-        // Local buffer for drawing logic
-        let mut app_buffer: Vec<u32> = Vec::new();
 
         event_loop.run(move |event, target| {
             match event {
@@ -118,14 +115,8 @@ impl Backend for WinitBackend {
                             
                             runtime.set_size(width as f32, height as f32);
 
-                            let buffer_len = (width * height) as usize;
-                            if app_buffer.len() != buffer_len {
-                                app_buffer.resize(buffer_len, 0xFF222222);
-                            }
+                            render_fn(&mut runtime, &mut buffer, width, height);
 
-                            render_fn(&mut runtime, &mut app_buffer, width, height);
-
-                            buffer.copy_from_slice(&app_buffer);
                             buffer.present().unwrap();
                         },
                         WindowEvent::CloseRequested => {

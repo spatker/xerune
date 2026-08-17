@@ -501,4 +501,88 @@ fn test_timer_cancellation() {
     assert_eq!(runtime.timers().len(), 0, "Timer should be cleared when processing context commands");
 }
 
+#[test]
+fn test_dirty_rect_rasterization_culling() {
+    use std::collections::HashMap;
+    use fast_renderer::FastRenderer;
+    use xerune::font::DEFAULT_ROBOTO_REGULAR;
+
+    let fonts = vec![DEFAULT_ROBOTO_REGULAR];
+
+    let commands = vec![
+        DrawCommand::DrawRect {
+            rect: Rect { x: 0.0, y: 0.0, width: 50.0, height: 50.0 },
+            color: Some(Color::new(255, 0, 0, 255)),
+            gradient: None,
+            border_radius: 0.0,
+            border_width: 0.0,
+            border_color: None,
+            border_style: xerune::style::BorderStyle::Solid,
+            border_bottom_only: false,
+        },
+        DrawCommand::DrawRect {
+            rect: Rect { x: 100.0, y: 100.0, width: 50.0, height: 50.0 },
+            color: Some(Color::new(0, 255, 0, 255)),
+            gradient: None,
+            border_radius: 0.0,
+            border_width: 0.0,
+            border_color: None,
+            border_style: xerune::style::BorderStyle::Solid,
+            border_bottom_only: false,
+        },
+    ];
+
+    let mut buffer = vec![0u32; 200 * 200];
+    let mut image_cache = HashMap::new();
+    let mut glyph_cache = HashMap::new();
+
+    // Render with dirty_rect restricted to the second rectangle only
+    let dirty_rect = Some(Rect::new(90.0, 90.0, 70.0, 70.0));
+    let mut renderer = FastRenderer::new(&mut buffer, 200, 200, &fonts, &mut image_cache, &mut glyph_cache);
+    renderer.render(&commands, &HashMap::new(), dirty_rect);
+
+    // Verify first rect (0,0..50,50) was culled and untouched (0)
+    let first_rect_pixel = buffer[0];
+    assert_eq!(first_rect_pixel, 0, "First rect should not have been rendered because it falls outside dirty_rect");
+
+    // Verify second rect (100,100) was rendered with green color (0xFF00FF00)
+    let second_rect_pixel = buffer[100 * 200 + 100];
+    assert_eq!(second_rect_pixel, 0xFF00FF00, "Second rect should have been rendered within dirty_rect");
+}
+
+#[test]
+fn test_zero_copy_canvas_blitting() {
+    use fast_renderer::blit_image_rgba;
+
+    let mut buffer = vec![0u32; 100 * 100];
+    // 2x2 RGBA image
+    let canvas_rgba = vec![
+        255, 0, 0, 255,   // Red
+        0, 255, 0, 255,   // Green
+        0, 0, 255, 255,   // Blue
+        255, 255, 255, 255 // White
+    ];
+
+    blit_image_rgba(
+        &mut buffer,
+        100,
+        100,
+        100,
+        &Rect::new(10.0, 10.0, 2.0, 2.0),
+        0.0,
+        2,
+        2,
+        &canvas_rgba,
+        false,
+        None,
+        0,
+    );
+
+    assert_eq!(buffer[10 * 100 + 10], 0xFFFF0000); // Red (ARGB)
+    assert_eq!(buffer[10 * 100 + 11], 0xFF00FF00); // Green (ARGB)
+    assert_eq!(buffer[11 * 100 + 10], 0xFF0000FF); // Blue (ARGB)
+    assert_eq!(buffer[11 * 100 + 11], 0xFFFFFFFF); // White (ARGB)
+}
+
+
 

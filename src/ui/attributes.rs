@@ -3,7 +3,6 @@
 use taffy::prelude::*;
 use crate::style::{ContainerStyle, RenderData};
 use crate::css;
-use crate::graphics::TextMeasurer;
 use crate::defaults;
 use super::node_map::NodeMap;
 use crate::alloc_prelude::*;
@@ -11,18 +10,13 @@ use crate::alloc_prelude::*;
 #[cfg(feature = "dynamic-parser")]
 use crate::style::{Overflow, BoxSizing, Display, CssJustifyContent, TextAlign, Direction};
 #[cfg(feature = "dynamic-parser")]
-use super::metadata::NodeMetadata;
+use super::Interaction;
 #[cfg(feature = "dynamic-parser")]
-use super::{Interaction, Handle};
-
-#[cfg(feature = "dynamic-parser")]
-use html5ever::parse_document;
-#[cfg(feature = "dynamic-parser")]
-use html5ever::tendril::TendrilSink;
-#[cfg(feature = "dynamic-parser")]
-use markup5ever_rcdom::{Handle as DomHandle, NodeData, RcDom};
+use markup5ever_rcdom::{Handle as DomHandle, NodeData};
 #[cfg(feature = "dynamic-parser")]
 use std::rc::Rc;
+#[cfg(feature = "dynamic-parser")]
+use crate::graphics::TextMeasurer;
 
 #[cfg(feature = "dynamic-parser")]
 pub(crate) struct ElementWrapper(pub(crate) DomHandle);
