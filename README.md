@@ -18,6 +18,8 @@ High quality videos: [Music Player](docs/img/music_player.mkv), [Showcase](docs/
 - **Embedded hardware-ready**: Dedicated backends for Linux Framebuffer (`/dev/fb0`) and DRM/KMS with double buffering.
 - **Input integration**: Built-in support for mouse, keyboard, and `evdev` touch input bounds calibration.
 - **CSS Stylesheets & Keyframe Animations**: Parse inline styles, global styles, classes, IDs, gradients, borders, font weights, and keyframe animations.
+- **Responsive Layout**: `@media` queries (width/height/orientation), `vw`/`vh`/`vmin`/`vmax` viewport units, automatic `Model::on_resize` notification, and breakpoint helpers — compiled into cheap static guards for embedded targets.
+- **Fingerprint Gating**: Opt-in `Model::view_fingerprint` lets the runtime skip full view rebuilds when a message changes no rendered state.
 - **Canvas APIs**: Support for custom user-drawn Canvas pixel buffers.
 
 ## Documentation
@@ -91,6 +93,7 @@ impl Model for AppModel {
 cargo run --release --example music_player
 cargo run --release --example todo
 cargo run --release --example showcase
+cargo run --release --example responsive   # resize the window to see @media / vw adaptation
 ```
 
 ### Running in WebBrowser (WASM & Xerune Studio)

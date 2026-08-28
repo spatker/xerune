@@ -2,6 +2,8 @@
 
 pub(crate) mod parser;
 pub(crate) mod animation;
+/// `@media` query parsing, matching, and stylesheet expansion.
+pub mod media;
 
 pub use parser::{parse_hex_color, parse_px, parse_dimension, parse_length_percentage, parse_length_percentage_auto, parse_box_shadow};
 use parser::{parse_padding, parse_margin};

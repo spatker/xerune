@@ -10,11 +10,14 @@ Xerune integrates a standard browser-like pipeline (HTML parsing, CSS styling, l
 graph TD
     A[Input Event: Click/Touch/Key] --> B[Runtime Event Loop]
     B --> C[Model::update]
-    C --> D[Model State Mutated]
+    C --> FGP{view_fingerprint unchanged?}
+    FGP -->|yes, and no resize| G[Generate DrawCommand List]
+    FGP -->|no| D[Model State Mutated]
     D --> E[Rebuild DOM & Style Tree]
     E --> F[Taffy Layout Resolution]
-    F --> G[Generate DrawCommand List]
+    F --> G
     G --> H[Backend Presentation]
+    R[Viewport change / resize] --> RS[Model::on_resize + rebuild] --> F
 ```
 
 ---
@@ -31,15 +34,21 @@ A tick occurs when:
 2. Hit-testing matches display coordinates to an interactive element containing an `onclick` attribute.
 3. The event is dispatched to the user's `update` function.
 
+After `update`, the runtime rebuilds the view — unless the model opts into **fingerprint gating** (`Model::view_fingerprint` returns `Some(..)`): if the fingerprint is unchanged since the last rebuild and no viewport change occurred, the costly DOM/style/layout rebuild is skipped. Canvas dirty flags and viewport changes always bypass the skip.
+
+**Responsive state**: The active viewport size lives in `src/screen.rs` as two process-global atomics (`screen::width/height/breakpoint`). On a real resize, `Runtime::set_size` updates these, fires `Model::on_resize`, and rebuilds so `@media`/`vw` re-resolve. Fixed-size embedded displays pay nothing beyond two relaxed atomic reads at startup.
+
 ---
 
 ## 2. Layout & Stylesheet Pipeline
 
 Xerune parses CSS declarations, matching them to nodes via tags, classes, and IDs:
 1. **HTML Parsing**: Performed during template generation.
-2. **Style Resolution**: CSS property values are resolved onto `ContainerStyle` values (margins, padding, align-items, flex-direction, colors, borders, font configuration).
-3. **Taffy Tree**: Layout properties (display, width, heights, paddings, flex configurations) are sent to a `TaffyTree` representing the DOM layout tree.
-4. **StyleCacheKey**: To optimize performance on embedded hardware, resolved styles are cached using tag, class, ID, and inherited properties to avoid re-resolution.
+2. **Media & At-Rule Handling**: The upstream `simplecss` parser drops at-rules, so `src/css/media.rs` provides a minimal `@media` engine. For **compiled templates** (`XeruneTemplate`), the macro splits `@media` blocks at compile time and emits each guarded rule behind a `matches_query(&[FeatureGroup])` predicate built from static `Feature` constants — no runtime parsing. For **runtime string stylesheets** (dynamic-parser path), `expand_for_viewport` inlines matching blocks before `simplecss` parses the result. Supported features: `min/max-width`, `min/max-height`, `orientation`, and `all`/`screen`/`print`/`not`.
+3. **Viewport Units**: `vw`/`vh`/`vmin`/`vmax` lengths resolve against `src/screen.rs`'s global viewport at style-application time (`css::parse_px`).
+4. **Style Resolution**: CSS property values are resolved onto `ContainerStyle` values (margins, padding, align-items, flex-direction, colors, borders, font configuration).
+5. **Taffy Tree**: Layout properties (display, width, heights, paddings, flex configurations) are sent to a `TaffyTree` representing the DOM layout tree.
+6. **StyleCacheKey**: To optimize performance on embedded hardware, resolved styles are cached using tag, class, ID, inherited properties, **and the viewport size** (`vw`/`vh` depend on it) to avoid re-resolution.
 
 ---
 

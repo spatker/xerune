@@ -28,6 +28,8 @@ pub struct StyleCacheKey {
     pub parent_weight: u16,
     /// Parent foreground color in u32 format.
     pub parent_color_u32: u32,
+    /// Viewport size (rounded px) the resolved `vw`/`vh` lengths were computed against.
+    pub viewport: (u32, u32),
 }
 
 #[cfg(feature = "std")]
@@ -40,7 +42,8 @@ pub(crate) struct CachedStyles {
 
 #[cfg(feature = "std")]
 thread_local! {
-    pub(crate) static STYLESHEET_CACHE: std::cell::RefCell<HashMap<&'static str, &'static CachedStyles>> = std::cell::RefCell::new(HashMap::new());
+    /// Keyed by the `@media`-expanded stylesheet text so entries stay viewport-correct.
+    pub(crate) static STYLESHEET_CACHE: std::cell::RefCell<HashMap<String, &'static CachedStyles>> = std::cell::RefCell::new(HashMap::new());
     pub(crate) static CACHE_STATS: std::cell::Cell<(usize, usize)> = std::cell::Cell::new((0, 0));
 }
 
@@ -140,6 +143,7 @@ pub(crate) fn resolve_styles(
 
     let c = parent_style.color;
     let parent_color_u32 = ((c.r as u32) << 24) | ((c.g as u32) << 16) | ((c.b as u32) << 8) | (c.a as u32);
+    let (vw, vh) = crate::screen::size();
     let cache_key = StyleCacheKey {
         tag: meta.tag.clone(),
         class: meta.class.clone(),
@@ -148,6 +152,7 @@ pub(crate) fn resolve_styles(
         parent_font_size_bits: parent_style.font_size.to_bits(),
         parent_weight: parent_style.weight,
         parent_color_u32,
+        viewport: (vw.round() as u32, vh.round() as u32),
     };
 
     let (mut layout_style, mut current_style) = if let Some(cached_styles) = style_cache.get(&cache_key) {

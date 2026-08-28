@@ -160,6 +160,18 @@ impl Context {
         self.canvases.get_mut(id)
     }
 
+    /// Current rendering viewport size in CSS pixels as `(width, height)`.
+    ///
+    /// Returns `(0.0, 0.0)` before the backend has reported a size.
+    pub fn screen_size(&self) -> (f32, f32) {
+        crate::screen::size()
+    }
+
+    /// Semantic breakpoint for the current viewport width.
+    pub fn breakpoint(&self) -> crate::screen::Breakpoint {
+        crate::screen::breakpoint()
+    }
+
     /// Schedule a command to scroll the viewport to show a specific interactive element.
     pub fn scroll_into_view(&mut self, interaction_id: &str) {
         self.commands.push(ContextCommand::ScrollIntoView(interaction_id.to_string()));

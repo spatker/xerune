@@ -1,0 +1,21 @@
+<style>
+  .box {
+    height: 20px;
+    background-color: #ff0000;
+  }
+  @media (min-width: 400px) {
+    .box {
+      background-color: #00ff00;
+    }
+  }
+  @media (orientation: landscape) {
+    .landscape-only {
+      background-color: #0000ff;
+    }
+  }
+</style>
+<div style="width: 100%; height: 100%;">
+  <div class="box" style="width: 50vw;" data-on-click="probe_vw"></div>
+  <div class="box" style="width: 100px;" data-on-click="probe_media"></div>
+  <div class="landscape-only" style="width: 40px; height: 40px;" data-on-click="probe_land"></div>
+</div>
