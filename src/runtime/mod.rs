@@ -54,6 +54,8 @@ pub struct Runtime<M, R> {
     default_style: ContainerStyle,
     pub(crate) scroll_offsets: NodeMap<(f32, f32)>,
     cached_size: Size<AvailableSpace>,
+    viewport_px: (f32, f32),
+    last_fingerprint: Option<u64>,
     context: Context,
     last_commands: Vec<DrawCommand>,
     /// Focused input ID if any text inputs are currently active.
@@ -77,6 +79,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
          
          let mut context = Context::new();
          Runtime::<M, R>::sync_canvases(&ui, &mut context);
+         let initial_fingerprint = model.view_fingerprint();
 
          Self {
              model,
@@ -85,6 +88,8 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
              default_style,
              scroll_offsets: NodeMap::new(),
              cached_size: Size::MAX_CONTENT,
+             viewport_px: crate::screen::size(),
+             last_fingerprint: initial_fingerprint,
              context,
              last_commands: Vec::new(),
              focused_id: None,
@@ -291,7 +296,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
             }
         }
         if any_update {
-            self.sync_view()
+            self.sync_view_inner(true)
         } else {
             false
         }
@@ -301,7 +306,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
         if let Ok(msg) = M::Message::from_str(msg_str) {
             profile!("update");
             self.model.update(msg, &mut self.context);
-            self.sync_view()
+            self.sync_view_inner(true)
         } else {
             log::debug!("Unhandled or failed to parse message: {}", msg_str);
             false
@@ -309,21 +314,43 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
     }
 
     /// Syncs the declarative view to the layout tree and triggers layout recalculation.
-    /// Returns true if layout adjustments occurred.
+    ///
+    /// Always performs a full rebuild (callers include backends after a viewport
+    /// change). Message-driven syncs use the fingerprint-aware path internally,
+    /// see [`Model::view_fingerprint`].
     pub fn sync_view(&mut self) -> bool {
-        self.ui = {
-            profile!("ui_new_compiled");
-            let validator = |s: &str| M::Message::from_str(s).is_ok();
-            Ui::new_compiled(&self.model, &self.measurer, self.default_style.clone(), &validator).unwrap()
-        };
-        {
-            profile!("compute_layout");
-            let _ = self.ui.compute_layout(self.cached_size);
+        self.sync_view_inner(false)
+    }
+
+    fn sync_view_inner(&mut self, allow_skip: bool) -> bool {
+        let fingerprint = self.model.view_fingerprint();
+        // Skipping is only possible when the model explicitly supports
+        // fingerprinting and its view-relevant state is unchanged since the
+        // last full rebuild. Viewport changes always force a rebuild (they run
+        // through `sync_view` / `set_size`).
+        let skip = allow_skip
+            && fingerprint.is_some()
+            && self.last_fingerprint.is_some()
+            && fingerprint == self.last_fingerprint;
+
+        let rebuilt = !skip;
+        if rebuilt {
+            self.ui = {
+                profile!("ui_new_compiled");
+                let validator = |s: &str| M::Message::from_str(s).is_ok();
+                Ui::new_compiled(&self.model, &self.measurer, self.default_style.clone(), &validator).unwrap()
+            };
+            {
+                profile!("compute_layout");
+                let _ = self.ui.compute_layout(self.cached_size);
+            }
+            Runtime::<M, R>::sync_canvases(&self.ui, &mut self.context);
+            self.restore_scroll();
+            self.last_commands.clear();
+            self.last_fingerprint = fingerprint;
         }
-        Runtime::<M, R>::sync_canvases(&self.ui, &mut self.context);
-        self.restore_scroll();
-        self.last_commands.clear();
-        let mut dirty = true;
+
+        let mut dirty = rebuilt;
 
         let commands: Vec<_> = self.context.commands.drain(..).collect();
         for cmd in commands {
@@ -409,15 +436,49 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
     }
 
     /// Set the fixed dimensions of the layout viewport.
-    pub fn set_size(&mut self, width: f32, height: f32) {
-         let _ = self.ui.compute_layout(Size {
+    ///
+    /// When the size actually changes this updates the global viewport state
+    /// (used by `@media` matching and `vw`/`vh` units), notifies the model via
+    /// [`Model::on_resize`], rebuilds the UI tree so viewport-dependent styles
+    /// re-resolve, and recomputes layout. Returns true when a redraw is needed.
+    pub fn set_size(&mut self, width: f32, height: f32) -> bool {
+        let size = Size {
             width: length(width),
-             height: length(height),
-          });
+            height: length(height),
+        };
+        if self.viewport_px == (width, height) {
+            self.cached_size = size;
+            let _ = self.ui.compute_layout(size);
+            return false;
+        }
+        self.viewport_px = (width, height);
+        crate::screen::set_viewport(width, height);
+        self.cached_size = size;
+        self.model.on_resize(width, height, &mut self.context);
+        // sync_view rebuilds the tree (re-resolving @media/vw) and relayouts
+        // with the updated cached_size.
+        self.sync_view()
+    }
+
+    /// Current viewport size in CSS pixels as reported via [`Self::set_size`].
+    pub fn viewport(&self) -> (f32, f32) {
+        self.viewport_px
     }
 
     /// Recalculates layout with the provided available space constraints.
+    ///
+    /// When `size` is fully definite this is equivalent to [`Self::set_size`]
+    /// (including resize notification and rebuild); otherwise it only updates
+    /// the layout constraints.
     pub fn compute_layout(&mut self, size: Size<AvailableSpace>) {
+        let definite = match (size.width, size.height) {
+            (AvailableSpace::Definite(w), AvailableSpace::Definite(h)) => Some((w, h)),
+            _ => None,
+        };
+        if let Some((w, h)) = definite {
+            self.set_size(w, h);
+            return;
+        }
         self.cached_size = size;
         let _ = self.ui.compute_layout(size);
     }

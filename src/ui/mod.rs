@@ -103,7 +103,11 @@ impl Ui {
 
         let mut css_str = String::new();
         attributes::extract_styles(&dom.document, &mut css_str);
-        
+
+        // Inline `@media` blocks that match the current viewport before the
+        // simplecss parse (which drops all at-rules).
+        let css_str = css::media::expand_for_viewport(&css_str);
+
         let keyframes = css::parse_keyframes(&css_str);
         
         let re_nth = regex::Regex::new(r":nth-child\(\s*(\d+)\s*\)").unwrap();
@@ -229,30 +233,37 @@ impl Ui {
 
         #[cfg(feature = "std")]
         if !stylesheet_str.is_empty() || builder.node_metadata.iter().next().is_some() {
-            let cached = style_resolution::STYLESHEET_CACHE.with(|cache| {
+            // Resolve `@media` blocks against the current viewport first; the
+            // expanded text is what `simplecss` (which skips at-rules) parses.
+            let expanded = if stylesheet_str.contains("@media") {
+                css::media::expand_for_viewport(stylesheet_str)
+            } else {
+                stylesheet_str.to_string()
+            };
+            let cached = style_resolution::STYLESHEET_CACHE.with(move |cache| {
                 let mut cache_guard = cache.borrow_mut();
-                if let Some(&c) = cache_guard.get(stylesheet_str) {
+                if let Some(&c) = cache_guard.get(&expanded) {
                     c
                 } else {
-                    let has_nth_or_last_child = stylesheet_str.contains(":nth-child") || stylesheet_str.contains(":last-child");
-                    let keyframes = css::parse_keyframes(stylesheet_str);
-                    
+                    let has_nth_or_last_child = expanded.contains(":nth-child") || expanded.contains(":last-child");
+                    let keyframes = css::parse_keyframes(&expanded);
+
                     let re_nth = regex::Regex::new(r":nth-child\(\s*(\d+)\s*\)").unwrap();
-                    let css_str = re_nth.replace_all(stylesheet_str, ".nth-child-$1").into_owned();
+                    let css_str = re_nth.replace_all(&expanded, ".nth-child-$1").into_owned();
                     let css_str = css_str.replace(":last-child", ".last-child");
                     let re_slash = regex::Regex::new(r"/[\d\.]+").unwrap();
                     let css_str = re_slash.replace_all(&css_str, "").into_owned();
-                    
+
                     let static_css_str: &'static str = Box::leak(css_str.into_boxed_str());
                     let stylesheet = simplecss::StyleSheet::parse(static_css_str);
-                    
+
                     let cached_val: &'static style_resolution::CachedStyles = Box::leak(Box::new(style_resolution::CachedStyles {
                         stylesheet,
                         keyframes,
                         has_nth_or_last_child,
                         style_cache: std::cell::RefCell::new(HashMap::with_capacity(128)),
                     }));
-                    cache_guard.insert(stylesheet_str, cached_val);
+                    cache_guard.insert(expanded, cached_val);
                     cached_val
                 }
             });
@@ -396,6 +407,24 @@ impl Ui {
     /// Recalculates the taffy layout based on the available size constraints.
     pub fn compute_layout(&mut self, available_space: Size<AvailableSpace>) -> Result<(), TaffyError> {
         profile!("taffy_layout");
+        if let Ok(mut style) = self.taffy.style(self.root).cloned() {
+            let mut changed = false;
+            if style.size.width.is_auto() {
+                if let AvailableSpace::Definite(_) = available_space.width {
+                    style.size.width = Dimension::percent(1.0);
+                    changed = true;
+                }
+            }
+            if style.size.height.is_auto() {
+                if let AvailableSpace::Definite(_) = available_space.height {
+                    style.size.height = Dimension::percent(1.0);
+                    changed = true;
+                }
+            }
+            if changed {
+                let _ = self.taffy.set_style(self.root, style);
+            }
+        }
         self.taffy.compute_layout(self.root, available_space)?;
         Ok(())
     }

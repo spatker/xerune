@@ -160,9 +160,35 @@ pub(crate) fn parse_linear_gradient(val: &str) -> Option<LinearGradient> {
     Some(LinearGradient { angle, stops: stops.into() })
 }
 
+/// Resolves `vw`/`vh`/`vmin`/`vmax` lengths against the current global
+/// viewport (see [`crate::screen`]). Returns `None` for other units.
+fn parse_viewport_unit(val: &str) -> Option<f32> {
+    let (num, unit) = if let Some(n) = val.strip_suffix("vmin") {
+        (n, "vmin")
+    } else if let Some(n) = val.strip_suffix("vmax") {
+        (n, "vmax")
+    } else if let Some(n) = val.strip_suffix("vw") {
+        (n, "vw")
+    } else if let Some(n) = val.strip_suffix("vh") {
+        (n, "vh")
+    } else {
+        return None;
+    };
+    let n: f32 = num.trim().parse().ok()?;
+    let (w, h) = crate::screen::size();
+    Some(match unit {
+        "vw" => n * w / 100.0,
+        "vh" => n * h / 100.0,
+        "vmin" => n * w.min(h) / 100.0,
+        _ => n * w.max(h) / 100.0,
+    })
+}
+
 pub fn parse_px(val: &str) -> Option<f32> {
     if let Some(stripped) = val.strip_suffix("px") {
         stripped.parse::<f32>().ok()
+    } else if let Some(v) = parse_viewport_unit(val) {
+        Some(v)
     } else {
         val.parse::<f32>().ok()
     }

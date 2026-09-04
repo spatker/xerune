@@ -68,6 +68,7 @@ impl Backend for WinitBackend {
         let mut mouse_x = 0.0;
         let mut mouse_y = 0.0;
         let mut next_trigger = std::time::Instant::now();
+        let mut app_buffer: Vec<u32> = Vec::new();
 
         event_loop.run(move |event, target| {
             match event {
@@ -90,6 +91,12 @@ impl Backend for WinitBackend {
                 },
                 Event::WindowEvent { window_id, event } if window_id == window_clone.id() => {
                     match event {
+                        WindowEvent::Resized(_) => {
+                            window_clone.request_redraw();
+                        },
+                        WindowEvent::ScaleFactorChanged { .. } => {
+                            window_clone.request_redraw();
+                        },
                         WindowEvent::RedrawRequested => {
                             let size = window_clone.inner_size();
                             let width = size.width;
@@ -105,6 +112,12 @@ impl Backend for WinitBackend {
                                 return;
                             }
 
+                            let buffer_len = (width * height) as usize;
+                            if app_buffer.len() != buffer_len {
+                                app_buffer.resize(buffer_len, 0);
+                                app_buffer.fill(0);
+                            }
+
                             let mut buffer = match surface.buffer_mut() {
                                 Ok(b) => b,
                                 Err(e) => {
@@ -115,8 +128,9 @@ impl Backend for WinitBackend {
                             
                             runtime.set_size(width as f32, height as f32);
 
-                            render_fn(&mut runtime, &mut buffer, width, height);
+                            render_fn(&mut runtime, &mut app_buffer, width, height);
 
+                            buffer.copy_from_slice(&app_buffer);
                             buffer.present().unwrap();
                         },
                         WindowEvent::CloseRequested => {

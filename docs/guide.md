@@ -140,7 +140,71 @@ impl Model for MyModel { ... }
 
 ---
 
-## 4. Keyframe Animations
+## 4. Responsive Design
+
+A single template adapts to any screen size using standard CSS building blocks, plus a small Rust-side API. See `examples/responsive` for a complete dashboard demo (resize the window to watch the layout switch).
+
+### Media Queries
+
+`@media` blocks are resolved against the current viewport every time the UI tree is built. Supported features: `min-width`, `max-width`, `min-height`, `max-height` (and `device-*` aliases), `orientation: portrait|landscape`. Media types `all`/`screen` pass, `print` never matches, `not (feature)` is supported. Unknown features never match (CSS spec behavior).
+
+```css
+.card { width: 46%; }
+@media (min-width: 1024px) { .card { width: 29%; } }
+@media (orientation: landscape) { .toolbar { height: 48px; } }
+```
+
+For compiled templates the queries are parsed **at macro time**: each rule inside an `@media` block is inlined into the generated build code behind a `xerune::css::media::matches_query(&[...])` predicate built from static feature constants — matching costs two atomic reads plus a tiny slice scan, no runtime CSS parsing.
+
+### Viewport Units
+
+`vw`, `vh`, `vmin` and `vmax` work anywhere a length is accepted (sizes, padding, gaps, `font-size`, ...):
+
+```css
+.hero { width: 80vw; height: 25vh; font-size: 3vh; }
+```
+
+### Resize Notification
+
+Backends report viewport changes automatically. On a real size change the runtime updates the global viewport, calls `Model::on_resize`, and rebuilds the tree so media queries and `vw`/`vh` values re-resolve. `on_resize` also fires once with the initial size:
+
+```rust
+impl Model for MyModel {
+    fn on_resize(&mut self, width: f32, height: f32, _ctx: &mut Context) {
+        self.width = width as u32;
+        self.height = height as u32;
+    }
+}
+```
+
+Overriding `on_resize` is only needed when the *structure* of the view changes; pure-CSS adaptation via `@media`/`vw` requires no model code at all.
+
+### Breakpoint Helpers
+
+- `xerune::screen::width()` / `height()` / `size()` — current viewport, readable anywhere (including template expressions like `{{ xerune::screen::width() }}`).
+- `xerune::screen::breakpoint()` → `Breakpoint::Mobile` (`<600px`), `Tablet` (`<1024px`), `Desktop`, plus `is_mobile()` / `is_tablet()` / `is_desktop()`. Thresholds are plain constants (`screen::MOBILE_MAX`, `screen::TABLET_MAX`).
+- `Context::screen_size()` / `Context::breakpoint()` for use inside `update`/`on_resize`.
+
+---
+
+## 5. Skipping Redundant Rebuilds (view fingerprint)
+
+The classic MVU loop rebuilds the whole UI tree after every message. For embedded CPU savings a model may opt into **fingerprint gating** by overriding `Model::view_fingerprint`:
+
+```rust
+fn view_fingerprint(&self) -> Option<u64> {
+    // hash everything the view actually renders (e.g. via `xerune::model::hash_bytes`)
+    Some(xerune::model::hash_bytes(self.rendered_state.as_bytes()))
+}
+```
+
+When two consecutive message-driven syncs see an unchanged fingerprint (and no viewport change happened), the runtime skips template re-instantiation, style resolution and text measurement — a big win for messages that only touch state the view does not display (bookkeeping, hidden timers). Canvas pixels remain safe: dirty canvas flags still force a redraw even when the rebuild is skipped, and viewport changes always rebuild.
+
+The default implementation returns `None` (no fingerprinting) and keeps the always-rebuild behavior. **The runtime trusts your fingerprint completely** — if it misses state the view reads, the UI will go stale. Keep it a function of exactly the view-relevant fields.
+
+---
+
+## 6. Keyframe Animations
 
 Animations are declared directly in CSS style blocks:
 
@@ -164,7 +228,7 @@ Animations are declared directly in CSS style blocks:
 
 ---
 
-## 5. Running on Embedded Linux (fbdev / DRM)
+## 7. Running on Embedded Linux (fbdev / DRM)
 
 Configure `Cargo.toml` features to enable embedded backends:
 ```toml
@@ -194,7 +258,7 @@ export XERUNE_ROTATION=90
 
 ---
 
-## 6. WebAssembly & Browser Deployment
+## 8. WebAssembly & Browser Deployment
 
 Xerune applications can compile to WebAssembly to run directly in web browsers or inside **Xerune Studio** (a web-based live inspector).
 
