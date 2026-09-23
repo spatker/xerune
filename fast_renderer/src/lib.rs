@@ -424,7 +424,11 @@ impl<'a> Renderer for FastRenderer<'a> {
         self.clip_stack.push(local_base_clip);
 
         for command in commands {
-            let cmd_bounds = command.bounds();
+            // Clip operations must stay balanced even outside the dirty region.
+            let cmd_bounds = match command {
+                DrawCommand::Clip { .. } | DrawCommand::PopClip => None,
+                _ => command.bounds(),
+            };
 
             if let Some(cb) = cmd_bounds {
                 if !cb.intersects(&active_clip) {
@@ -1394,6 +1398,39 @@ impl F32Ext for f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dirty_culling_preserves_clip_stack() {
+        let mut buffer = vec![0xff000000; 200 * 20];
+        let mut images = HashMap::new();
+        let mut glyphs = HashMap::new();
+        let fonts: &[xerune::BitmapFont] = &[];
+        let mut renderer = FastRenderer::new(
+            &mut buffer, 200, 20, fonts, &mut images, &mut glyphs,
+        );
+        let rect = |x, width, color| DrawCommand::DrawRect {
+            rect: Rect::new(x, 0.0, width, 10.0),
+            color: Some(color),
+            gradient: None,
+            border_radius: 0.0,
+            border_width: 0.0,
+            border_color: None,
+            border_style: xerune::style::BorderStyle::Solid,
+            border_bottom_only: false,
+        };
+        let commands = [
+            DrawCommand::Clip { rect: Rect::new(100.0, 0.0, 10.0, 10.0) },
+            rect(0.0, 10.0, xerune::Color::new(255, 0, 0, 255)),
+            DrawCommand::PopClip,
+            rect(10.0, 100.0, xerune::Color::new(0, 255, 0, 255)),
+        ];
+
+        renderer.render(&commands, &HashMap::new(), Some(Rect::new(0.0, 0.0, 20.0, 20.0)));
+        assert!(renderer.clip_stack.is_empty());
+        assert_eq!(buffer[0], 0xff000000, "Clipped child must remain invisible");
+        assert_eq!(buffer[10], 0xff00ff00, "Sibling must render after PopClip");
+        assert_eq!(buffer[20], 0xff000000, "Dirty-region clip must remain active");
+    }
 
     #[test]
     fn test_emoji_decoding() {
