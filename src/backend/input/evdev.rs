@@ -35,7 +35,11 @@ pub struct EvdevInputSource {
 impl EvdevInputSource {
     /// Open input devices and spawn the evdev event fetch threads.
     pub fn new() -> Self {
-        let (rx_input, calibration) = spawn_input_thread();
+        Self::with_waker(None)
+    }
+
+    pub(crate) fn with_waker(event_loop_thread: Option<thread::Thread>) -> Self {
+        let (rx_input, calibration) = spawn_input_thread(event_loop_thread);
         Self {
             rx_input,
             calibration,
@@ -176,7 +180,7 @@ impl InputSource for EvdevInputSource {
     }
 }
 
-fn spawn_input_thread() -> (Receiver<evdev::InputEvent>, Option<TouchCalibration>) {
+fn spawn_input_thread(event_loop_thread: Option<thread::Thread>) -> (Receiver<evdev::InputEvent>, Option<TouchCalibration>) {
     let mut calibration = None;
     let mut open_devices = Vec::new();
 
@@ -256,6 +260,9 @@ fn spawn_input_thread() -> (Receiver<evdev::InputEvent>, Option<TouchCalibration
                                     for ev in events {
                                         if tx.send(ev).is_err() {
                                             return;
+                                        }
+                                        if let Some(waker) = &event_loop_thread {
+                                            waker.unpark();
                                         }
                                     }
                                 }

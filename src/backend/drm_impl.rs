@@ -296,9 +296,10 @@ impl Backend for DrmBackend {
             .map_err(|e| BackendError::Init(format!("Failed to perform initial modeset: {:?}", e)))?;
             
         let (msg_tx, msg_rx) = channel::<String>();
-        setup(MpscProxy { sender: msg_tx });
+        let event_loop_thread = thread::current();
+        setup(MpscProxy { sender: msg_tx, event_loop_thread: event_loop_thread.clone() });
         
-        let input_source = EvdevInputSource::new();
+        let input_source = EvdevInputSource::with_waker(Some(event_loop_thread));
         let presenter = DrmPresenter {
             card,
             crtc_handle,

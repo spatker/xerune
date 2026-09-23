@@ -53,6 +53,7 @@ impl std::error::Error for SendError {}
 #[derive(Clone)]
 pub struct MpscProxy {
     pub(crate) sender: std::sync::mpsc::Sender<String>,
+    pub(crate) event_loop_thread: std::thread::Thread,
 }
 
 #[cfg(any(
@@ -62,7 +63,9 @@ pub struct MpscProxy {
 impl EventProxy for MpscProxy {
     fn send_message(&self, message: String) -> Result<(), SendError> {
         self.sender.send(message)
-            .map_err(|e| SendError(e.to_string()))
+            .map_err(|e| SendError(e.to_string()))?;
+        self.event_loop_thread.unpark();
+        Ok(())
     }
 }
 

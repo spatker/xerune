@@ -15,6 +15,7 @@ pub trait FramePresenter {
 }
 
 /// Generic event loop for embedded Linux backends.
+/// Input and message producers must unpark this thread after queuing events.
 pub fn run_embedded_event_loop<M, TM, F, I, P>(
     mut runtime: Runtime<M, TM>,
     mut render_fn: F,
@@ -58,6 +59,7 @@ where
                 break;
             }
         }
+        let batch_full = messages.len() > 300;
         if !messages.is_empty() {
             dirty |= runtime.handle_messages(messages);
         }
@@ -73,17 +75,19 @@ where
             presenter.present(&local_buffer, &surface, effective_damage)?;
         }
 
-        // Dynamic sleeping & idle frame pacing
-        if !dirty {
-            let elapsed = frame_start.elapsed();
-            let is_idle = tick_res.next_tick_in > std::time::Duration::from_secs(3600);
-            if is_idle {
-                input_source.wait_for_event(None);
-            } else if let Some(sleep_dur) = tick_res.next_tick_in.checked_sub(elapsed) {
+        // Input and proxy messages both unpark this thread. A wake sent before
+        // parking is retained, so events arriving during rendering are not lost.
+        // Also pace dirty frames, and never sleep with a full message batch.
+        if !batch_full {
+            if let Some(sleep_dur) = tick_res.next_tick_in.checked_sub(frame_start.elapsed()) {
                 if !sleep_dur.is_zero() {
-                    input_source.wait_for_event(Some(sleep_dur));
+                    std::thread::park_timeout(sleep_dur);
                 }
             }
         }
     }
 }
+
+#[cfg(all(test, any(feature = "drm", feature = "linuxfb")))]
+#[path = "common_loop_tests.rs"]
+mod tests;

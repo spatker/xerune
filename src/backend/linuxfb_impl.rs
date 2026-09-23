@@ -235,9 +235,10 @@ impl Backend for LinuxFbBackend {
         let _ = fb.set_offset(0, 0);
 
         let (msg_tx, msg_rx) = channel::<String>();
-        setup(MpscProxy { sender: msg_tx });
+        let event_loop_thread = std::thread::current();
+        setup(MpscProxy { sender: msg_tx, event_loop_thread: event_loop_thread.clone() });
 
-        let input_source = EvdevInputSource::new();
+        let input_source = EvdevInputSource::with_waker(Some(event_loop_thread));
         let presenter = LinuxFbPresenter {
             fb,
             fb_mmap,
