@@ -22,6 +22,8 @@ pub struct StyleCacheKey {
     pub id: Option<std::borrow::Cow<'static, str>>,
     /// Other miscellaneous HTML attributes.
     pub other_attrs: Option<Vec<(String, String)>>,
+    /// Matching rule indices, including ancestor, sibling and pseudo-class context.
+    pub matched_rules: Vec<usize>,
     /// Parent font size.
     pub parent_font_size_bits: u32,
     /// Parent font weight.
@@ -144,11 +146,21 @@ pub(crate) fn resolve_styles(
     let c = parent_style.color;
     let parent_color_u32 = ((c.r as u32) << 24) | ((c.g as u32) << 16) | ((c.b as u32) << 8) | (c.a as u32);
     let (vw, vh) = crate::screen::size();
+    let el_wrapper = TaffyElementWrapper {
+        node,
+        taffy,
+        metadata: node_metadata,
+        meta,
+    };
+    let matched_rules = stylesheet.rules.iter().enumerate()
+        .filter_map(|(index, rule)| rule.selector.matches(&el_wrapper).then_some(index))
+        .collect();
     let cache_key = StyleCacheKey {
         tag: meta.tag.clone(),
         class: meta.class.clone(),
         id: meta.id.clone(),
         other_attrs: meta.other_attrs.clone(),
+        matched_rules,
         parent_font_size_bits: parent_style.font_size.to_bits(),
         parent_weight: parent_style.weight,
         parent_color_u32,
@@ -170,24 +182,16 @@ pub(crate) fn resolve_styles(
         let mut l_style = defaults.taffy_style;
         let mut c_style = defaults.container_style;
 
-        let el_wrapper = TaffyElementWrapper {
-            node,
-            taffy,
-            metadata: node_metadata,
-            meta,
-        };
-        for rule in &stylesheet.rules {
-            if rule.selector.matches(&el_wrapper) {
-                for decl in &rule.declarations {
-                    let name_lower;
-                    let name = if decl.name.chars().any(|c| c.is_ascii_uppercase()) {
-                        name_lower = decl.name.to_lowercase();
-                        &name_lower
-                    } else {
-                        decl.name
-                    };
-                    css::apply_declaration(name, decl.value, &mut c_style, &mut l_style);
-                }
+        for &index in &cache_key.matched_rules {
+            for decl in &stylesheet.rules[index].declarations {
+                let name_lower;
+                let name = if decl.name.chars().any(|c| c.is_ascii_uppercase()) {
+                    name_lower = decl.name.to_lowercase();
+                    &name_lower
+                } else {
+                    decl.name
+                };
+                css::apply_declaration(name, decl.value, &mut c_style, &mut l_style);
             }
         }
         let pair = (l_style, c_style);
