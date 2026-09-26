@@ -6,84 +6,77 @@ This guide walks you through building your first application using Xerune, styli
 
 ## 1. Minimal Application Setup
 
-Ensure your `Cargo.toml` includes:
-```toml
-[dependencies]
-xerune = { version = "0.1", features = ["winit"] } # Features: "linuxfb", "drm", "evdev", "std"
-fast_renderer = { version = "0.1" }
-```
+Xerune applications follow the Elm/MVU (Model-View-Update) pattern. For a complete, runnable reference implementation, see [`examples/todo`](../examples/todo/).
 
-Create a new file `src/main.rs`:
+A complete application consists of:
+
+### 1. Application State & Messages
+
+Define your model struct and message enum:
 
 ```rust
-use xerune::{Model, InputEvent, Runtime, Context, XeruneTemplate, XeruneMessage, backend::WinitBackend, backend::Backend};
-use fast_renderer::{FastMeasurer, FastRenderer};
+use xerune::{Context, Model, XeruneMessage, XeruneTemplate};
 
-// 1. Define application state
-#[derive(Default)]
-struct Counter {
-    value: i32,
+#[derive(Default, XeruneTemplate)]
+#[template(path = "todo_list.html")]
+pub struct TodoList {
+    items: Vec<TodoItem>,
+    active_item: usize,
+    new_item_title: String,
 }
 
-// 2. Define messages
 #[derive(Debug, Clone, XeruneMessage)]
-enum Message {
-    Increment,
-    Decrement,
+pub enum TodoMsg {
+    Toggle(usize),
+    Remove(usize),
+    Add,
 }
 
-// 3. Define layout and logic
-#[derive(XeruneTemplate)]
-#[template(source = r#"
-    <div style="flex-direction: column; align-items: center; justify-content: center; width: 100%; height: 100%; background-color: #222222; color: #ffffff;">
-        <span style="font-size: 32px; font-weight: bold; margin-bottom: 20px;">
-            Value: {{ value }}
-        </span>
-        <div style="flex-direction: row;">
-            <button onclick="Decrement" style="background-color: #ff3b30; padding: 10px 20px; border-radius: 5px; margin-right: 10px;">-</button>
-            <button onclick="Increment" style="background-color: #34c759; padding: 10px 20px; border-radius: 5px;">+</button>
-        </div>
-    </div>
-"#, ext = "html")]
-impl Model for Counter {
-    type Message = Message;
+impl Model for TodoList {
+    type Message = TodoMsg;
 
     fn update(&mut self, msg: Self::Message, _ctx: &mut Context) {
         match msg {
-            Message::Increment => self.value += 1,
-            Message::Decrement => self.value -= 1,
+            TodoMsg::Toggle(index) => {
+                if let Some(item) = self.items.get_mut(index) {
+                    item.completed = !item.completed;
+                }
+            }
+            TodoMsg::Remove(index) => {
+                if index < self.items.len() {
+                    self.items.remove(index);
+                }
+            }
+            TodoMsg::Add => { /* ... */ }
         }
     }
 }
+```
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let model = Counter::default();
-    
-    // Create UI measures using the default precompiled bitmap fonts
-    let fonts = vec![xerune::font::DEFAULT_ROBOTO_REGULAR, xerune::font::DEFAULT_ROBOTO_BOLD];
-    let measurer = FastMeasurer { fonts: (&fonts).into() };
-    let runtime = Runtime::new(model, measurer);
-    
-    // Setup rendering caches
-    let mut image_cache = std::collections::HashMap::new();
-    let mut glyph_cache = std::collections::HashMap::new();
+### 2. Declarative Template Layout
 
-    // Run the desktop window backend
-    let backend = WinitBackend::new();
-    backend.run("Xerune Counter", 800, 600, runtime, move |rt, buf, w, h| {
-        let mut renderer = FastRenderer::new(
-            buf,
-            w,
-            h,
-            &fonts,
-            &mut image_cache,
-            &mut glyph_cache,
-        );
-        rt.render(&mut renderer);
-    }, |_proxy| {})?;
-    
-    Ok(())
-}
+Templates are precompiled at compile time via `#[derive(XeruneTemplate)]` and bind interaction handlers via `data-on-click`:
+
+```html
+<div data-on-click="add" class="add-btn">Add</div>
+
+{% for item in items %}
+<div class="todo-item" data-on-click="toggle:{{ loop.index0 }}">
+    <span>{{ item.title }}</span>
+    <div data-on-click="remove:{{ loop.index0 }}" class="remove-btn">x</div>
+</div>
+{% endfor %}
+```
+
+See [`examples/todo/templates/todo_list.html`](../examples/todo/templates/todo_list.html) for the full layout and CSS.
+
+### 3. Running with a Backend
+
+Each example includes a native runner supporting desktop (`WinitBackend`) and embedded Linux (`LinuxFbBackend`, `DrmBackend`).
+See [`examples/todo/main.rs`](../examples/todo/main.rs) and [`examples/todo/todo_impl.rs`](../examples/todo/todo_impl.rs) for the runner setup:
+
+```bash
+cargo run --release --example todo
 ```
 
 ---
@@ -95,7 +88,7 @@ Custom canvas allows you to directly manipulate raw pixel colors:
 ```rust
 // 1. Declare <canvas id="my_canvas"> in HTML template
 // 2. Access and draw onto the canvas inside update loop:
-fn update(&mut self, msg: Self::Message, ctx: &mut Context) -> Option<Self::Message> {
+fn update(&mut self, msg: Self::Message, ctx: &mut Context) {
     if let Some(canvas) = ctx.get_canvas_mut("my_canvas", 200, 200) {
         // Clear canvas with white color
         canvas.data.fill(255);
@@ -107,7 +100,6 @@ fn update(&mut self, msg: Self::Message, ctx: &mut Context) -> Option<Self::Mess
         canvas.data[idx + 3] = 255; // Alpha
         canvas.dirty = true;
     }
-    None
 }
 ```
 
@@ -115,27 +107,31 @@ fn update(&mut self, msg: Self::Message, ctx: &mut Context) -> Option<Self::Mess
 
 ## 3. Styling with CSS Stylesheets
 
-You can supply global stylesheets to style elements by class, ID, or tag:
+Templates can embed global or component stylesheets inside `<style>` blocks:
+
+```html
+<style>
+    .card {
+        background-color: #333333;
+        border-radius: 8px;
+        padding: 20px;
+    }
+    #title {
+        color: #ffcc00;
+        font-size: 24px;
+    }
+</style>
+<div class="card">
+    <span id="title">Hello World</span>
+</div>
+```
 
 ```rust
 #[derive(XeruneTemplate)]
-#[template(source = r#"
-    <style>
-        .card {
-            background-color: #333333;
-            border-radius: 8px;
-            padding: 20px;
-        }
-        #title {
-            color: #ffcc00;
-            font-size: 24px;
-        }
-    </style>
-    <div class="card">
-        <span id="title">Hello World</span>
-    </div>
-"#, ext = "html")]
-impl Model for MyModel { ... }
+#[template(path = "my_template.html")]
+pub struct MyModel {
+    // ...
+}
 ```
 
 ---

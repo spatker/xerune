@@ -46,52 +46,62 @@ Xerune is built around the **Model-View-Update (MVU)** pattern:
 
 ## Getting Started
 
-### Example Code
+### Minimal Example
+
+Xerune applications follow the Elm/MVU architecture using pre-compiled HTML templates and strongly typed messages. For a complete runnable application, see the [Todo List example](examples/todo/).
 
 ```rust
-use xerune::{Model, InputEvent, Runtime, Context, XeruneTemplate};
+use xerune::{Context, Model, XeruneMessage, XeruneTemplate};
 
-#[derive(Default)]
-struct AppModel {
-    counter: i32,
+// 1. Define application state and link its template
+#[derive(Default, XeruneTemplate)]
+#[template(path = "todo_list.html")]
+pub struct TodoList {
+    items: Vec<TodoItem>,
+    active_item: usize,
+    new_item_title: String,
 }
 
-#[derive(Debug)]
-enum Msg {
-    Increment,
-    Decrement,
+// 2. Define message intents validated at compile time
+#[derive(Debug, Clone, XeruneMessage)]
+pub enum TodoMsg {
+    Toggle(usize),
+    Remove(usize),
+    Add,
 }
 
-#[derive(XeruneTemplate)]
-#[template(source = r#"
-    <div style="flex-direction: column; align-items: center; justify-content: center; width: 100%; height: 100%;">
-        <span style="font-size: 24px;">Counter: {{ counter }}</span>
-        <div style="flex-direction: row; margin-top: 10px;">
-            <button onclick="Increment" style="padding: 5px 15px; margin: 5px;">+</button>
-            <button onclick="Decrement" style="padding: 5px 15px; margin: 5px;">-</button>
-        </div>
-    </div>
-"#, ext = "html")]
-impl Model for AppModel {
-    type Message = Msg;
+// 3. Implement the Model trait
+impl Model for TodoList {
+    type Message = TodoMsg;
 
-    fn update(&mut self, msg: Self::Message, _ctx: &mut Context) -> Option<Self::Message> {
+    fn update(&mut self, msg: Self::Message, _ctx: &mut Context) {
         match msg {
-            Msg::Increment => self.counter += 1,
-            Msg::Decrement => self.counter -= 1,
+            TodoMsg::Toggle(index) => {
+                if let Some(item) = self.items.get_mut(index) {
+                    item.completed = !item.completed;
+                }
+            }
+            TodoMsg::Remove(index) => {
+                if index < self.items.len() {
+                    self.items.remove(index);
+                }
+            }
+            TodoMsg::Add => { /* ... */ }
         }
-        None
     }
 }
 ```
+
+Templates connect interaction handlers via `data-on-click` (e.g. `data-on-click="toggle:{{ loop.index0 }}"` or `data-on-click="add"`).
+See [`examples/todo/templates/todo_list.html`](examples/todo/templates/todo_list.html) for the full layout and CSS.
 
 ### Running Examples
 
 > **Note**: For best performance, please run all native examples with the `--release` flag.
 
 ```bash
-cargo run --release --example music_player
 cargo run --release --example todo
+cargo run --release --example music_player
 cargo run --release --example showcase
 cargo run --release --example responsive   # resize the window to see @media / vw adaptation
 ```
