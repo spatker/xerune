@@ -78,6 +78,100 @@ pub fn find_best_bitmap_font<'a>(fonts: &'a [xerune::font::BitmapFont], target_s
     Some(&fonts[0])
 }
 
+const fn parse_usize_opt(opt: Option<&'static str>, default: usize) -> usize {
+    match opt {
+        Some(s) => {
+            let bytes = s.as_bytes();
+            let mut val = 0;
+            let mut i = 0;
+            while i < bytes.len() {
+                let b = bytes[i];
+                if b >= b'0' && b <= b'9' {
+                    val = val * 10 + (b - b'0') as usize;
+                } else {
+                    return default;
+                }
+                i += 1;
+            }
+            val
+        }
+        None => default,
+    }
+}
+
+/// Compile-time cache capacity limits for text measurement in embedded environments.
+///
+/// Can be configured at compile time via `FAST_RENDERER_MAX_MEASURE_CACHE` (default: 64).
+/// Set to 0 to disable text measurement caching.
+#[cfg(feature = "std")]
+pub const MAX_MEASURE_CACHE_ENTRIES: usize =
+    parse_usize_opt(option_env!("FAST_RENDERER_MAX_MEASURE_CACHE"), 64);
+
+#[cfg(feature = "std")]
+struct BoundedMeasureCache {
+    entries: HashMap<String, Vec<(u32, u16, f32, f32)>>,
+    order: std::collections::VecDeque<String>,
+    max_entries: usize,
+}
+
+#[cfg(feature = "std")]
+impl BoundedMeasureCache {
+    fn new(max_entries: usize) -> Self {
+        Self {
+            entries: HashMap::with_capacity(max_entries),
+            order: std::collections::VecDeque::with_capacity(max_entries),
+            max_entries,
+        }
+    }
+
+    fn get(&self, text: &str, font_size_bits: u32, weight: u16) -> Option<(f32, f32)> {
+        if self.max_entries == 0 {
+            return None;
+        }
+        if let Some(entries) = self.entries.get(text) {
+            for &(sz, wt, w, h) in entries {
+                if sz == font_size_bits && wt == weight {
+                    return Some((w, h));
+                }
+            }
+        }
+        None
+    }
+
+    fn insert(&mut self, text: &str, font_size_bits: u32, weight: u16, dims: (f32, f32)) {
+        if self.max_entries == 0 {
+            return;
+        }
+        if let Some(list) = self.entries.get_mut(text) {
+            if !list.iter().any(|&(sz, wt, _, _)| sz == font_size_bits && wt == weight) {
+                list.push((font_size_bits, weight, dims.0, dims.1));
+            }
+            return;
+        }
+        if self.entries.len() >= self.max_entries {
+            if let Some(oldest) = self.order.pop_front() {
+                self.entries.remove(&oldest);
+            }
+        }
+        self.order.push_back(text.to_string());
+        self.entries.insert(
+            text.to_string(),
+            vec![(font_size_bits, weight, dims.0, dims.1)],
+        );
+    }
+}
+
+#[cfg(feature = "std")]
+thread_local! {
+    static MEASURE_CACHE: std::cell::RefCell<BoundedMeasureCache> =
+        std::cell::RefCell::new(BoundedMeasureCache::new(MAX_MEASURE_CACHE_ENTRIES));
+}
+
+#[cfg(feature = "std")]
+pub fn measure_cache_len() -> usize {
+    MEASURE_CACHE.with(|cache| cache.borrow().entries.len())
+}
+
 impl<'a> TextMeasurer for FastMeasurer<'a> {
     fn measure_text(&self, text: &str, font_size: f32, weight: u16) -> (f32, f32) {
         profile!("text_measure");
@@ -85,23 +179,9 @@ impl<'a> TextMeasurer for FastMeasurer<'a> {
             return (0.0, 0.0);
         }
 
-        #[cfg(feature = "std")]
-        thread_local! {
-            static MEASURE_CACHE: std::cell::RefCell<HashMap<String, Vec<(u32, u16, f32, f32)>>> = std::cell::RefCell::new(HashMap::with_capacity(256));
-        }
-
         let font_size_bits = font_size.to_bits();
         #[cfg(feature = "std")]
-        let cached = MEASURE_CACHE.with(|cache| {
-            if let Some(entries) = cache.borrow().get(text) {
-                for &(sz, wt, w, h) in entries {
-                    if sz == font_size_bits && wt == weight {
-                        return Some((w, h));
-                    }
-                }
-            }
-            None
-        });
+        let cached = MEASURE_CACHE.with(|cache| cache.borrow().get(text, font_size_bits, weight));
         #[cfg(not(feature = "std"))]
         let cached = None;
 
@@ -187,10 +267,7 @@ impl<'a> TextMeasurer for FastMeasurer<'a> {
 
         #[cfg(feature = "std")]
         MEASURE_CACHE.with(|cache| {
-            cache.borrow_mut()
-                .entry(text.to_string())
-                .or_insert_with(Vec::new)
-                .push((font_size_bits, weight, result.0, result.1));
+            cache.borrow_mut().insert(text, font_size_bits, weight, result);
         });
 
         result
@@ -1451,5 +1528,28 @@ mod tests {
         blit_image(&mut buffer, 10, 10, 10, &rect, 0.0, 0, 0, &[], None, 0);
         blit_image(&mut buffer, 10, 10, 10, &rect, 0.0, 10, 0, &[], None, 0);
         blit_image(&mut buffer, 10, 10, 10, &rect, 0.0, 0, 10, &[], None, 0);
+    }
+
+    #[test]
+    fn test_measurement_cache_is_bounded_and_evicts_old_entries() {
+        let fonts: &[xerune::font::BitmapFont] = &[xerune::font::DEFAULT_ROBOTO_REGULAR];
+        let measurer = FastMeasurer { fonts: fonts.into() };
+
+        // Simulate a long-running dashboard with 2000 changing text strings
+        for i in 0..2000 {
+            let text = format!("Dashboard metric #{} is 42.0", i);
+            let (w, h) = measurer.measure_text(&text, 14.0, 400);
+            assert!(w > 0.0);
+            assert!(h > 0.0);
+        }
+
+        // Must stay bounded to MAX_MEASURE_CACHE_ENTRIES
+        assert_eq!(measure_cache_len(), MAX_MEASURE_CACHE_ENTRIES);
+
+        // Verify that measuring an evicted string again works and succeeds
+        let (w, h) = measurer.measure_text("Dashboard metric #0 is 42.0", 14.0, 400);
+        assert!(w > 0.0);
+        assert!(h > 0.0);
+        assert_eq!(measure_cache_len(), MAX_MEASURE_CACHE_ENTRIES);
     }
 }

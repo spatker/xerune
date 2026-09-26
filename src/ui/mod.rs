@@ -8,6 +8,8 @@ pub mod style_resolution;
 pub use node_map::{NodeMap, NodeMapIter, NodeMapValues};
 pub use metadata::NodeMetadata;
 pub use builder::UiBuilder;
+#[cfg(feature = "std")]
+pub use style_resolution::{cache_config, stylesheet_cache_len};
 
 use taffy::prelude::*;
 use taffy::TaffyError;
@@ -248,9 +250,9 @@ impl Ui {
             } else {
                 stylesheet_str.to_string()
             };
-            let cached = style_resolution::STYLESHEET_CACHE.with(move |cache| {
+            let cached = style_resolution::STYLESHEET_CACHE.with(|cache| {
                 let mut cache_guard = cache.borrow_mut();
-                if let Some(&c) = cache_guard.get(&expanded) {
+                if let Some(c) = cache_guard.get(&expanded) {
                     c
                 } else {
                     let has_nth_or_last_child = expanded.contains(":nth-child") || expanded.contains(":last-child");
@@ -262,16 +264,12 @@ impl Ui {
                     let re_slash = regex::Regex::new(r"/[\d\.]+").unwrap();
                     let css_str = re_slash.replace_all(&css_str, "").into_owned();
 
-                    let static_css_str: &'static str = Box::leak(css_str.into_boxed_str());
-                    let stylesheet = simplecss::StyleSheet::parse(static_css_str);
-
-                    let cached_val: &'static style_resolution::CachedStyles = Box::leak(Box::new(style_resolution::CachedStyles {
-                        stylesheet,
+                    let cached_val = std::rc::Rc::new(style_resolution::CachedStyles::new(
+                        css_str,
                         keyframes,
                         has_nth_or_last_child,
-                        style_cache: std::cell::RefCell::new(HashMap::with_capacity(128)),
-                    }));
-                    cache_guard.insert(expanded, cached_val);
+                    ));
+                    cache_guard.insert(expanded, cached_val.clone());
                     cached_val
                 }
             });

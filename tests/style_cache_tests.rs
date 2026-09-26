@@ -84,3 +84,20 @@ fn style_cache_respects_structural_selectors_across_rebuilds() {
         }
     }
 }
+
+#[test]
+fn stylesheet_cache_is_bounded_and_evicts_old_entries() {
+    for i in 0..50 {
+        let css: &'static str = Box::leak(format!(".dynamic-{} {{ color: red; }}", i).into_boxed_str());
+        let template = Template {
+            css,
+            classes: ["red", "blue"],
+        };
+        let _ui = Ui::new_compiled(&template, &Measurer, ContainerStyle::default(), &|_| true)
+            .unwrap();
+    }
+    assert_eq!(
+        xerune::stylesheet_cache_len(),
+        xerune::cache_config::MAX_STYLESHEET_CACHE_ENTRIES
+    );
+}

@@ -65,6 +65,8 @@ pub use graphics::{Color, LinearGradient, Rect, Canvas, Context, DrawCommand, Te
 pub use style::{Overflow, ContainerStyle, RenderData, Display, TextAlign, Direction, WritingMode, FlexDirection, FlexWrap, AlignContent, AlignItems, CssJustifyContent, Position, BoxSizing};
 pub use model::{Model, InputEvent, XeruneMessage, NoMessage};
 pub use ui::{Interaction, Ui, TemplateLayout, UiBuilder};
+#[cfg(feature = "std")]
+pub use ui::{cache_config, stylesheet_cache_len};
 pub use runtime::Runtime;
 pub use font::{BitmapGlyph, BitmapFont};
 pub use xerune_derive::{XeruneTemplate, XeruneMessage};

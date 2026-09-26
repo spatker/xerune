@@ -41,19 +41,138 @@ pub struct StyleCacheKey {
     pub viewport: (u32, u32),
 }
 
+const fn parse_usize_opt(opt: Option<&'static str>, default: usize) -> usize {
+    match opt {
+        Some(s) => {
+            let bytes = s.as_bytes();
+            let mut val = 0;
+            let mut i = 0;
+            while i < bytes.len() {
+                let b = bytes[i];
+                if b >= b'0' && b <= b'9' {
+                    val = val * 10 + (b - b'0') as usize;
+                } else {
+                    return default;
+                }
+                i += 1;
+            }
+            val
+        }
+        None => default,
+    }
+}
+
+/// Compile-time cache capacity limits for embedded environments.
+///
+/// These values can be configured at compile time via environment variables:
+/// - `XERUNE_MAX_STYLESHEET_CACHE`: Max compiled stylesheets to cache (default: 4)
+/// - `XERUNE_MAX_STYLE_RULE_CACHE`: Max resolved element style pairs to cache per stylesheet (default: 64)
+pub mod cache_config {
+    use super::parse_usize_opt;
+
+    /// Maximum number of compiled stylesheets to keep cached.
+    /// Default: 4 (covers multi-screen embedded apps like Main, Settings, Error, Modal).
+    /// Set to 0 to disable stylesheet caching.
+    pub const MAX_STYLESHEET_CACHE_ENTRIES: usize =
+        parse_usize_opt(option_env!("XERUNE_MAX_STYLESHEET_CACHE"), 4);
+
+    /// Maximum number of resolved element style rules to cache per stylesheet.
+    /// Default: 64 (~23 KB peak heap per stylesheet).
+    /// Set to 0 to disable element style caching.
+    pub const MAX_STYLE_RULE_CACHE_ENTRIES: usize =
+        parse_usize_opt(option_env!("XERUNE_MAX_STYLE_RULE_CACHE"), 64);
+}
+
 #[cfg(feature = "std")]
 pub(crate) struct CachedStyles {
     pub(crate) stylesheet: simplecss::StyleSheet<'static>,
     pub(crate) keyframes: HashMap<String, css::KeyframesAnimation>,
     pub(crate) has_nth_or_last_child: bool,
     pub(crate) style_cache: std::cell::RefCell<HashMap<StyleCacheKey, (Style, ContainerStyle)>>,
+    _css: Box<str>,
+}
+
+#[cfg(feature = "std")]
+impl CachedStyles {
+    pub(crate) fn new(
+        css_str: String,
+        keyframes: HashMap<String, css::KeyframesAnimation>,
+        has_nth_or_last_child: bool,
+    ) -> Self {
+        let boxed_css = css_str.into_boxed_str();
+        // Safety: `_css` is stored in the same heap allocation inside `Rc<CachedStyles>`.
+        // It is never mutated or moved while `CachedStyles` exists, so the slice reference
+        // into its contents remains valid for the lifetime of `CachedStyles`.
+        let static_str: &'static str = unsafe { &*(boxed_css.as_ref() as *const str) };
+        let stylesheet = simplecss::StyleSheet::parse(static_str);
+        Self {
+            stylesheet,
+            keyframes,
+            has_nth_or_last_child,
+            style_cache: std::cell::RefCell::new(HashMap::with_capacity(cache_config::MAX_STYLE_RULE_CACHE_ENTRIES)),
+            _css: boxed_css,
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+pub(crate) struct BoundedStylesheetCache {
+    entries: HashMap<String, std::rc::Rc<CachedStyles>>,
+    order: std::collections::VecDeque<String>,
+    max_entries: usize,
+}
+
+#[cfg(feature = "std")]
+impl BoundedStylesheetCache {
+    pub(crate) fn new(max_entries: usize) -> Self {
+        Self {
+            entries: HashMap::with_capacity(max_entries),
+            order: std::collections::VecDeque::with_capacity(max_entries),
+            max_entries,
+        }
+    }
+
+    pub(crate) fn get(&self, key: &str) -> Option<std::rc::Rc<CachedStyles>> {
+        if self.max_entries == 0 {
+            return None;
+        }
+        self.entries.get(key).cloned()
+    }
+
+    pub(crate) fn insert(&mut self, key: String, val: std::rc::Rc<CachedStyles>) {
+        if self.max_entries == 0 {
+            return;
+        }
+        if self.entries.contains_key(&key) {
+            self.entries.insert(key, val);
+            return;
+        }
+        if self.entries.len() >= self.max_entries {
+            if let Some(oldest) = self.order.pop_front() {
+                self.entries.remove(&oldest);
+            }
+        }
+        self.order.push_back(key.clone());
+        self.entries.insert(key, val);
+    }
+
+    pub(crate) fn len(&self) -> usize {
+        self.entries.len()
+    }
 }
 
 #[cfg(feature = "std")]
 thread_local! {
     /// Keyed by the `@media`-expanded stylesheet text so entries stay viewport-correct.
-    pub(crate) static STYLESHEET_CACHE: std::cell::RefCell<HashMap<String, &'static CachedStyles>> = std::cell::RefCell::new(HashMap::new());
+    pub(crate) static STYLESHEET_CACHE: std::cell::RefCell<BoundedStylesheetCache> =
+        std::cell::RefCell::new(BoundedStylesheetCache::new(cache_config::MAX_STYLESHEET_CACHE_ENTRIES));
     pub(crate) static CACHE_STATS: std::cell::Cell<(usize, usize)> = std::cell::Cell::new((0, 0));
+}
+
+/// Returns the current number of cached stylesheets in thread-local storage.
+#[cfg(feature = "std")]
+pub fn stylesheet_cache_len() -> usize {
+    STYLESHEET_CACHE.with(|cache| cache.borrow().len())
 }
 
 pub(crate) fn to_border_box(dim: taffy::style::Dimension, add: f32) -> taffy::style::Dimension {
@@ -202,7 +321,12 @@ pub(crate) fn resolve_styles(
             }
         }
         let pair = (l_style, c_style);
-        style_cache.insert(cache_key, pair.clone());
+        if cache_config::MAX_STYLE_RULE_CACHE_ENTRIES > 0 {
+            if style_cache.len() >= cache_config::MAX_STYLE_RULE_CACHE_ENTRIES {
+                style_cache.clear();
+            }
+            style_cache.insert(cache_key, pair.clone());
+        }
         pair
     };
 

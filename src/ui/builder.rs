@@ -17,22 +17,6 @@ pub struct UiBuilder {
     pub keyframes: HashMap<String, crate::css::KeyframesAnimation>,
 }
 
-#[cfg(feature = "std")]
-fn intern_string(s: &str) -> &'static str {
-    thread_local! {
-        static CACHE: std::cell::RefCell<std::collections::HashSet<&'static str>> = std::cell::RefCell::new(std::collections::HashSet::new());
-    }
-    CACHE.with(|cache| {
-        let mut cache = cache.borrow_mut();
-        if let Some(&interned) = cache.get(s) {
-            interned
-        } else {
-            let interned: &'static str = Box::leak(s.to_string().into_boxed_str());
-            cache.insert(interned);
-            interned
-        }
-    })
-}
 
 impl UiBuilder {
     pub fn new() -> Self {
@@ -151,8 +135,8 @@ impl UiBuilder {
 
         for &(k, v) in attrs {
             match k {
-                "class" => class = Some(std::borrow::Cow::Borrowed(intern_string(v))),
-                "id" => id = Some(std::borrow::Cow::Borrowed(intern_string(v))),
+                "class" => class = Some(std::borrow::Cow::Owned(v.to_string())),
+                "id" => id = Some(std::borrow::Cow::Owned(v.to_string())),
                 "style" => style = Some(v.to_string()),
                 _ => {
                     let vec = other_attrs.get_or_insert_with(Vec::new);
@@ -167,7 +151,7 @@ impl UiBuilder {
     pub fn create_element(&mut self, tag: &str, attrs: &[(&str, &str)]) -> NodeId {
         let id = self.taffy.new_leaf(Style::default()).unwrap();
         let (class, id_val, style, other_attrs) = Self::parse_attrs(attrs);
-        let metadata = NodeMetadata::new(std::borrow::Cow::Borrowed(intern_string(tag)), class, id_val, style, other_attrs);
+        let metadata = NodeMetadata::new(std::borrow::Cow::Owned(tag.to_string()), class, id_val, style, other_attrs);
         self.node_metadata.insert(id, metadata);
         id
     }
