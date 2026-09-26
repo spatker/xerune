@@ -16,7 +16,7 @@ categories = ["embedded", "gui", "rendering"]
 [lib]
 name = "xerune"
 path = "src/lib.rs"
-crate-type = ["rlib", "cdylib"]
+crate-type = ["rlib"]
 
 
 [features]

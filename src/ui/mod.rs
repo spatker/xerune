@@ -143,6 +143,7 @@ impl Ui {
         })
     }
 
+    #[cfg(feature = "std")]
     fn preprocess_compiled_tree(
         _taffy: &taffy::TaffyTree,
         node_metadata: &mut NodeMap<NodeMetadata>,
@@ -227,9 +228,16 @@ impl Ui {
             model.build_ui(&mut builder, measurer, &default_style, message_validator)
         };
 
+        #[cfg(feature = "std")]
         let stylesheet_str = model.stylesheet();
+        #[cfg(feature = "std")]
         let mut base_styles = builder.base_styles;
+        #[cfg(not(feature = "std"))]
+        let base_styles = builder.base_styles;
+        #[cfg(feature = "std")]
         let mut keyframes = builder.keyframes;
+        #[cfg(not(feature = "std"))]
+        let keyframes = builder.keyframes;
 
         #[cfg(feature = "std")]
         if !stylesheet_str.is_empty() || builder.node_metadata.iter().next().is_some() {
