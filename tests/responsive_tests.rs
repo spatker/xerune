@@ -118,7 +118,7 @@ fn responsive_flow() {
     let mut runtime = Runtime::new(ResponsiveModel::default(), MockMeasurer);
 
     // Small portrait viewport: media rules must not apply, 50vw = 150px.
-    runtime.set_size(300.0, 800.0); // first call return value not asserted (global pre-state)
+    assert!(runtime.set_size(300.0, 800.0));
     assert_eq!(runtime.model().resizes, vec![(300.0, 800.0)]);
     assert_eq!(screen::breakpoint(), screen::Breakpoint::Mobile);
 
@@ -168,4 +168,13 @@ fn responsive_flow() {
     assert_eq!(bg_color(&dyn_runtime.ui, media_node), Some(GREEN),
         "runtime stylesheet @media must re-resolve on resize");
     assert!((layout_width(&dyn_runtime.ui, vw_node) - 150.0).abs() < 0.01);
+
+    // ----- successive runtimes with identical initial sizes do not leak global viewport -----
+    let mut rt_first = Runtime::new(ResponsiveModel::default(), MockMeasurer);
+    assert!(rt_first.set_size(1024.0, 768.0));
+    assert_eq!(rt_first.model().resizes, vec![(1024.0, 768.0)]);
+
+    let mut rt_second = Runtime::new(ResponsiveModel::default(), MockMeasurer);
+    assert!(rt_second.set_size(1024.0, 768.0), "Second runtime must not skip on_resize when matching previous global viewport");
+    assert_eq!(rt_second.model().resizes, vec![(1024.0, 768.0)]);
 }

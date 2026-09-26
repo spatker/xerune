@@ -54,7 +54,7 @@ pub struct Runtime<M, R> {
     default_style: ContainerStyle,
     pub(crate) scroll_offsets: NodeMap<(f32, f32)>,
     cached_size: Size<AvailableSpace>,
-    viewport_px: (f32, f32),
+    viewport_px: Option<(f32, f32)>,
     last_fingerprint: Option<u64>,
     context: Context,
     last_commands: Vec<DrawCommand>,
@@ -88,7 +88,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
              default_style,
              scroll_offsets: NodeMap::new(),
              cached_size: Size::MAX_CONTENT,
-             viewport_px: crate::screen::size(),
+             viewport_px: None,
              last_fingerprint: initial_fingerprint,
              context,
              last_commands: Vec::new(),
@@ -335,6 +335,9 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
 
         let rebuilt = !skip;
         if rebuilt {
+            if let Some((w, h)) = self.viewport_px {
+                crate::screen::set_viewport(w, h);
+            }
             self.ui = {
                 profile!("ui_new_compiled");
                 let validator = |s: &str| M::Message::from_str(s).is_ok();
@@ -446,12 +449,12 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
             width: length(width),
             height: length(height),
         };
-        if self.viewport_px == (width, height) {
+        if self.viewport_px == Some((width, height)) {
             self.cached_size = size;
             let _ = self.ui.compute_layout(size);
             return false;
         }
-        self.viewport_px = (width, height);
+        self.viewport_px = Some((width, height));
         crate::screen::set_viewport(width, height);
         self.cached_size = size;
         self.model.on_resize(width, height, &mut self.context);
@@ -462,7 +465,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
 
     /// Current viewport size in CSS pixels as reported via [`Self::set_size`].
     pub fn viewport(&self) -> (f32, f32) {
-        self.viewport_px
+        self.viewport_px.unwrap_or((0.0, 0.0))
     }
 
     /// Recalculates layout with the provided available space constraints.
