@@ -56,10 +56,15 @@ pub fn blend_solid_span(dst: &mut [u32], color: u32) {
         dst.fill(color);
     } else if a > 0 {
         let inv_a = 255 - a;
-        let src_b0 = (color & 0xFF) as i16;
-        let src_b1 = ((color >> 8) & 0xFF) as i16;
-        let src_b2 = ((color >> 16) & 0xFF) as i16;
-        let src_b3 = ((color >> 24) & 0xFF) as i16;
+        let src_b0 = color & 0xFF;
+        let src_b1 = (color >> 8) & 0xFF;
+        let src_b2 = (color >> 16) & 0xFF;
+        let src_b3 = (color >> 24) & 0xFF;
+
+        let scale_b0 = (src_b0 * a) as u16;
+        let scale_b1 = (src_b1 * a) as u16;
+        let scale_b2 = (src_b2 * a) as u16;
+        let scale_b3 = (src_b3 * a) as u16;
         
         let mut chunks_std = dst;
         
@@ -71,8 +76,8 @@ pub fn blend_solid_span(dst: &mut [u32], color: u32) {
             unsafe {
                 let inv_a_vec = _mm_set1_epi16(inv_a as i16);
                 let src_scale = _mm_set_epi16(
-                    src_b3 * a as i16, src_b2 * a as i16, src_b1 * a as i16, src_b0 * a as i16,
-                    src_b3 * a as i16, src_b2 * a as i16, src_b1 * a as i16, src_b0 * a as i16
+                    scale_b3 as i16, scale_b2 as i16, scale_b1 as i16, scale_b0 as i16,
+                    scale_b3 as i16, scale_b2 as i16, scale_b1 as i16, scale_b0 as i16,
                 );
                 
                 let mut ptr = simd_slice.as_mut_ptr();
@@ -108,10 +113,10 @@ pub fn blend_solid_span(dst: &mut [u32], color: u32) {
             unsafe {
                 let inv_a_vec = vdupq_n_u16(inv_a as u16);
                 let src_scale_arr = [
-                    src_b0 * a as i16, src_b1 * a as i16, src_b2 * a as i16, src_b3 * a as i16,
-                    src_b0 * a as i16, src_b1 * a as i16, src_b2 * a as i16, src_b3 * a as i16,
+                    scale_b0, scale_b1, scale_b2, scale_b3,
+                    scale_b0, scale_b1, scale_b2, scale_b3,
                 ];
-                let src_scale_vec = vld1q_u16(src_scale_arr.as_ptr() as *const u16);
+                let src_scale_vec = vld1q_u16(src_scale_arr.as_ptr());
                 let one_vec = vdupq_n_u16(1);
                 
                 let mut ptr = simd_slice.as_mut_ptr();
@@ -431,6 +436,69 @@ pub fn blend_glyph_span(dst: &mut [u32], coverage: &[u8], color: u32) {
                 let temp_rb = rb + ((rb >> 8) & 0x00FF00FF) + 0x00010001;
                 
                 *pixel = (temp_ag & 0xFF00FF00) | ((temp_rb >> 8) & 0x00FF00FF);
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn scalar_blend_pixel(dst: u32, color: u32) -> u32 {
+        let a = (color >> 24) & 0xff;
+        if a == 255 {
+            return color;
+        }
+        if a == 0 {
+            return dst;
+        }
+        let inv_a = 255 - a;
+        let src_ag = ((color & 0xFF00FF00) >> 8) * a;
+        let src_rb = (color & 0x00FF00FF) * a;
+        let ag = ((dst & 0xFF00FF00) >> 8) * inv_a + src_ag;
+        let rb = (dst & 0x00FF00FF) * inv_a + src_rb;
+
+        let temp_ag = ag + ((ag >> 8) & 0x00FF00FF) + 0x00010001;
+        let temp_rb = rb + ((rb >> 8) & 0x00FF00FF) + 0x00010001;
+
+        (temp_ag & 0xFF00FF00) | ((temp_rb >> 8) & 0x00FF00FF)
+    }
+
+    #[test]
+    fn blend_solid_span_simd_matches_scalar_reference() {
+        let colors = [
+            0xC8FFFFFF,
+            0x80123456,
+            0x01AABBCC,
+            0xFEFEDCBA,
+            0x7F808080,
+            0x00000000,
+            0xFFFFFFFF,
+        ];
+        let bg_patterns = [
+            0x00000000,
+            0xFFFFFFFF,
+            0xFF000000,
+            0xFF112233,
+            0x88445566,
+        ];
+
+        for &color in &colors {
+            for &bg in &bg_patterns {
+                for len in [1, 2, 3, 4, 5, 7, 8, 16] {
+                    let mut buffer = vec![bg; len];
+                    blend_solid_span(&mut buffer, color);
+                    let expected: Vec<u32> = (0..len).map(|_| scalar_blend_pixel(bg, color)).collect();
+                    assert_eq!(
+                        buffer,
+                        expected,
+                        "Mismatch for color {:#010X} over bg {:#010X} with length {}",
+                        color,
+                        bg,
+                        len
+                    );
+                }
             }
         }
     }
