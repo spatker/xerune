@@ -83,7 +83,6 @@ evdev = "0.12"
 # anyhow for easier error handling in examples
 anyhow = "1.0" 
 rand = "0.8"
-mimalloc = "0.1.43"
 
 [profile.release]
 opt-level = 3

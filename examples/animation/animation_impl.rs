@@ -6,10 +6,6 @@ use xerune::{Runtime, Model, XeruneMessage, XeruneTemplate};
 #[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm")))]
 use fast_renderer::FastMeasurer;
 
-#[cfg(all(not(target_arch = "wasm32"), target_os = "linux", feature = "mimalloc"))]
-#[global_allocator]
-static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
-
 #[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm")))]
 pub type Measurer = FastMeasurer<'static>;
 
