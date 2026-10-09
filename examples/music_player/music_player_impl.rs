@@ -136,7 +136,11 @@ impl MusicPlayerModel {
     fn update_derived_fields(&mut self) {
         if self.tracks.is_empty() { return; }
         let dummy_track = self.tracks[0].clone();
-        let current = self.current_track_index.map(|i| &self.tracks[i]).unwrap_or(&dummy_track);
+        let current = match self.current_track_index {
+            Some(i) => &self.tracks[i],
+            None if self.active_list_index < self.tracks.len() => &self.tracks[self.active_list_index],
+            None => &dummy_track,
+        };
         self.current_track = current.clone();
         let duration = current.duration_seconds();
         
