@@ -369,8 +369,25 @@ pub trait TextMeasurer {
     fn measure_text(&self, text: &str, font_size: f32, weight: u16) -> (f32, f32);
 }
 
+/// Read-only pixel resources a renderer may draw from. Renderers never load anything
+/// themselves; missing images are drawn as placeholders.
+#[derive(Clone, Copy)]
+pub struct RenderResources<'a> {
+    /// Canvas pixel buffers by canvas id.
+    pub canvases: &'a HashMap<String, Canvas>,
+    /// Decoded images by `src`.
+    pub images: &'a crate::images::ImageStore,
+}
+
+impl<'a> RenderResources<'a> {
+    /// Bundle canvases and images for a render pass.
+    pub fn new(canvases: &'a HashMap<String, Canvas>, images: &'a crate::images::ImageStore) -> Self {
+        Self { canvases, images }
+    }
+}
+
 /// Trait defining a renderer backend that executes draw commands to present graphics.
 pub trait Renderer: TextMeasurer {
     /// Renders a set of draw commands onto the canvas/display buffer, optimizing for a dirty rectangle region.
-    fn render(&mut self, commands: &[DrawCommand], canvases: &HashMap<String, Canvas>, dirty_rect: Option<Rect>);
+    fn render(&mut self, commands: &[DrawCommand], resources: &RenderResources<'_>, dirty_rect: Option<Rect>);
 }

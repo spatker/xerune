@@ -241,6 +241,8 @@ fn render_html_to_pixmap(html: &str, fonts: &'static [fontdue::Font]) -> Result<
     let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let mut runtime = Runtime::new(model, measurer);
         runtime.set_size(WIDTH as f32, HEIGHT as f32);
+        // Images load in the background; settle them before the one-shot snapshot.
+        runtime.wait_for_images(std::time::Duration::from_secs(5));
         
         let mut image_cache = HashMap::new();
         let mut glyph_cache = HashMap::new();

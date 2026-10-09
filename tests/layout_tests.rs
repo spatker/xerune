@@ -336,7 +336,7 @@ fn test_tiled_rendering_identity() {
     let mut glyph_cache1 = HashMap::new();
     {
         let mut renderer = FastRenderer::new(&mut full_buffer, 800, 600, &fonts, &mut image_cache1, &mut glyph_cache1);
-        renderer.render(&commands, &HashMap::new(), None);
+        renderer.render(&commands, &xerune::RenderResources::new(&HashMap::new(), &xerune::ImageStore::new()), None);
     }
 
     // 2. Tile-based rendering
@@ -347,7 +347,7 @@ fn test_tiled_rendering_identity() {
         // 50-pixel height tile
         let mut tile_buffer = vec![0u32; 800 * 50];
         let mut renderer = FastRenderer::new(&mut tile_buffer, 800, 50, &fonts, &mut image_cache2, &mut glyph_cache2);
-        renderer.render_tiled(&commands, &HashMap::new(), None, 600, |tx, ty, tw, th, pixels| {
+        renderer.render_tiled(&commands, &xerune::RenderResources::new(&HashMap::new(), &xerune::ImageStore::new()), None, 600, |tx, ty, tw, th, pixels| {
             for dy in 0..th {
                 let src_start = (dy * tw) as usize;
                 let dst_start = ((ty + dy as i32) * 800 + tx) as usize;
@@ -383,7 +383,7 @@ fn test_bitmap_font_rendering() {
     let mut glyph_cache = HashMap::new();
 
     let mut renderer = FastRenderer::new(&mut buffer, 200, 50, &fonts, &mut image_cache, &mut glyph_cache);
-    renderer.render(&commands, &HashMap::new(), None);
+    renderer.render(&commands, &xerune::RenderResources::new(&HashMap::new(), &xerune::ImageStore::new()), None);
 
     // Verify that some pixels are drawn (not all zeros)
     let non_zero_count = buffer.iter().filter(|&&pixel| pixel != 0).count();
@@ -539,7 +539,7 @@ fn test_dirty_rect_rasterization_culling() {
     // Render with dirty_rect restricted to the second rectangle only
     let dirty_rect = Some(Rect::new(90.0, 90.0, 70.0, 70.0));
     let mut renderer = FastRenderer::new(&mut buffer, 200, 200, &fonts, &mut image_cache, &mut glyph_cache);
-    renderer.render(&commands, &HashMap::new(), dirty_rect);
+    renderer.render(&commands, &xerune::RenderResources::new(&HashMap::new(), &xerune::ImageStore::new()), dirty_rect);
 
     // Verify first rect (0,0..50,50) was culled and untouched (0)
     let first_rect_pixel = buffer[0];

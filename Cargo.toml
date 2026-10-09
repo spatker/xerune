@@ -27,7 +27,11 @@ std = [
     "dep:regex",
     "dep:simplecss",
     "dep:env_logger",
+    "dep:png",
+    "http",
 ]
+# Load images from http(s):// URLs (via ureq) in the default image loader.
+http = ["std", "dep:ureq"]
 profile = ["dep:coarse-prof"]
 dynamic-parser = ["dep:html5ever", "dep:markup5ever", "dep:markup5ever_rcdom", "std"]
 
@@ -63,6 +67,8 @@ evdev = { version = "0.12", optional = true }
 libc = { version = "0.2", optional = true }
 simplecss = { version = "0.2.2", optional = true }
 bytemuck = { version = "1.14", default-features = false }
+png = { version = "0.17", optional = true }
+ureq = { version = "2", optional = true }
 
 [dev-dependencies]
 coarse-prof = "0.2.6"

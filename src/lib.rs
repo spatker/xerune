@@ -39,6 +39,8 @@ pub mod alloc_prelude {
 
 /// Graphics types, color definitions, draw commands, and canvas abstractions.
 pub mod graphics;
+/// Image resources: decoded images, the runtime-owned store and background loading.
+pub mod images;
 /// Layout and styling properties, including the core styling system.
 pub mod style;
 /// Application state abstractions for MVU (Model-View-Update).
@@ -61,7 +63,10 @@ pub mod font;
 #[cfg(any(feature = "winit", feature = "linuxfb", feature = "drm", feature = "browser"))]
 pub mod backend;
 
-pub use graphics::{Color, LinearGradient, Rect, Canvas, Context, DrawCommand, TextMeasurer, Renderer};
+pub use graphics::{Color, LinearGradient, Rect, Canvas, Context, DrawCommand, TextMeasurer, Renderer, RenderResources};
+pub use images::{Image, ImageStatus, ImageStore};
+#[cfg(feature = "std")]
+pub use images::{DefaultImageLoader, ImageError, ImageLoader};
 pub use style::{Overflow, ContainerStyle, RenderData, Display, TextAlign, Direction, WritingMode, FlexDirection, FlexWrap, AlignContent, AlignItems, CssJustifyContent, Position, BoxSizing};
 pub use model::{Model, InputEvent, XeruneMessage, NoMessage};
 pub use ui::{Interaction, Ui, TemplateLayout, UiBuilder};

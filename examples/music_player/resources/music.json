@@ -21,7 +21,7 @@
         "artist": "Tame Impala",
         "album": "Currents",
         "duration": "3:36",
-        "cover_url": "/examples/music_player/resources/img/currents.png"
+        "cover_url": "https://placehold.co/400x400/dimgrey/purple/png?text=The%20Less%20I%20Know%20The%20Better"
     },
     {
         "id": "4",
@@ -37,6 +37,6 @@
         "artist": "Dua Lipa",
         "album": "Future Nostalgia",
         "duration": "3:23",
-        "cover_url": "/examples/music_player/resources/img/future_nostalgia.png"
+        "cover_url": "https://placehold.co/400x400/dimgrey/yellow/png?text=Levitating"
     }
 ]

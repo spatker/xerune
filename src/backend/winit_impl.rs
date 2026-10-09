@@ -49,6 +49,15 @@ impl Backend for WinitBackend {
         let event_loop = winit::event_loop::EventLoopBuilder::<String>::with_user_event().build()
             .map_err(|e| BackendError::Init(e.to_string()))?;
         let proxy = event_loop.create_proxy();
+        {
+            // Background image loads wake the loop; `tick()` then applies them.
+            let wake_proxy = std::sync::Mutex::new(proxy.clone());
+            runtime.set_image_waker(move || {
+                if let Ok(p) = wake_proxy.lock() {
+                    let _ = p.send_event(crate::runtime::WAKE_MESSAGE.to_string());
+                }
+            });
+        }
         setup(WinitProxy { proxy });
         
         let window = Rc::new(WindowBuilder::new()
@@ -84,7 +93,10 @@ impl Backend for WinitBackend {
                     target.set_control_flow(ControlFlow::WaitUntil(next_trigger));
                 }
                 Event::UserEvent(msg) => {
-                    if runtime.handle_event(InputEvent::Message(msg)) {
+                    if msg == crate::runtime::WAKE_MESSAGE {
+                        // Run `tick()` in the upcoming AboutToWait.
+                        next_trigger = std::time::Instant::now();
+                    } else if runtime.handle_event(InputEvent::Message(msg)) {
                         next_trigger = std::time::Instant::now();
                         window_clone.request_redraw();
                     }

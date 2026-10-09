@@ -36,6 +36,10 @@ where
 
     runtime.set_size(w as f32, h as f32);
 
+    // Background image loads unpark this thread; the next `tick()` applies them.
+    let loop_thread = std::thread::current();
+    runtime.set_image_waker(move || loop_thread.unpark());
+
     let mut force_redraw = true;
     let mut local_buffer = vec![0xFF222222u32; (surface.disp_w * surface.disp_h) as usize];
 

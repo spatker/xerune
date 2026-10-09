@@ -9,7 +9,7 @@ pub mod rounded_rect;
 
 #[cfg(feature = "std")]
 use fontdue::Font;
-use xerune::{Canvas, DrawCommand, Rect, Renderer, TextMeasurer};
+use xerune::{DrawCommand, Rect, RenderResources, Renderer, TextMeasurer};
 use xerune::alloc_prelude::*;
 
 use blitter::{pack_color, blend_solid_rect, blend_pixel, blend_glyph_span, div_255, calc_pixel_index};
@@ -367,7 +367,7 @@ pub struct FastRenderer<'a> {
     pub rotation: u32,
     pub x_offset: i32,
     pub y_offset: i32,
-    pub image_cache: &'a mut HashMap<String, (u32, u32, Vec<u32>)>, // (width, height, pixels)
+    pub image_cache: &'a mut HashMap<String, (u32, u32, Vec<u32>)>, // src -> (width, height, packed pixels)
     pub glyph_cache: &'a mut HashMap<(usize, u16, u32), CachedGlyph>,
     #[cfg(feature = "std")]
     pub layout: fontdue::layout::Layout,
@@ -428,7 +428,7 @@ impl<'a> FastRenderer<'a> {
     pub fn render_tiled<F>(
         &mut self,
         commands: &[DrawCommand],
-        canvases: &HashMap<String, Canvas>,
+        resources: &RenderResources<'_>,
         dirty_rect: Option<Rect>,
         screen_height: u32,
         mut flush_cb: F,
@@ -455,7 +455,7 @@ impl<'a> FastRenderer<'a> {
 
             if overlap {
                 self.buffer.fill(0);
-                self.render(commands, canvases, dirty_rect);
+                self.render(commands, resources, dirty_rect);
                 let actual_h = (screen_height as i32 - y).min(tile_h) as u32;
                 flush_cb(0, y, self.width, actual_h, &self.buffer[.. (self.width * actual_h) as usize]);
             }
@@ -473,7 +473,7 @@ impl<'a> TextMeasurer for FastRenderer<'a> {
 }
 
 impl<'a> Renderer for FastRenderer<'a> {
-    fn render(&mut self, commands: &[DrawCommand], canvases: &HashMap<String, Canvas>, dirty_rect: Option<Rect>) {
+    fn render(&mut self, commands: &[DrawCommand], resources: &RenderResources<'_>, dirty_rect: Option<Rect>) {
         profile!("render_full");
         
         let tile_rect = Rect {
@@ -909,68 +909,43 @@ impl<'a> Renderer for FastRenderer<'a> {
                     let local_rect = self.translate_rect(rect);
                     let clip = self.get_clip_rect();
 
-                    #[cfg(feature = "std")]
-                    {
-                        if !self.image_cache.contains_key(src) {
-                            let path_to_read = src.strip_prefix('/').unwrap_or(src);
-                            if let Ok(data) = std::fs::read(path_to_read) {
-                                if let Ok(png_pixmap) = tiny_skia::Pixmap::decode_png(&data) {
-                                    let w = png_pixmap.width();
-                                    let h = png_pixmap.height();
-                                    if w > 0 && h > 0 {
-                                        let mut pixels = Vec::with_capacity((w * h) as usize);
-                                        for chunk in png_pixmap.data().chunks_exact(4) {
-                                            let r = chunk[0];
-                                            let g = chunk[1];
-                                            let b = chunk[2];
-                                            let a = chunk[3];
-                                            let col = xerune::Color::new(r, g, b, a);
-                                            pixels.push(pack_color(col, self.swap_rb));
-                                        }
-                                        self.image_cache.insert(src.clone(), (w, h, pixels));
-                                    }
-                                } else {
-                                    log::warn!("Failed to decode PNG image: {}", src);
-                                }
-                            } else {
-                                log::warn!("Failed to read image file: {}", src);
+                    // Images are loaded and decoded by the runtime; here we only convert them to
+                    // the framebuffer pixel format once and draw a placeholder while missing.
+                    match resources.images.get(src) {
+                        Some(img) => {
+                            let up_to_date = matches!(
+                                self.image_cache.get(src),
+                                Some((w, h, _)) if *w == img.width && *h == img.height
+                            );
+                            if !up_to_date {
+                                let pixels: Vec<u32> = img
+                                    .data
+                                    .chunks_exact(4)
+                                    .map(|c| pack_color(xerune::Color::new(c[0], c[1], c[2], c[3]), self.swap_rb))
+                                    .collect();
+                                self.image_cache.insert(src.clone(), (img.width, img.height, pixels));
                             }
                         }
-
-                        if let Some(&(img_w, img_h, ref img_pixels)) = self.image_cache.get(src) {
-                            blit_image(
-                                self.buffer,
-                                self.width,
-                                self.height,
-                                self.physical_width,
-                                &local_rect,
-                                *border_radius,
-                                img_w,
-                                img_h,
-                                img_pixels,
-                                clip,
-                                self.rotation,
-                            );
-                        } else {
-                            let grey = pack_color(xerune::Color::new(200, 200, 200, 255), self.swap_rb);
-                            blend_solid_rect(
-                                self.buffer,
-                                self.width,
-                                self.height,
-                                self.physical_width,
-                                local_rect.x as i32,
-                                local_rect.y as i32,
-                                local_rect.width as i32,
-                                local_rect.height as i32,
-                                grey,
-                                clip,
-                                self.rotation,
-                            );
+                        None => {
+                            self.image_cache.remove(src);
                         }
                     }
 
-                    #[cfg(not(feature = "std"))]
-                    {
+                    if let Some(&(img_w, img_h, ref img_pixels)) = self.image_cache.get(src) {
+                        blit_image(
+                            self.buffer,
+                            self.width,
+                            self.height,
+                            self.physical_width,
+                            &local_rect,
+                            *border_radius,
+                            img_w,
+                            img_h,
+                            img_pixels,
+                            clip,
+                            self.rotation,
+                        );
+                    } else {
                         let grey = pack_color(xerune::Color::new(200, 200, 200, 255), self.swap_rb);
                         blend_solid_rect(
                             self.buffer,
@@ -1164,7 +1139,7 @@ impl<'a> Renderer for FastRenderer<'a> {
                 DrawCommand::DrawCanvas { id, rect, border_radius } => {
                     profile!("render_canvas");
                     let local_rect = self.translate_rect(rect);
-                    if let Some(canvas) = canvases.get(id) {
+                    if let Some(canvas) = resources.canvases.get(id) {
                         let clip = self.get_clip_rect();
                         blit_image_rgba(
                             self.buffer,
@@ -1502,7 +1477,7 @@ mod tests {
             rect(10.0, 100.0, xerune::Color::new(0, 255, 0, 255)),
         ];
 
-        renderer.render(&commands, &HashMap::new(), Some(Rect::new(0.0, 0.0, 20.0, 20.0)));
+        renderer.render(&commands, &xerune::RenderResources::new(&HashMap::new(), &xerune::ImageStore::new()), Some(Rect::new(0.0, 0.0, 20.0, 20.0)));
         assert!(renderer.clip_stack.is_empty());
         assert_eq!(buffer[0], 0xff000000, "Clipped child must remain invisible");
         assert_eq!(buffer[10], 0xff00ff00, "Sibling must render after PopClip");

@@ -132,7 +132,8 @@ pub fn get_default_style(tag: &str, parent_style: &ContainerStyle) -> StyleBundl
         }
         "img" => {
             bundle.element_type = ElementType::Image;
-            bundle.taffy_style.size = Size { width: length(100.0), height: length(100.0) };
+            // No default size: the runtime applies a placeholder box until the image has
+            // loaded and its natural size afterwards (see `Runtime::apply_image_sizes`).
         }
         "strong" | "b" => {
              bundle.container_style.weight = 1; // Bold

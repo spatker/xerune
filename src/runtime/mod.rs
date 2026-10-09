@@ -21,10 +21,18 @@ macro_rules! profile {
     ($($tt:tt)*) => {};
 }
 
-use crate::graphics::{Context, DrawCommand, Rect, TextMeasurer, Renderer};
+use crate::graphics::{Context, DrawCommand, Rect, TextMeasurer, Renderer, RenderResources};
+use crate::images::ImageStore;
 use crate::style::{ContainerStyle, RenderData, AnimationIterationCount};
 use crate::model::{InputEvent, Model};
 use crate::ui::{Ui, NodeMap};
+
+/// Message a backend's event proxy can send purely to wake the event loop (e.g. when a
+/// background image load completes). It is not forwarded to the model.
+pub const WAKE_MESSAGE: &str = "\u{0}xerune:wake";
+
+/// Placeholder box used for images without an explicit size until they have loaded.
+const IMAGE_PLACEHOLDER_SIZE: f32 = 100.0;
 
 /// Current active state of a touch event/gesture tracking.
 #[derive(Debug, Clone, Copy)]
@@ -68,6 +76,7 @@ pub struct Runtime<M, R> {
     last_tick_time: Instant,
     start_time: Instant,
     pub(crate) touch_state: Option<TouchState>,
+    images: ImageStore,
 }
 
 impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
@@ -76,6 +85,11 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
          let default_style = ContainerStyle::default();
          let validator = |s: &str| M::Message::from_str(s).is_ok();
          let ui = Ui::new_compiled(&model, &measurer, default_style.clone(), &validator).unwrap();
+         let mut ui = ui;
+         let images = ImageStore::new();
+         // Images are requested on the first layout (`set_size` / `sync_view`), so a custom
+         // loader can still be installed right after construction.
+         Runtime::<M, R>::apply_image_sizes(&mut ui, &images);
          
          let mut context = Context::new();
          Runtime::<M, R>::sync_canvases(&ui, &mut context);
@@ -100,6 +114,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
              last_tick_time: Instant::now(),
              start_time: Instant::now(),
              touch_state: None,
+             images,
          }
     }
 
@@ -126,6 +141,86 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
     /// Get a reference to active timers in the runtime.
     pub fn timers(&self) -> &[Timer] {
         &self.timers
+    }
+
+    /// Images referenced by the current view and their load state.
+    pub fn images(&self) -> &ImageStore {
+        &self.images
+    }
+
+    /// Mutable access to the image store, e.g. to [`ImageStore::insert`] bundled images.
+    pub fn images_mut(&mut self) -> &mut ImageStore {
+        &mut self.images
+    }
+
+    /// Replace the loader used to fetch and decode `<img src>` (default: [`crate::DefaultImageLoader`]).
+    /// Install it before the first layout so initial images use it too.
+    #[cfg(all(feature = "std", not(target_arch = "wasm32")))]
+    pub fn set_image_loader(&mut self, loader: impl crate::images::ImageLoader) {
+        self.images.set_loader(loader);
+    }
+
+    /// Install a callback that wakes the event loop when a background image load completes.
+    /// Built-in backends install this automatically; the next [`Self::tick`] applies the result.
+    #[cfg(all(feature = "std", not(target_arch = "wasm32")))]
+    pub fn set_image_waker(&mut self, waker: impl Fn() + Send + Sync + 'static) {
+        self.images.set_waker(Arc::new(waker));
+    }
+
+    /// Block until pending images have loaded (or failed), up to `timeout`, then relayout.
+    /// Intended for headless rendering and tests. Returns true if a redraw is needed.
+    #[cfg(all(feature = "std", not(target_arch = "wasm32")))]
+    pub fn wait_for_images(&mut self, timeout: core::time::Duration) -> bool {
+        if self.images.wait(timeout) {
+            self.sync_view_inner(false)
+        } else {
+            false
+        }
+    }
+
+    /// Sizes `<img>` nodes: once loaded, an image without explicit width/height takes its
+    /// natural size, and its aspect ratio is used when only one dimension is set. Until then,
+    /// unsized images get a placeholder box.
+    fn apply_image_sizes(ui: &mut Ui, images: &ImageStore) {
+        let nodes: Vec<(NodeId, Option<(u32, u32)>)> = ui
+            .render_data
+            .iter()
+            .filter_map(|(node, data)| match data {
+                RenderData::Image(src, _) => Some((node, images.get(src).map(|i| (i.width, i.height)))),
+                _ => None,
+            })
+            .collect();
+
+        for (node, natural) in nodes {
+            let Ok(mut style) = ui.taffy.style(node).cloned() else { continue };
+            let auto_w = style.size.width.is_auto();
+            let auto_h = style.size.height.is_auto();
+            match natural {
+                Some((w, h)) => {
+                    if style.aspect_ratio.is_none() {
+                        style.aspect_ratio = Some(w as f32 / h as f32);
+                    }
+                    if auto_w && auto_h {
+                        style.size.width = length(w as f32);
+                    }
+                }
+                None => {
+                    if auto_w && auto_h {
+                        style.size = Size {
+                            width: length(IMAGE_PLACEHOLDER_SIZE),
+                            height: length(IMAGE_PLACEHOLDER_SIZE),
+                        };
+                    } else if (auto_w != auto_h) && style.aspect_ratio.is_none() {
+                        style.aspect_ratio = Some(1.0);
+                    }
+                }
+            }
+            let _ = ui.taffy.set_style(node, style.clone());
+            // Keep the animation base in sync so restoring an animated node keeps the size.
+            if let Some((base_layout, _)) = ui.base_styles.get_mut(node) {
+                *base_layout = style;
+            }
+        }
     }
 
     fn sync_canvases(ui: &Ui, context: &mut Context) {
@@ -189,6 +284,9 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
                 return old_focus.is_some();
             }
             InputEvent::Message(msg_str) => {
+                if msg_str == WAKE_MESSAGE {
+                    return false;
+                }
                 self.process_message_str(&msg_str)
             }
             InputEvent::Scroll { x, y, delta_x, delta_y } => {
@@ -343,6 +441,11 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
                 let validator = |s: &str| M::Message::from_str(s).is_ok();
                 Ui::new_compiled(&self.model, &self.measurer, self.default_style.clone(), &validator).unwrap()
             };
+            self.images.sync(self.ui.render_data.values().filter_map(|d| match d {
+                RenderData::Image(src, _) => Some(src.as_str()),
+                _ => None,
+            }));
+            Runtime::<M, R>::apply_image_sizes(&mut self.ui, &self.images);
             {
                 profile!("compute_layout");
                 let _ = self.ui.compute_layout(self.cached_size);
@@ -433,7 +536,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
             canvas.dirty = false;
         }
 
-        renderer.render(&commands, &self.context.canvases, dirty_region);
+        renderer.render(&commands, &RenderResources::new(&self.context.canvases, &self.images), dirty_region);
         self.last_commands = commands;
         dirty_region
     }
@@ -560,6 +663,12 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
     /// Evaluates animations and timers using the specified Instant time.
     pub fn tick_with_time(&mut self, now: Instant) -> TickResult {
         let mut needs_redraw = false;
+
+        // Finished background image loads: rebuild so sizes/layout reflect the new images.
+        // The rebuild also clears the previous command list, forcing a full repaint.
+        if self.images.poll() {
+            needs_redraw |= self.sync_view_inner(false);
+        }
 
         self.drain_pending_timers();
 
