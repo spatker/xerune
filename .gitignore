@@ -1,2 +1,6 @@
 /target
 /.idea
+# Local secrets and large VM images
+.openai_apikey
+/qemu-arm/*.iso
+/qemu-arm/*.img
