@@ -70,6 +70,42 @@ Templates are precompiled at compile time via `#[derive(XeruneTemplate)]` and bi
 
 See [`examples/todo/templates/todo_list.html`](../examples/todo/templates/todo_list.html) for the full layout and CSS.
 
+#### Template syntax
+
+Templates are parsed with [Askama](https://askama.readthedocs.io/)'s parser, so expressions are **Rust**, not Jinja. Everything below is checked at compile time; anything unsupported is a compile error pointing at the template line.
+
+| Construct | Example | Notes |
+|---|---|---|
+| Expression | `{{ name }}`, `{{ self.total() }}`, `{{ item.title }}` | Bare names are model fields (`self.name`) unless bound by `for` / `if let`. |
+| Formatting | `{{ "{:.1}"\|format(volume) }}` | `format` is the **only** filter. For anything else, add a method to your model. |
+| Conditionals | `{% if a %}…{% elif b %}…{% else %}…{% endif %}` | |
+| Pattern match | `{% if let Some(c) = cover %}{{ c }}{% endif %}` | The value is borrowed; `c` is a reference. |
+| Loops | `{% for item in items %}`, `{% for (k, v) in pairs %}`, `{% for i in 0..n %}` | `loop.index` (1-based) and `loop.index0` are available. `{% break %}` / `{% continue %}` work. |
+| Includes | `{% include "header.html" %}` | Resolved relative to the including file. |
+| Comments | `{# … #}` | |
+
+Operators are Rust's: `&&`, `||`, `!`, `==`, `!=`, `<`, … (**not** `and` / `or` / `not`).
+
+Not supported: other filters (`upper`, `safe`, …), `{% match %}`, `{% let %}` / `{% set %}`, `{% macro %}`, `{% block %}` / `{% extends %}`, `{% for … if cond %}`, and `{% else %}` inside `{% for %}`.
+
+**Inside tags**, template code may only appear *inside a quoted attribute value*:
+
+```html
+<!-- yes -->
+<div class="row {% if selected %}active{% else %}idle{% endif %}">
+<img src="{{ cover_url }}">
+<p class='{% if title != "" %}has-title{% endif %}'>  <!-- either quote style works -->
+
+<!-- no: compile error -->
+<div {% if selected %}class="active"{% endif %}>
+```
+
+The one exception is `<input type="checkbox" {% if done %}checked{% endif %}>`.
+
+**Class names must be literals.** CSS is matched against classes at compile time, so `class="{{ name }}"` is rejected; switch between literal classes with `{% if %}` instead.
+
+For small components and tests, a template can be inline instead of a file: `#[template(source = r#"<p>{{ name }}</p>"#)]`.
+
 ### 3. Running with a Backend
 
 Each example includes a native runner supporting desktop (`WinitBackend`) and embedded Linux (`LinuxFbBackend`, `DrmBackend`).
@@ -133,6 +169,24 @@ pub struct MyModel {
     // ...
 }
 ```
+
+CSS is resolved at **compile time**: selectors are matched against the template and each element gets the declarations that apply to it, guarded by any `{% if %}` conditions on its classes. Unsupported properties are ignored with a one-time warning at runtime.
+
+**Selectors:** type (`p`), class (`.card`), id (`#title`), attribute (`[type=checkbox]`), universal (`*`), descendant (`.list p`), child (`.list > p`), adjacent sibling (`h1 + p`), `:first-child`, and `@media` queries (see below). Descendant and child selectors see through `{% for %}` / `{% if %}`. Sibling selectors and `:first-child` do not: which iteration or branch comes first is only known at runtime, so they never match across a loop or conditional. No `:hover` / `:focus` / `:nth-child`.
+
+**Properties:**
+
+- Box: `width`, `height`, `min-/max-width`, `min-/max-height`, logical sizes (`inline-size`, `block-size` and their `min-`/`max-` forms), `margin*`, `padding*`, `box-sizing`
+- Layout: `display` (`block`, `inline-block`, `inline`, `flex`, `none`), `flex`, `flex-direction`, `flex-wrap`, `flex-flow`, `flex-grow`, `flex-shrink`, `flex-basis`, `justify-content`, `align-items`, `align-self`, `align-content`, `gap`, `row-gap`, `column-gap`, `order`, `position` (`static`, `relative`, `absolute`), `top`/`right`/`bottom`/`left`, `float`, `overflow`, `direction`, `writing-mode`
+- Visual: `color`, `background`, `background-color` (incl. linear gradients), `border*` (width, color, style, per side), `border-radius`, `box-shadow`
+- Text: `font-size`, `font-weight`, `font` (size/weight only), `text-align`
+- Animation: `animation` and all `animation-*` longhands, with `@keyframes`
+
+Not supported, among others: `font-family` (fonts are compiled bitmap fonts), `line-height`, `opacity`, `transform`, `transition`, `display: grid`, `z-index`.
+
+As in browsers, `box-sizing` defaults to `content-box`: `width: 800px; padding: 10px` takes up 820px. Add `* { box-sizing: border-box; }` if you prefer the other model.
+
+Unsupported **tags** fall back to a generic inline-block box (with a one-time warning). Elements with dedicated behaviour: `div`, `p`, `span`, `h1`–`h6`, `ul`/`li`, `table`/`tr`/`td`/`th` (+ `thead`/`tbody`/`tfoot`), `strong`/`b`, `img`, `button`, `input` (`type="checkbox"` / text), `progress`, `canvas`, `br`.
 
 ---
 
