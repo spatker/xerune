@@ -680,12 +680,12 @@ enum MediaFeature {
 impl MediaFeature {
     fn tokens(&self) -> proc_macro2::TokenStream {
         match self {
-            MediaFeature::MinWidth(v) => quote! { xerune::css::media::Feature::MinWidth(#v) },
-            MediaFeature::MaxWidth(v) => quote! { xerune::css::media::Feature::MaxWidth(#v) },
-            MediaFeature::MinHeight(v) => quote! { xerune::css::media::Feature::MinHeight(#v) },
-            MediaFeature::MaxHeight(v) => quote! { xerune::css::media::Feature::MaxHeight(#v) },
-            MediaFeature::Landscape => quote! { xerune::css::media::Feature::Landscape },
-            MediaFeature::Portrait => quote! { xerune::css::media::Feature::Portrait },
+            MediaFeature::MinWidth(v) => quote! { ::xerune::css::media::Feature::MinWidth(#v) },
+            MediaFeature::MaxWidth(v) => quote! { ::xerune::css::media::Feature::MaxWidth(#v) },
+            MediaFeature::MinHeight(v) => quote! { ::xerune::css::media::Feature::MinHeight(#v) },
+            MediaFeature::MaxHeight(v) => quote! { ::xerune::css::media::Feature::MaxHeight(#v) },
+            MediaFeature::Landscape => quote! { ::xerune::css::media::Feature::Landscape },
+            MediaFeature::Portrait => quote! { ::xerune::css::media::Feature::Portrait },
         }
     }
 }
@@ -789,7 +789,7 @@ fn compile_media_guard(query: &str) -> MediaGuard {
         if unsatisfiable {
             // Emit an impossible group; other comma-groups may still match.
             group_tokens.push(quote! {
-                xerune::css::media::FeatureGroup { negated: false, features: &[xerune::css::media::Feature::MinWidth(f32::INFINITY)] }
+                ::xerune::css::media::FeatureGroup { negated: false, features: &[::xerune::css::media::Feature::MinWidth(f32::INFINITY)] }
             });
             any_effective = true;
             continue;
@@ -802,7 +802,7 @@ fn compile_media_guard(query: &str) -> MediaGuard {
             // a negated group token.
             let feats = features.iter().map(|f| f.tokens());
             group_tokens.push(quote! {
-                xerune::css::media::FeatureGroup { negated: true, features: &[#(#feats),*] }
+                ::xerune::css::media::FeatureGroup { negated: true, features: &[#(#feats),*] }
             });
             any_effective = true;
             continue;
@@ -816,7 +816,7 @@ fn compile_media_guard(query: &str) -> MediaGuard {
 
         let feats = features.iter().map(|f| f.tokens());
         group_tokens.push(quote! {
-            xerune::css::media::FeatureGroup { negated: false, features: &[#(#feats),*] }
+            ::xerune::css::media::FeatureGroup { negated: false, features: &[#(#feats),*] }
         });
         any_effective = true;
     }
@@ -826,7 +826,7 @@ fn compile_media_guard(query: &str) -> MediaGuard {
     }
 
     MediaGuard::Guard(quote! {
-        xerune::css::media::matches_query(&[#(#group_tokens),*])
+        ::xerune::css::media::matches_query(&[#(#group_tokens),*])
     })
 }
 
@@ -918,7 +918,7 @@ fn compile_dom_node<'a>(
                     let expr_tokens: proc_macro2::TokenStream = expr_str.parse().unwrap();
                     return quote! {
                         let node = {
-                            use xerune::ui::ToDisplayString;
+                            use ::xerune::ui::ToDisplayString;
                             let text_val = #expr_tokens.to_display_string().into_owned();
                             let mut current_style = parent_style.clone();
                             current_style.background_color = None;
@@ -927,27 +927,27 @@ fn compile_dom_node<'a>(
                             current_style.border_width = 0.0;
                             current_style.border_radius = 0.0;
                             current_style.border_color = None;
-                            current_style.overflow = xerune::Overflow::Visible;
+                            current_style.overflow = ::xerune::Overflow::Visible;
                             current_style.animation_name = None;
                             current_style.animation_duration = 0.0;
                             current_style.animation_timing_function = std::sync::Arc::from("ease");
                             current_style.animation_delay = 0.0;
-                            current_style.animation_iteration_count = xerune::style::AnimationIterationCount::Count(1.0);
+                            current_style.animation_iteration_count = ::xerune::style::AnimationIterationCount::Count(1.0);
                             current_style.animation_direction = std::sync::Arc::from("normal");
                             current_style.animation_fill_mode = std::sync::Arc::from("none");
                             current_style.animation_play_state = std::sync::Arc::from("running");
 
-                            let normalized = xerune::ui::normalize_text(&text_val);
+                            let normalized = ::xerune::ui::normalize_text(&text_val);
                             let (width, height) = measurer.measure_text(&normalized, current_style.font_size, current_style.weight);
-                            let text_layout_style = taffy::style::Style {
-                                size: taffy::geometry::Size { 
-                                    width: taffy::style::Dimension::length(width), 
-                                    height: taffy::style::Dimension::length(height) 
+                            let text_layout_style = ::xerune::taffy::style::Style {
+                                size: ::xerune::taffy::geometry::Size { 
+                                    width: ::xerune::taffy::style::Dimension::length(width), 
+                                    height: ::xerune::taffy::style::Dimension::length(height) 
                                 },
-                                ..taffy::style::Style::default()
+                                ..::xerune::taffy::style::Style::default()
                             };
                             let node_id = builder.taffy.new_leaf(text_layout_style.clone()).unwrap();
-                            builder.render_data.insert(node_id, xerune::style::RenderData::Text(normalized.into_owned(), current_style.clone()));
+                            builder.render_data.insert(node_id, ::xerune::style::RenderData::Text(normalized.into_owned(), current_style.clone()));
                             builder.base_styles.insert(node_id, (text_layout_style, current_style));
                             node_id
                         };
@@ -1116,7 +1116,7 @@ fn compile_dom_node<'a>(
                 let mut app = Vec::new();
                 for (prop_name, prop_val) in rule.declarations {
                     app.push(quote! {
-                        xerune::css::apply_declaration(#prop_name, #prop_val, &mut current_style, &mut layout_style);
+                        ::xerune::css::apply_declaration(#prop_name, #prop_val, &mut current_style, &mut layout_style);
                     });
                 }
                 let mut body: proc_macro2::TokenStream = quote! { #(#app)* };
@@ -1172,7 +1172,7 @@ fn compile_dom_node<'a>(
                         #(#dynamic_attrs),*
                     ];
 
-                    let defaults = xerune::defaults::get_default_style(#tag, &parent_style);
+                    let defaults = ::xerune::defaults::get_default_style(#tag, &parent_style);
                     let mut layout_style = defaults.taffy_style;
                     let mut current_style = defaults.container_style;
 
@@ -1180,8 +1180,8 @@ fn compile_dom_node<'a>(
                     #(#rule_applications)*
 
                     // Match and apply inline/dynamic attributes
-                    let mut parsed = xerune::ui::attributes::ParsedAttributes::new(defaults.element_type);
-                    xerune::ui::attributes::parse_attributes_generic(
+                    let mut parsed = ::xerune::ui::attributes::ParsedAttributes::new(defaults.element_type);
+                    ::xerune::ui::attributes::parse_attributes_generic(
                         #tag,
                         attrs_slice.iter().map(|(k, v)| (k.as_ref(), v.as_ref())),
                         &mut current_style,
@@ -1203,7 +1203,7 @@ fn compile_dom_node<'a>(
                 }
                 
                 // Finalize style and insert into Maps after children are appended
-                xerune::ui::style_resolution::finalize_node_style(
+                ::xerune::ui::style_resolution::finalize_node_style(
                     node,
                     #tag,
                     &parent_style,
@@ -1232,27 +1232,27 @@ fn compile_dom_node<'a>(
                     current_style.border_width = 0.0;
                     current_style.border_radius = 0.0;
                     current_style.border_color = None;
-                    current_style.overflow = xerune::Overflow::Visible;
+                    current_style.overflow = ::xerune::Overflow::Visible;
                     current_style.animation_name = None;
                     current_style.animation_duration = 0.0;
                     current_style.animation_timing_function = std::sync::Arc::from("ease");
                     current_style.animation_delay = 0.0;
-                    current_style.animation_iteration_count = xerune::style::AnimationIterationCount::Count(1.0);
+                    current_style.animation_iteration_count = ::xerune::style::AnimationIterationCount::Count(1.0);
                     current_style.animation_direction = std::sync::Arc::from("normal");
                     current_style.animation_fill_mode = std::sync::Arc::from("none");
                     current_style.animation_play_state = std::sync::Arc::from("running");
 
-                    let normalized = xerune::ui::normalize_text(#trimmed);
+                    let normalized = ::xerune::ui::normalize_text(#trimmed);
                     let (width, height) = measurer.measure_text(&normalized, current_style.font_size, current_style.weight);
-                    let text_layout_style = taffy::style::Style {
-                        size: taffy::geometry::Size { 
-                            width: taffy::style::Dimension::length(width), 
-                            height: taffy::style::Dimension::length(height) 
+                    let text_layout_style = ::xerune::taffy::style::Style {
+                        size: ::xerune::taffy::geometry::Size { 
+                            width: ::xerune::taffy::style::Dimension::length(width), 
+                            height: ::xerune::taffy::style::Dimension::length(height) 
                         },
-                        ..taffy::style::Style::default()
+                        ..::xerune::taffy::style::Style::default()
                     };
                     let node_id = builder.taffy.new_leaf(text_layout_style.clone()).unwrap();
-                    builder.render_data.insert(node_id, xerune::style::RenderData::Text(normalized.into_owned(), current_style.clone()));
+                    builder.render_data.insert(node_id, ::xerune::style::RenderData::Text(normalized.into_owned(), current_style.clone()));
                     builder.base_styles.insert(node_id, (text_layout_style, current_style));
                     node_id
                 };
@@ -1583,18 +1583,18 @@ pub fn derive_xerune_template(input: TokenStream) -> TokenStream {
     let expanded = quote! {
         #(#dummy_includes)*
 
-        impl xerune::ui::TemplateLayout for #name {
+        impl ::xerune::ui::TemplateLayout for #name {
             fn stylesheet(&self) -> &'static str {
                 ""
             }
 
             fn build_ui(
                 &self,
-                builder: &mut xerune::ui::UiBuilder,
-                measurer: &impl xerune::TextMeasurer,
-                default_style: &xerune::style::ContainerStyle,
+                builder: &mut ::xerune::ui::UiBuilder,
+                measurer: &impl ::xerune::TextMeasurer,
+                default_style: &::xerune::style::ContainerStyle,
                 message_validator: &impl Fn(&str) -> bool,
-            ) -> taffy::NodeId {
+            ) -> ::xerune::taffy::NodeId {
                 const _: () = {
                     const fn const_str_eq(a: &str, b: &str) -> bool {
                         let a_bytes = a.as_bytes();
@@ -1619,24 +1619,24 @@ pub fn derive_xerune_template(input: TokenStream) -> TokenStream {
                         true
                     }
 
-                    type MsgType = <#name as xerune::Model>::Message;
-                    let exact = <MsgType as xerune::XeruneMessage>::VALID_EXACT;
-                    let prefixes = <MsgType as xerune::XeruneMessage>::VALID_PREFIXES;
+                    type MsgType = <#name as ::xerune::Model>::Message;
+                    let exact = <MsgType as ::xerune::XeruneMessage>::VALID_EXACT;
+                    let prefixes = <MsgType as ::xerune::XeruneMessage>::VALID_PREFIXES;
 
                     #(#check_calls)*
                 };
 
-                builder.keyframes = xerune::css::parse_keyframes(#keyframes_css);
-                let parent_layout = taffy::style::Style {
-                    size: taffy::geometry::Size {
-                        width: taffy::style::Dimension::percent(1.0),
-                        height: taffy::style::Dimension::percent(1.0),
+                builder.keyframes = ::xerune::css::parse_keyframes(#keyframes_css);
+                let parent_layout = ::xerune::taffy::style::Style {
+                    size: ::xerune::taffy::geometry::Size {
+                        width: ::xerune::taffy::style::Dimension::percent(1.0),
+                        height: ::xerune::taffy::style::Dimension::percent(1.0),
                     },
-                    ..taffy::style::Style::default()
+                    ..::xerune::taffy::style::Style::default()
                 };
                 let parent = builder.taffy.new_leaf(parent_layout.clone()).unwrap();
                 let parent_style = default_style.clone();
-                builder.render_data.insert(parent, xerune::style::RenderData::Container(parent_style.clone()));
+                builder.render_data.insert(parent, ::xerune::style::RenderData::Container(parent_style.clone()));
                 builder.base_styles.insert(parent, (parent_layout, parent_style.clone()));
                 {
                     let parent = parent;
@@ -1772,7 +1772,7 @@ pub fn derive_xerune_message(input: TokenStream) -> TokenStream {
     let expanded = quote! {
         #from_str_impl
 
-        impl xerune::model::XeruneMessage for #name {
+        impl ::xerune::model::XeruneMessage for #name {
             const VALID_PREFIXES: &'static [&'static str] = &[#(#prefix_matches),*];
             const VALID_EXACT: &'static [&'static str] = &[#(#exact_matches),*];
         }
