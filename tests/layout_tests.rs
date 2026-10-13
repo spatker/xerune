@@ -586,3 +586,24 @@ fn test_zero_copy_canvas_blitting() {
 
 
 
+
+#[derive(XeruneTemplate)]
+#[template(source = "<html><body><p>short</p></body></html>")]
+struct HtmlRootModel;
+
+impl Model for HtmlRootModel {
+    type Message = MockMsg;
+    fn update(&mut self, _msg: Self::Message, _context: &mut Context) {}
+}
+
+#[test]
+fn test_html_root_fills_viewport_width() {
+    // <html> is block-level: it, and the blocks inside it, take the full
+    // viewport width instead of shrink-wrapping their content.
+    let mut runtime = Runtime::new(HtmlRootModel, MockMeasurer);
+    runtime.set_size(800.0, 600.0);
+    let html = runtime.ui.taffy.children(runtime.ui.root).unwrap()[0];
+    let body = runtime.ui.taffy.children(html).unwrap()[0];
+    assert_eq!(runtime.ui.taffy.layout(html).unwrap().size.width, 800.0);
+    assert_eq!(runtime.ui.taffy.layout(body).unwrap().size.width, 800.0);
+}

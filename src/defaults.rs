@@ -85,7 +85,7 @@ pub fn get_default_style(tag: &str, parent_style: &ContainerStyle) -> StyleBundl
 
     bundle.container_style.display = match tag {
         "tr" => Display::Flex,
-        "div" | "body" | "p" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "ul" | "li" | "table" | "tbody" | "thead" | "tfoot" => Display::Block,
+        "html" | "div" | "body" | "p" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "ul" | "li" | "table" | "tbody" | "thead" | "tfoot" => Display::Block,
         _ => Display::InlineBlock,
     };
 
