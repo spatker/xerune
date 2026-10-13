@@ -1,0 +1,5 @@
+error: Template file 'tests/template_errors/does_not_exist.html' not found near manifest "$DIR/target/tests/trybuild/xerune"
+ --> tests/template_errors/missing_file.rs:9:19
+  |
+9 | #[template(path = "tests/template_errors/does_not_exist.html")]
+  |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

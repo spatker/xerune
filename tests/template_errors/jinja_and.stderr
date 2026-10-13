@@ -1,0 +1,13 @@
+error: template syntax error: unknown node `and`
+         --> <inline template>:2:15
+         |
+       2 | <div>{% if on and name != "" %}<p>x</p>{% endif %}</div>
+         |               ^
+         = note: conditions use Rust operators: `&&`, `||`, `!` (not `and`, `or`, `not`)
+  --> tests/template_errors/jinja_and.rs:9:21
+   |
+9  |   #[template(source = r#"
+   |  _____________________^
+10 | | <div>{% if on and name != "" %}<p>x</p>{% endif %}</div>
+11 | | "#)]
+   | |__^

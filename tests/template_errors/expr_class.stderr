@@ -1,0 +1,8 @@
+error: class names produced by `{{ ... }}` (in `class="{{ name }}"`) can't be styled: CSS is matched at compile time. Use literal class names behind conditions instead: `class="{% if selected %}active{% endif %}"`
+  --> tests/template_errors/expr_class.rs:9:21
+   |
+9  |   #[template(source = r#"
+   |  _____________________^
+10 | | <style>.a { color: red; }</style><p class="{{ name }}">x</p>
+11 | | "#)]
+   | |__^

@@ -1,0 +1,12 @@
+error: `{% else %}` inside `{% for %}` is not supported; check for emptiness with a separate `{% if %}`
+         --> <inline template>:2:3
+         |
+       2 | {% for i in items %}<p>{{ i }}</p>{% else %}<p>none</p>{% endfor %}
+         |   ^
+  --> tests/template_errors/for_else.rs:9:21
+   |
+9  |   #[template(source = r#"
+   |  _____________________^
+10 | | {% for i in items %}<p>{{ i }}</p>{% else %}<p>none</p>{% endfor %}
+11 | | "#)]
+   | |__^

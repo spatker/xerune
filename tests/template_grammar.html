@@ -1,0 +1,18 @@
+<style>
+    .red { color: #ff0000; }
+    .blue { color: #0000ff; }
+    .green { color: #00ff00; }
+    .list > b { color: #ff0000; }
+    .wrap i { color: #0000ff; }
+</style>
+<div>
+    <p class="{% if on %}red{% else %}blue{% endif %}">if-else</p>
+    <p class="{% if off %}blue{% elif on %}red{% else %}green{% endif %}">elif</p>
+    <p class="{% if let Some(c) = cover %}red{% else %}blue{% endif %}">if-let-class</p>
+    <p class="{% if title != "" %}red{% else %}blue{% endif %}">double-quoted-literal</p>
+    {% for i in 0..2 %}<span>range-{{ i }}</span>{% endfor %}
+    {% for (k, v) in pairs %}<span>pair-{{ k }}-{{ v }}-{{ loop.index }}</span>{% endfor %}
+    {% if let Some(c) = cover %}<span>cover-{{ c }}</span>{% endif %}
+    <div class="list">{% for i in 0..2 %}<b>loop-child</b>{% endfor %}</div>
+    <div class="wrap">{% if on %}<div>{% for i in 0..2 %}<i>if-loop-descendant</i>{% endfor %}</div>{% endif %}</div>
+</div>

@@ -1,0 +1,14 @@
+error: template syntax error: expected `endif` to terminate `if` node, found nothing
+         --> <inline template>:3:3
+         |
+       3 | {% if on %}<p>open</p>
+         |   ^
+  --> tests/template_errors/syntax_error.rs:9:21
+   |
+9  |   #[template(source = r#"
+   |  _____________________^
+10 | | <div>
+11 | | {% if on %}<p>open</p>
+12 | | </div>
+13 | | "#)]
+   | |__^

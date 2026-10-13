@@ -1,0 +1,14 @@
+error: filter `|upper` is not supported; the only supported filter is `format`, e.g. `{{ "{:.1}"|format(value) }}`. Format the value in Rust (a method on your model works: `{{ self.my_value() }}`)
+         --> <inline template>:3:11
+         |
+       3 |     <p>{{ name|upper }}</p>
+         |           ^
+  --> tests/template_errors/unsupported_filter.rs:9:21
+   |
+9  |   #[template(source = r#"
+   |  _____________________^
+10 | | <div>
+11 | |     <p>{{ name|upper }}</p>
+12 | | </div>
+13 | | "#)]
+   | |__^

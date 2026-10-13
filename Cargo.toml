@@ -88,6 +88,8 @@ drm-fourcc = "2.2"
 evdev = "0.12"
 # anyhow for easier error handling in examples
 anyhow = "1.0" 
+# Compile-fail tests for template diagnostics (tests/template_errors.rs)
+trybuild = "1.0"
 rand = "0.8"
 
 [profile.release]

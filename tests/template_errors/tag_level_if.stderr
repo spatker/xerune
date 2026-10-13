@@ -1,0 +1,12 @@
+error: `{% if %}` can only appear inside a quoted attribute value. Write `class="{% if c %}a{% else %}b{% endif %}"` instead of `{% if c %}class="a"{% else %}class="b"{% endif %}`. (The only tag-level conditional supported is `{% if c %}checked{% endif %}`.)
+         --> <inline template>:2:6
+         |
+       2 | <p {% if on %}class="a"{% else %}class="b"{% endif %}>x</p>
+         |      ^
+  --> tests/template_errors/tag_level_if.rs:9:21
+   |
+9  |   #[template(source = r#"
+   |  _____________________^
+10 | | <p {% if on %}class="a"{% else %}class="b"{% endif %}>x</p>
+11 | | "#)]
+   | |__^
