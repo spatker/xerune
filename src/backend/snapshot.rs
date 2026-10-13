@@ -20,7 +20,7 @@
 //! - `XERUNE_SNAPSHOT_TIME_MS`: simulated time to run before rendering (default 0)
 
 use std::path::PathBuf;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use super::{Backend, BackendError, EventProxy, SendError};
 use crate::{graphics::Rect, Model, Runtime, TextMeasurer};
@@ -99,12 +99,13 @@ impl SnapshotBackend {
         }
         runtime.handle_messages(self.messages.iter().cloned());
 
-        let start = Instant::now();
+        // tick_at_ms anchors to the runtime's own clock on the first call, so
+        // the real time spent starting up doesn't leak into animations.
         let mut elapsed = Duration::ZERO;
-        runtime.tick_with_time(start);
+        runtime.tick_at_ms(0);
         while elapsed < self.time {
             elapsed = (elapsed + FRAME).min(self.time);
-            runtime.tick_with_time(start + elapsed);
+            runtime.tick_at_ms(elapsed.as_millis() as u64);
         }
 
         runtime.wait_for_images(IMAGE_TIMEOUT);
