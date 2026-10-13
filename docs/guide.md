@@ -278,7 +278,32 @@ Animations are declared directly in CSS style blocks:
 
 ---
 
-## 7. Running on Embedded Linux (fbdev / DRM)
+## 7. Headless Snapshots
+
+Any app can render a single frame to a PNG instead of opening a window, which makes the UI easy to check from tests, CI or an AI agent. Every built-in backend honours these variables, so no code changes are needed:
+
+```bash
+XERUNE_SNAPSHOT=todo.png cargo run --example todo
+# Reach a specific state, at a specific size, after 1.5 s of simulated time:
+XERUNE_SNAPSHOT=todo.png \
+XERUNE_SNAPSHOT_SIZE=800x480 \
+XERUNE_SNAPSHOT_MESSAGES="remove:0;toggle:0" \
+XERUNE_SNAPSHOT_TIME_MS=1500 \
+cargo run --example todo
+```
+
+| Variable | Meaning |
+|---|---|
+| `XERUNE_SNAPSHOT` | Output PNG path; enables snapshot mode |
+| `XERUNE_SNAPSHOT_SIZE` | `WIDTHxHEIGHT`; defaults to the app's window size |
+| `XERUNE_SNAPSHOT_MESSAGES` | `;`-separated messages dispatched in order (same strings as `data-on-click`); an unknown message is an error |
+| `XERUNE_SNAPSHOT_TIME_MS` | Simulated time to run before rendering, so timers fire and animations progress (default 0) |
+
+The frame goes through the app's own render function, so fonts and drawing match the real app. Pending images are awaited (up to 10 s). The backend's `setup` callback is not run, since background producers would make the output nondeterministic; drive state with messages instead. To snapshot from code, use `xerune::backend::SnapshotBackend` directly.
+
+---
+
+## 8. Running on Embedded Linux (fbdev / DRM)
 
 Configure `Cargo.toml` features to enable embedded backends:
 ```toml
@@ -308,7 +333,7 @@ export XERUNE_ROTATION=90
 
 ---
 
-## 8. WebAssembly & Browser Deployment
+## 9. WebAssembly & Browser Deployment
 
 Xerune applications can compile to WebAssembly to run directly in web browsers or inside **Xerune Studio** (a web-based live inspector).
 

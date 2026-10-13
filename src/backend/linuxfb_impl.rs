@@ -191,9 +191,9 @@ impl Backend for LinuxFbBackend {
 
     fn run<M, TM, F>(
         self,
-        _title: &str,
-        _width: u32,
-        _height: u32,
+        title: &str,
+        width: u32,
+        height: u32,
         runtime: Runtime<M, TM>,
         render_fn: F,
         setup: impl FnOnce(Self::Proxy) + 'static,
@@ -203,6 +203,10 @@ impl Backend for LinuxFbBackend {
         TM: TextMeasurer + 'static,
         F: FnMut(&mut Runtime<M, TM>, &mut [u32], u32, u32) -> Option<crate::graphics::Rect> + 'static,
     {
+        // `XERUNE_SNAPSHOT=out.png` renders headlessly instead (see `backend::snapshot`).
+        if let Some(snapshot) = super::SnapshotBackend::from_env() {
+            return snapshot?.run(title, width, height, runtime, render_fn, |_| {});
+        }
         log::info!("Initializing Framebuffer Backend...");
         let mut fb = Framebuffer::new("/dev/fb0")
             .map_err(|e| BackendError::Init(format!("Failed to open framebuffer: {:?}", e)))?;

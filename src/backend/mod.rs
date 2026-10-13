@@ -19,6 +19,11 @@ pub(crate) mod drm_impl;
 #[cfg(feature = "browser")]
 pub mod browser_impl;
 
+#[cfg(not(target_arch = "wasm32"))]
+pub mod snapshot;
+#[cfg(not(target_arch = "wasm32"))]
+pub use snapshot::SnapshotBackend;
+
 #[cfg(feature = "winit")]
 pub use winit_impl::WinitBackend;
 

@@ -46,6 +46,10 @@ impl Backend for WinitBackend {
         TM: TextMeasurer + 'static,
         F: FnMut(&mut Runtime<M, TM>, &mut [u32], u32, u32) -> Option<crate::graphics::Rect> + 'static,
     {
+        // `XERUNE_SNAPSHOT=out.png` renders headlessly instead (see `backend::snapshot`).
+        if let Some(snapshot) = super::SnapshotBackend::from_env() {
+            return snapshot?.run(title, width, height, runtime, render_fn, |_| {});
+        }
         let event_loop = winit::event_loop::EventLoopBuilder::<String>::with_user_event().build()
             .map_err(|e| BackendError::Init(e.to_string()))?;
         let proxy = event_loop.create_proxy();
