@@ -98,3 +98,9 @@ lto = true
 codegen-units = 1
 panic = "abort"
 strip = true
+
+# Debug info for dependencies (winit, html5ever, taffy, ...) is what makes test
+# and example binaries ~150 MB each and linking slow and memory hungry. Keep
+# full debug info for this workspace's own crates; backtraces still work.
+[profile.dev.package."*"]
+debug = false
