@@ -755,7 +755,7 @@ pub fn apply_declaration(prop: &str, val: &str, current_style: &mut ContainerSty
              parse_animation_shorthand(val, current_style);
          }
          _ => {
-             log::warn!("Unsupported CSS property: {}", prop);
+             crate::diag::warn_once("Unsupported CSS property", prop);
          }
      }
 }

@@ -58,6 +58,7 @@ pub mod screen;
 pub mod defaults;
 /// Font rasterizer representation and precompiled bitmap fonts.
 pub mod font;
+mod diag;
 
 /// System-specific backends for windowing and hardware displays.
 #[cfg(any(feature = "winit", feature = "linuxfb", feature = "drm", feature = "browser"))]

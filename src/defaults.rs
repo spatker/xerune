@@ -244,8 +244,12 @@ pub fn get_default_style(tag: &str, parent_style: &ContainerStyle) -> StyleBundl
             bundle.taffy_style.size.width = Dimension::percent(1.0);
             bundle.taffy_style.size.height = Dimension::length(0.0);
         }
+        // Generic containers: the defaults above are all they need.
+        "html" | "span" => {}
+        // Restyled from its `type` attribute in `ui::attributes`.
+        "input" => {}
         _ => {
-            log::warn!("Unsupported tag encountered: {}", tag);
+            crate::diag::warn_once("Unsupported tag encountered", tag);
         }
     }
     
