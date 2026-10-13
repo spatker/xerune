@@ -1651,6 +1651,43 @@ fn extract_css_from_html(html: &str) -> String {
     css
 }
 
+/// The `@keyframes` blocks of `css`, with comments removed.
+fn extract_keyframes(css: &str) -> String {
+    let mut stripped = String::with_capacity(css.len());
+    let mut rest = css;
+    while let Some(start) = rest.find("/*") {
+        stripped.push_str(&rest[..start]);
+        rest = rest[start + 2..].find("*/").map_or("", |end| &rest[start + 2 + end + 2..]);
+    }
+    stripped.push_str(rest);
+
+    let mut out = String::new();
+    let mut rest = stripped.as_str();
+    while let Some(start) = rest.find("@keyframes") {
+        let block = &rest[start..];
+        let Some(open) = block.find('{') else { break };
+        let mut depth = 0;
+        let mut end = block.len();
+        for (i, c) in block[open..].char_indices() {
+            match c {
+                '{' => depth += 1,
+                '}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        end = open + i + 1;
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        out.push_str(&block[..end]);
+        out.push('\n');
+        rest = &block[end..];
+    }
+    out
+}
+
 // Helper to find a template file dynamically in parent dir, example templates dirs, root templates dir, or manifest dir
 fn find_template_file(
     path_str: &str,
@@ -2007,6 +2044,15 @@ fn expand_template(input: &DeriveInput, template: &TemplateRef) -> proc_macro2::
         }
     }
 
+    // Only the @keyframes blocks are parsed at runtime (on every rebuild),
+    // so hand over just those, and nothing for templates without any.
+    let keyframes_css = extract_keyframes(&keyframes_css);
+    let keyframes_init = if keyframes_css.is_empty() {
+        quote! {}
+    } else {
+        quote! { builder.keyframes = ::xerune::css::parse_keyframes(#keyframes_css); }
+    };
+
     let mut local_vars = HashSet::new();
     let body_compilation = compile_dom_node(&dom.document, &rulesets, &mut local_vars, &dynamic_exprs, &dynamic_loops, &dynamic_ifs);
 
@@ -2056,7 +2102,7 @@ fn expand_template(input: &DeriveInput, template: &TemplateRef) -> proc_macro2::
                     #(#check_calls)*
                 };
 
-                builder.keyframes = ::xerune::css::parse_keyframes(#keyframes_css);
+                #keyframes_init
                 let parent_layout = ::xerune::taffy::style::Style {
                     size: ::xerune::taffy::geometry::Size {
                         width: ::xerune::taffy::style::Dimension::percent(1.0),
