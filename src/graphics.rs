@@ -194,7 +194,8 @@ impl Context {
             id: 0,
             message,
             interval: duration,
-            next_trigger: crate::runtime::time::Instant::now() + duration,
+            // Set by the runtime when it registers the timer at the next tick.
+            next_trigger: crate::runtime::time::Instant::now(),
             is_recurring: true,
         });
     }
@@ -206,7 +207,8 @@ impl Context {
             id: 0,
             message,
             interval: duration,
-            next_trigger: crate::runtime::time::Instant::now() + duration,
+            // Set by the runtime when it registers the timer at the next tick.
+            next_trigger: crate::runtime::time::Instant::now(),
             is_recurring: false,
         });
     }

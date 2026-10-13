@@ -74,7 +74,10 @@ pub struct Runtime<M, R> {
     next_timer_id: usize,
     pub(crate) active_animations: HashMap<NodeId, ActiveAnimation>,
     last_tick_time: Instant,
-    start_time: Instant,
+    /// `(now_ms, instant)` from the first `tick_at_ms` call: host millisecond
+    /// timestamps are measured relative to it, keeping that clock continuous
+    /// with `last_tick_time` whatever the host's time origin is.
+    ms_clock_anchor: Option<(u64, Instant)>,
     pub(crate) touch_state: Option<TouchState>,
     images: ImageStore,
 }
@@ -112,7 +115,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
              next_timer_id: 1,
              active_animations: HashMap::new(),
              last_tick_time: Instant::now(),
-             start_time: Instant::now(),
+             ms_clock_anchor: None,
              touch_state: None,
              images,
          }
@@ -466,7 +469,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
                     dirty = true;
                 }
                 crate::graphics::ContextCommand::ClearTimer(msg) => {
-                    self.timers.retain(|t| t.message != msg);
+                    self.clear_timers(&msg);
                 }
             }
         }
@@ -597,40 +600,53 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
 
     /// Clears any active recurring or timeout timers matching the message string.
     pub fn clear_interval(&mut self, message: &str) {
-        self.timers.retain(|t| t.message != message);
+        self.clear_timers(message);
     }
 
     /// Clears any active recurring or timeout timers matching the message string.
     pub fn clear_timeout(&mut self, message: &str) {
+        self.clear_timers(message);
+    }
+
+    /// Also drops matching timers requested through [`Context`] that the next
+    /// tick hasn't registered yet, so set-then-clear never resurrects one.
+    fn clear_timers(&mut self, message: &str) {
         self.timers.retain(|t| t.message != message);
+        self.context.pending_timers.retain(|t| t.message != message);
     }
 
     /// Registers a recurring interval timer.
     pub fn set_interval(&mut self, message: String, millis: u32) {
-        let duration = core::time::Duration::from_millis(millis as u64);
-        let id = self.next_timer_id;
-        self.next_timer_id += 1;
-        self.timers.push(Timer {
-            id,
-            message,
-            interval: duration,
-            next_trigger: Instant::now() + duration,
-            is_recurring: true,
-        });
+        self.add_timer(message, millis, true);
     }
 
     /// Registers a one-shot timeout timer.
     pub fn set_timeout(&mut self, message: String, millis: u32) {
-        let duration = core::time::Duration::from_millis(millis as u64);
+        self.add_timer(message, millis, false);
+    }
+
+    fn add_timer(&mut self, message: String, millis: u32, is_recurring: bool) {
+        let interval = core::time::Duration::from_millis(millis as u64);
         let id = self.next_timer_id;
         self.next_timer_id += 1;
         self.timers.push(Timer {
             id,
             message,
-            interval: duration,
-            next_trigger: Instant::now() + duration,
-            is_recurring: false,
+            interval,
+            next_trigger: self.clock_now() + interval,
+            is_recurring,
         });
+    }
+
+    /// The current time on the clock that drives `tick*`: the latest tick when
+    /// the host supplies timestamps (`tick_at_ms`, or no `std` clock),
+    /// otherwise real time.
+    fn clock_now(&self) -> Instant {
+        #[cfg(all(feature = "std", not(target_arch = "wasm32")))]
+        if self.ms_clock_anchor.is_none() {
+            return Instant::now();
+        }
+        self.last_tick_time
     }
 
     /// Evaluates current animations and timers, updating state if necessary.
@@ -642,13 +658,18 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
 
     /// Evaluates animations and timers using the specified millisecond elapsed time duration.
     pub fn tick_at_ms(&mut self, now_ms: u64) -> TickResult {
-        let now = self.start_time + core::time::Duration::from_millis(now_ms);
+        let (anchor_ms, anchor) = *self.ms_clock_anchor.get_or_insert((now_ms, self.last_tick_time));
+        let now = anchor + core::time::Duration::from_millis(now_ms.saturating_sub(anchor_ms));
         self.tick_with_time(now)
     }
 
-    fn drain_pending_timers(&mut self) {
+    /// Registers timers requested since the last tick. Deadlines are computed
+    /// here, from the tick's clock, so timers work the same whichever clock
+    /// drives the runtime (`tick`, `tick_at_ms`, or `tick_with_time`).
+    fn drain_pending_timers(&mut self, now: Instant) {
         let new_timers = core::mem::take(&mut self.context.pending_timers);
         for mut timer in new_timers {
+            timer.next_trigger = now + timer.interval;
             if !timer.is_recurring {
                 if self.timers.iter().any(|t| !t.is_recurring && t.message == timer.message) {
                     continue;
@@ -670,7 +691,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
             needs_redraw |= self.sync_view_inner(false);
         }
 
-        self.drain_pending_timers();
+        self.drain_pending_timers(now);
 
         let mut triggered_messages = Vec::new();
         for timer in &mut self.timers {
@@ -686,7 +707,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
 
         if !triggered_messages.is_empty() {
             needs_redraw |= self.handle_messages(triggered_messages);
-            self.drain_pending_timers();
+            self.drain_pending_timers(now);
         }
 
         let dt = now.duration_since(self.last_tick_time);
