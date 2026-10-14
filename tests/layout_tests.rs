@@ -234,7 +234,22 @@ fn test_macro_layout_generation() {
 #[derive(Clone)]
 struct TodoItem {
     title: String,
+    tag: String,
     completed: bool,
+}
+
+impl TodoItem {
+    fn new(title: &str, completed: bool) -> Self {
+        Self { title: title.to_string(), tag: "work".to_string(), completed }
+    }
+
+    fn is_home(&self) -> bool {
+        self.tag == "home"
+    }
+
+    fn is_fun(&self) -> bool {
+        self.tag == "fun"
+    }
 }
 
 #[derive(Debug, PartialEq, XeruneMessage)]
@@ -256,6 +271,20 @@ struct TestTodoModel {
     new_item_title: String,
 }
 
+impl TestTodoModel {
+    fn done_count(&self) -> usize {
+        self.items.iter().filter(|i| i.completed).count()
+    }
+
+    fn open_count(&self) -> usize {
+        self.items.len() - self.done_count()
+    }
+
+    fn done_pct(&self) -> usize {
+        self.done_count() * 100 / self.items.len().max(1)
+    }
+}
+
 impl Model for TestTodoModel {
     type Message = TestTodoMsg;
     fn update(&mut self, _msg: Self::Message, _context: &mut Context) {}
@@ -265,8 +294,8 @@ impl Model for TestTodoModel {
 fn test_todo_layout_comparison() {
     let model = TestTodoModel {
         items: vec![
-            TodoItem { title: "Item 1".to_string(), completed: false },
-            TodoItem { title: "Item 2".to_string(), completed: true },
+            TodoItem::new("Item 1", false),
+            TodoItem::new("Item 2", true),
         ],
         active_item: 0,
         new_item_title: "abc".to_string(),
@@ -317,8 +346,8 @@ fn test_tiled_rendering_identity() {
     // Setup model and layout
     let model = TestTodoModel {
         items: vec![
-            TodoItem { title: "Item 1".to_string(), completed: false },
-            TodoItem { title: "Item 2".to_string(), completed: true },
+            TodoItem::new("Item 1", false),
+            TodoItem::new("Item 2", true),
         ],
         active_item: 0,
         new_item_title: "abc".to_string(),

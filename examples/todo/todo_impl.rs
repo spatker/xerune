@@ -19,15 +19,23 @@ pub struct TodoList {
 
 impl Default for TodoList {
     fn default() -> Self {
-        let mut items = Vec::new();
-        for i in 1..=20 {
-            items.push(TodoItem {
-                title: format!("Todo Item {}", i),
-                completed: i % 3 == 0,
-            });
-        }
+        let tasks = [
+            ("Flash the new firmware to the Pi", "work", false),
+            ("Water the balcony tomatoes", "home", true),
+            ("Profile the conic gradient path on ARM", "work", false),
+            ("Book climbing gym for Saturday", "fun", false),
+            ("Reply to the display vendor", "work", true),
+            ("Buy coffee beans", "home", false),
+            ("Record a demo video of the showcase", "work", false),
+            ("Try the new ramen place", "fun", true),
+            ("Clean up the 3D printer bed", "home", false),
+            ("Write release notes", "work", false),
+        ];
         Self {
-            items,
+            items: tasks
+                .iter()
+                .map(|&(title, tag, completed)| TodoItem { title: title.into(), tag: tag.into(), completed })
+                .collect(),
             active_item: 0,
             new_item_title: String::new(),
         }
@@ -37,7 +45,33 @@ impl Default for TodoList {
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct TodoItem {
     pub title: String,
+    /// Category chip: `work`, `home` or `fun`.
+    pub tag: String,
     pub completed: bool,
+}
+
+impl TodoItem {
+    pub fn is_home(&self) -> bool {
+        self.tag == "home"
+    }
+
+    pub fn is_fun(&self) -> bool {
+        self.tag == "fun"
+    }
+}
+
+impl TodoList {
+    pub fn done_count(&self) -> usize {
+        self.items.iter().filter(|i| i.completed).count()
+    }
+
+    pub fn open_count(&self) -> usize {
+        self.items.len() - self.done_count()
+    }
+
+    pub fn done_pct(&self) -> usize {
+        if self.items.is_empty() { 100 } else { self.done_count() * 100 / self.items.len() }
+    }
 }
 
 #[derive(Debug, Clone, XeruneMessage)]
@@ -74,6 +108,7 @@ impl Model for TodoList {
                 if !self.new_item_title.trim().is_empty() {
                     self.items.insert(0, TodoItem {
                         title: self.new_item_title.trim().to_string(),
+                        tag: "work".into(),
                         completed: false,
                     });
                     self.new_item_title.clear();
@@ -131,19 +166,19 @@ pub fn run_native(render_frame: impl FnMut(&mut Runtime<TodoList, Measurer>, &mu
     )))]
     {
         use xerune::backend::Backend;
-        xerune::backend::WinitBackend::new().run("Xerune Todo Example", 800, 600, runtime, render_frame, | _ | {})?
+        xerune::backend::WinitBackend::new().run("Xerune Todo", 800, 480, runtime, render_frame, | _ | {})?
     }
 
     #[cfg(all(target_os = "linux", feature = "linuxfb", feature = "evdev", not(feature = "drm")))]
     {
         use xerune::backend::Backend;
-        xerune::backend::LinuxFbBackend::new().run("Xerune Todo Example", 800, 600, runtime, render_frame, | _ | {})?;
+        xerune::backend::LinuxFbBackend::new().run("Xerune Todo", 800, 480, runtime, render_frame, | _ | {})?;
     }
 
     #[cfg(all(target_os = "linux", feature = "drm", feature = "evdev"))]
     {
         use xerune::backend::Backend;
-        xerune::backend::DrmBackend::new().run("Xerune Todo Example", 800, 600, runtime, render_frame, | _ | {})?;
+        xerune::backend::DrmBackend::new().run("Xerune Todo", 800, 480, runtime, render_frame, | _ | {})?;
     }
 
     Ok(())

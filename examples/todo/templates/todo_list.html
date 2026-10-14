@@ -1,113 +1,133 @@
 <style>
-    body {
-        margin: 0;
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+
+    .app {
+        display: flex;
+        flex-direction: row;
+        width: 100vw;
+        height: 100vh;
+        background: linear-gradient(160deg, #1b1430 0%, #0f0c1d 55%, #0b0a14 100%);
+        color: #ece9f6;
     }
-    .todo-container {
+
+    /* ---------- sidebar ---------- */
+    .side {
         display: flex;
         flex-direction: column;
-        width: 760px;
-        height: 560px;
-        background-color: #1e1e1e;
-        padding: 20px;
-     }
-     .todo-title {
-         font-size: 32px;
-         color: white;
-         margin-bottom: 20px;
-     }
-     .input-section {
-         display: flex;
-         flex-direction: row;
-         margin-bottom: 20px;
-         align-items: center;
-         flex-shrink: 0;
-     }
-     .todo-input {
-         flex-grow: 1;
-         margin-right: 10px;
-         font-size: 18px;
-         color: black;
-         background-color: white;
-     }
-     .add-btn {
-         display: flex;
-         background-color: #4CAF50;
-         border-radius: 4px;
-         padding: 10px 20px;
-         justify-content: center;
-         align-items: center;
-         cursor: pointer;
-     }
-     .add-btn span {
-         color: white;
-         font-size: 16px;
-     }
-     .todo-list {
-         display: flex;
-         flex-direction: column;
-         flex-grow: 1;
-         overflow: scroll;
-         min-height: 0;
-     }
-     .todo-item {
-         display: flex;
-         flex-direction: row;
-         margin: 5px 0;
-         padding: 10px;
-         flex-shrink: 0;
-         align-items: center;
-     }
-     .todo-item.active {
-         background-color: #333333;
-         border: 1px solid #555555;
-         border-radius: 4px;
-     }
-     .todo-text {
-         margin: 0px 10px;
-         flex-grow: 1;
-         font-size: 18px;
-         color: white;
-     }
-     .todo-text.completed {
-         color: #888888;
-     }
-     .remove-btn {
-         display: flex;
-         background-color: #f44336;
-         border-radius: 4px;
-         padding: 5px 10px;
-         justify-content: center;
-         align-items: center;
-         cursor: pointer;
-     }
-     .remove-btn span {
-         color: white;
-         font-size: 14px;
-     }
-</style>
-<div class="todo-container">
-    <!-- Title -->
-    <span class="todo-title">Todo List</span>
+        width: 230px;
+        padding: 26px 22px;
+        border-right: 1px solid rgba(255,255,255,0.05);
+    }
+    .day { font-size: 13px; font-weight: bold; color: #f472b6; }
+    .title { font-size: 30px; font-weight: bold; color: #ffffff; margin-top: 2px; }
 
-    <!-- Input Section -->
-    <div class="input-section">
-        <input type="text" id="todo_input" value="{{ new_item_title }}" class="todo-input">
-        <div data-on-click="add" class="add-btn">
-            <span>Add</span>
+    .ring-wrap { display: flex; justify-content: center; margin: 26px 0 22px 0; }
+    .ring { position: relative; width: 150px; height: 150px; }
+    .ring-fill { position: absolute; left: 0px; top: 0px; width: 150px; height: 150px; border-radius: 50%; }
+    .ring-hole { position: absolute; left: 14px; top: 14px; width: 122px; height: 122px; border-radius: 50%;
+                 background: radial-gradient(circle at 50% 35%, #261d42 0%, #15112a 100%);
+                 display: flex; flex-direction: column; justify-content: center; align-items: center; }
+    .ring-pct { font-size: 34px; font-weight: bold; color: #ffffff; }
+    .ring-label { font-size: 11px; font-weight: bold; color: #8b80b0; margin-top: 2px; }
+
+    .counts { display: flex; flex-direction: row; gap: 10px; }
+    .count { display: flex; flex-direction: column; flex-grow: 1; flex-basis: 0px; padding: 10px 12px;
+             border-radius: 12px; background-color: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.05); }
+    .count-num { font-size: 22px; font-weight: bold; color: #ffffff; }
+    .count-name { font-size: 11px; color: #8b80b0; margin-top: 2px; }
+
+    /* ---------- main column ---------- */
+    .main { display: flex; flex-direction: column; flex-grow: 1; padding: 22px 22px 0 22px; min-width: 0px; }
+    .composer { display: flex; flex-direction: row; align-items: center; gap: 10px; flex-shrink: 0; }
+    .todo-input { flex-grow: 1; height: 44px; font-size: 16px; color: #ffffff; background-color: #1d1733;
+                  border-radius: 12px; border: 1px solid rgba(167,139,250,0.25); padding: 0 14px; }
+    .add-btn { display: flex; height: 44px; padding: 0 20px; border-radius: 12px; justify-content: center; align-items: center;
+               font-size: 15px; font-weight: bold; color: #ffffff;
+               background: linear-gradient(135deg, #f472b6 0%, #8b5cf6 100%);
+               box-shadow: 0px 6px 18px rgba(236,72,153,0.30); }
+    .hint { font-size: 11px; color: #5f567f; margin: 7px 0 10px 4px; flex-shrink: 0; }
+
+    .todo-list { display: flex; flex-direction: column; flex-grow: 1; overflow: scroll; min-height: 0px; padding-bottom: 12px; }
+    .item { display: flex; flex-direction: row; align-items: center; flex-shrink: 0; padding: 11px 12px; margin-bottom: 6px;
+            border-radius: 12px; background-color: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.03); }
+    .item.active { background-color: rgba(167,139,250,0.12); border: 1px solid rgba(167,139,250,0.45); }
+    .check { display: flex; width: 22px; height: 22px; border-radius: 11px; border: 2px solid #4b4270;
+             justify-content: center; align-items: center; margin-right: 12px; flex-shrink: 0; }
+    .check.done { border: 2px solid #f472b6; background: linear-gradient(135deg, #f472b6 0%, #8b5cf6 100%); }
+    .check-dot { width: 8px; height: 8px; border-radius: 4px; background-color: #ffffff; }
+    .text { flex-grow: 1; font-size: 16px; color: #ece9f6; }
+    .text.done { color: #5f567f; }
+    .tag { display: flex; font-size: 11px; font-weight: bold; padding: 4px 9px; border-radius: 8px; margin-right: 10px;
+           color: #c4b5fd; background-color: rgba(139,92,246,0.15); }
+    .tag.home { color: #67e8f9; background-color: rgba(34,211,238,0.12); }
+    .tag.fun { color: #fda4af; background-color: rgba(244,63,94,0.13); }
+    .remove { display: flex; width: 28px; height: 28px; border-radius: 8px; justify-content: center; align-items: center;
+              font-size: 18px; color: #6b6290; background-color: rgba(255,255,255,0.04); }
+
+    .empty { display: flex; flex-direction: column; align-items: center; margin-top: 60px; }
+    .empty-big { font-size: 22px; font-weight: bold; color: #ffffff; }
+    .empty-small { font-size: 13px; color: #8b80b0; margin-top: 6px; }
+
+    /* ---------- portrait (480x800): sidebar becomes a header strip ---------- */
+    @media (orientation: portrait) {
+        .app { flex-direction: column; }
+        .side { width: 100%; flex-direction: row; flex-wrap: wrap; align-items: center; padding: 18px 18px 6px 18px;
+                border-right: 0px solid transparent; }
+        .heading { flex-grow: 1; }
+        .ring-wrap { margin: 0px; }
+        .ring { width: 96px; height: 96px; }
+        .ring-fill { width: 96px; height: 96px; }
+        .ring-hole { left: 10px; top: 10px; width: 76px; height: 76px; }
+        .ring-pct { font-size: 22px; }
+        .counts { width: 100%; margin-top: 12px; }
+        .main { padding: 12px 18px 0 18px; }
+    }
+</style>
+
+<div class="app">
+    <div class="side">
+        <div class="heading">
+            <div class="day">XERUNE · TASKS</div>
+            <div class="title">Today</div>
+        </div>
+        <div class="ring-wrap">
+            <div class="ring">
+                <div class="ring-fill" style="background: conic-gradient(#f472b6 0%, #8b5cf6 {{ self.done_pct() }}%, #2a2245 {{ self.done_pct() }}%);"></div>
+                <div class="ring-hole">
+                    <span class="ring-pct">{{ self.done_pct() }}%</span>
+                    <span class="ring-label">DONE</span>
+                </div>
+            </div>
+        </div>
+        <div class="counts">
+            <div class="count"><span class="count-num">{{ self.open_count() }}</span><span class="count-name">open</span></div>
+            <div class="count"><span class="count-num">{{ self.done_count() }}</span><span class="count-name">done</span></div>
         </div>
     </div>
 
-    <!-- List -->
-    <div class="todo-list">
-        {% for item in items %}
-        <div class="todo-item {% if loop.index0 == active_item %}active{% endif %}"
-            data-on-click="toggle:{{ loop.index0 }}">
-            <input type="checkbox" {% if item.completed %}checked{% endif %}>
-            <span class="todo-text {% if item.completed %}completed{% endif %}">{{ item.title }}</span>
-            <div data-on-click="remove:{{ loop.index0 }}" class="remove-btn">
-                <span>Remove</span>
-            </div>
+    <div class="main">
+        <div class="composer">
+            <input type="text" id="todo_input" value="{{ new_item_title }}" class="todo-input">
+            <div data-on-click="add" class="add-btn">Add task</div>
         </div>
-        {% endfor %}
+        <span class="hint">Click the field to type · Enter adds · arrow keys move · Enter toggles</span>
+
+        <div class="todo-list">
+            {% for item in items %}
+            <div class="item {% if loop.index0 == active_item %}active{% endif %}" data-on-click="toggle:{{ loop.index0 }}">
+                <div class="check {% if item.completed %}done{% endif %}">{% if item.completed %}<div class="check-dot"></div>{% endif %}</div>
+                <span class="text {% if item.completed %}done{% endif %}">{{ item.title }}</span>
+                <div class="tag {% if item.is_home() %}home{% endif %} {% if item.is_fun() %}fun{% endif %}">{{ item.tag }}</div>
+                <div data-on-click="remove:{{ loop.index0 }}" class="remove">×</div>
+            </div>
+            {% endfor %}
+            {% if items.is_empty() %}
+            <div class="empty">
+                <span class="empty-big">All clear</span>
+                <span class="empty-small">Nothing left for today. Add something fun.</span>
+            </div>
+            {% endif %}
+        </div>
     </div>
 </div>
