@@ -732,11 +732,11 @@ impl<'a> Renderer for FastRenderer<'a> {
                                 }
 
                                 if let Some(cached) = self.glyph_cache.get(&cache_key) {
-                                    let gx = (local_rect.x + glyph.x + extra_x) as i32;
+                                    let gx = floor_i32(local_rect.x + glyph.x + extra_x);
                                     let gy = if cached.is_color {
-                                        (local_rect.y + glyph.key.px * 0.10) as i32
+                                        floor_i32(local_rect.y + glyph.key.px * 0.10)
                                     } else {
-                                        (local_rect.y + glyph.y) as i32
+                                        floor_i32(local_rect.y + glyph.y)
                                     };
                                     let target_sz = glyph.key.px.round().max(1.0) as i32;
                                     if cached.is_color {
@@ -845,8 +845,8 @@ impl<'a> Renderer for FastRenderer<'a> {
 
                                 if let Some(glyph) = font.lookup_glyph(c) {
                                     if glyph.width > 0 && glyph.height > 0 {
-                                        let gx = (pen_x + glyph.x_offset as f32) as i32;
-                                        let gy = (pen_y + glyph.y_offset as f32) as i32;
+                                        let gx = floor_i32(pen_x + glyph.x_offset as f32);
+                                        let gy = floor_i32(pen_y + glyph.y_offset as f32);
                                         let gw = glyph.width as i32;
                                         let gh = glyph.height as i32;
 
@@ -1390,6 +1390,14 @@ pub fn blit_image(
             }
         }
     }
+}
+
+/// Floor to i32. `as i32` truncates toward zero, which places glyphs one
+/// pixel off when a tile shifts their coordinates below zero.
+#[inline(always)]
+fn floor_i32(v: f32) -> i32 {
+    let i = v as i32;
+    if (i as f32) > v { i - 1 } else { i }
 }
 
 pub trait F32Ext {
