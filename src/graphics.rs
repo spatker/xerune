@@ -329,7 +329,7 @@ pub enum DrawCommand {
         /// Flag indicating bottom-only border.
         border_bottom_only: bool,
     },
-    /// Draw a single-line text string.
+    /// Draw one line of text.
     DrawText { 
         /// The text content.
         text: String, 
@@ -341,6 +341,9 @@ pub enum DrawCommand {
         font_size: f32,
         /// Font weight (0 for Regular, 1 for Bold).
         weight: u16,
+        /// The shaped glyphs of `text`, positioned by layout. Without it the
+        /// renderer lays `text` out itself (text inputs).
+        run: Option<crate::text::GlyphRun>,
     },
     /// Draw a PNG image.
     DrawImage {
@@ -440,7 +443,7 @@ pub trait TextMeasurer {
     /// fonts; real renderers implement this to get glyph ids and kerning.
     fn shape(&self, text: &str, font_size: f32, weight: u16) -> Arc<crate::text::ShapedText> {
         let mut buf = [0u8; 4];
-        let glyphs = text
+        let glyphs: Vec<_> = text
             .char_indices()
             .map(|(i, c)| crate::text::ShapedGlyph {
                 cluster: i as u32,
@@ -450,10 +453,8 @@ pub trait TextMeasurer {
             })
             .collect();
         let ascent = self.measure_text("x", font_size, weight).1;
-        Arc::new(crate::text::ShapedText {
-            glyphs,
-            metrics: crate::text::LineMetrics { ascent, descent: 0.0, line_gap: 0.0 },
-        })
+        let metrics = crate::text::LineMetrics { ascent, descent: 0.0, line_gap: 0.0 };
+        Arc::new(crate::text::ShapedText::new(text, glyphs, metrics))
     }
 }
 

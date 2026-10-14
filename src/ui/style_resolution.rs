@@ -230,11 +230,8 @@ pub(crate) fn resolve_styles(
         if let Some(ref text) = meta.text {
             let normalized = super::normalize_text(text);
             if !normalized.is_empty() {
-                let (width, height) = text_measurer.measure_text(&normalized, current_style.font_size, current_style.weight);
-                let text_layout_style = Style {
-                    size: Size { width: length(width), height: length(height) },
-                    ..Style::default()
-                };
+                // Sized by the layout's measure function (see `Ui::compute_layout`).
+                let text_layout_style = Style::default();
                 let _ = taffy.set_style(node, text_layout_style.clone());
                 render_data.insert(node, RenderData::Text(normalized.into_owned(), current_style.clone()));
                 base_styles.insert(node, (text_layout_style, current_style));

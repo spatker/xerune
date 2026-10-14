@@ -683,6 +683,7 @@ version = "0.1.0"
 dependencies = [
  "coarse-prof",
  "fontdue",
+ "hashbrown 0.14.5",
  "log",
  "png 0.17.16",
  "ttf-parser 0.20.0",

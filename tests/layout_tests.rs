@@ -396,6 +396,7 @@ fn test_bitmap_font_rendering() {
             color: Color::new(255, 255, 255, 255),
             font_size: 16.0,
             weight: 0,
+            run: None,
         }
     ];
 
@@ -769,6 +770,7 @@ mod known_gaps {
     gap_model!(ImgShadow, "tests/gaps/img_shadow.html");
     gap_model!(CanvasResize, "tests/gaps/canvas_resize.html");
     gap_model!(Order, "tests/gaps/order.html");
+    gap_model!(InlineWrap, "tests/gaps/inline_wrap.html");
 
     fn runtime<M: Model + ui::TemplateLayout + 'static>(model: M, w: f32, h: f32) -> Runtime<M, CharMeasurer> {
         let mut runtime = Runtime::new(model, CharMeasurer);
@@ -787,7 +789,6 @@ mod known_gaps {
     }
 
     #[test]
-    #[ignore = "FIXME: text never wraps; each run is one fixed-width line (fontdue measures single lines)"]
     fn text_wraps_to_its_container() {
         let rt = runtime(TextWrap, 400.0, 300.0);
         let commands = rt.ui.build_commands(&HashMap::new(), None);
@@ -800,6 +801,20 @@ mod known_gaps {
             .collect();
         assert!(lines.iter().all(|r| r.width <= 100.0), "a line overflows the 100px box: {lines:?}");
         assert!(lines.len() > 1, "expected the sentence on several lines");
+    }
+
+    #[test]
+    #[ignore = "FIXME: inline elements are separate flex items, not one inline formatting context: text after <b> starts a new line and the space before it is lost"]
+    fn text_flows_around_inline_elements() {
+        // With 8px characters, "Some bold words in a" (160px) fits the 240px
+        // line, so the text after </b> continues on the line of "bold".
+        let rt = runtime(InlineWrap, 400.0, 300.0);
+        let commands = rt.ui.build_commands(&HashMap::new(), None);
+        let some = text_rect(&commands, "Some");
+        let bold = text_rect(&commands, "bold");
+        let words = text_rect(&commands, "words");
+        assert_eq!(words.y, bold.y, "text after </b> must stay on its line");
+        assert!(bold.x >= some.x + some.width + 8.0, "the space before <b> must remain");
     }
 
     #[test]

@@ -41,19 +41,47 @@ impl LineMetrics {
     }
 }
 
-/// A run of text shaped with one font size and weight.
+/// A run of text shaped with one font size and weight, split at its line
+/// break opportunities (Unicode UAX #14) so it can be broken into lines at
+/// any width with arithmetic only.
+///
+/// Scripts that need a dictionary to find word boundaries (Thai, Lao, Khmer,
+/// Myanmar) only break at spaces.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct ShapedText {
     /// Glyphs in logical order.
     pub glyphs: Vec<ShapedGlyph>,
     /// Font metrics of the run.
     pub metrics: LineMetrics,
+    segments: Vec<Segment>,
+    min_content: f32,
+    max_content: f32,
 }
 
-impl ShapedText {
-    /// Sum of all advances: the width of the run on one line.
-    pub fn width(&self) -> f32 {
-        self.glyphs.iter().map(|g| g.advance).sum()
+/// The glyphs of one line of a [`ShapedText`], as drawn by
+/// [`DrawCommand::DrawText`](crate::DrawCommand::DrawText).
+#[derive(Clone, Debug)]
+pub struct GlyphRun {
+    /// The whole shaped text.
+    pub shaped: Arc<ShapedText>,
+    /// First glyph of the line.
+    pub start: u32,
+    /// One past the last glyph of the line.
+    pub end: u32,
+    /// Byte offset of the command's `text` in the shaped source text, to map
+    /// glyph clusters back to characters.
+    pub text_start: u32,
+    /// Distance from the top of the line box to the baseline.
+    pub baseline: f32,
+}
+
+impl PartialEq for GlyphRun {
+    fn eq(&self, other: &Self) -> bool {
+        self.start == other.start
+            && self.end == other.end
+            && self.text_start == other.text_start
+            && self.baseline == other.baseline
+            && (Arc::ptr_eq(&self.shaped, &other.shaped) || self.shaped == other.shaped)
     }
 }
 
@@ -71,49 +99,31 @@ struct Segment {
     forced: bool,
 }
 
-/// One laid out line: a range of glyphs of a [`Paragraph`].
+/// One laid out line: a range of glyphs of a [`ShapedText`].
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Line {
     /// First glyph of the line.
     pub start: u32,
-    /// One past the last visible glyph; spaces at the end of a wrapped
-    /// line are excluded.
+    /// One past the last glyph to draw; spaces at the end of a wrapped line
+    /// are excluded.
     pub end: u32,
     /// Advance of the visible glyphs.
     pub width: f32,
 }
 
-/// Shaped text split at its line break opportunities (Unicode UAX #14), ready
-/// to be broken into lines at any width.
-///
-/// Scripts that need a dictionary to find word boundaries (Thai, Lao, Khmer,
-/// Myanmar) only break at spaces.
-#[derive(Clone, Debug, PartialEq)]
-pub struct Paragraph {
-    /// The shaped glyphs.
-    pub shaped: Arc<ShapedText>,
-    segments: Vec<Segment>,
-}
-
-impl Paragraph {
-    /// Finds the break opportunities of `text`, which `shaped` was shaped
-    /// from.
-    pub fn new(text: &str, shaped: Arc<ShapedText>) -> Self {
-        let glyphs = &shaped.glyphs;
+impl ShapedText {
+    /// Wraps the `glyphs` shaped from `text` and finds the text's break
+    /// opportunities.
+    pub fn new(text: &str, glyphs: Vec<ShapedGlyph>, metrics: LineMetrics) -> Self {
         let mut segments = Vec::new();
         let mut g = 0usize;
-        let mut start = 0usize;
+        let mut width = 0.0;
+        let mut trailing = 0.0;
         for (offset, opportunity) in unicode_linebreak::linebreaks(text) {
             // Glyphs whose cluster starts before the break belong to the segment.
+            let seg_start = g;
             while g < glyphs.len() && (glyphs[g].cluster as usize) < offset {
-                g += 1;
-            }
-            if g == start && offset < text.len() {
-                continue;
-            }
-            let mut width = 0.0;
-            let mut trailing = 0.0;
-            for glyph in &glyphs[start..g] {
+                let glyph = &glyphs[g];
                 width += glyph.advance;
                 let c = text[glyph.cluster as usize..].chars().next().unwrap_or(' ');
                 if c.is_whitespace() {
@@ -121,76 +131,100 @@ impl Paragraph {
                 } else {
                     trailing = 0.0;
                 }
+                g += 1;
+            }
+            if g == seg_start && offset < text.len() {
+                continue;
             }
             let forced = opportunity == unicode_linebreak::BreakOpportunity::Mandatory && offset < text.len();
             segments.push(Segment { end: g as u32, width, trailing, forced });
-            start = g;
+            width = 0.0;
+            trailing = 0.0;
         }
-        Self { shaped, segments }
+        let mut shaped = Self { glyphs, metrics, segments, min_content: 0.0, max_content: 0.0 };
+        shaped.min_content = shaped.segments.iter().fold(0.0, |w, s| w.max(s.width - s.trailing));
+        let mut max_content = 0.0f32;
+        shaped.break_lines(f32::INFINITY, |line| max_content = max_content.max(line.width));
+        shaped.max_content = max_content;
+        shaped
     }
 
-    /// Font metrics of the text.
-    pub fn metrics(&self) -> LineMetrics {
-        self.shaped.metrics
+    /// Sum of all advances: the width of the run on one line.
+    pub fn width(&self) -> f32 {
+        self.glyphs.iter().map(|g| g.advance).sum()
     }
 
     /// Width of the widest unbreakable piece: the narrowest the text can
     /// get without overflowing (CSS min-content).
     pub fn min_content_width(&self) -> f32 {
-        self.segments.iter().fold(0.0, |w, s| w.max(s.width - s.trailing))
+        self.min_content
     }
 
     /// Width with lines broken only where they must be (CSS max-content).
     pub fn max_content_width(&self) -> f32 {
-        self.lines(f32::INFINITY).iter().fold(0.0, |w, l| w.max(l.width))
+        self.max_content
     }
 
     /// Breaks the text greedily into lines no wider than `max_width` where
     /// possible. A piece that alone is wider than `max_width` overflows.
     pub fn lines(&self, max_width: f32) -> Vec<Line> {
         let mut lines = Vec::new();
-        let mut start = 0u32;
-        let mut end = 0u32;
-        // Width up to `end`, with and without the last segment's spaces.
-        let mut width = 0.0f32;
-        let mut visible = 0.0f32;
-        let mut visible_end = 0u32;
-        for seg in &self.segments {
-            let seg_start = end;
-            if end > start && width + seg.width - seg.trailing > max_width {
-                lines.push(Line { start, end: visible_end, width: visible });
-                start = seg_start;
-                width = 0.0;
-            }
-            visible = width + seg.width - seg.trailing;
-            width += seg.width;
-            end = seg.end;
-            visible_end = self.visible_end(seg_start, seg.end);
-            if seg.forced {
-                lines.push(Line { start, end: visible_end, width: visible });
-                start = end;
-                width = 0.0;
-                visible = 0.0;
-                visible_end = end;
-            }
-        }
-        if end > start || lines.is_empty() {
-            lines.push(Line { start, end: visible_end, width: visible });
-        }
+        self.break_lines(max_width, |line| lines.push(line));
         lines
     }
 
-    /// One past the last glyph of `start..end` that has a non-zero advance or
-    /// is not trailing whitespace: trailing spaces hang and aren't drawn.
-    fn visible_end(&self, start: u32, end: u32) -> u32 {
-        let seg = self.segments.iter().find(|s| s.end == end);
-        let mut trailing = seg.map_or(0.0, |s| s.trailing);
-        let mut i = end;
-        while i > start && trailing > 0.0 {
-            i -= 1;
-            trailing -= self.shaped.glyphs[i as usize].advance;
+    /// Number of lines at `max_width`, see [`lines`](Self::lines).
+    pub fn line_count(&self, max_width: f32) -> usize {
+        let mut count = 0;
+        self.break_lines(max_width, |_| count += 1);
+        count
+    }
+
+    fn break_lines(&self, max_width: f32, mut emit: impl FnMut(Line)) {
+        let mut start = 0u32;
+        let mut end = 0u32;
+        // Width of the current line, and its last segment's trailing spaces.
+        let mut width = 0.0f32;
+        let mut trailing = 0.0f32;
+        let mut emitted = false;
+        for seg in &self.segments {
+            // The tolerance absorbs float error between the width text was
+            // measured at and the width layout hands back.
+            if end > start && width - trailing + seg.width - seg.trailing > max_width + 0.01 {
+                emit(self.wrapped_line(start, end, width, trailing));
+                emitted = true;
+                start = end;
+                width = 0.0;
+            }
+            width += seg.width;
+            trailing = seg.trailing;
+            end = seg.end;
+            if seg.forced {
+                emit(self.wrapped_line(start, end, width, trailing));
+                emitted = true;
+                start = end;
+                width = 0.0;
+                trailing = 0.0;
+            }
         }
-        i
+        // Spaces at the very end of the text only hang when a line wraps
+        // there: otherwise they separate it from whatever comes next on the
+        // line (`core {{ n }}`).
+        if end > start || !emitted {
+            emit(Line { start, end, width });
+        }
+    }
+
+    /// A line ending at a break: its trailing spaces hang, so they neither
+    /// count nor get drawn.
+    fn wrapped_line(&self, start: u32, end: u32, width: f32, trailing: f32) -> Line {
+        let mut visible_end = end;
+        let mut hanging = trailing;
+        while visible_end > start && hanging > 0.0 {
+            visible_end -= 1;
+            hanging -= self.glyphs[visible_end as usize].advance;
+        }
+        Line { start, end: visible_end, width: width - trailing }
     }
 }
 
@@ -199,16 +233,16 @@ mod tests {
     use super::*;
 
     /// Every character 10px wide.
-    fn paragraph(text: &str) -> Paragraph {
+    fn paragraph(text: &str) -> ShapedText {
         let glyphs = text
             .char_indices()
             .map(|(i, _)| ShapedGlyph { cluster: i as u32, font: 0, id: 0, advance: 10.0 })
             .collect();
-        Paragraph::new(text, Arc::new(ShapedText { glyphs, metrics: LineMetrics::default() }))
+        ShapedText::new(text, glyphs, LineMetrics::default())
     }
 
-    fn line_texts<'a>(text: &'a str, p: &Paragraph, max_width: f32) -> Vec<&'a str> {
-        let g = &p.shaped.glyphs;
+    fn line_texts<'a>(text: &'a str, p: &ShapedText, max_width: f32) -> Vec<&'a str> {
+        let g = &p.glyphs;
         let byte = |i: u32| g.get(i as usize).map_or(text.len(), |g| g.cluster as usize);
         p.lines(max_width).iter().map(|l| &text[byte(l.start)..byte(l.end)]).collect()
     }
@@ -229,6 +263,14 @@ mod tests {
         let text = "aa bb";
         let p = paragraph(text);
         assert_eq!(line_texts(text, &p, 20.0), ["aa", "bb"]);
+    }
+
+    #[test]
+    fn spaces_at_the_end_of_the_text_count() {
+        let text = "core ";
+        let p = paragraph(text);
+        assert_eq!(p.max_content_width(), 50.0);
+        assert_eq!(line_texts(text, &p, 1000.0), ["core "]);
     }
 
     #[test]

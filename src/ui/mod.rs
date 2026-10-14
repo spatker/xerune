@@ -81,6 +81,10 @@ pub struct Ui {
     pub html: Option<NodeId>,
     /// See [`Ui::html`].
     pub body: Option<NodeId>,
+    /// Shaped text of every text node, which layout measures and breaks.
+    pub paragraphs: NodeMap<Arc<crate::text::ShapedText>>,
+    /// Lines of every text node at its laid out width.
+    pub text_lines: NodeMap<Vec<crate::text::Line>>,
 }
 
 impl Ui {
@@ -139,6 +143,7 @@ impl Ui {
             _ => None,
         });
 
+        let paragraphs = shape_texts(&render_data, measurer);
         Ok(Self {
             taffy,
             render_data,
@@ -150,6 +155,8 @@ impl Ui {
             keyframes,
             html,
             body,
+            paragraphs,
+            text_lines: NodeMap::new(),
         })
     }
 
@@ -304,6 +311,10 @@ impl Ui {
         }
 
         let (html, body) = (builder.html, builder.body);
+        let paragraphs = {
+            profile!("shape_texts");
+            shape_texts(&builder.render_data, measurer)
+        };
 
         Ok(Self {
             taffy: builder.taffy,
@@ -316,6 +327,8 @@ impl Ui {
             keyframes,
             html,
             body,
+            paragraphs,
+            text_lines: NodeMap::new(),
         })
     }
 
@@ -439,7 +452,19 @@ impl Ui {
                 let _ = self.taffy.set_style(self.root, style);
             }
         }
-        self.taffy.compute_layout(self.root, available_space)?;
+        let Ui { taffy, render_data, paragraphs, text_lines, root, .. } = self;
+        taffy.compute_layout_with_measure(*root, available_space, |known, available, node, _, _| {
+            match (paragraphs.get(node), render_data.get(node)) {
+                (Some(paragraph), Some(RenderData::Text(_, style))) => measure_paragraph(paragraph, style, known, available),
+                _ => Size::ZERO,
+            }
+        })?;
+        // Break at the unrounded width: the one the text was measured at.
+        text_lines.clear();
+        for (node, paragraph) in paragraphs.iter() {
+            let width = taffy.unrounded_layout(node).content_box_width();
+            text_lines.insert(node, paragraph.lines(width));
+        }
         Ok(())
     }
 
@@ -464,6 +489,8 @@ impl Ui {
             &self.taffy,
             self.root,
             &self.render_data,
+            &self.paragraphs,
+            &self.text_lines,
             &self.scroll_offsets,
             0.0,
             0.0,
@@ -684,6 +711,8 @@ fn traverse_layout(
     taffy: &TaffyTree,
     root: NodeId,
     render_data: &NodeMap<RenderData>,
+    paragraphs: &NodeMap<Arc<crate::text::ShapedText>>,
+    text_lines: &NodeMap<Vec<crate::text::Line>>,
     scroll_offsets: &NodeMap<(f32, f32)>,
     offset_x: f32,
     offset_y: f32,
@@ -749,13 +778,9 @@ fn traverse_layout(
 
         match data {
             RenderData::Text(text, style) => {
-                commands.push(DrawCommand::DrawText {
-                    text: text.clone(),
-                    rect,
-                    color: style.color,
-                    font_size: style.font_size,
-                    weight: style.weight,
-                });
+                if let (Some(paragraph), Some(lines)) = (paragraphs.get(root), text_lines.get(root)) {
+                    push_text_lines(commands, text, style, paragraph, lines, rect);
+                }
             },
             RenderData::Image(src, style) => {
                  commands.push(DrawCommand::DrawImage {
@@ -837,6 +862,7 @@ fn traverse_layout(
                             color: style.color,
                             font_size: style.font_size,
                             weight: style.weight,
+                            run: None,
                         });
                     }
                 }
@@ -861,12 +887,94 @@ fn traverse_layout(
 
     if let Ok(children) = taffy.children(root) {
         for child in children {
-            traverse_layout(taffy, child, render_data, scroll_offsets, child_offset_x, child_offset_y, commands, focused_id, canvas_source);
+            traverse_layout(taffy, child, render_data, paragraphs, text_lines, scroll_offsets, child_offset_x, child_offset_y, commands, focused_id, canvas_source);
         }
     }
 
     if overflow != Overflow::Visible {
         commands.push(DrawCommand::PopClip);
+    }
+}
+
+/// Shapes the text of every text node.
+fn shape_texts(render_data: &NodeMap<RenderData>, measurer: &impl TextMeasurer) -> NodeMap<Arc<crate::text::ShapedText>> {
+    let mut paragraphs = NodeMap::new();
+    for (node, data) in render_data.iter() {
+        if let RenderData::Text(text, style) = data {
+            paragraphs.insert(node, measurer.shape(text, style.font_size, style.weight));
+        }
+    }
+    paragraphs
+}
+
+/// Height of one line of `paragraph`.
+fn line_height(paragraph: &Arc<crate::text::ShapedText>, _style: &ContainerStyle) -> f32 {
+    paragraph.metrics.normal_line_height()
+}
+
+/// Taffy measure function for a text leaf: CSS min/max-content widths, and
+/// the height of the text wrapped at the width taffy settles on.
+fn measure_paragraph(
+    paragraph: &Arc<crate::text::ShapedText>,
+    style: &ContainerStyle,
+    known: Size<Option<f32>>,
+    available: Size<AvailableSpace>,
+) -> Size<f32> {
+    if paragraph.glyphs.is_empty() {
+        return Size::ZERO;
+    }
+    let width = known.width.unwrap_or_else(|| match available.width {
+        AvailableSpace::MinContent => paragraph.min_content_width(),
+        AvailableSpace::MaxContent => paragraph.max_content_width(),
+        AvailableSpace::Definite(w) => w.min(paragraph.max_content_width()).max(paragraph.min_content_width()),
+    });
+    let height = known
+        .height
+        .unwrap_or_else(|| paragraph.line_count(width) as f32 * line_height(paragraph, style));
+    Size { width, height }
+}
+
+/// Emits one `DrawText` per line of a laid out text node at `rect`.
+fn push_text_lines(
+    commands: &mut Vec<DrawCommand>,
+    text: &str,
+    style: &ContainerStyle,
+    paragraph: &Arc<crate::text::ShapedText>,
+    lines: &[crate::text::Line],
+    rect: Rect,
+) {
+    let line_h = line_height(paragraph, style);
+    let m = paragraph.metrics;
+    // Half the leading goes above the text (CSS 2 10.8.1).
+    let baseline = (line_h - (m.ascent + m.descent)) / 2.0 + m.ascent;
+    let glyphs = &paragraph.glyphs;
+    let byte = |i: u32| glyphs.get(i as usize).map_or(text.len(), |g| g.cluster as usize);
+    for (i, line) in lines.iter().enumerate() {
+        if line.end <= line.start {
+            continue;
+        }
+        // Lines too wide for the box stay at the start edge.
+        let free = (rect.width - line.width).max(0.0);
+        let offset = match style.text_align {
+            Some(crate::style::TextAlign::Center) => free / 2.0,
+            Some(crate::style::TextAlign::Right) => free,
+            _ => 0.0,
+        };
+        let (start, end) = (byte(line.start), byte(line.end));
+        commands.push(DrawCommand::DrawText {
+            text: text[start..end].to_string(),
+            rect: Rect { x: rect.x + offset, y: rect.y + i as f32 * line_h, width: line.width, height: line_h },
+            color: style.color,
+            font_size: style.font_size,
+            weight: style.weight,
+            run: Some(crate::text::GlyphRun {
+                shaped: paragraph.clone(),
+                start: line.start,
+                end: line.end,
+                text_start: start as u32,
+                baseline,
+            }),
+        });
     }
 }
 

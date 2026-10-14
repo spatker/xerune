@@ -282,7 +282,7 @@ impl UiBuilder {
     /// text node in a template doesn't inline its own copy.
     pub fn append_text_node(
         &mut self,
-        measurer: &impl crate::TextMeasurer,
+        _measurer: &impl crate::TextMeasurer,
         parent: NodeId,
         parent_style: &crate::style::ContainerStyle,
         text: &str,
@@ -312,11 +312,8 @@ impl UiBuilder {
         if (lead || trail) && !normalized.is_empty() {
             normalized = Cow::Owned(format!("{}{}{}", if lead { " " } else { "" }, normalized, if trail { " " } else { "" }));
         }
-        let (width, height) = measurer.measure_text(&normalized, current_style.font_size, current_style.weight);
-        let text_layout_style = Style {
-            size: Size { width: Dimension::length(width), height: Dimension::length(height) },
-            ..Style::default()
-        };
+        // Sized by the layout's measure function (see `Ui::compute_layout`).
+        let text_layout_style = Style::default();
         let node = self.taffy.new_leaf(text_layout_style.clone()).unwrap();
         self.render_data.insert(node, RenderData::Text(normalized.into_owned(), current_style.clone()));
         self.base_styles.insert(node, (text_layout_style, current_style));

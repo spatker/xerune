@@ -793,11 +793,8 @@ pub(crate) fn dom_to_taffy(
             if normalized.is_empty() {
                 None
             } else {
-                let (width, height) = text_measurer.measure_text(&normalized, current_style.font_size, current_style.weight);
-                let text_layout_style = Style {
-                    size: Size { width: length(width), height: length(height) },
-                    ..Style::default()
-                };
+                // Sized by the layout's measure function (see `Ui::compute_layout`).
+                let text_layout_style = Style::default();
                 let id = taffy.new_leaf(text_layout_style.clone()).ok()?;
                 render_data.insert(id, RenderData::Text(normalized.into_owned(), current_style.clone()));
                 base_styles.insert(id, (text_layout_style, current_style));

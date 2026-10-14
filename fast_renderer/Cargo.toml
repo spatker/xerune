@@ -9,6 +9,7 @@ fontdue = { version = "0.9.3", optional = true }
 ttf-parser = { version = "0.20", optional = true }
 png = { version = "0.17", optional = true }
 log = "0.4"
+hashbrown = { version = "0.14", default-features = false, features = ["ahash", "inline-more"] }
 coarse-prof = { version = "0.2.6", optional = true }
 
 [features]

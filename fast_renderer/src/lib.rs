@@ -186,7 +186,9 @@ pub const EMOJI_FONT: u16 = u16::MAX;
 
 #[cfg(feature = "std")]
 struct ShapeCache {
-    entries: HashMap<String, Vec<(u32, u16, Arc<ShapedText>)>>,
+    // Looked up for every text node on every rebuild: ahash rather than
+    // the slower DoS-resistant default.
+    entries: hashbrown::HashMap<String, Vec<(u32, u16, Arc<ShapedText>)>>,
     order: std::collections::VecDeque<String>,
     max_entries: usize,
 }
@@ -194,7 +196,7 @@ struct ShapeCache {
 #[cfg(feature = "std")]
 impl ShapeCache {
     fn new(max_entries: usize) -> Self {
-        Self { entries: HashMap::new(), order: std::collections::VecDeque::new(), max_entries }
+        Self { entries: hashbrown::HashMap::new(), order: std::collections::VecDeque::new(), max_entries }
     }
 
     fn get(&self, text: &str, font_size_bits: u32, weight: u16) -> Option<Arc<ShapedText>> {
@@ -236,16 +238,17 @@ fn rounded_metrics(ascent: f32, descent: f32, line_gap: f32) -> LineMetrics {
 
 impl<'a> FastMeasurer<'a> {
     fn shape_uncached(&self, text: &str, font_size: f32, weight: u16) -> ShapedText {
-        let mut shaped = ShapedText::default();
+        let mut glyphs = Vec::with_capacity(text.len());
+        let mut metrics = LineMetrics::default();
         match &self.fonts {
             #[cfg(feature = "std")]
             FontSource::Ttf(ttf_fonts) => {
                 let Some(font_index) = ttf_font_index(ttf_fonts, weight) else {
-                    return shaped;
+                    return ShapedText::default();
                 };
                 let font = &ttf_fonts[font_index];
                 if let Some(m) = font.horizontal_line_metrics(font_size) {
-                    shaped.metrics = rounded_metrics(m.ascent, -m.descent, m.line_gap);
+                    metrics = rounded_metrics(m.ascent, -m.descent, m.line_gap);
                 }
                 for (i, c) in text.char_indices() {
                     if c == '\u{fe0f}' {
@@ -261,24 +264,24 @@ impl<'a> FastMeasurer<'a> {
                     } else {
                         (font_index as u16, advance)
                     };
-                    shaped.glyphs.push(ShapedGlyph { cluster: i as u32, font, id, advance });
+                    glyphs.push(ShapedGlyph { cluster: i as u32, font, id, advance });
                 }
             }
             FontSource::Bitmap(bitmap_fonts) => {
                 let Some(font) = find_best_bitmap_font(bitmap_fonts, font_size, weight) else {
-                    return shaped;
+                    return ShapedText::default();
                 };
-                shaped.metrics = LineMetrics { ascent: font.line_height, descent: 0.0, line_gap: 0.0 };
+                metrics = LineMetrics { ascent: font.line_height, descent: 0.0, line_gap: 0.0 };
                 for (i, c) in text.char_indices() {
                     let (id, advance) = match font.glyphs.binary_search_by_key(&c, |g| g.character) {
                         Ok(idx) => (idx as u16, font.glyphs[idx].x_advance as f32),
                         Err(_) => (u16::MAX, 0.0),
                     };
-                    shaped.glyphs.push(ShapedGlyph { cluster: i as u32, font: 0, id, advance });
+                    glyphs.push(ShapedGlyph { cluster: i as u32, font: 0, id, advance });
                 }
             }
         }
-        shaped
+        ShapedText::new(text, glyphs, metrics)
     }
 }
 
@@ -291,9 +294,11 @@ fn ttf_font_index(fonts: &[Font], weight: u16) -> Option<usize> {
     }
 }
 
+/// Whether `c` is drawn from a color emoji font: emoji-only planes, and
+/// anything the text font lacks.
 #[cfg(feature = "std")]
 fn is_emoji(c: char, glyph_index: u16) -> bool {
-    (c as u32) >= 0x2000 || glyph_index == 0
+    (c as u32) >= 0x1F000 || glyph_index == 0
 }
 
 #[cfg(feature = "std")]
@@ -353,10 +358,10 @@ impl<'a> TextMeasurer for FastMeasurer<'a> {
 
                 let mut extra_x = 0.0f32;
                 for glyph in layout.glyphs() {
-                    if (glyph.parent as u32) == 0xFE0F || glyph.parent == '\u{fe0f}' {
+                    if glyph.parent == '\u{fe0f}' {
                         continue;
                     }
-                    let is_emoji = (glyph.parent as u32) >= 0x2000 || glyph.key.glyph_index == 0;
+                    let is_emoji = is_emoji(glyph.parent, glyph.key.glyph_index);
                     let gx = glyph.x + extra_x;
                     let gy = glyph.y;
                     let mut gw = glyph.width as f32;
@@ -427,6 +432,10 @@ impl<'a> TextMeasurer for FastMeasurer<'a> {
 pub struct CachedGlyph {
     pub width: u32,
     pub height: u32,
+    /// Offset of the bitmap's left edge from the pen position.
+    pub xmin: i32,
+    /// Offset of the bitmap's bottom edge above the baseline.
+    pub ymin: i32,
     pub bitmap: Vec<u8>,
     pub rgba_bitmap: Option<Vec<u32>>,
     pub is_color: bool,
@@ -495,12 +504,162 @@ fn try_find_color_emoji_glyph(font_bytes_slice: &[&[u8]], c: char, target_size: 
         return Some(CachedGlyph {
             width: img_w,
             height: img_h,
+            xmin: 0,
+            ymin: 0,
             bitmap: Vec::new(),
             rgba_bitmap: Some(rgba_pixels),
             is_color: true,
         });
     }
     None
+}
+
+/// Where and how [`blit_glyph`] draws.
+#[cfg(feature = "std")]
+struct GlyphTarget {
+    /// Clip rectangle as (x1, y1, x2, y2) in buffer pixels.
+    clip: (i32, i32, i32, i32),
+    packed_color: u32,
+    swap_rb: bool,
+    rotation: u32,
+    physical_width: u32,
+    width: u32,
+    height: u32,
+}
+
+#[cfg(feature = "std")]
+fn emoji_cache_key(c: char, sub_px: u32) -> (usize, u16, u32) {
+    let emoji_id = ((c as u32) ^ ((c as u32) >> 16)) as u16;
+    (0xffff_usize, emoji_id, sub_px)
+}
+
+/// Looks up a glyph in the cache, rasterizing it first if needed: a color
+/// emoji for `emoji` when an emoji font has it, else glyph `id` of
+/// `fonts[font_index]`. None for glyphs without pixels (spaces).
+#[cfg(feature = "std")]
+#[allow(clippy::too_many_arguments)]
+fn cached_glyph<'c>(
+    cache: &'c mut HashMap<(usize, u16, u32), CachedGlyph>,
+    fonts: &[Font],
+    font_bytes: Option<&[&[u8]]>,
+    key: (usize, u16, u32),
+    font_index: usize,
+    id: u16,
+    px: f32,
+    emoji: Option<char>,
+) -> Option<&'c CachedGlyph> {
+    if !cache.contains_key(&key) {
+        let color = emoji.zip(font_bytes).and_then(|(c, fbs)| try_find_color_emoji_glyph(fbs, c, px));
+        if let Some(cg) = color {
+            cache.insert(key, cg);
+        } else if let Some(font) = fonts.get(font_index) {
+            let (metrics, bitmap) = font.rasterize_indexed(id, px);
+            if metrics.width > 0 && metrics.height > 0 {
+                cache.insert(
+                    key,
+                    CachedGlyph {
+                        width: metrics.width as u32,
+                        height: metrics.height as u32,
+                        xmin: metrics.xmin,
+                        ymin: metrics.ymin,
+                        bitmap,
+                        rgba_bitmap: None,
+                        is_color: false,
+                    },
+                );
+            }
+        }
+    }
+    cache.get(&key)
+}
+
+/// Blends one cached glyph with its top-left corner at (gx, gy); color
+/// glyphs are scaled to `px` square.
+#[cfg(feature = "std")]
+fn blit_glyph(buffer: &mut [u32], cached: &CachedGlyph, gx: i32, gy: i32, px: f32, t: &GlyphTarget) {
+    let (clip_x1, clip_y1, clip_x2, clip_y2) = t.clip;
+    let target_sz = px.round().max(1.0) as i32;
+    let gw = if cached.is_color { target_sz } else { cached.width as i32 };
+    let gh = if cached.is_color { target_sz } else { cached.height as i32 };
+    let color_a = (t.packed_color >> 24) & 0xff;
+    let r = (t.packed_color >> 16) & 0xff;
+    let g = (t.packed_color >> 8) & 0xff;
+    let b = t.packed_color & 0xff;
+
+    let start_x = gx.max(clip_x1);
+    let start_y = gy.max(clip_y1);
+    let end_x = (gx + gw).min(clip_x2);
+    let end_y = (gy + gh).min(clip_y2);
+
+    if start_x < end_x && start_y < end_y {
+        if cached.is_color {
+            if let Some(ref rgba) = cached.rgba_bitmap {
+                for y in start_y..end_y {
+                    let src_y = (((y - gy) as usize * cached.height as usize) / target_sz as usize).min(cached.height as usize - 1);
+                    let src_row_offset = src_y * cached.width as usize;
+                    for x in start_x..end_x {
+                        let src_x = (((x - gx) as usize * cached.width as usize) / target_sz as usize).min(cached.width as usize - 1);
+                        let color_pixel = rgba[src_row_offset + src_x];
+                        let sa = (color_pixel >> 24) & 0xff;
+                        if sa > 0 {
+                            let idx = calc_pixel_index(x, y, t.rotation, t.physical_width, t.width, t.height);
+                            if idx < buffer.len() {
+                                let final_color = if t.swap_rb {
+                                    let sr = (color_pixel >> 16) & 0xff;
+                                    let sg = (color_pixel >> 8) & 0xff;
+                                    let sb = color_pixel & 0xff;
+                                    (sa << 24) | (sb << 16) | (sg << 8) | sr
+                                } else {
+                                    color_pixel
+                                };
+                                blend_pixel(&mut buffer[idx], final_color);
+                            }
+                        }
+                    }
+                }
+            }
+        } else if t.rotation != 0 {
+            for y in start_y..end_y {
+                let src_y = (y - gy) as usize;
+                let src_row_offset = src_y * cached.width as usize;
+                for x in start_x..end_x {
+                    let src_x = (x - gx) as usize;
+                    let cov = cached.bitmap[src_row_offset + src_x];
+                    if cov > 0 {
+                        let a = div_255(color_a * cov as u32);
+                        if a > 0 {
+                            let idx = calc_pixel_index(x, y, t.rotation, t.physical_width, t.width, t.height);
+                            if idx < buffer.len() {
+                                let inv_a = 255 - a;
+                                let d = buffer[idx];
+                                let dst_a = (d >> 24) & 0xff;
+                                let dst_r = (d >> 16) & 0xff;
+                                let dst_g = (d >> 8) & 0xff;
+                                let dst_b = d & 0xff;
+
+                                let res_r = div_255(r * a + dst_r * inv_a);
+                                let res_g = div_255(g * a + dst_g * inv_a);
+                                let res_b = div_255(b * a + dst_b * inv_a);
+                                let res_a = a + div_255(dst_a * inv_a);
+                                buffer[idx] = (res_a << 24) | (res_r << 16) | (res_g << 8) | res_b;
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            for y in start_y..end_y {
+                let src_y = (y - gy) as usize;
+                let dst_row_start = (y * t.physical_width as i32 + start_x) as usize;
+                let draw_w = (end_x - start_x) as usize;
+
+                let src_x_start = (start_x - gx) as usize;
+                let glyph_span = &cached.bitmap[src_y * cached.width as usize + src_x_start..src_y * cached.width as usize + src_x_start + draw_w];
+                let dst_span = &mut buffer[dst_row_start..dst_row_start + draw_w];
+                blend_glyph_span(dst_span, glyph_span, t.packed_color);
+            }
+        }
+    }
 }
 
 pub struct FastRenderer<'a> {
@@ -803,6 +962,7 @@ impl<'a> Renderer for FastRenderer<'a> {
                     color,
                     font_size,
                     weight,
+                    run,
                 } => {
                     profile!("render_text");
                     let local_rect = self.translate_rect(rect);
@@ -822,152 +982,81 @@ impl<'a> Renderer for FastRenderer<'a> {
                     match &self.fonts {
                         #[cfg(feature = "std")]
                         FontSource::Ttf(ttf_fonts) => {
-                            if ttf_fonts.is_empty() {
+                            let ttf_fonts: &[Font] = ttf_fonts;
+                            let Some(font_index) = ttf_font_index(ttf_fonts, *weight) else {
                                 continue;
-                            }
-                            let font_index = if *weight > 0 && ttf_fonts.len() > 1 { 1 } else { 0 };
+                            };
+                            let target = GlyphTarget {
+                                clip: (clip_x1, clip_y1, clip_x2, clip_y2),
+                                packed_color,
+                                swap_rb: self.swap_rb,
+                                rotation: self.rotation,
+                                physical_width: self.physical_width,
+                                width: self.width,
+                                height: self.height,
+                            };
+                            let px = *font_size;
+                            let sub_px = (px * 16.0) as u32;
 
-                            {
-                                profile!("text_layout");
-                                self.layout.reset(&fontdue::layout::LayoutSettings::default());
-                                self.layout.append(ttf_fonts, &fontdue::layout::TextStyle::new(text, *font_size, font_index));
-                            }
-
-                            profile!("text_rasterize_blend");
-                            let color_a = (packed_color >> 24) & 0xff;
-                            let r = (packed_color >> 16) & 0xff;
-                            let g = (packed_color >> 8) & 0xff;
-                            let b = packed_color & 0xff;
-
-                            let mut extra_x: f32 = 0.0;
-                            for glyph in self.layout.glyphs() {
-                                if (glyph.parent as u32) == 0xFE0F || glyph.parent == '\u{fe0f}' {
-                                    continue;
+                            if let Some(run) = run {
+                                // Shaped glyphs: positions are the advances.
+                                profile!("text_rasterize_blend");
+                                let baseline = (local_rect.y + run.baseline).round() as i32;
+                                let emoji_top = floor_i32(local_rect.y + run.baseline - run.shaped.metrics.ascent + px * 0.10);
+                                let mut pen = local_rect.x;
+                                let glyphs = run.shaped.glyphs.get(run.start as usize..run.end as usize).unwrap_or(&[]);
+                                for glyph in glyphs {
+                                    let x = pen.round() as i32;
+                                    pen += glyph.advance;
+                                    let (key, fallback_font, emoji) = if glyph.font == EMOJI_FONT {
+                                        let c = text
+                                            .get(glyph.cluster.saturating_sub(run.text_start) as usize..)
+                                            .and_then(|s| s.chars().next())
+                                            .unwrap_or('\u{fffd}');
+                                        (emoji_cache_key(c, sub_px), font_index, Some(c))
+                                    } else {
+                                        ((glyph.font as usize, glyph.id, sub_px), glyph.font as usize, None)
+                                    };
+                                    let Some(cached) = cached_glyph(self.glyph_cache, ttf_fonts, self.font_bytes, key, fallback_font, glyph.id, px, emoji) else {
+                                        continue;
+                                    };
+                                    let (gx, gy) = if cached.is_color {
+                                        (x, emoji_top)
+                                    } else {
+                                        (x + cached.xmin, baseline - cached.ymin - cached.height as i32)
+                                    };
+                                    blit_glyph(self.buffer, cached, gx, gy, px, &target);
                                 }
-                                let sub_px = (glyph.key.px * 16.0) as u32;
-                                let is_emoji = (glyph.parent as u32) >= 0x2000 || glyph.key.glyph_index == 0;
-                                let cache_key = if is_emoji {
-                                    let emoji_id = ((glyph.parent as u32) ^ ((glyph.parent as u32) >> 16)) as u16;
-                                    (0xffff_usize, emoji_id, sub_px)
-                                } else {
-                                    (glyph.font_index, glyph.key.glyph_index, sub_px)
-                                };
-
-                                if !self.glyph_cache.contains_key(&cache_key) {
-                                    let mut color_glyph = None;
-                                    if is_emoji {
-                                        if let Some(fbs) = self.font_bytes {
-                                            color_glyph = try_find_color_emoji_glyph(fbs, glyph.parent, glyph.key.px);
-                                        }
-                                    }
-
-                                    if let Some(cg) = color_glyph {
-                                        self.glyph_cache.insert(cache_key, cg);
-                                     } else if let Some(font) = ttf_fonts.get(glyph.font_index) {
-                                        let (metrics, bitmap) = font.rasterize_indexed(glyph.key.glyph_index, glyph.key.px);
-                                        if metrics.width > 0 && metrics.height > 0 {
-                                            self.glyph_cache.insert(
-                                                cache_key,
-                                                CachedGlyph {
-                                                    width: metrics.width as u32,
-                                                    height: metrics.height as u32,
-                                                    bitmap,
-                                                    rgba_bitmap: None,
-                                                    is_color: false,
-                                                },
-                                            );
-                                        }
-                                    }
+                            } else {
+                                {
+                                    profile!("text_layout");
+                                    self.layout.reset(&fontdue::layout::LayoutSettings::default());
+                                    self.layout.append(ttf_fonts, &fontdue::layout::TextStyle::new(text, px, font_index));
                                 }
-
-                                if let Some(cached) = self.glyph_cache.get(&cache_key) {
+                                profile!("text_rasterize_blend");
+                                let mut extra_x: f32 = 0.0;
+                                for glyph in self.layout.glyphs() {
+                                    if glyph.parent == '\u{fe0f}' {
+                                        continue;
+                                    }
+                                    let emoji = is_emoji(glyph.parent, glyph.key.glyph_index).then_some(glyph.parent);
+                                    let key = match emoji {
+                                        Some(c) => emoji_cache_key(c, sub_px),
+                                        None => (glyph.font_index, glyph.key.glyph_index, sub_px),
+                                    };
+                                    let Some(cached) = cached_glyph(self.glyph_cache, ttf_fonts, self.font_bytes, key, glyph.font_index, glyph.key.glyph_index, glyph.key.px, emoji) else {
+                                        continue;
+                                    };
                                     let gx = floor_i32(local_rect.x + glyph.x + extra_x);
                                     let gy = if cached.is_color {
                                         floor_i32(local_rect.y + glyph.key.px * 0.10)
                                     } else {
                                         floor_i32(local_rect.y + glyph.y)
                                     };
-                                    let target_sz = glyph.key.px.round().max(1.0) as i32;
-                                    if cached.is_color {
+                                    if emoji.is_some() {
                                         extra_x += glyph.key.px * 0.85;
                                     }
-                                    let gw = if cached.is_color { target_sz } else { cached.width as i32 };
-                                    let gh = if cached.is_color { target_sz } else { cached.height as i32 };
-
-                                    let start_x = gx.max(clip_x1);
-                                    let start_y = gy.max(clip_y1);
-                                    let end_x = (gx + gw).min(clip_x2);
-                                    let end_y = (gy + gh).min(clip_y2);
-
-                                    if start_x < end_x && start_y < end_y {
-                                        if cached.is_color {
-                                            if let Some(ref rgba) = cached.rgba_bitmap {
-                                                for y in start_y..end_y {
-                                                    let src_y = (((y - gy) as usize * cached.height as usize) / target_sz as usize).min(cached.height as usize - 1);
-                                                    let src_row_offset = src_y * cached.width as usize;
-                                                    for x in start_x..end_x {
-                                                        let src_x = (((x - gx) as usize * cached.width as usize) / target_sz as usize).min(cached.width as usize - 1);
-                                                        let color_pixel = rgba[src_row_offset + src_x];
-                                                        let sa = (color_pixel >> 24) & 0xff;
-                                                        if sa > 0 {
-                                                            let idx = calc_pixel_index(x, y, self.rotation, self.physical_width, self.width, self.height);
-                                                            if idx < self.buffer.len() {
-                                                                let final_color = if self.swap_rb {
-                                                                    let sr = (color_pixel >> 16) & 0xff;
-                                                                    let sg = (color_pixel >> 8) & 0xff;
-                                                                    let sb = color_pixel & 0xff;
-                                                                    (sa << 24) | (sb << 16) | (sg << 8) | sr
-                                                                } else {
-                                                                    color_pixel
-                                                                };
-                                                                blend_pixel(&mut self.buffer[idx], final_color);
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        } else if self.rotation != 0 {
-                                            for y in start_y..end_y {
-                                                let src_y = (y - gy) as usize;
-                                                let src_row_offset = src_y * cached.width as usize;
-                                                for x in start_x..end_x {
-                                                    let src_x = (x - gx) as usize;
-                                                    let cov = cached.bitmap[src_row_offset + src_x];
-                                                    if cov > 0 {
-                                                        let a = div_255(color_a * cov as u32);
-                                                        if a > 0 {
-                                                            let idx = calc_pixel_index(x, y, self.rotation, self.physical_width, self.width, self.height);
-                                                            if idx < self.buffer.len() {
-                                                                let inv_a = 255 - a;
-                                                                let d = self.buffer[idx];
-                                                                let dst_a = (d >> 24) & 0xff;
-                                                                let dst_r = (d >> 16) & 0xff;
-                                                                let dst_g = (d >> 8) & 0xff;
-                                                                let dst_b = d & 0xff;
-                                                                
-                                                                let res_r = div_255(r * a + dst_r * inv_a);
-                                                                let res_g = div_255(g * a + dst_g * inv_a);
-                                                                let res_b = div_255(b * a + dst_b * inv_a);
-                                                                let res_a = a + div_255(dst_a * inv_a);
-                                                                self.buffer[idx] = (res_a << 24) | (res_r << 16) | (res_g << 8) | res_b;
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        } else {
-                                            for y in start_y..end_y {
-                                                let src_y = (y - gy) as usize;
-                                                let dst_row_start = (y * self.physical_width as i32 + start_x) as usize;
-                                                let draw_w = (end_x - start_x) as usize;
-                                                
-                                                let src_x_start = (start_x - gx) as usize;
-                                                let glyph_span = &cached.bitmap[src_y * cached.width as usize + src_x_start..src_y * cached.width as usize + src_x_start + draw_w];
-                                                let dst_span = &mut self.buffer[dst_row_start..dst_row_start + draw_w];
-                                                blend_glyph_span(dst_span, glyph_span, packed_color);
-                                            }
-                                        }
-                                    }
+                                    blit_glyph(self.buffer, cached, gx, gy, glyph.key.px, &target);
                                 }
                             }
                         }
