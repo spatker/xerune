@@ -1,94 +1,83 @@
 <style>
-    body {
-        margin: 0;
-    }
-    .game-container {
+    body { margin: 0; }
+    .game {
         display: flex;
         position: relative;
-        margin: 0 auto;
-        background-color: #111111;
+        overflow: hidden;
+        background: linear-gradient(180deg, #160b2e 0%, #0b0b1f 60%, #05050d 100%);
     }
-    .game-block {
-        position: absolute;
-        border-radius: 4px;
-    }
-    .game-particle {
-        position: absolute;
-        width: 6px;
-        height: 6px;
-        border-radius: 3px;
-    }
-    .game-paddle {
-        position: absolute;
-        background-color: #ffffff;
-        border-radius: 8px;
-    }
-    .game-ball {
-        position: absolute;
-        background-color: #ffffff;
-        border-radius: 50%;
-    }
-    .game-overlay {
-        display: flex;
-        position: absolute;
-        left: 0;
-        top: 0;
-        background-color: rgba(0,0,0,0.8);
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-    }
-    .game-overlay p {
-        font-size: 48px;
-        font-weight: bold;
-        margin-bottom: 20px;
-    }
-    .game-overlay-over p {
-        color: #ff5555;
-    }
-    .game-overlay-win p {
-        color: #55ff55;
-    }
+
+    .hud { display: flex; flex-direction: row; position: absolute; left: 24px; right: 24px; top: 16px;
+           align-items: center; justify-content: space-between; }
+    .hud-group { display: flex; flex-direction: row; align-items: center; gap: 18px; }
+    .hud-item { display: flex; flex-direction: column; }
+    .hud-label { font-size: 10px; font-weight: bold; color: #7c6fa8; }
+    .hud-value { font-size: 20px; font-weight: bold; color: #ffffff; }
+    .lives { display: flex; flex-direction: row; gap: 6px; margin-top: 4px; }
+    .life { width: 12px; height: 12px; border-radius: 6px; background-color: #2a2347; }
+    .life.left { background-color: #f472b6; box-shadow: 0px 0px 8px rgba(244,114,182,0.7); }
+
+    .block { position: absolute; border-radius: 5px; }
+    .particle { position: absolute; width: 5px; height: 5px; border-radius: 3px; }
+    .paddle { position: absolute; border-radius: 7px;
+              background: linear-gradient(180deg, #e9d5ff 0%, #a78bfa 100%);
+              box-shadow: 0px 0px 18px rgba(167,139,250,0.55); }
+    .ball { position: absolute; border-radius: 50%;
+            background: radial-gradient(circle at 35% 30%, #ffffff 0%, #fde68a 45%, #f59e0b 100%);
+            box-shadow: 0px 0px 14px rgba(253,230,138,0.8); }
+    .hint { position: absolute; bottom: 12px; left: 0px; width: 100%; display: flex; justify-content: center;
+            font-size: 11px; color: #4b4470; }
+
+    .overlay { display: flex; position: absolute; left: 0px; top: 0px; justify-content: center; align-items: center;
+               background-color: rgba(5,5,13,0.72); }
+    .card { display: flex; flex-direction: column; align-items: center; padding: 26px 40px; border-radius: 22px;
+            background-color: #140f29; border: 1px solid rgba(255,255,255,0.08); box-shadow: 0px 20px 50px rgba(0,0,0,0.6); }
+    .card-title { font-size: 40px; font-weight: bold; }
+    .card-title.over { color: #fb7185; }
+    .card-title.win { color: #4ade80; }
+    .card-score { font-size: 15px; color: #c4b5fd; margin-top: 6px; }
+    .card-hint { font-size: 12px; color: #6b6290; margin-top: 16px; }
 </style>
 
-<div class="game-container" style="width: {{ game_width }}px; height: {{ game_height }}px;">
+<div class="game" style="width: {{ game_width }}px; height: {{ game_height }}px;">
+    <div class="hud">
+        <div class="hud-group">
+            <div class="hud-item"><span class="hud-label">SCORE</span><span class="hud-value">{{ score }}</span></div>
+            <div class="hud-item"><span class="hud-label">BRICKS</span><span class="hud-value">{{ self.bricks_left() }}</span></div>
+        </div>
+        <div class="hud-item">
+            <span class="hud-label">LIVES</span>
+            <div class="lives">
+                {% for life in self.life_slots() %}
+                <div class="life {% if life.left %}left{% endif %}"></div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
 
-    <!-- Blocks -->
     {% for block in blocks %}
     {% if block.alive %}
-    <div class="game-block"
-        style="left: {{ block.x }}px; top: {{ block.y }}px; width: {{ block_w }}px; height: {{ block_h }}px; background-color: {{ block.color }};">
+    <div class="block"
+        style="left: {{ block.x }}px; top: {{ block.y }}px; width: {{ block_w }}px; height: {{ block_h }}px; background: linear-gradient(180deg, {{ block.shine }} 0%, {{ block.color }} 55%); box-shadow: 0px 0px 12px {{ block.color }}66;">
     </div>
     {% endif %}
     {% endfor %}
 
-    <!-- Particles -->
     {% for p in particles %}
-    <div class="game-particle" style="left: {{ p.x }}px; top: {{ p.y }}px; background-color: {{ p.color }};">
-    </div>
+    <div class="particle" style="left: {{ p.x }}px; top: {{ p.y }}px; background-color: {{ p.color }};"></div>
     {% endfor %}
 
-    <!-- Paddle -->
-    <div class="game-paddle"
-        style="left: {{ paddle_x }}px; top: {{ paddle_y }}px; width: {{ paddle_w }}px; height: {{ paddle_h }}px;">
-    </div>
+    <div class="paddle" style="left: {{ paddle_x }}px; top: {{ paddle_y }}px; width: {{ paddle_w }}px; height: {{ paddle_h }}px;"></div>
+    <div class="ball" style="left: {{ ball_x }}px; top: {{ ball_y }}px; width: {{ ball_s }}px; height: {{ ball_s }}px;"></div>
+    <div class="hint">Left / Right to move · Space to restart</div>
 
-    <!-- Ball -->
-    <div class="game-ball"
-        style="left: {{ ball_x }}px; top: {{ ball_y }}px; width: {{ ball_s }}px; height: {{ ball_s }}px;">
-    </div>
-
-    <!-- UI Overlay for Game Over/Win -->
-    {% if game_over %}
-    <div class="game-overlay game-overlay-over" style="width: {{ game_width }}px; height: {{ game_height }}px;">
-        <p>GAME OVER</p>
+    {% if game_over || won %}
+    <div class="overlay" style="width: {{ game_width }}px; height: {{ game_height }}px;">
+        <div class="card">
+            {% if won %}<span class="card-title win">Board cleared!</span>{% else %}<span class="card-title over">Game over</span>{% endif %}
+            <span class="card-score">Score {{ score }}</span>
+            <span class="card-hint">Press Space to play again</span>
+        </div>
     </div>
     {% endif %}
-
-    {% if won %}
-    <div class="game-overlay game-overlay-win" style="width: {{ game_width }}px; height: {{ game_height }}px;">
-        <p>YOU WIN!</p>
-    </div>
-    {% endif %}
-
 </div>

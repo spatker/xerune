@@ -15,21 +15,32 @@ pub type Measurer = FastMeasurer<'static>;
 const GAME_WIDTH: f32 = 800.0;
 const GAME_HEIGHT: f32 = 480.0;
 
-const PADDLE_WIDTH: f32 = 100.0;
-const PADDLE_HEIGHT: f32 = 16.0;
-const PADDLE_Y: f32 = GAME_HEIGHT - 40.0;
-const PADDLE_SPEED: f32 = 400.0; // px per second
+const PADDLE_WIDTH: f32 = 110.0;
+const PADDLE_HEIGHT: f32 = 14.0;
+/// Paddle distance from the bottom edge.
+const PADDLE_BOTTOM: f32 = 46.0;
+const PADDLE_SPEED: f32 = 460.0; // px per second
 
-const BALL_SIZE: f32 = 12.0;
-const INITIAL_BALL_SPEED: f32 = 300.0;
+const BALL_SIZE: f32 = 14.0;
+const INITIAL_BALL_SPEED: f32 = 320.0;
+const LIVES: u32 = 3;
 
 const COLS: usize = 10;
 const ROWS: usize = 5;
-const BLOCK_WIDTH: f32 = 64.0;
-const BLOCK_HEIGHT: f32 = 24.0;
-const BLOCK_PADDING: f32 = 8.0;
-const BOARD_OFFSET_Y: f32 = 50.0;
-const BOARD_OFFSET_X: f32 = (GAME_WIDTH - (COLS as f32 * (BLOCK_WIDTH + BLOCK_PADDING))) / 2.0;
+const BLOCK_HEIGHT: f32 = 22.0;
+const BLOCK_GAP: f32 = 8.0;
+const BOARD_MARGIN_X: f32 = 24.0;
+/// Space above the bricks for the score bar.
+const BOARD_OFFSET_Y: f32 = 64.0;
+
+/// Per row, top to bottom: highlight color, base color, points.
+const ROW_STYLE: [(&str, &str, u32); ROWS] = [
+    ("#fbcfe8", "#ec4899", 50),
+    ("#fed7aa", "#f97316", 40),
+    ("#fef08a", "#eab308", 30),
+    ("#bbf7d0", "#22c55e", 20),
+    ("#a5f3fc", "#06b6d4", 10),
+];
 
 struct LcgRng {
     state: u64,
@@ -54,6 +65,9 @@ pub struct Block {
     pub y: f32,
     pub alive: bool,
     pub color: String,
+    /// Lighter top color for the brick's gloss.
+    pub shine: String,
+    pub points: u32,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -81,6 +95,8 @@ pub struct BreakoutModel {
     pub last_tick: xerune::runtime::time::Instant,
     pub game_over: bool,
     pub won: bool,
+    pub score: u32,
+    pub lives: u32,
     pub paddle_y: f32,
     pub paddle_w: f32,
     pub paddle_h: f32,
@@ -93,42 +109,75 @@ pub struct BreakoutModel {
 
 impl Default for BreakoutModel {
     fn default() -> Self {
+        Self::new(GAME_WIDTH, GAME_HEIGHT)
+    }
+}
+
+impl BreakoutModel {
+    /// A fresh game laid out for a `width` x `height` board.
+    pub fn new(width: f32, height: f32) -> Self {
+        let block_w = (width - 2.0 * BOARD_MARGIN_X - (COLS - 1) as f32 * BLOCK_GAP) / COLS as f32;
         let mut blocks = Vec::new();
-        let colors = ["#ff5555", "#ffaa00", "#55ff55", "#5555ff", "#aa00ff"];
-        
-        for row in 0..ROWS {
+        for (row, &(shine, color, points)) in ROW_STYLE.iter().enumerate() {
             for col in 0..COLS {
                 blocks.push(Block {
-                    x: BOARD_OFFSET_X + col as f32 * (BLOCK_WIDTH + BLOCK_PADDING),
-                    y: BOARD_OFFSET_Y + row as f32 * (BLOCK_HEIGHT + BLOCK_PADDING),
+                    x: BOARD_MARGIN_X + col as f32 * (block_w + BLOCK_GAP),
+                    y: BOARD_OFFSET_Y + row as f32 * (BLOCK_HEIGHT + BLOCK_GAP),
                     alive: true,
-                    color: colors[row % colors.len()].to_string(),
+                    color: color.to_string(),
+                    shine: shine.to_string(),
+                    points,
                 });
             }
         }
 
-        Self {
-            paddle_x: GAME_WIDTH / 2.0 - PADDLE_WIDTH / 2.0,
-            ball_x: GAME_WIDTH / 2.0 - BALL_SIZE / 2.0,
-            ball_y: PADDLE_Y - BALL_SIZE - 2.0,
-            ball_dx: INITIAL_BALL_SPEED * 0.707, // 45 degrees up-right
-            ball_dy: -INITIAL_BALL_SPEED * 0.707,
+        let mut model = Self {
+            paddle_x: width / 2.0 - PADDLE_WIDTH / 2.0,
+            ball_x: 0.0,
+            ball_y: 0.0,
+            ball_dx: 0.0,
+            ball_dy: 0.0,
             blocks,
             particles: Vec::new(),
             keys_held: HashSet::new(),
             last_tick: xerune::runtime::time::Instant::now(),
             game_over: false,
             won: false,
-            paddle_y: PADDLE_Y,
+            score: 0,
+            lives: LIVES,
+            paddle_y: height - PADDLE_BOTTOM,
             paddle_w: PADDLE_WIDTH,
             paddle_h: PADDLE_HEIGHT,
             ball_s: BALL_SIZE,
-            block_w: BLOCK_WIDTH,
+            block_w,
             block_h: BLOCK_HEIGHT,
-            game_width: GAME_WIDTH,
-            game_height: GAME_HEIGHT,
-        }
+            game_width: width,
+            game_height: height,
+        };
+        model.serve();
+        model
     }
+
+    /// Put the ball above the paddle, heading up and to the right.
+    fn serve(&mut self) {
+        self.ball_x = self.paddle_x + PADDLE_WIDTH / 2.0 - BALL_SIZE / 2.0;
+        self.ball_y = self.paddle_y - BALL_SIZE - 2.0;
+        self.ball_dx = INITIAL_BALL_SPEED * 0.707;
+        self.ball_dy = -INITIAL_BALL_SPEED * 0.707;
+    }
+
+    pub fn bricks_left(&self) -> usize {
+        self.blocks.iter().filter(|b| b.alive).count()
+    }
+
+    /// One slot per life for the HUD; `true` while the life is unused.
+    pub fn life_slots(&self) -> Vec<Life> {
+        (0..LIVES).map(|i| Life { left: i < self.lives }).collect()
+    }
+}
+
+pub struct Life {
+    pub left: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, XeruneMessage)]
@@ -143,6 +192,13 @@ pub enum Msg {
 impl Model for BreakoutModel {
     type Message = Msg;
 
+    fn on_resize(&mut self, width: f32, height: f32, _context: &mut xerune::Context) {
+        if width != self.game_width || height != self.game_height {
+            // The board is laid out for the screen; start over on a new size.
+            *self = BreakoutModel::new(width, height);
+        }
+    }
+
     fn update(&mut self, msg: Self::Message, context: &mut xerune::Context) {
         match msg {
             Msg::Tick => {
@@ -154,6 +210,7 @@ impl Model for BreakoutModel {
                     context.clear_interval("tick");
                     return;
                 }
+                let (width, _height) = (self.game_width, self.game_height);
 
                 // --- Paddle Movement ---
                 let mut paddle_dir = 0.0;
@@ -177,7 +234,7 @@ impl Model for BreakoutModel {
                 }
 
                 self.paddle_x += paddle_dir * PADDLE_SPEED * dt;
-                self.paddle_x = self.paddle_x.clamp(0.0, GAME_WIDTH - PADDLE_WIDTH);
+                self.paddle_x = self.paddle_x.clamp(0.0, width - PADDLE_WIDTH);
 
                 // --- Ball Movement ---
                 self.ball_x += self.ball_dx * dt;
@@ -186,27 +243,33 @@ impl Model for BreakoutModel {
                 // --- Wall Collisions ---
                 if self.ball_x <= 0.0 {
                     self.ball_x = 0.0;
-                    self.ball_dx *= -1.0;
-                } else if self.ball_x >= GAME_WIDTH - BALL_SIZE {
-                    self.ball_x = GAME_WIDTH - BALL_SIZE;
-                    self.ball_dx *= -1.0;
+                    self.ball_dx = self.ball_dx.abs();
+                } else if self.ball_x >= width - BALL_SIZE {
+                    self.ball_x = width - BALL_SIZE;
+                    self.ball_dx = -self.ball_dx.abs();
                 }
 
                 if self.ball_y <= 0.0 {
                     self.ball_y = 0.0;
-                    self.ball_dy *= -1.0;
-                } else if self.ball_y >= GAME_HEIGHT {
-                    self.game_over = true;
+                    self.ball_dy = self.ball_dy.abs();
+                } else if self.ball_y >= self.game_height {
+                    self.lives = self.lives.saturating_sub(1);
+                    if self.lives == 0 {
+                        self.game_over = true;
+                    } else {
+                        self.serve();
+                    }
                 }
 
                 // --- Paddle Collision ---
-                if self.ball_y + BALL_SIZE >= PADDLE_Y 
-                    && self.ball_y <= PADDLE_Y + PADDLE_HEIGHT 
+                let paddle_y = self.paddle_y;
+                if self.ball_y + BALL_SIZE >= paddle_y 
+                    && self.ball_y <= paddle_y + PADDLE_HEIGHT 
                     && self.ball_x + BALL_SIZE >= self.paddle_x 
                     && self.ball_x <= self.paddle_x + PADDLE_WIDTH 
                     && self.ball_dy > 0.0
                 {
-                    self.ball_y = PADDLE_Y - BALL_SIZE;
+                    self.ball_y = paddle_y - BALL_SIZE;
                     
                     let hit_factor = ((self.ball_x + BALL_SIZE / 2.0) - (self.paddle_x + PADDLE_WIDTH / 2.0)) / (PADDLE_WIDTH / 2.0);
                     
@@ -221,25 +284,27 @@ impl Model for BreakoutModel {
                 // --- Block Collisions ---
                 let mut hit_block = false;
                 let mut rng = LcgRng::new(self.ball_x.to_bits() as u64 ^ self.ball_y.to_bits() as u64);
+                let (block_w, block_h) = (self.block_w, self.block_h);
                 
                 for block in self.blocks.iter_mut() {
                     if !block.alive { continue; }
 
                     if self.ball_x + BALL_SIZE >= block.x 
-                        && self.ball_x <= block.x + BLOCK_WIDTH 
+                        && self.ball_x <= block.x + block_w 
                         && self.ball_y + BALL_SIZE >= block.y 
-                        && self.ball_y <= block.y + BLOCK_HEIGHT 
+                        && self.ball_y <= block.y + block_h 
                     {
                         block.alive = false;
                         hit_block = true;
+                        self.score += block.points;
 
                         // Spawn particles using custom LcgRng
                         for _ in 0..10 {
                             let angle = rng.gen_range(0.0, PI * 2.0);
                             let speed = rng.gen_range(50.0, 150.0);
                             self.particles.push(Particle {
-                                x: block.x + BLOCK_WIDTH / 2.0,
-                                y: block.y + BLOCK_HEIGHT / 2.0,
+                                x: block.x + block_w / 2.0,
+                                y: block.y + block_h / 2.0,
                                 dx: angle.cos() * speed,
                                 dy: angle.sin() * speed,
                                 life: 1.0,
@@ -248,9 +313,9 @@ impl Model for BreakoutModel {
                         }
 
                         let overlap_left = (self.ball_x + BALL_SIZE) - block.x;
-                        let overlap_right = (block.x + BLOCK_WIDTH) - self.ball_x;
+                        let overlap_right = (block.x + block_w) - self.ball_x;
                         let overlap_top = (self.ball_y + BALL_SIZE) - block.y;
-                        let overlap_bottom = (block.y + BLOCK_HEIGHT) - self.ball_y;
+                        let overlap_bottom = (block.y + block_h) - self.ball_y;
 
                         let min_overlap = overlap_left.min(overlap_right).min(overlap_top).min(overlap_bottom);
 
@@ -285,7 +350,7 @@ impl Model for BreakoutModel {
             Msg::KeyDown(key) => {
                 if self.game_over || self.won {
                     if matches!(key.as_str(), "KEY_PLAYPAUSE" | "KEY_UP" | "Space" | "Enter" | "KEY_NEXTSONG" | "KEY_PREVIOUSSONG") {
-                        *self = BreakoutModel::default();
+                        *self = BreakoutModel::new(self.game_width, self.game_height);
                         context.set_timeout("tick".to_string(), 16);
                         return;
                     }
