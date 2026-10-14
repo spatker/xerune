@@ -25,7 +25,7 @@ High quality videos: [Music Player](docs/img/music_player.mkv), [Showcase](docs/
 ## Documentation
 - [Quick Start Guide](docs/guide.md)
 - [Architecture Overview](docs/architecture.md)
-- [AI Assistant Context (gemini.md)](gemini.md)
+- [AI Assistant Context (CLAUDE.md)](CLAUDE.md)
 
 ## Architecture
 
