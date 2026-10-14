@@ -38,7 +38,8 @@
     .count-name { font-size: 11px; color: #8b80b0; margin-top: 2px; }
 
     /* ---------- main column ---------- */
-    .main { display: flex; flex-direction: column; flex-grow: 1; padding: 22px 22px 0 22px; min-width: 0px; }
+    /* min-height: 0 lets the column shrink to the window in portrait, so the list scrolls. */
+    .main { display: flex; flex-direction: column; flex-grow: 1; padding: 22px 22px 0 22px; min-width: 0px; min-height: 0px; }
     .composer { display: flex; flex-direction: row; align-items: center; gap: 10px; flex-shrink: 0; }
     .todo-input { flex-grow: 1; height: 44px; font-size: 16px; color: #ffffff; background-color: #1d1733;
                   border-radius: 12px; border: 1px solid rgba(167,139,250,0.25); padding: 0 14px; }

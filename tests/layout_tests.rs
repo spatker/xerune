@@ -714,3 +714,33 @@ mod canvas {
         assert_eq!((fills[1].r, fills[1].a), (255, 127));
     }
 }
+
+/// In the portrait layout the todo list must stay inside the window so it
+/// scrolls; a column flex child with `min-height: auto` would grow to fit
+/// every item instead.
+#[test]
+fn todo_list_scrolls_in_portrait() {
+    let items = (0..30).map(|i| TodoItem::new(&format!("Item {}", i), false)).collect();
+    let model = TestTodoModel { items, active_item: 0, new_item_title: String::new() };
+    let mut runtime = Runtime::new(model, MockMeasurer);
+    runtime.set_size(480.0, 800.0);
+
+    let ui = &runtime.ui;
+    let scroller = ui
+        .render_data
+        .iter()
+        .find_map(|(node, data)| match data {
+            xerune::style::RenderData::Container(s) if s.overflow == Overflow::Scroll => Some(node),
+            _ => None,
+        })
+        .expect("todo list is a scroll container");
+
+    // Absolute bottom edge of the scroll container.
+    let mut bottom = ui.taffy.layout(scroller).unwrap().size.height;
+    let mut node = Some(scroller);
+    while let Some(n) = node {
+        bottom += ui.taffy.layout(n).unwrap().location.y;
+        node = ui.taffy.parent(n);
+    }
+    assert!(bottom <= 800.5, "scroll container ends at {bottom}px, below the 800px window");
+}
