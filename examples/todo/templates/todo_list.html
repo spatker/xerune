@@ -70,12 +70,6 @@
     .empty-big { font-size: 22px; font-weight: bold; color: #ffffff; }
     .empty-small { font-size: 13px; color: #8b80b0; margin-top: 6px; }
 
-    /* FIXME: workaround for missing text wrapping (known_gaps::text_wraps_to_its_container).
-       Titles can't wrap, so in very narrow windows they would run over the chips. */
-    @media (max-width: 460px) {
-        .tag { display: none; }
-    }
-
     /* ---------- portrait (480x800): sidebar becomes a header strip ---------- */
     @media (orientation: portrait) {
         .app { flex-direction: column; }
