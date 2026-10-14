@@ -194,7 +194,7 @@ impl ShapedText {
         let mut shaped = Self { glyphs, metrics, segments, flags, min_content: 0.0, min_content_anywhere, max_content: 0.0 };
         shaped.min_content = shaped.segments.iter().fold(0.0, |w, s| w.max(s.width - s.trailing));
         let mut max_content = 0.0f32;
-        shaped.break_lines(f32::INFINITY, WordBreak::Normal, |line| max_content = max_content.max(line.width));
+        shaped.break_lines(f32::INFINITY, WordBreak::Normal, |line| max_content = max_content.max(line.width - line.hanging));
         shaped.max_content = max_content;
         shaped
     }
@@ -223,7 +223,7 @@ impl ShapedText {
     /// unless `word_break` allows breaking it.
     pub fn lines(&self, max_width: f32, word_break: WordBreak) -> Vec<Line> {
         let mut lines = Vec::new();
-        self.break_lines(max_width, word_break, |line| lines.push(line));
+        self.break_lines(max_width, word_break, |line| lines.push(self.finish_line(line)));
         lines
     }
 
@@ -234,8 +234,18 @@ impl ShapedText {
         count
     }
 
-    fn break_lines(&self, max_width: f32, word_break: WordBreak, mut emit: impl FnMut(Line)) {
+    /// Breaks into lines, emitting each as it ends. Counting lines is the hot
+    /// path (taffy measures often), so lines come out raw: see
+    /// [`finish_line`](Self::finish_line).
+    fn break_lines(&self, max_width: f32, word_break: WordBreak, mut emit: impl FnMut(RawLine)) {
         let mut line = LineState::default();
+        if word_break == WordBreak::Normal {
+            for seg in &self.segments {
+                line.place(seg, max_width, &mut emit);
+            }
+            line.finish(&mut emit);
+            return;
+        }
         let mut seg_start = 0u32;
         for seg in &self.segments {
             let split = match word_break {
@@ -247,25 +257,32 @@ impl ShapedText {
             };
             if split {
                 if word_break != WordBreak::BreakAll && line.end > line.start {
-                    line.wrap(self, &mut emit);
+                    line.wrap(&mut emit);
                 }
                 let mut piece_start = seg_start;
                 while piece_start < seg.end {
                     let piece = self.grapheme(piece_start, seg);
-                    line.place(self, &piece, max_width, &mut emit);
+                    line.place(&piece, max_width, &mut emit);
                     piece_start = piece.end;
                 }
             } else {
-                line.place(self, seg, max_width, &mut emit);
+                line.place(seg, max_width, &mut emit);
             }
             seg_start = seg.end;
         }
-        // Spaces at the very end of the text only hang when a line wraps
-        // there: otherwise they separate it from whatever comes next on the
-        // line (`core {{ n }}`).
-        if line.end > line.start || !line.emitted {
-            emit(Line { start: line.start, end: line.end, width: line.width, ellipsis: false });
+        line.finish(&mut emit);
+    }
+
+    /// The [`Line`] of a raw line: hanging spaces neither count nor get
+    /// drawn.
+    fn finish_line(&self, raw: RawLine) -> Line {
+        let mut end = raw.end;
+        let mut hanging = raw.hanging;
+        while end > raw.start && hanging > 0.0 {
+            end -= 1;
+            hanging -= self.glyphs[end as usize].advance;
         }
+        Line { start: raw.start, end, width: raw.width - raw.hanging, ellipsis: false }
     }
 
     /// The grapheme of `seg` starting at glyph `start`, as a segment of its
@@ -305,22 +322,22 @@ impl ShapedText {
         Line { start: line.start, end, width, ellipsis: true }
     }
 
-    /// A line ending at a break: its trailing spaces hang, so they neither
-    /// count nor get drawn.
-    fn wrapped_line(&self, start: u32, end: u32, width: f32, trailing: f32) -> Line {
-        let mut visible_end = end;
-        let mut hanging = trailing;
-        while visible_end > start && hanging > 0.0 {
-            visible_end -= 1;
-            hanging -= self.glyphs[visible_end as usize].advance;
-        }
-        Line { start, end: visible_end, width: width - trailing, ellipsis: false }
-    }
 }
 
 /// Tolerance for float error between the width text was measured at and
 /// the width layout hands back.
 const EPSILON: f32 = 0.01;
+
+/// A line as [`ShapedText::break_lines`] finds it.
+#[derive(Clone, Copy)]
+struct RawLine {
+    start: u32,
+    end: u32,
+    /// Advance of the glyphs, hanging spaces included.
+    width: f32,
+    /// Advance of the spaces at a wrapped line's end, which hang.
+    hanging: f32,
+}
 
 /// The line being filled by [`ShapedText::break_lines`].
 #[derive(Default)]
@@ -336,27 +353,38 @@ struct LineState {
 
 impl LineState {
     /// Adds `seg` to the line, wrapping first if it doesn't fit.
-    fn place(&mut self, text: &ShapedText, seg: &Segment, max_width: f32, emit: &mut impl FnMut(Line)) {
+    #[inline]
+    fn place(&mut self, seg: &Segment, max_width: f32, emit: &mut impl FnMut(RawLine)) {
         // The line's spaces are mid-line once `seg` joins it; only `seg`'s
         // own would hang.
         if self.end > self.start && self.width + seg.width - seg.trailing > max_width + EPSILON {
-            self.wrap(text, emit);
+            self.wrap(emit);
         }
         self.width += seg.width;
         self.trailing = if seg.trailing < seg.width { seg.trailing } else { self.trailing + seg.trailing };
         self.end = seg.end;
         if seg.forced {
-            self.wrap(text, emit);
+            self.wrap(emit);
         }
     }
 
     /// Ends the line at its current end.
-    fn wrap(&mut self, text: &ShapedText, emit: &mut impl FnMut(Line)) {
-        emit(text.wrapped_line(self.start, self.end, self.width, self.trailing));
+    #[inline]
+    fn wrap(&mut self, emit: &mut impl FnMut(RawLine)) {
+        emit(RawLine { start: self.start, end: self.end, width: self.width, hanging: self.trailing });
         self.emitted = true;
         self.start = self.end;
         self.width = 0.0;
         self.trailing = 0.0;
+    }
+
+    /// Emits the last line. Spaces at the very end of the text only hang
+    /// when a line wraps there: otherwise they separate it from whatever
+    /// comes next on the line (`core {{ n }}`).
+    fn finish(&mut self, emit: &mut impl FnMut(RawLine)) {
+        if self.end > self.start || !self.emitted {
+            emit(RawLine { start: self.start, end: self.end, width: self.width, hanging: 0.0 });
+        }
     }
 }
 
