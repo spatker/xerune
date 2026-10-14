@@ -77,6 +77,13 @@ pub enum WhiteSpace {
     PreLine,
 }
 
+impl ContainerStyle {
+    /// Where lines of this style's text may break inside words.
+    pub fn word_break(&self) -> crate::text::WordBreak {
+        if self.word_break_all { crate::text::WordBreak::BreakAll } else { self.overflow_wrap }
+    }
+}
+
 impl WhiteSpace {
     /// Whether lines may break at soft wrap opportunities.
     pub fn wraps(self) -> bool {
@@ -226,6 +233,10 @@ pub struct ContainerStyle {
     pub line_height: LineHeight,
     /// Whitespace collapsing and wrapping of text.
     pub white_space: WhiteSpace,
+    /// `overflow-wrap`: `Normal`, `BreakWord` or `Anywhere`.
+    pub overflow_wrap: crate::text::WordBreak,
+    /// `word-break: break-all`.
+    pub word_break_all: bool,
     /// Ordering index within a Flexbox layout.
     pub order: i32,
     /// Text writing direction.
@@ -312,6 +323,8 @@ impl Default for ContainerStyle {
             text_align: None,
             line_height: LineHeight::Normal,
             white_space: WhiteSpace::Normal,
+            overflow_wrap: crate::text::WordBreak::Normal,
+            word_break_all: false,
             order: 0,
             direction: Direction::Ltr,
             writing_mode: WritingMode::HorizontalTb,

@@ -231,7 +231,7 @@ pub(crate) fn resolve_styles(
             let normalized = super::collapse_white_space(text, current_style.white_space);
             if !normalized.is_empty() {
                 // Sized by the layout's measure function (see `Ui::compute_layout`).
-                let text_layout_style = Style::default();
+                let text_layout_style = super::text_leaf_style(&current_style);
                 let _ = taffy.set_style(node, text_layout_style.clone());
                 render_data.insert(node, RenderData::Text(normalized.into_owned(), current_style.clone()));
                 base_styles.insert(node, (text_layout_style, current_style));

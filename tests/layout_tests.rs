@@ -846,6 +846,20 @@ mod text_layout {
             "and wraps when the line is full.",
             "Pre keeps",
             "indentation",
+            "A",
+            "Supercalifragilist",
+            "icexpialidocious",
+            "word.",
+            "Break all fills eve",
+            "ry line to the edg",
+            "e.",
+            // `anywhere` lets the flex item shrink below the long word;
+            // `break-word` doesn't change min-content, so it overflows.
+            "Anywhere:",
+            "Pneumonoultrami",
+            "croscopic",
+            "Breakword:",
+            "Pneumonoultramicroscopic",
         ];
         assert_eq!(crate::roboto_lines(Reference, 800.0, 480.0), expected);
     }

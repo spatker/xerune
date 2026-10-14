@@ -54,8 +54,35 @@ pub struct ShapedText {
     /// Font metrics of the run.
     pub metrics: LineMetrics,
     segments: Vec<Segment>,
+    /// Per glyph: [`GLYPH_SPACE`] and [`GLYPH_JOINED`] bits.
+    flags: Vec<u8>,
     min_content: f32,
+    /// Widest grapheme: min-content when words may break anywhere.
+    min_content_anywhere: f32,
     max_content: f32,
+}
+
+/// The glyph is whitespace.
+const GLYPH_SPACE: u8 = 1;
+/// The glyph continues the grapheme of the previous one (a combining mark,
+/// a joined emoji, another glyph of the same character): no break before it.
+const GLYPH_JOINED: u8 = 2;
+
+/// Where lines may break inside words (CSS `overflow-wrap` and
+/// `word-break`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum WordBreak {
+    /// Only at break opportunities; longer words overflow.
+    #[default]
+    Normal,
+    /// A word that doesn't fit on a line of its own breaks anywhere
+    /// (`overflow-wrap: break-word`).
+    BreakWord,
+    /// Like `BreakWord`, and the text's min-content width accounts for it
+    /// (`overflow-wrap: anywhere`).
+    Anywhere,
+    /// Lines break between any two letters (`word-break: break-all`).
+    BreakAll,
 }
 
 /// The glyphs of one line of a [`ShapedText`], as drawn by
@@ -143,10 +170,28 @@ impl ShapedText {
             width = 0.0;
             trailing = 0.0;
         }
-        let mut shaped = Self { glyphs, metrics, segments, min_content: 0.0, max_content: 0.0 };
+        let mut flags = Vec::with_capacity(glyphs.len());
+        let mut previous: Option<(u32, char)> = None;
+        let mut grapheme = 0.0f32;
+        let mut min_content_anywhere = 0.0f32;
+        for glyph in &glyphs {
+            let c = text[glyph.cluster as usize..].chars().next().unwrap_or(' ');
+            let joined = previous.is_some_and(|(cluster, p)| cluster == glyph.cluster || p == '\u{200d}' || continues_grapheme(c));
+            let mut f = if joined { GLYPH_JOINED } else { 0 };
+            if c.is_whitespace() {
+                f |= GLYPH_SPACE;
+            }
+            flags.push(f);
+            grapheme = if joined { grapheme + glyph.advance } else { glyph.advance };
+            if !c.is_whitespace() {
+                min_content_anywhere = min_content_anywhere.max(grapheme);
+            }
+            previous = Some((glyph.cluster, c));
+        }
+        let mut shaped = Self { glyphs, metrics, segments, flags, min_content: 0.0, min_content_anywhere, max_content: 0.0 };
         shaped.min_content = shaped.segments.iter().fold(0.0, |w, s| w.max(s.width - s.trailing));
         let mut max_content = 0.0f32;
-        shaped.break_lines(f32::INFINITY, |line| max_content = max_content.max(line.width));
+        shaped.break_lines(f32::INFINITY, WordBreak::Normal, |line| max_content = max_content.max(line.width));
         shaped.max_content = max_content;
         shaped
     }
@@ -158,8 +203,11 @@ impl ShapedText {
 
     /// Width of the widest unbreakable piece: the narrowest the text can
     /// get without overflowing (CSS min-content).
-    pub fn min_content_width(&self) -> f32 {
-        self.min_content
+    pub fn min_content_width(&self, word_break: WordBreak) -> f32 {
+        match word_break {
+            WordBreak::Normal | WordBreak::BreakWord => self.min_content,
+            WordBreak::Anywhere | WordBreak::BreakAll => self.min_content_anywhere,
+        }
     }
 
     /// Width with lines broken only where they must be (CSS max-content).
@@ -168,55 +216,66 @@ impl ShapedText {
     }
 
     /// Breaks the text greedily into lines no wider than `max_width` where
-    /// possible. A piece that alone is wider than `max_width` overflows.
-    pub fn lines(&self, max_width: f32) -> Vec<Line> {
+    /// possible. A piece that alone is wider than `max_width` overflows,
+    /// unless `word_break` allows breaking it.
+    pub fn lines(&self, max_width: f32, word_break: WordBreak) -> Vec<Line> {
         let mut lines = Vec::new();
-        self.break_lines(max_width, |line| lines.push(line));
+        self.break_lines(max_width, word_break, |line| lines.push(line));
         lines
     }
 
     /// Number of lines at `max_width`, see [`lines`](Self::lines).
-    pub fn line_count(&self, max_width: f32) -> usize {
+    pub fn line_count(&self, max_width: f32, word_break: WordBreak) -> usize {
         let mut count = 0;
-        self.break_lines(max_width, |_| count += 1);
+        self.break_lines(max_width, word_break, |_| count += 1);
         count
     }
 
-    fn break_lines(&self, max_width: f32, mut emit: impl FnMut(Line)) {
-        let mut start = 0u32;
-        let mut end = 0u32;
-        // Width of the current line, and its last segment's trailing spaces.
-        let mut width = 0.0f32;
-        let mut trailing = 0.0f32;
-        let mut emitted = false;
+    fn break_lines(&self, max_width: f32, word_break: WordBreak, mut emit: impl FnMut(Line)) {
+        let mut line = LineState::default();
+        let mut seg_start = 0u32;
         for seg in &self.segments {
-            // The previous segment's spaces are mid-line once `seg` joins
-            // it; only `seg`'s own would hang. The tolerance absorbs float
-            // error between the width text was measured at and the width
-            // layout hands back.
-            if end > start && width + seg.width - seg.trailing > max_width + 0.01 {
-                emit(self.wrapped_line(start, end, width, trailing));
-                emitted = true;
-                start = end;
-                width = 0.0;
+            let split = match word_break {
+                WordBreak::Normal => false,
+                WordBreak::BreakAll => true,
+                // Only a word too long for a line of its own; it starts on
+                // a fresh line.
+                WordBreak::BreakWord | WordBreak::Anywhere => seg.width - seg.trailing > max_width + EPSILON,
+            };
+            if split {
+                if word_break != WordBreak::BreakAll && line.end > line.start {
+                    line.wrap(self, &mut emit);
+                }
+                let mut piece_start = seg_start;
+                while piece_start < seg.end {
+                    let piece = self.grapheme(piece_start, seg);
+                    line.place(self, &piece, max_width, &mut emit);
+                    piece_start = piece.end;
+                }
+            } else {
+                line.place(self, seg, max_width, &mut emit);
             }
-            width += seg.width;
-            trailing = seg.trailing;
-            end = seg.end;
-            if seg.forced {
-                emit(self.wrapped_line(start, end, width, trailing));
-                emitted = true;
-                start = end;
-                width = 0.0;
-                trailing = 0.0;
-            }
+            seg_start = seg.end;
         }
         // Spaces at the very end of the text only hang when a line wraps
         // there: otherwise they separate it from whatever comes next on the
         // line (`core {{ n }}`).
-        if end > start || !emitted {
-            emit(Line { start, end, width });
+        if line.end > line.start || !line.emitted {
+            emit(Line { start: line.start, end: line.end, width: line.width });
         }
+    }
+
+    /// The grapheme of `seg` starting at glyph `start`, as a segment of its
+    /// own; it inherits `seg`'s forced break if it ends `seg`.
+    fn grapheme(&self, start: u32, seg: &Segment) -> Segment {
+        let mut end = start + 1;
+        while end < seg.end && self.flags[end as usize] & GLYPH_JOINED != 0 {
+            end += 1;
+        }
+        let glyphs = &self.glyphs[start as usize..end as usize];
+        let width = glyphs.iter().map(|g| g.advance).sum();
+        let space = self.flags[start as usize] & GLYPH_SPACE != 0;
+        Segment { end, width, trailing: if space { width } else { 0.0 }, forced: seg.forced && end == seg.end }
     }
 
     /// A line ending at a break: its trailing spaces hang, so they neither
@@ -230,6 +289,56 @@ impl ShapedText {
         }
         Line { start, end: visible_end, width: width - trailing }
     }
+}
+
+/// Tolerance for float error between the width text was measured at and
+/// the width layout hands back.
+const EPSILON: f32 = 0.01;
+
+/// The line being filled by [`ShapedText::break_lines`].
+#[derive(Default)]
+struct LineState {
+    start: u32,
+    end: u32,
+    /// Advance of the line so far, trailing spaces included.
+    width: f32,
+    /// Advance of the spaces ending the line, which hang if it wraps there.
+    trailing: f32,
+    emitted: bool,
+}
+
+impl LineState {
+    /// Adds `seg` to the line, wrapping first if it doesn't fit.
+    fn place(&mut self, text: &ShapedText, seg: &Segment, max_width: f32, emit: &mut impl FnMut(Line)) {
+        // The line's spaces are mid-line once `seg` joins it; only `seg`'s
+        // own would hang.
+        if self.end > self.start && self.width + seg.width - seg.trailing > max_width + EPSILON {
+            self.wrap(text, emit);
+        }
+        self.width += seg.width;
+        self.trailing = if seg.trailing < seg.width { seg.trailing } else { self.trailing + seg.trailing };
+        self.end = seg.end;
+        if seg.forced {
+            self.wrap(text, emit);
+        }
+    }
+
+    /// Ends the line at its current end.
+    fn wrap(&mut self, text: &ShapedText, emit: &mut impl FnMut(Line)) {
+        emit(text.wrapped_line(self.start, self.end, self.width, self.trailing));
+        self.emitted = true;
+        self.start = self.end;
+        self.width = 0.0;
+        self.trailing = 0.0;
+    }
+}
+
+/// Whether `c` attaches to the character before it: combining marks,
+/// variation selectors and emoji modifiers.
+fn continues_grapheme(c: char) -> bool {
+    matches!(c as u32,
+        0x0300..=0x036F | 0x1AB0..=0x1AFF | 0x1DC0..=0x1DFF | 0x20D0..=0x20FF | 0xFE20..=0xFE2F
+        | 0xFE00..=0xFE0F | 0x200D | 0x1F3FB..=0x1F3FF | 0xE0020..=0xE007F)
 }
 
 #[cfg(test)]
@@ -248,7 +357,7 @@ mod tests {
     fn line_texts<'a>(text: &'a str, p: &ShapedText, max_width: f32) -> Vec<&'a str> {
         let g = &p.glyphs;
         let byte = |i: u32| g.get(i as usize).map_or(text.len(), |g| g.cluster as usize);
-        p.lines(max_width).iter().map(|l| &text[byte(l.start)..byte(l.end)]).collect()
+        p.lines(max_width, WordBreak::Normal).iter().map(|l| &text[byte(l.start)..byte(l.end)]).collect()
     }
 
     #[test]
@@ -257,7 +366,7 @@ mod tests {
         let p = paragraph(text);
         assert_eq!(line_texts(text, &p, 55.0), ["aa bb", "cc", "dddd"]);
         assert_eq!(line_texts(text, &p, 1000.0), [text]);
-        let widths: Vec<f32> = p.lines(55.0).iter().map(|l| l.width).collect();
+        let widths: Vec<f32> = p.lines(55.0, WordBreak::Normal).iter().map(|l| l.width).collect();
         assert_eq!(widths, [50.0, 20.0, 40.0]);
     }
 
@@ -288,7 +397,7 @@ mod tests {
     #[test]
     fn content_sizes() {
         let p = paragraph("aa bbbb c");
-        assert_eq!(p.min_content_width(), 40.0);
+        assert_eq!(p.min_content_width(WordBreak::Normal), 40.0);
         assert_eq!(p.max_content_width(), 90.0);
     }
 
@@ -297,6 +406,45 @@ mod tests {
         let text = "a bbbbbbbb c";
         let p = paragraph(text);
         assert_eq!(line_texts(text, &p, 30.0), ["a", "bbbbbbbb", "c"]);
+    }
+
+    fn texts_in<'a>(text: &'a str, max_width: f32, word_break: WordBreak) -> Vec<&'a str> {
+        let p = paragraph(text);
+        let byte = |i: u32| p.glyphs.get(i as usize).map_or(text.len(), |g| g.cluster as usize);
+        p.lines(max_width, word_break).iter().map(|l| &text[byte(l.start)..byte(l.end)]).collect()
+    }
+
+    #[test]
+    fn break_word_splits_only_words_too_long_for_a_line() {
+        let text = "a bbbbbbbb c";
+        // The long word starts a fresh line, then breaks where it must.
+        assert_eq!(texts_in(text, 30.0, WordBreak::BreakWord), ["a", "bbb", "bbb", "bb", "c"]);
+        assert_eq!(texts_in(text, 30.0, WordBreak::Anywhere), ["a", "bbb", "bbb", "bb", "c"]);
+        // Words that fit are left alone.
+        assert_eq!(texts_in("aa bb", 30.0, WordBreak::BreakWord), ["aa", "bb"]);
+    }
+
+    #[test]
+    fn break_all_fills_lines() {
+        assert_eq!(texts_in("aa bbbbbb", 40.0, WordBreak::BreakAll), ["aa b", "bbbb", "b"]);
+    }
+
+    #[test]
+    fn min_content_with_word_breaking() {
+        let p = paragraph("aa bbbbbbbb");
+        assert_eq!(p.min_content_width(WordBreak::Normal), 80.0);
+        // break-word doesn't change min-content, anywhere does.
+        assert_eq!(p.min_content_width(WordBreak::BreakWord), 80.0);
+        assert_eq!(p.min_content_width(WordBreak::Anywhere), 10.0);
+        assert_eq!(p.min_content_width(WordBreak::BreakAll), 10.0);
+    }
+
+    #[test]
+    fn graphemes_stay_together() {
+        // e + combining acute: never split between them.
+        let text = "ae\u{301}e\u{301}e\u{301}";
+        let lines = texts_in(text, 15.0, WordBreak::BreakAll);
+        assert!(lines.iter().all(|l| !l.starts_with('\u{301}')), "{lines:?}");
     }
 
     #[test]
@@ -318,6 +466,6 @@ mod tests {
     #[test]
     fn empty_text_has_one_empty_line() {
         let p = paragraph("");
-        assert_eq!(p.lines(100.0), [Line { start: 0, end: 0, width: 0.0 }]);
+        assert_eq!(p.lines(100.0, WordBreak::Normal), [Line { start: 0, end: 0, width: 0.0 }]);
     }
 }

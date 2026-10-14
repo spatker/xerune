@@ -308,7 +308,7 @@ impl UiBuilder {
         // spaces between pieces are inside `text`.
         let normalized = super::collapse_white_space(text, current_style.white_space);
         // Sized by the layout's measure function (see `Ui::compute_layout`).
-        let text_layout_style = Style::default();
+        let text_layout_style = super::text_leaf_style(&current_style);
         let node = self.taffy.new_leaf(text_layout_style.clone()).unwrap();
         self.render_data.insert(node, RenderData::Text(normalized.into_owned(), current_style.clone()));
         self.base_styles.insert(node, (text_layout_style, current_style));

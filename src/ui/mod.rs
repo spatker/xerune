@@ -464,7 +464,7 @@ impl Ui {
         for (node, paragraph) in paragraphs.iter() {
             let width = taffy.unrounded_layout(node).content_box_width();
             let Some(RenderData::Text(_, style)) = render_data.get(node) else { continue };
-            text_lines.insert(node, paragraph.lines(wrap_width(style, width)));
+            text_lines.insert(node, paragraph.lines(wrap_width(style, width), style.word_break()));
         }
         Ok(())
     }
@@ -938,6 +938,23 @@ fn traverse_layout(
     }
 }
 
+/// Layout style of a text leaf whose parent has `parent_style` (the text's
+/// own style is inherited from it). Its size comes from the measure
+/// function.
+///
+/// In a block container the leaf stands in for the container's lines, which
+/// are as wide as the container whatever the text's min-content width:
+/// `min-width: 0` lets it shrink to that width, so words break where they
+/// may and otherwise overflow, as in a browser. Text directly in a flex
+/// container is an anonymous flex item and keeps the automatic minimum.
+pub(crate) fn text_leaf_style(parent_style: &ContainerStyle) -> Style {
+    let mut style = Style::default();
+    if parent_style.display != crate::style::Display::Flex {
+        style.min_size.width = Dimension::length(0.0);
+    }
+    style
+}
+
 /// Shapes the text of every text node.
 fn shape_texts(render_data: &NodeMap<RenderData>, measurer: &impl TextMeasurer) -> NodeMap<Arc<crate::text::ShapedText>> {
     let mut paragraphs = NodeMap::new();
@@ -971,7 +988,7 @@ fn measure_paragraph(
         return Size::ZERO;
     }
     let wraps = style.white_space.wraps();
-    let min_content = if wraps { paragraph.min_content_width() } else { paragraph.max_content_width() };
+    let min_content = if wraps { paragraph.min_content_width(style.word_break()) } else { paragraph.max_content_width() };
     let width = known.width.unwrap_or_else(|| match available.width {
         AvailableSpace::MinContent => min_content,
         AvailableSpace::MaxContent => paragraph.max_content_width(),
@@ -979,7 +996,7 @@ fn measure_paragraph(
     });
     let height = known
         .height
-        .unwrap_or_else(|| paragraph.line_count(wrap_width(style, width)) as f32 * line_height(paragraph, style));
+        .unwrap_or_else(|| paragraph.line_count(wrap_width(style, width), style.word_break()) as f32 * line_height(paragraph, style));
     Size { width, height }
 }
 
