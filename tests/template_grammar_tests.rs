@@ -70,6 +70,13 @@ fn model(on: bool, cover: Option<&str>, title: &str) -> GrammarModel {
     }
 }
 
+/// `{{ a * 10 }}` used to expand to `a * 10.to_display_string()`.
+#[test]
+fn arithmetic_in_text_expressions() {
+    let t = texts(model(true, None, ""));
+    assert_eq!(count(&t, "207"), 1, "{t:?}");
+}
+
 /// Loop variables are references (`&bool` here); a bare one used as a class
 /// condition inside an element must still compile and pick the branch.
 #[test]

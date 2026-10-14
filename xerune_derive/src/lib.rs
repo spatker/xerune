@@ -1294,7 +1294,7 @@ fn compile_dom_node<'a>(
                     return quote! {
                         {
                             use ::xerune::ui::ToDisplayString;
-                            let text_val = #expr_tokens.to_display_string().into_owned();
+                            let text_val = (#expr_tokens).to_display_string().into_owned();
                             builder.append_text_node(measurer, parent, &parent_style, &text_val);
                         }
                     };
