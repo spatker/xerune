@@ -277,6 +277,17 @@ Animations are declared directly in CSS style blocks:
 <div class="pulsing-box"></div>
 ```
 
+Animatable properties: `color`, `background-color`, `border-color`, `border-width`, `border-radius`, `font-size`, `width`, `height`, `margin-*`, `padding-*`, `top`/`right`/`bottom`/`left`, and `background` gradients. Two gradients of the same kind with the same number of stops interpolate their angle, center, colors and stop positions, so a spinner is just:
+
+```css
+@keyframes spin {
+    from { background: conic-gradient(from 0deg, transparent, #22d3ee); }
+    to { background: conic-gradient(from 360deg, transparent, #22d3ee); }
+}
+```
+
+See `examples/animation_css` for a gallery.
+
 ---
 
 ## 7. Headless Snapshots

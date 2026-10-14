@@ -22,6 +22,45 @@ pub fn parse_gradient(val: &str) -> Option<Gradient> {
     }
 }
 
+/// Blend two gradients for keyframe animation. Gradients of the same kind
+/// with the same number of stops interpolate their angle, center, stop
+/// colors and positions; anything else switches at the halfway point.
+pub fn interpolate_gradient(a: &Gradient, b: &Gradient, t: f32) -> Gradient {
+    let lerp = |x: f32, y: f32| x + (y - x) * t;
+    let lerp_pt = |p: (f32, f32), q: (f32, f32)| (lerp(p.0, q.0), lerp(p.1, q.1));
+    let lerp_stops = |sa: &[(Color, f32)], sb: &[(Color, f32)]| -> Vec<(Color, f32)> {
+        sa.iter()
+            .zip(sb)
+            .map(|(&(ca, pa), &(cb, pb))| {
+                let ch = |x: u8, y: u8| (lerp(x as f32, y as f32) + 0.5) as u8;
+                (Color::new(ch(ca.r, cb.r), ch(ca.g, cb.g), ch(ca.b, cb.b), ch(ca.a, cb.a)), lerp(pa, pb))
+            })
+            .collect()
+    };
+    match (a, b) {
+        (Gradient::Linear(x), Gradient::Linear(y)) if x.stops.len() == y.stops.len() => Gradient::Linear(LinearGradient {
+            angle: lerp(x.angle, y.angle),
+            stops: lerp_stops(&x.stops, &y.stops).into(),
+        }),
+        (Gradient::Radial(x), Gradient::Radial(y))
+            if x.stops.len() == y.stops.len() && x.shape == y.shape && x.extent == y.extent =>
+        {
+            Gradient::Radial(RadialGradient {
+                center: lerp_pt(x.center, y.center),
+                stops: lerp_stops(&x.stops, &y.stops).into(),
+                ..x.clone()
+            })
+        }
+        (Gradient::Conic(x), Gradient::Conic(y)) if x.stops.len() == y.stops.len() => Gradient::Conic(ConicGradient {
+            from: lerp(x.from, y.from),
+            center: lerp_pt(x.center, y.center),
+            stops: lerp_stops(&x.stops, &y.stops).into(),
+            repeating: x.repeating,
+        }),
+        _ => if t < 0.5 { a.clone() } else { b.clone() },
+    }
+}
+
 fn parse_linear(args: &[&str]) -> Option<LinearGradient> {
     let (angle, stop_args) = match args.first().map(|a| a.trim()) {
         Some(first) if first.starts_with("to ") => {
@@ -331,6 +370,26 @@ mod tests {
         assert_eq!(g.shape, RadialShape::Ellipse);
         assert_eq!(g.extent, RadialExtent::FarthestCorner);
         assert_eq!(g.stops.len(), 2);
+    }
+
+    #[test]
+    fn interpolates_matching_gradients() {
+        let a = parse_gradient("conic-gradient(from 0deg, red 0%, blue 50%)").unwrap();
+        let b = parse_gradient("conic-gradient(from 360deg, blue 0%, red 100%)").unwrap();
+        let Gradient::Conic(mid) = interpolate_gradient(&a, &b, 0.5) else {
+            panic!("not conic");
+        };
+        assert_eq!(mid.from, 180.0);
+        assert_eq!(mid.stops[1].1, 0.75);
+        assert_eq!(mid.stops[0].0, Color::new(128, 0, 128, 255));
+    }
+
+    #[test]
+    fn mismatched_gradients_switch_halfway() {
+        let a = parse_gradient("conic-gradient(red, blue)").unwrap();
+        let b = parse_gradient("linear-gradient(red, blue)").unwrap();
+        assert_eq!(interpolate_gradient(&a, &b, 0.4), a);
+        assert_eq!(interpolate_gradient(&a, &b, 0.6), b);
     }
 
     #[test]

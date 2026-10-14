@@ -148,7 +148,17 @@ pub(crate) fn interpolate_property(
     style: &mut ContainerStyle,
     taffy_style: &mut Style,
 ) {
-    if ["color", "background-color", "border-color"].contains(&prop) {
+    if prop == "background" || prop == "background-image" {
+        let parse = crate::css::parse_gradient;
+        if let (Some(g1), Some(g2)) = (parse(val1), parse(val2)) {
+            style.background_gradient = Some(crate::css::interpolate_gradient(&g1, &g2, t));
+            style.background_color = None;
+        } else if let (Some(c1), Some(c2)) = (crate::css::parse_hex_color(val1), crate::css::parse_hex_color(val2)) {
+            style.background_color = Some(interpolate_color(c1, c2, t));
+            style.background_gradient = None;
+        }
+    }
+    else if ["color", "background-color", "border-color"].contains(&prop) {
         if let (Some(c1), Some(c2)) = (crate::css::parse_hex_color(val1), crate::css::parse_hex_color(val2)) {
             let interpolated = interpolate_color(c1, c2, t);
             match prop {
