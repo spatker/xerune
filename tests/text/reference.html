@@ -37,3 +37,15 @@
         <div class="small">A body paragraph in a flex column that may shrink to nothing, so it wraps.</div>
     </div>
 </div>
+<div class="row" style="margin-top: 8px;">
+    <div class="col">
+        <p style="white-space: nowrap;">No wrapping here even though the box is narrow.</p>
+        <p style="white-space: pre-line;">Pre-line keeps
+the newlines   but collapses     spaces and still wraps long lines.</p>
+    </div>
+    <div class="col">
+        <p style="white-space: pre-wrap;">Pre-wrap   keeps   every space and wraps when the line is full.</p>
+        <p style="white-space: pre;">Pre keeps
+  indentation</p>
+    </div>
+</div>

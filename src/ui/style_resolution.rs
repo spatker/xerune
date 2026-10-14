@@ -228,7 +228,7 @@ pub(crate) fn resolve_styles(
         current_style.animation_play_state = std::sync::Arc::from("running");
 
         if let Some(ref text) = meta.text {
-            let normalized = super::normalize_text(text);
+            let normalized = super::collapse_white_space(text, current_style.white_space);
             if !normalized.is_empty() {
                 // Sized by the layout's measure function (see `Ui::compute_layout`).
                 let text_layout_style = Style::default();

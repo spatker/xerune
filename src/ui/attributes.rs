@@ -788,7 +788,7 @@ pub(crate) fn dom_to_taffy(
         
         NodeData::Text { contents } => {
             let text = contents.borrow();
-            let normalized = super::normalize_text(&text);
+            let normalized = super::collapse_white_space(&text, current_style.white_space);
             
             if normalized.is_empty() {
                 None

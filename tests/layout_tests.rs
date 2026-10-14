@@ -763,7 +763,8 @@ fn roboto_lines<M: Model + ui::TemplateLayout + 'static>(model: M, width: f32, h
         .build_commands(&std::collections::HashMap::new(), None)
         .into_iter()
         .filter_map(|c| match c {
-            DrawCommand::DrawText { text, .. } => Some(text.trim().to_string()),
+            // Like tests/text/chromium_lines.js: whitespace collapsed.
+            DrawCommand::DrawText { text, .. } => Some(text.split_whitespace().collect::<Vec<_>>().join(" ")),
             _ => None,
         })
         .collect()
@@ -836,6 +837,15 @@ mod text_layout {
             "to wrap",
             "A body paragraph in a flex column that may",
             "shrink to nothing, so it wraps.",
+            "No wrapping here even though the box is narrow.",
+            "Pre-line keeps",
+            "the newlines but collapses",
+            "spaces and still wraps long",
+            "lines.",
+            "Pre-wrap keeps every space",
+            "and wraps when the line is full.",
+            "Pre keeps",
+            "indentation",
         ];
         assert_eq!(crate::roboto_lines(Reference, 800.0, 480.0), expected);
     }
@@ -866,6 +876,51 @@ mod text_layout {
             .collect();
         // 15 characters of 8px fit in 120px; lines break across the values.
         assert_eq!(lines, ["Hello Ada, you", "have 3 new", "messages", "waiting."]);
+    }
+
+    #[derive(XeruneTemplate)]
+    #[template(path = "tests/text/white_space.html")]
+    struct WhiteSpaces;
+    impl Model for WhiteSpaces {
+        type Message = String;
+        fn update(&mut self, _msg: String, _context: &mut Context) {}
+    }
+
+    #[test]
+    fn white_space_modes() {
+        let mut rt = Runtime::new(WhiteSpaces, CharMeasurer);
+        crate::set_size(&mut rt, 400.0, 600.0);
+        let commands = rt.ui.build_commands(&HashMap::new(), None);
+        let lines: Vec<&str> = commands
+            .iter()
+            .filter_map(|c| match c {
+                DrawCommand::DrawText { text, .. } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            lines,
+            [
+                // nowrap: one line overflowing the 80px box
+                "aaaa bbbb cccc",
+                // pre: spaces kept, breaks only at the newline
+                "x  y",
+                "z",
+                // pre-line: spaces collapse, the newline stays
+                "p q",
+                "r",
+                // pre-wrap: spaces kept, wraps; spaces at a break hang
+                "eeee",
+                "ffff gggg",
+                "hhhh",
+                "blank",
+                "line",
+                // <pre> keeps whitespace; a tab goes to the next 8-column stop
+                "        tab",
+            ]
+        );
+        // The blank line between two newlines takes a line of its own.
+        assert_eq!(line_y(&commands, "line") - line_y(&commands, "blank"), 32.0);
     }
 
     #[test]

@@ -133,10 +133,12 @@ impl ShapedText {
                 }
                 g += 1;
             }
-            if g == seg_start && offset < text.len() {
+            let mandatory = opportunity == unicode_linebreak::BreakOpportunity::Mandatory;
+            // An empty segment only matters as a forced break (a blank line).
+            if g == seg_start && offset < text.len() && !mandatory {
                 continue;
             }
-            let forced = opportunity == unicode_linebreak::BreakOpportunity::Mandatory && offset < text.len();
+            let forced = mandatory && offset < text.len();
             segments.push(Segment { end: g as u32, width, trailing, forced });
             width = 0.0;
             trailing = 0.0;

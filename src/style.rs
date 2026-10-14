@@ -60,6 +60,30 @@ impl LineHeight {
     }
 }
 
+/// CSS `white-space`: whether spaces and newlines collapse, and whether
+/// lines wrap.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum WhiteSpace {
+    /// Collapse whitespace, wrap lines.
+    #[default]
+    Normal,
+    /// Collapse whitespace, don't wrap.
+    Nowrap,
+    /// Keep whitespace, break only at newlines.
+    Pre,
+    /// Keep whitespace, wrap lines.
+    PreWrap,
+    /// Collapse spaces but keep newlines, wrap lines.
+    PreLine,
+}
+
+impl WhiteSpace {
+    /// Whether lines may break at soft wrap opportunities.
+    pub fn wraps(self) -> bool {
+        matches!(self, WhiteSpace::Normal | WhiteSpace::PreWrap | WhiteSpace::PreLine)
+    }
+}
+
 /// Text direction.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Direction {
@@ -200,6 +224,8 @@ pub struct ContainerStyle {
     pub text_align: Option<TextAlign>,
     /// Height of a line of text.
     pub line_height: LineHeight,
+    /// Whitespace collapsing and wrapping of text.
+    pub white_space: WhiteSpace,
     /// Ordering index within a Flexbox layout.
     pub order: i32,
     /// Text writing direction.
@@ -285,6 +311,7 @@ impl Default for ContainerStyle {
             display: Display::Block,
             text_align: None,
             line_height: LineHeight::Normal,
+            white_space: WhiteSpace::Normal,
             order: 0,
             direction: Direction::Ltr,
             writing_mode: WritingMode::HorizontalTb,

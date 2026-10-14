@@ -123,6 +123,9 @@ pub fn get_default_style(tag: &str, parent_style: &ContainerStyle) -> StyleBundl
                 top: length(10.0), bottom: length(10.0)
             };
         }
+        "pre" => {
+            bundle.container_style.white_space = crate::style::WhiteSpace::Pre;
+        }
         "ul" => {
             bundle.taffy_style.padding = taffy::geometry::Rect {
                 left: length(20.0), right: length(0.0),

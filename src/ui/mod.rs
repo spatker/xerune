@@ -463,7 +463,8 @@ impl Ui {
         text_lines.clear();
         for (node, paragraph) in paragraphs.iter() {
             let width = taffy.unrounded_layout(node).content_box_width();
-            text_lines.insert(node, paragraph.lines(width));
+            let Some(RenderData::Text(_, style)) = render_data.get(node) else { continue };
+            text_lines.insert(node, paragraph.lines(wrap_width(style, width)));
         }
         Ok(())
     }
@@ -548,6 +549,47 @@ impl Ui {
              return Some((String::new(), clicked_node));
          }
          None
+    }
+}
+
+/// Applies `white-space` to the text of a text node: collapses whitespace
+/// as `mode` says and expands tabs to 8-column stops.
+pub fn collapse_white_space(text: &str, mode: crate::style::WhiteSpace) -> Cow<'_, str> {
+    use crate::style::WhiteSpace;
+    match mode {
+        WhiteSpace::Normal | WhiteSpace::Nowrap => normalize_text(text),
+        WhiteSpace::PreLine => {
+            // Spaces collapse, newlines stay; spaces around a newline go.
+            let lines: Vec<String> = text.split('\n').map(|l| l.split_whitespace().collect::<Vec<_>>().join(" ")).collect();
+            let joined = lines.join("\n");
+            if joined == text { Cow::Borrowed(text) } else { Cow::Owned(joined) }
+        }
+        WhiteSpace::Pre | WhiteSpace::PreWrap => {
+            if !text.contains(['\t', '\r']) {
+                return Cow::Borrowed(text);
+            }
+            let mut out = String::with_capacity(text.len() + 8);
+            let mut column = 0;
+            for c in text.chars() {
+                match c {
+                    '\t' => {
+                        let spaces = 8 - column % 8;
+                        out.extend(core::iter::repeat_n(' ', spaces));
+                        column += spaces;
+                    }
+                    '\r' => {}
+                    '\n' => {
+                        out.push(c);
+                        column = 0;
+                    }
+                    _ => {
+                        out.push(c);
+                        column += 1;
+                    }
+                }
+            }
+            Cow::Owned(out)
+        }
     }
 }
 
@@ -912,6 +954,11 @@ fn line_height(paragraph: &Arc<crate::text::ShapedText>, style: &ContainerStyle)
     style.line_height.resolve(style.font_size, paragraph.metrics.normal_line_height())
 }
 
+/// The width lines of text in `style` are broken at, for a box `width` wide.
+fn wrap_width(style: &ContainerStyle, width: f32) -> f32 {
+    if style.white_space.wraps() { width } else { f32::INFINITY }
+}
+
 /// Taffy measure function for a text leaf: CSS min/max-content widths, and
 /// the height of the text wrapped at the width taffy settles on.
 fn measure_paragraph(
@@ -923,14 +970,16 @@ fn measure_paragraph(
     if paragraph.glyphs.is_empty() {
         return Size::ZERO;
     }
+    let wraps = style.white_space.wraps();
+    let min_content = if wraps { paragraph.min_content_width() } else { paragraph.max_content_width() };
     let width = known.width.unwrap_or_else(|| match available.width {
-        AvailableSpace::MinContent => paragraph.min_content_width(),
+        AvailableSpace::MinContent => min_content,
         AvailableSpace::MaxContent => paragraph.max_content_width(),
-        AvailableSpace::Definite(w) => w.min(paragraph.max_content_width()).max(paragraph.min_content_width()),
+        AvailableSpace::Definite(w) => w.min(paragraph.max_content_width()).max(min_content),
     });
     let height = known
         .height
-        .unwrap_or_else(|| paragraph.line_count(width) as f32 * line_height(paragraph, style));
+        .unwrap_or_else(|| paragraph.line_count(wrap_width(style, width)) as f32 * line_height(paragraph, style));
     Size { width, height }
 }
 
@@ -949,11 +998,15 @@ fn push_text_lines(
     // Chromium so odd leading puts the extra pixel below.
     let baseline = ((line_h - (m.ascent + m.descent)) / 2.0).floor() + m.ascent;
     let glyphs = &paragraph.glyphs;
-    let byte = |i: u32| glyphs.get(i as usize).map_or(text.len(), |g| g.cluster as usize);
     for (i, line) in lines.iter().enumerate() {
         if line.end <= line.start {
             continue;
         }
+        // From the first glyph's character to the end of the last glyph's,
+        // leaving out newlines and hanging spaces.
+        let start = glyphs[line.start as usize].cluster as usize;
+        let last = glyphs[line.end as usize - 1].cluster as usize;
+        let end = last + text[last..].chars().next().map_or(0, char::len_utf8);
         // Lines too wide for the box stay at the start edge.
         let free = (rect.width - line.width).max(0.0);
         let offset = match style.text_align {
@@ -961,7 +1014,6 @@ fn push_text_lines(
             Some(crate::style::TextAlign::Right) => free,
             _ => 0.0,
         };
-        let (start, end) = (byte(line.start), byte(line.end));
         commands.push(DrawCommand::DrawText {
             text: text[start..end].to_string(),
             rect: Rect { x: rect.x + offset, y: rect.y + i as f32 * line_h, width: line.width, height: line_h },

@@ -306,7 +306,7 @@ impl UiBuilder {
 
         // The derive passes whole runs of text and `{{ }}` values, so the
         // spaces between pieces are inside `text`.
-        let normalized = super::normalize_text(text);
+        let normalized = super::collapse_white_space(text, current_style.white_space);
         // Sized by the layout's measure function (see `Ui::compute_layout`).
         let text_layout_style = Style::default();
         let node = self.taffy.new_leaf(text_layout_style.clone()).unwrap();

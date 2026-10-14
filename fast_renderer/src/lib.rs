@@ -251,11 +251,12 @@ impl<'a> FastMeasurer<'a> {
                     metrics = rounded_metrics(m.ascent, -m.descent, m.line_gap);
                 }
                 for (i, c) in text.char_indices() {
-                    if c == '\u{fe0f}' {
+                    // Newlines are line breaks, not glyphs.
+                    if c == '\u{fe0f}' || c.is_control() {
                         continue;
                     }
                     let id = font.lookup_glyph_index(c);
-                    let advance = if c.is_control() { 0.0 } else { font.metrics_indexed(id, font_size).advance_width };
+                    let advance = font.metrics_indexed(id, font_size).advance_width;
                     // Characters the font lacks are drawn as color emoji when
                     // an emoji font is available (see the renderer), a bit
                     // wider than the font's missing-glyph box.
@@ -272,7 +273,7 @@ impl<'a> FastMeasurer<'a> {
                     return ShapedText::default();
                 };
                 metrics = LineMetrics { ascent: font.line_height, descent: 0.0, line_gap: 0.0 };
-                for (i, c) in text.char_indices() {
+                for (i, c) in text.char_indices().filter(|(_, c)| !c.is_control()) {
                     let (id, advance) = match font.glyphs.binary_search_by_key(&c, |g| g.character) {
                         Ok(idx) => (idx as u16, font.glyphs[idx].x_advance as f32),
                         Err(_) => (u16::MAX, 0.0),

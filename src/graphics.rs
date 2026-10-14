@@ -445,6 +445,7 @@ pub trait TextMeasurer {
         let mut buf = [0u8; 4];
         let glyphs: Vec<_> = text
             .char_indices()
+            .filter(|(_, c)| !c.is_control())
             .map(|(i, c)| crate::text::ShapedGlyph {
                 cluster: i as u32,
                 font: 0,

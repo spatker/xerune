@@ -279,6 +279,17 @@ pub fn apply_declaration(prop: &str, val: &str, current_style: &mut ContainerSty
                 }
             }
         }
+        "white-space" => {
+            use crate::style::WhiteSpace;
+            current_style.white_space = match val.trim() {
+                "normal" => WhiteSpace::Normal,
+                "nowrap" => WhiteSpace::Nowrap,
+                "pre" => WhiteSpace::Pre,
+                "pre-wrap" | "break-spaces" => WhiteSpace::PreWrap,
+                "pre-line" => WhiteSpace::PreLine,
+                _ => return,
+            };
+        }
         "line-height" => {
             if let Some(lh) = parse_line_height(val) {
                 current_style.line_height = lh;
