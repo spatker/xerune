@@ -50,6 +50,17 @@ fn default_accent() -> String {
 }
 
 impl Track {
+    /// The accent mixed 22% into the page background, as an opaque color.
+    /// The page background must be opaque: frames are drawn over the
+    /// previous one, so a translucent base would leave ghost images.
+    pub fn glow(&self) -> String {
+        let hex = self.accent.trim_start_matches('#');
+        let channel = |i: usize| u8::from_str_radix(hex.get(i..i + 2).unwrap_or("00"), 16).unwrap_or(0) as f32;
+        let base = [0x11 as f32, 0x0e as f32, 0x1a as f32];
+        let mix = |i: usize| (base[i] + (channel(i * 2) - base[i]) * 0.22).round() as u8;
+        format!("#{:02x}{:02x}{:02x}", mix(0), mix(1), mix(2))
+    }
+
     pub fn duration_seconds(&self) -> u64 {
         let parts: Vec<&str> = self.duration.split(':').collect();
         if parts.len() == 2 {

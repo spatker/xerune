@@ -31,7 +31,7 @@
     .ico-tri-right { width: 14px; height: 16px;
                      background: conic-gradient(from 240deg at 100% 50%, #f4f1fa 0deg 60deg, transparent 60deg); }
 </style>
-<div class="app" style="background: radial-gradient(circle at 15% 0%, {{ current_track.accent }}38 0%, #110e1a 55%, #0a0810 100%);">
+<div class="app" style="background: radial-gradient(circle at 15% 0%, {{ current_track.glow() }} 0%, #110e1a 55%, #0a0810 100%);">
     {% include "music_list.html" %}
     {% include "music_player_view.html" %}
 </div>
