@@ -1,6 +1,15 @@
 use xerune::*;
 use taffy::prelude::TaffyMaxContent;
 
+/// The viewport (`vw`, `vh`, `@media`) is process-global and tests run in
+/// parallel: `set_size` stores it and then rebuilds reading it back, so
+/// concurrent calls must not interleave.
+fn set_size<M: Model + ui::TemplateLayout, R: TextMeasurer>(runtime: &mut Runtime<M, R>, width: f32, height: f32) {
+    static VIEWPORT_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _guard = VIEWPORT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    runtime.set_size(width, height);
+}
+
 struct MockModel;
 #[derive(Debug, PartialEq, XeruneMessage)]
 enum MockMsg {
@@ -296,10 +305,7 @@ fn test_todo_layout_comparison() {
     // Since resolve_styles is crate-internal under super::resolve_styles, we can resolve it using Runtime's internal compilations, 
     // or we can test using Runtime::new. Let's do it using Runtime::new which compiles and builds the ui structure.
     let mut runtime = Runtime::new(model, measurer);
-    runtime.compute_layout(taffy::geometry::Size {
-        width: taffy::prelude::AvailableSpace::Definite(800.0),
-        height: taffy::prelude::AvailableSpace::Definite(600.0),
-    });
+    crate::set_size(&mut runtime, 800.0, 600.0);
 
     println!("--- COMPILED LAYOUT TREE ---");
     // Retrieve metadata/render_data/interactions from runtime's internal builders or Ui.
@@ -346,7 +352,7 @@ fn test_tiled_rendering_identity() {
     };
     let measurer = fast_renderer::FastMeasurer { fonts: (&fonts).into() };
     let mut runtime = Runtime::new(model, measurer);
-    runtime.set_size(800.0, 600.0);
+    crate::set_size(&mut runtime, 800.0, 600.0);
 
     // Get render commands
     let commands = runtime.ui.build_commands(&HashMap::new(), None);
@@ -623,7 +629,7 @@ fn test_html_root_fills_viewport_width() {
     // <html> is block-level: it, and the blocks inside it, take the full
     // viewport width instead of shrink-wrapping their content.
     let mut runtime = Runtime::new(HtmlRootModel, MockMeasurer);
-    runtime.set_size(800.0, 600.0);
+    crate::set_size(&mut runtime, 800.0, 600.0);
     let html = runtime.ui.taffy.children(runtime.ui.root).unwrap()[0];
     let body = runtime.ui.taffy.children(html).unwrap()[0];
     assert_eq!(runtime.ui.taffy.layout(html).unwrap().size.width, 800.0);
@@ -658,7 +664,7 @@ mod canvas {
 
     fn commands<M: Model + ui::TemplateLayout + 'static>(model: M) -> Vec<DrawCommand> {
         let mut runtime = Runtime::new(model, MockMeasurer);
-        runtime.set_size(VIEWPORT.width, VIEWPORT.height);
+        crate::set_size(&mut runtime, VIEWPORT.width, VIEWPORT.height);
         runtime.ui.build_commands(&HashMap::new(), None)
     }
 
@@ -716,7 +722,7 @@ fn todo_list_scrolls_in_portrait() {
     let items = (0..30).map(|i| TodoItem::new(&format!("Item {}", i), false)).collect();
     let model = TestTodoModel { items, active_item: 0, new_item_title: String::new() };
     let mut runtime = Runtime::new(model, MockMeasurer);
-    runtime.set_size(480.0, 800.0);
+    crate::set_size(&mut runtime, 480.0, 800.0);
 
     let ui = &runtime.ui;
     let scroller = ui
@@ -774,7 +780,7 @@ mod known_gaps {
 
     fn runtime<M: Model + ui::TemplateLayout + 'static>(model: M, w: f32, h: f32) -> Runtime<M, CharMeasurer> {
         let mut runtime = Runtime::new(model, CharMeasurer);
-        runtime.set_size(w, h);
+        crate::set_size(&mut runtime, w, h);
         runtime
     }
 
@@ -838,7 +844,7 @@ mod known_gaps {
     fn canvas_follows_its_layout_size() {
         let mut rt = runtime(CanvasResize, 800.0, 480.0);
         assert_eq!(rt.context().canvases["c"].width, 100);
-        rt.set_size(480.0, 800.0);
+        crate::set_size(&mut rt, 480.0, 800.0);
         assert_eq!(rt.context().canvases["c"].width, 60);
     }
 
