@@ -744,6 +744,31 @@ fn todo_list_scrolls_in_portrait() {
     assert!(bottom <= 800.5, "scroll container ends at {bottom}px, below the 800px window");
 }
 
+/// Lines of text drawn, in paint order, laid out with the bundled Roboto
+/// fonts (as in the examples) at `width`x`height`.
+fn roboto_lines<M: Model + ui::TemplateLayout + 'static>(model: M, width: f32, height: f32) -> Vec<String> {
+    use std::sync::OnceLock;
+    static FONTS: OnceLock<Vec<fontdue::Font>> = OnceLock::new();
+    let fonts = FONTS.get_or_init(|| {
+        let font = |bytes: &[u8]| fontdue::Font::from_bytes(bytes, fontdue::FontSettings::default()).unwrap();
+        vec![
+            font(include_bytes!("../resources/fonts/Roboto-Regular.ttf")),
+            font(include_bytes!("../resources/fonts/Roboto-Bold.ttf")),
+        ]
+    });
+    let mut runtime = Runtime::new(model, fast_renderer::FastMeasurer { fonts: fonts.into() });
+    set_size(&mut runtime, width, height);
+    runtime
+        .ui
+        .build_commands(&std::collections::HashMap::new(), None)
+        .into_iter()
+        .filter_map(|c| match c {
+            DrawCommand::DrawText { text, .. } => Some(text.trim().to_string()),
+            _ => None,
+        })
+        .collect()
+}
+
 mod text_layout {
     use std::collections::HashMap;
     use xerune::*;
@@ -772,6 +797,47 @@ mod text_layout {
                 _ => None,
             })
             .unwrap_or_else(|| panic!("no line {text:?}"))
+    }
+
+    #[derive(XeruneTemplate)]
+    #[template(path = "tests/text/reference.html")]
+    struct Reference;
+    impl Model for Reference {
+        type Message = String;
+        fn update(&mut self, _msg: String, _context: &mut Context) {}
+    }
+
+    /// Line breaks of a reference page must match Chromium's with the same
+    /// fonts. To regenerate the expected lines, load the page in Chromium
+    /// with Roboto from `resources/fonts` (via `@font-face`) and
+    /// `tests/text/chromium_lines.js`, at 800x480.
+    #[test]
+    fn line_breaks_match_chromium() {
+        let expected = [
+            "The quick brown fox jumps over",
+            "the lazy dog while the",
+            "committee debates.",
+            "Centered text that wraps onto",
+            "more than one line here.",
+            "Right aligned text that also",
+            "wraps around.",
+            "Supercalifragilisticexpialidocious",
+            "words overflow narrow boxes.",
+            "Small print: embedded displays are",
+            "small, so every line of text has to earn",
+            "its place.",
+            "Line height 1.6 spreads these",
+            "wrapped lines further apart.",
+            "Thirty-two pixel lines with small thirteen",
+            "pixel text inside them.",
+            "The font shorthand sets size and",
+            "line height together.",
+            "Story title that is long enough",
+            "to wrap",
+            "A body paragraph in a flex column that may",
+            "shrink to nothing, so it wraps.",
+        ];
+        assert_eq!(crate::roboto_lines(Reference, 800.0, 480.0), expected);
     }
 
     #[test]
@@ -824,6 +890,7 @@ mod known_gaps {
     gap_model!(CanvasResize, "tests/gaps/canvas_resize.html");
     gap_model!(Order, "tests/gaps/order.html");
     gap_model!(InlineWrap, "tests/gaps/inline_wrap.html");
+    gap_model!(GposKerning, "tests/gaps/gpos_kerning.html");
 
     fn runtime<M: Model + ui::TemplateLayout + 'static>(model: M, w: f32, h: f32) -> Runtime<M, CharMeasurer> {
         let mut runtime = Runtime::new(model, CharMeasurer);
@@ -868,6 +935,16 @@ mod known_gaps {
         let words = text_rect(&commands, "words");
         assert_eq!(words.y, bold.y, "text after </b> must stay on its line");
         assert!(bold.x >= some.x + some.width + 8.0, "the space before <b> must remain");
+    }
+
+    #[test]
+    #[ignore = "FIXME: Roboto kerns with OpenType GPOS, which fontdue can't read; needs a shaper (harfrust)"]
+    fn gpos_kerning_narrows_lines() {
+        // Chromium fits "min-" on the first line thanks to kerning.
+        assert_eq!(
+            crate::roboto_lines(GposKerning, 800.0, 480.0),
+            ["A body paragraph in a flex column with min-", "width zero, which wraps."]
+        );
     }
 
     #[test]

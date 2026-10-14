@@ -1,0 +1,39 @@
+<style>
+    body { margin: 8px; background-color: #ffffff; color: #111111; font-size: 16px; }
+    .row { display: flex; flex-direction: row; gap: 16px; }
+    .col { width: 230px; border: 1px solid #cccccc; padding: 4px; }
+    p { margin: 0px; margin-bottom: 8px; }
+    .center { text-align: center; }
+    .right { text-align: right; }
+    .card { display: flex; flex-direction: row; gap: 8px; width: 300px; border: 1px solid #cccccc; padding: 4px; margin-top: 8px; }
+    .avatar { width: 40px; height: 40px; background-color: #6366f1; flex-shrink: 0; }
+    .text { display: flex; flex-direction: column; flex-grow: 1; flex-basis: 0px; min-width: 0px; }
+    .title { font-size: 18px; font-weight: bold; }
+    .small { font-size: 13px; color: #555555; }
+    .lh16 { line-height: 1.6; background-color: #ffe4e6; }
+    .lh32 { line-height: 32px; font-size: 13px; background-color: #e0f2fe; }
+    .font { font: bold 14px/22px sans-serif; background-color: #dcfce7; }
+</style>
+<div class="row">
+    <div class="col">
+        <p>The quick brown fox jumps over the lazy dog while the committee debates.</p>
+        <p class="center">Centered text that wraps onto more than one line here.</p>
+        <p class="right">Right aligned text that also wraps around.</p>
+    </div>
+    <div class="col">
+        <p>Supercalifragilisticexpialidocious words overflow narrow boxes.</p>
+        <p class="small">Small print: embedded displays are small, so every line of text has to earn its place.</p>
+    </div>
+    <div class="col">
+        <p class="lh16">Line height 1.6 spreads these wrapped lines further apart.</p>
+        <p class="lh32">Thirty-two pixel lines with small thirteen pixel text inside them.</p>
+        <p class="font">The font shorthand sets size and line height together.</p>
+    </div>
+</div>
+<div class="card">
+    <div class="avatar"></div>
+    <div class="text">
+        <div class="title">Story title that is long enough to wrap</div>
+        <div class="small">A body paragraph in a flex column that may shrink to nothing, so it wraps.</div>
+    </div>
+</div>
