@@ -112,11 +112,7 @@ impl Ui {
 
         let keyframes = css::parse_keyframes(&css_str);
         
-        let re_nth = regex::Regex::new(r":nth-child\(\s*(\d+)\s*\)").unwrap();
-        let css_str = re_nth.replace_all(&css_str, ".nth-child-$1").into_owned();
-        let css_str = css_str.replace(":last-child", ".last-child");
-        let re_slash = regex::Regex::new(r"/[\d\.]+").unwrap();
-        let css_str = re_slash.replace_all(&css_str, "").into_owned();
+        let css_str = css::rewrite_for_simplecss(&css_str);
         
         let stylesheet = simplecss::StyleSheet::parse(&css_str);
 
@@ -258,11 +254,7 @@ impl Ui {
                     let has_nth_or_last_child = expanded.contains(":nth-child") || expanded.contains(":last-child");
                     let keyframes = css::parse_keyframes(&expanded);
 
-                    let re_nth = regex::Regex::new(r":nth-child\(\s*(\d+)\s*\)").unwrap();
-                    let css_str = re_nth.replace_all(&expanded, ".nth-child-$1").into_owned();
-                    let css_str = css_str.replace(":last-child", ".last-child");
-                    let re_slash = regex::Regex::new(r"/[\d\.]+").unwrap();
-                    let css_str = re_slash.replace_all(&css_str, "").into_owned();
+                    let css_str = css::rewrite_for_simplecss(&expanded);
 
                     let cached_val = std::rc::Rc::new(style_resolution::CachedStyles::new(
                         css_str,

@@ -633,7 +633,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7a1c3cc8e57274ec99de65301228b537f1e4eedc1b8e0f9411c6caac8ae7308f"
 dependencies = [
  "log",
- "regex",
 ]
 
 [[package]]
@@ -3252,7 +3251,6 @@ dependencies = [
  "markup5ever_rcdom",
  "png 0.17.16",
  "rand",
- "regex",
  "serde",
  "serde_json",
  "simplecss",

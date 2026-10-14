@@ -16,6 +16,48 @@ use taffy::prelude::*;
 use taffy::style::Style;
 use crate::alloc_prelude::*;
 
+/// Rewrites a stylesheet into something `simplecss` can match against the
+/// classes the DOM builder adds: `:nth-child(N)` becomes `.nth-child-N` and
+/// `:last-child` becomes `.last-child`. `/<number>` (e.g. the line-height part
+/// of a `font` shorthand) is dropped.
+#[cfg(feature = "std")]
+pub(crate) fn rewrite_for_simplecss(css: &str) -> String {
+    const NTH: &str = ":nth-child(";
+    let mut out = String::with_capacity(css.len());
+    let mut rest = css;
+    while let Some(pos) = rest.find(NTH) {
+        out.push_str(&rest[..pos]);
+        let after = &rest[pos + NTH.len()..];
+        let inner = after.trim_start();
+        let digits = inner.len() - inner.trim_start_matches(|c: char| c.is_ascii_digit()).len();
+        let tail = inner[digits..].trim_start();
+        if digits > 0 && tail.starts_with(')') {
+            out.push_str(".nth-child-");
+            out.push_str(&inner[..digits]);
+            rest = &tail[1..];
+        } else {
+            out.push_str(NTH);
+            rest = after;
+        }
+    }
+    out.push_str(rest);
+    let css = out.replace(":last-child", ".last-child");
+
+    let mut out = String::with_capacity(css.len());
+    let mut rest = css.as_str();
+    while let Some(pos) = rest.find('/') {
+        out.push_str(&rest[..pos]);
+        let after = &rest[pos + 1..];
+        let num = after.len() - after.trim_start_matches(|c: char| c.is_ascii_digit() || c == '.').len();
+        if num == 0 {
+            out.push('/');
+        }
+        rest = &after[num..];
+    }
+    out.push_str(rest);
+    out
+}
+
 struct FastLayoutStyle {
     left: f32,
     top: f32,
@@ -758,4 +800,25 @@ pub fn apply_declaration(prop: &str, val: &str, current_style: &mut ContainerSty
              crate::diag::warn_once("Unsupported CSS property", prop);
          }
      }
+}
+
+#[cfg(all(test, feature = "std"))]
+mod tests {
+    use super::rewrite_for_simplecss;
+
+    #[test]
+    fn rewrite_for_simplecss_rewrites_structural_pseudo_classes() {
+        assert_eq!(rewrite_for_simplecss("li:nth-child(3) { }"), "li.nth-child-3 { }");
+        assert_eq!(rewrite_for_simplecss("li:nth-child( 12 ),a:last-child{}"), "li.nth-child-12,a.last-child{}");
+        // Only plain numbers are supported; anything else is left alone.
+        assert_eq!(rewrite_for_simplecss("li:nth-child(2n+1){}"), "li:nth-child(2n+1){}");
+        assert_eq!(rewrite_for_simplecss("li:nth-child(){}"), "li:nth-child(){}");
+    }
+
+    #[test]
+    fn rewrite_for_simplecss_drops_slash_numbers() {
+        assert_eq!(rewrite_for_simplecss("font: 16px/1.5 sans"), "font: 16px sans");
+        assert_eq!(rewrite_for_simplecss("a/b /2/3."), "a/b ");
+        assert_eq!(rewrite_for_simplecss("x/"), "x/");
+    }
 }
