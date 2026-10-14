@@ -5,7 +5,8 @@
         "artist": "M83",
         "album": "Hurry Up, We're Dreaming",
         "duration": "4:03",
-        "cover_url": "/examples/music_player/resources/img/midnight_city.png"
+        "cover_url": "/examples/music_player/resources/img/midnight_city.png",
+        "accent": "#f472b6"
     },
     {
         "id": "2",
@@ -13,7 +14,8 @@
         "artist": "Daft Punk",
         "album": "Random Access Memories",
         "duration": "6:09",
-        "cover_url": "/examples/music_player/resources/img/get_lucky.png"
+        "cover_url": "/examples/music_player/resources/img/get_lucky.png",
+        "accent": "#fbbf24"
     },
     {
         "id": "3",
@@ -21,7 +23,8 @@
         "artist": "Tame Impala",
         "album": "Currents",
         "duration": "3:36",
-        "cover_url": "https://placehold.co/400x400/dimgrey/purple/png?text=The%20Less%20I%20Know%20The%20Better"
+        "cover_url": "https://placehold.co/400x400/dimgrey/purple/png?text=The%20Less%20I%20Know%20The%20Better",
+        "accent": "#fb923c"
     },
     {
         "id": "4",
@@ -29,7 +32,8 @@
         "artist": "The Weeknd",
         "album": "After Hours",
         "duration": "3:20",
-        "cover_url": "/examples/music_player/resources/img/after_hours.png"
+        "cover_url": "/examples/music_player/resources/img/after_hours.png",
+        "accent": "#ef4444"
     },
     {
         "id": "5",
@@ -37,6 +41,7 @@
         "artist": "Dua Lipa",
         "album": "Future Nostalgia",
         "duration": "3:23",
-        "cover_url": "https://placehold.co/400x400/dimgrey/yellow/png?text=Levitating"
+        "cover_url": "https://placehold.co/400x400/dimgrey/yellow/png?text=Levitating",
+        "accent": "#818cf8"
     }
 ]

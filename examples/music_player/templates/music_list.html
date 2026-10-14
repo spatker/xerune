@@ -1,99 +1,70 @@
 <style>
-    .music-list-container {
-        display: flex;
-        position: absolute;
-        top: 0;
-        width: 760px;
-        height: 440px;
-        flex-direction: column;
-        padding: 20px;
-    }
-    .library-title {
-        font-size: 32px;
-        font-weight: 700;
-        margin: 10px 0 20px 10px;
-        color: #1ed760;
-    }
-    .track-list {
-        display: flex;
-        flex-direction: column;
-        flex-grow: 1;
-        overflow: scroll;
-        min-height: 0;
-    }
-    .track-item {
-        display: flex;
-        flex-direction: row;
-        align-items: center;
-        padding: 15px;
-        margin: 5px 10px;
-        background-color: rgba(255,255,255,0.05);
-        border: 1px solid rgba(255,255,255,0.05);
-        flex-shrink: 0;
-        cursor: pointer;
-        border-radius: 12px;
-    }
-    .track-item.hovered {
-        background-color: rgba(255,255,255,0.1);
-        border-color: rgba(255,255,255,0.2);
-    }
-    .track-item.active {
-        background-color: rgba(255,255,255,0.2);
-        border-color: #1ed760;
-    }
-    .track-cover {
-        width: 56px;
-        height: 56px;
-        margin-right: 20px;
-        border-radius: 8px;
-    }
-    .track-details {
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-        flex-grow: 1;
-    }
-    .track-title {
-        font-size: 18px;
-        margin: 0 0 4px 0;
-        color: #ffffff;
-        font-weight: 600;
-    }
-    .track-artist {
-        font-size: 14px;
-        margin: 0;
-        color: #a0a0a0;
-    }
-    .track-duration {
-        font-size: 14px;
-        color: #888888;
-        font-weight: 500;
-    }
-    .track-play-indicator {
-        margin-left: 20px;
-        font-size: 20px;
-        color: #1ed760;
+    .list-view { flex-direction: column; padding: 20px 22px 0 22px; }
+    .list-head { display: flex; flex-direction: row; align-items: flex-end; justify-content: space-between; margin-bottom: 14px; flex-shrink: 0; }
+    .list-title { font-size: 30px; font-weight: bold; color: #ffffff; }
+    .list-sub { font-size: 13px; color: #8a83a3; margin-top: 3px; }
+    .heading { display: flex; flex-direction: column; }
+    .now-chip { display: flex; flex-direction: row; align-items: center; gap: 8px; padding: 7px 12px; border-radius: 14px;
+                background-color: rgba(255,255,255,0.06); font-size: 12px; color: #d9d4e8; }
+    .now-dot { width: 8px; height: 8px; border-radius: 4px; }
+
+    .track-list { display: flex; flex-direction: column; flex-grow: 1; overflow: scroll; min-height: 0px; padding-bottom: 14px; }
+    .track { display: flex; flex-direction: row; align-items: center; flex-shrink: 0; padding: 9px 14px 9px 10px; margin-bottom: 6px;
+             border-radius: 14px; border: 1px solid rgba(255,255,255,0.0); }
+    .track.hovered { background-color: rgba(255,255,255,0.05); }
+    .track.active { background-color: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.10); }
+    .track-num { font-size: 13px; color: #6d6687; width: 28px; text-align: center; }
+    .track .cover { width: 48px; height: 48px; margin: 0 14px 0 6px; }
+    .track-text { display: flex; flex-direction: column; flex-grow: 1; flex-basis: 0px; }
+    .track-title { font-size: 16px; font-weight: bold; color: #ffffff; }
+    .track-artist { font-size: 13px; color: #9a93b3; margin-top: 3px; }
+    .track-album { font-size: 13px; color: #6d6687; width: 210px; }
+    .track-duration { font-size: 13px; color: #9a93b3; width: 44px; text-align: right; }
+    .eq { display: flex; flex-direction: row; align-items: flex-end; gap: 2px; width: 28px; height: 16px; justify-content: center; }
+    .eq-bar { width: 3px; border-radius: 1px; }
+
+    @media (orientation: portrait) {
+        .list-head { flex-direction: column; align-items: flex-start; }
+        .now-chip { margin-top: 10px; }
+        .track-album { display: none; }
     }
 </style>
 
-<div class="music-list-container" style="left: {{ list_x }}px;{% if transition_progress == 1.0 %} display: none;{% endif %}">
-    <!-- Selection View (Landscape List) -->
-    <p class="library-title">My Library</p>
+<div class="view list-view" style="left: {{ list_x }}px;{% if transition_progress == 1.0 %} display: none;{% endif %}">
+    <div class="list-head">
+        <div class="heading">
+            <span class="list-title">Library</span>
+            <span class="list-sub">{{ tracks.len() }} tracks · {{ self.total_minutes() }} min</span>
+        </div>
+        {% if is_playing %}
+        <div class="now-chip">
+            <div class="now-dot" style="background-color: {{ current_track.accent }};"></div>
+            <span>Now playing · {{ current_track.title }}</span>
+        </div>
+        {% endif %}
+    </div>
 
     <div class="track-list">
         {% for track in tracks %}
         <div data-on-click="select_track:{{ track.id }}" data-on-hover="hover_track:{{ track.id }}"
             data-on-hover-out="unhover_track"
-            class="track-item {% if track.id == hovered_track %}hovered{% elif loop.index0 == active_list_index %}active{% endif %}">
-            <img src="{{ track.cover_url }}" class="track-cover" />
-            <div class="track-details">
-                <p class="track-title">{{ track.title }}</p>
-                <p class="track-artist">{{ track.artist }}</p>
+            class="track {% if track.id == hovered_track %}hovered{% elif loop.index0 == active_list_index %}active{% endif %}">
+            {% if is_playing && loop.index0 == active_list_index %}
+            <div class="eq">
+                {% for h in self.mini_eq() %}
+                <div class="eq-bar" style="height: {{ h }}px; background-color: {{ track.accent }};"></div>
+                {% endfor %}
             </div>
-            <p class="track-duration">{{ track.duration }}</p>
-            <div class="track-play-indicator">
-                {% if track.id == hovered_track %} |&gt; {% elif loop.index0 == active_list_index %} |&gt; {% endif %}
+            {% else %}
+            <span class="track-num">{{ loop.index }}</span>
+            {% endif %}
+            <img src="{{ track.cover_url }}" class="cover" />
+            <div class="track-text">
+                <span class="track-title">{{ track.title }}</span>
+                <span class="track-artist">{{ track.artist }}</span>
             </div>
+            <span class="track-album">{{ track.album }}</span>
+            <span class="track-duration">{{ track.duration }}</span>
         </div>
         {% endfor %}
     </div>

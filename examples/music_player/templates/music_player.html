@@ -1,17 +1,37 @@
 <style>
-    body {
-        margin: 0;
-    }
-    .music-player-container {
-        width: 800px;
-        height: 480px;
-        background: linear-gradient(135deg, #2a0845 0%, #6441a5 50%, #121212 100%);
-        color: #ffffff;
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    .app {
         position: relative;
+        width: 100vw;
+        height: 100vh;
         overflow: hidden;
+        color: #f4f1fa;
     }
+    .view {
+        display: flex;
+        position: absolute;
+        top: 0px;
+        width: 100vw;
+        height: 100vh;
+    }
+
+    .cover { border-radius: 10px; flex-shrink: 0; }
+
+    /* Media icons drawn with CSS: conic wedges make the triangles. */
+    .ico-play { width: 22px; height: 26px; margin-left: 5px;
+                background: conic-gradient(from 240deg at 100% 50%, #0b0a10 0deg 60deg, transparent 60deg); }
+    .ico-pause { display: flex; flex-direction: row; gap: 6px; }
+    .ico-pause-bar { width: 7px; height: 24px; border-radius: 2px; background-color: #0b0a10; }
+    .ico-stop { width: 16px; height: 16px; border-radius: 3px; background-color: #f4f1fa; }
+    .ico-skip { display: flex; flex-direction: row; align-items: center; }
+    .ico-bar { width: 3px; height: 16px; border-radius: 1px; background-color: #f4f1fa; }
+    .ico-tri-left { width: 14px; height: 16px;
+                    background: conic-gradient(from 60deg at 0% 50%, #f4f1fa 0deg 60deg, transparent 60deg); }
+    .ico-tri-right { width: 14px; height: 16px;
+                     background: conic-gradient(from 240deg at 100% 50%, #f4f1fa 0deg 60deg, transparent 60deg); }
 </style>
-<div class="music-player-container">
+<div class="app" style="background: radial-gradient(circle at 15% 0%, {{ current_track.accent }}38 0%, #110e1a 55%, #0a0810 100%);">
     {% include "music_list.html" %}
     {% include "music_player_view.html" %}
 </div>

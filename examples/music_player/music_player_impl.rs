@@ -1,7 +1,6 @@
 #[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm")))]
 use fontdue::Font;
 use serde::{Serialize, Deserialize};
-use tiny_skia::{PixmapMut, Color, Paint, Rect, Transform, PathBuilder, FillRule};
 use xerune::{Runtime, Model, XeruneMessage, XeruneTemplate};
 
 #[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm")))]
@@ -37,6 +36,17 @@ pub struct Track {
     pub album: String,
     pub duration: String,
     pub cover_url: String,
+    /// Theme color for this track's player screen.
+    #[serde(default = "default_accent")]
+    pub accent: String,
+}
+
+fn default_width() -> f32 {
+    800.0
+}
+
+fn default_accent() -> String {
+    "#a78bfa".to_string()
 }
 
 impl Track {
@@ -71,6 +81,9 @@ pub struct MusicPlayerModel {
     pub progress: f32,
     pub list_x: f32,
     pub player_x: f32,
+    /// Viewport width; the list and player views slide by this much.
+    #[serde(default = "default_width")]
+    pub width: f32,
     #[serde(default)]
     pub tick_count: u64,
 }
@@ -100,6 +113,7 @@ impl MusicPlayerModel {
             album: "".to_string(),
             duration: "0:00".to_string(),
             cover_url: "".to_string(),
+            accent: default_accent(),
         };
         let current_track = if tracks.is_empty() { dummy_track } else { tracks[0].clone() };
 
@@ -118,9 +132,23 @@ impl MusicPlayerModel {
             total_time: if current_track.id.is_empty() { "0:00".to_string() } else { current_track.duration.clone() },
             progress: 0.0,
             list_x: 0.0,
-            player_x: 800.0,
+            player_x: default_width(),
+            width: default_width(),
             tick_count: 0,
         }
+    }
+
+    pub fn total_minutes(&self) -> u64 {
+        self.tracks.iter().map(Track::duration_seconds).sum::<u64>() / 60
+    }
+
+    pub fn progress_pct(&self) -> f32 {
+        (self.progress * 100.0).clamp(0.0, 100.0)
+    }
+
+    /// Three bar heights (px) for the "now playing" marker in the list.
+    pub fn mini_eq(&self) -> Vec<u32> {
+        self.visualizer_data.iter().step_by(7).take(3).map(|v| (4.0 + v * 0.24) as u32).collect()
     }
 
     fn ensure_ticking(&self, context: &mut xerune::Context) {
@@ -150,8 +178,8 @@ impl MusicPlayerModel {
         self.elapsed_time = Self::format_time(self.elapsed_seconds);
         self.total_time = current.duration.clone();
         self.progress = if duration > 0 { self.elapsed_seconds as f32 / duration as f32 } else { 0.0 };
-        self.list_x = -t * 800.0;
-        self.player_x = 800.0 - (t * 800.0);
+        self.list_x = -t * self.width;
+        self.player_x = self.width - (t * self.width);
     }
 }
 
@@ -174,6 +202,11 @@ pub enum Msg {
 
 impl Model for MusicPlayerModel {
     type Message = Msg;
+
+    fn on_resize(&mut self, width: f32, _height: f32, _context: &mut xerune::Context) {
+        self.width = width;
+        self.update_derived_fields();
+    }
 
     fn update(&mut self, msg: Self::Message, context: &mut xerune::Context) {
          if self.tracks.is_empty() { return; }
@@ -309,47 +342,6 @@ impl Model for MusicPlayerModel {
                      }
                  }
 
-                 // Draw Visualizer
-                 if let Some(canvas) = context.canvas_mut("visualizer") {
-                     let w = canvas.width as f32;
-                     let h = canvas.height as f32;
-                     
-                     if let Some(mut pixmap) = PixmapMut::from_bytes(&mut canvas.data, canvas.width, canvas.height) {
-                         pixmap.fill(Color::TRANSPARENT);
-                         
-                         let bars = self.visualizer_data.len();
-                         let gap = 4.0;
-                         let bar_width = (w - (bars as f32 - 1.0) * gap) / bars as f32;
-                         
-                         let mut paint = Paint::default();
-                         
-                         let gradient = tiny_skia::LinearGradient::new(
-                             tiny_skia::Point::from_xy(0.0, 0.0),
-                             tiny_skia::Point::from_xy(0.0, h),
-                             vec![
-                                 tiny_skia::GradientStop::new(0.0, tiny_skia::Color::from_rgba8(30, 215, 96, 255)), // Green
-                                 tiny_skia::GradientStop::new(1.0, tiny_skia::Color::from_rgba8(10, 100, 200, 200)), // Darker/Transparent Blue
-                             ],
-                             tiny_skia::SpreadMode::Pad,
-                             Transform::identity(),
-                         ).unwrap();
-                         
-                         paint.shader = gradient;
-                         
-                         for (i, &height) in self.visualizer_data.iter().enumerate() {
-                             let x = i as f32 * (bar_width + gap);
-                             let y = h - height;
-                             
-                             if let Some(rect) = Rect::from_xywh(x, y, bar_width, height) {
-                                 if let Some(path) = rounded_rect_path(rect, 4.0) {
-                                     pixmap.fill_path(&path, &paint, FillRule::Winding, Transform::identity(), None);
-                                 }
-                             }
-                         }
-                         canvas.dirty = true;
-                     }
-                 }
-
                  if self.is_playing {
                      if self.last_tick.elapsed() >= core::time::Duration::from_secs(1) {
                          if let Some(idx) = self.current_track_index {
@@ -374,51 +366,6 @@ impl Model for MusicPlayerModel {
          }
          self.update_derived_fields();
     }
-}
-
-fn rounded_rect_path(rect: Rect, radius: f32) -> Option<tiny_skia::Path> {
-    let mut pb = PathBuilder::new();
-    let r = radius.min(rect.width() / 2.0).min(rect.height() / 2.0).max(0.0);
-    
-    if r <= 0.0 {
-        return Some(PathBuilder::from_rect(rect));
-    }
-    
-    let bezier_circle_factor = 0.55228475;
-    let handle_offset = r * bezier_circle_factor;
-    
-    let left = rect.x();
-    let top = rect.y();
-    let right = rect.x() + rect.width();
-    let bottom = rect.y() + rect.height();
-
-    pb.move_to(left + r, top);
-    pb.line_to(right - r, top);
-    pb.cubic_to(
-        right - r + handle_offset, top,
-        right, top + r - handle_offset,
-        right, top + r
-    );
-    pb.line_to(right, bottom - r);
-    pb.cubic_to(
-        right, bottom - r + handle_offset,
-        right - r + handle_offset, bottom,
-        right - r, bottom
-    );
-    pb.line_to(left + r, bottom);
-    pb.cubic_to(
-        left + r - handle_offset, bottom,
-        left, bottom - r + handle_offset,
-        left, bottom - r
-    );
-    pb.line_to(left, top + r);
-    pb.cubic_to(
-        left, top + r - handle_offset,
-        left + r - handle_offset, top,
-        left + r, top
-    );
-    pb.close();
-    pb.finish()
 }
 
 #[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm")))]
