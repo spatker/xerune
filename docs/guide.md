@@ -178,7 +178,8 @@ CSS is resolved at **compile time**: selectors are matched against the template 
 
 - Box: `width`, `height`, `min-/max-width`, `min-/max-height`, logical sizes (`inline-size`, `block-size` and their `min-`/`max-` forms), `margin*`, `padding*`, `box-sizing`
 - Layout: `display` (`block`, `inline-block`, `inline`, `flex`, `none`), `flex`, `flex-direction`, `flex-wrap`, `flex-flow`, `flex-grow`, `flex-shrink`, `flex-basis`, `justify-content`, `align-items`, `align-self`, `align-content`, `gap`, `row-gap`, `column-gap`, `order`, `position` (`static`, `relative`, `absolute`), `top`/`right`/`bottom`/`left`, `float`, `overflow`, `direction`, `writing-mode`
-- Visual: `color`, `background`, `background-color` (incl. linear gradients), `border*` (width, color, style, per side), `border-radius`, `box-shadow`
+- Visual: `color`, `background`, `background-color`, `background-image`, `border*` (width, color, style, per side), `border-radius`, `box-shadow`
+- Gradients: `linear-gradient`, `radial-gradient`, `conic-gradient` and the `repeating-` radial/conic forms, with any CSS color, hard stops (`red 0deg 90deg`) and `from <angle>` / `at <position>`. Stop positions take `%` (and angles for conic); `px` stops are not supported. Conic gradients plus `border-radius: 50%` make rings, arcs and dials without a canvas — see the vehicle tab of `examples/showcase`.
 - Text: `font-size`, `font-weight`, `font` (size/weight only), `text-align`
 - Animation: `animation` and all `animation-*` longhands, with `@keyframes`
 

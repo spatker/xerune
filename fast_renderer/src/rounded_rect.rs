@@ -1,7 +1,14 @@
 use crate::blitter::{pack_color, blend_solid_rect, blend_pixel, calc_pixel_index};
-use crate::gradient::{draw_gradient_rect, sample_gradient};
+use crate::gradient::{draw_gradient_rect, draw_shaded_rounded_rect};
 #[cfg(not(feature = "std"))]
 use crate::F32Ext;
+/// The span-based linear gradient path only handles horizontal and vertical
+/// gradients.
+fn is_axis_aligned(angle: f32) -> bool {
+    let a = (angle % 90.0 + 90.0) % 90.0;
+    a < 0.01 || a > 89.99
+}
+
 pub fn draw_rounded_rect(
     buffer: &mut [u32],
     logical_w: u32,
@@ -13,7 +20,7 @@ pub fn draw_rounded_rect(
     rect_h: i32,
     radius: f32,
     color: Option<xerune::Color>,
-    gradient: Option<&xerune::LinearGradient>,
+    gradient: Option<&xerune::Gradient>,
     swap_rb: bool,
     clip_rect: Option<xerune::Rect>,
     rotation: u32,
@@ -22,8 +29,18 @@ pub fn draw_rounded_rect(
         return;
     }
 
+    let linear = match gradient {
+        Some(xerune::Gradient::Linear(linear)) if radius <= 0.0 && is_axis_aligned(linear.angle) => Some(linear),
+        Some(other) => {
+            let rect = xerune::Rect { x: rect_x as f32, y: rect_y as f32, width: rect_w as f32, height: rect_h as f32 };
+            draw_shaded_rounded_rect(buffer, logical_w, logical_h, physical_w, rect, radius, other, swap_rb, clip_rect, rotation);
+            return;
+        }
+        None => None,
+    };
+
     if radius <= 0.0 {
-        if let Some(grad) = gradient {
+        if let Some(grad) = linear {
             draw_gradient_rect(buffer, logical_w, logical_h, physical_w, rect_x, rect_y, rect_w, rect_h, grad, swap_rb, clip_rect, rotation);
         } else if let Some(col) = color {
             let packed = pack_color(col, swap_rb);
@@ -32,6 +49,12 @@ pub fn draw_rounded_rect(
         return;
     }
 
+    // Gradients with rounded corners took the per-pixel path above.
+    let Some(solid) = color else {
+        return;
+    };
+    let packed_solid = pack_color(solid, swap_rb);
+
     let r_f32 = radius.min(rect_w as f32 / 2.0).min(rect_h as f32 / 2.0).max(0.0);
     let r_i32 = r_f32.ceil() as i32;
 
@@ -39,35 +62,20 @@ pub fn draw_rounded_rect(
     let center_y = rect_y + r_i32;
     let center_h = rect_h - 2 * r_i32;
     if center_h > 0 {
-        if let Some(grad) = gradient {
-            draw_gradient_rect(buffer, logical_w, logical_h, physical_w, rect_x, center_y, rect_w, center_h, grad, swap_rb, clip_rect, rotation);
-        } else if let Some(col) = color {
-            let packed = pack_color(col, swap_rb);
-            blend_solid_rect(buffer, logical_w, logical_h, physical_w, rect_x, center_y, rect_w, center_h, packed, clip_rect, rotation);
-        }
+        blend_solid_rect(buffer, logical_w, logical_h, physical_w, rect_x, center_y, rect_w, center_h, packed_solid, clip_rect, rotation);
     }
 
     // Top strip
     let top_x = rect_x + r_i32;
     let top_w = rect_w - 2 * r_i32;
     if top_w > 0 && r_i32 > 0 {
-        if let Some(grad) = gradient {
-            draw_gradient_rect(buffer, logical_w, logical_h, physical_w, top_x, rect_y, top_w, r_i32, grad, swap_rb, clip_rect, rotation);
-        } else if let Some(col) = color {
-            let packed = pack_color(col, swap_rb);
-            blend_solid_rect(buffer, logical_w, logical_h, physical_w, top_x, rect_y, top_w, r_i32, packed, clip_rect, rotation);
-        }
+        blend_solid_rect(buffer, logical_w, logical_h, physical_w, top_x, rect_y, top_w, r_i32, packed_solid, clip_rect, rotation);
     }
 
     // Bottom strip
     let bottom_y = rect_y + rect_h - r_i32;
     if top_w > 0 && r_i32 > 0 {
-        if let Some(grad) = gradient {
-            draw_gradient_rect(buffer, logical_w, logical_h, physical_w, top_x, bottom_y, top_w, r_i32, grad, swap_rb, clip_rect, rotation);
-        } else if let Some(col) = color {
-            let packed = pack_color(col, swap_rb);
-            blend_solid_rect(buffer, logical_w, logical_h, physical_w, top_x, bottom_y, top_w, r_i32, packed, clip_rect, rotation);
-        }
+        blend_solid_rect(buffer, logical_w, logical_h, physical_w, top_x, bottom_y, top_w, r_i32, packed_solid, clip_rect, rotation);
     }
 
     // Corners
@@ -189,19 +197,7 @@ pub fn draw_rounded_rect(
                     if dx_idx >= 0 && dx_idx < r_i32 {
                         let coverage = corner_cov_small[row_off + dx_idx as usize];
                         if coverage > 0.0 {
-                            let src_color = if let Some(grad) = gradient {
-                                let t = if (grad.angle % 360.0 - 90.0).abs() < 45.0 || (grad.angle % 360.0 - 270.0).abs() < 45.0 {
-                                    (px - rect_x) as f32 / rect_w as f32
-                                } else {
-                                    (py - rect_y) as f32 / rect_h as f32
-                                };
-                                let col = sample_gradient(&grad.stops, t);
-                                pack_color(col, swap_rb)
-                            } else if let Some(col) = color {
-                                pack_color(col, swap_rb)
-                            } else {
-                                0
-                            };
+                            let src_color = packed_solid;
 
                             let alpha = ((src_color >> 24) & 0xff) as f32 * coverage;
                             let packed_col = (src_color & 0x00ffffff) | ((alpha.round() as u32) << 24);
@@ -221,19 +217,7 @@ pub fn draw_rounded_rect(
                     if dx_idx >= 0 && dx_idx < r_i32 {
                         let coverage = corner_cov_large[row_off + dx_idx as usize];
                         if coverage > 0.0 {
-                            let src_color = if let Some(grad) = gradient {
-                                let t = if (grad.angle % 360.0 - 90.0).abs() < 45.0 || (grad.angle % 360.0 - 270.0).abs() < 45.0 {
-                                    (px - rect_x) as f32 / rect_w as f32
-                                } else {
-                                    (py - rect_y) as f32 / rect_h as f32
-                                };
-                                let col = sample_gradient(&grad.stops, t);
-                                pack_color(col, swap_rb)
-                            } else if let Some(col) = color {
-                                pack_color(col, swap_rb)
-                            } else {
-                                0
-                            };
+                            let src_color = packed_solid;
 
                             let alpha = ((src_color >> 24) & 0xff) as f32 * coverage;
                             let packed_col = (src_color & 0x00ffffff) | ((alpha.round() as u32) << 24);
@@ -260,19 +244,7 @@ pub fn draw_rounded_rect(
                     };
 
                     if coverage > 0.0 {
-                        let src_color = if let Some(grad) = gradient {
-                            let t = if (grad.angle % 360.0 - 90.0).abs() < 45.0 || (grad.angle % 360.0 - 270.0).abs() < 45.0 {
-                                (px - rect_x) as f32 / rect_w as f32
-                            } else {
-                                (py - rect_y) as f32 / rect_h as f32
-                            };
-                            let col = sample_gradient(&grad.stops, t);
-                            pack_color(col, swap_rb)
-                        } else if let Some(col) = color {
-                            pack_color(col, swap_rb)
-                        } else {
-                            0
-                        };
+                        let src_color = packed_solid;
 
                         let alpha = ((src_color >> 24) & 0xff) as f32 * coverage;
                         let packed_col = (src_color & 0x00ffffff) | ((alpha.round() as u32) << 24);

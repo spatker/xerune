@@ -1,4 +1,4 @@
-use crate::graphics::{Color, LinearGradient};
+use crate::graphics::{Color, Gradient};
 use crate::alloc_prelude::*;
 
 /// Layout display type.
@@ -155,8 +155,8 @@ pub struct ContainerStyle {
     pub border_bottom_only: bool,
     /// Optional CSS box shadow.
     pub box_shadow: Option<BoxShadow>,
-    /// Optional linear background gradient.
-    pub background_gradient: Option<LinearGradient>,
+    /// Optional background gradient.
+    pub background_gradient: Option<Gradient>,
     /// Bounding box overflow behavior.
     pub overflow: Overflow,
     /// Layout display type.

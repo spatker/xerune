@@ -1,5 +1,5 @@
 use taffy::prelude::*;
-use crate::graphics::{Color, LinearGradient};
+use crate::graphics::Color;
 use crate::alloc_prelude::*;
 fn parse_named_color(s: &str) -> Option<Color> {
     match s.trim().to_ascii_lowercase().as_str() {
@@ -95,52 +95,6 @@ fn parse_color_fast(s: &str) -> Option<Color> {
         return Some(Color::from_rgba8(r, g, b, 255));
     }
     None
-}
-
-pub(crate) fn parse_linear_gradient(val: &str) -> Option<LinearGradient> {
-    let inner = val.trim_start_matches("linear-gradient(").trim_end_matches(")");
-    let parts: Vec<&str> = inner.split(',').collect();
-    if parts.is_empty() { return None; }
-
-    let mut angle = 180.0;
-    let mut stops = Vec::new();
-
-    let mut start_idx = 0;
-    if parts[0].contains("deg") {
-        if let Some(num) = parts[0].trim().replace("deg", "").parse::<f32>().ok() {
-            angle = num;
-        }
-        start_idx = 1;
-    } else if parts[0].contains("to right") {
-         angle = 90.0;
-         start_idx = 1;
-    } else if parts[0].contains("to bottom") {
-         angle = 180.0;
-         start_idx = 1;
-    }
-
-    for i in start_idx..parts.len() {
-        let stop_str = parts[i].trim();
-        let stop_parts: Vec<&str> = stop_str.split_whitespace().collect();
-        if stop_parts.is_empty() { continue; }
-        
-        let color_str = stop_parts[0];
-        if let Some(color) = parse_hex_color(color_str) {
-             let pos = if stop_parts.len() > 1 {
-                 if let Some(p) = stop_parts[1].strip_suffix("%") {
-                     p.parse::<f32>().unwrap_or(0.0) / 100.0
-                 } else {
-                     0.0
-                 }
-             } else {
-                 if i == start_idx { 0.0 } else { 1.0 }
-             };
-             
-             stops.push((color, pos));
-         }
-    }
-    
-    Some(LinearGradient { angle, stops: stops.into() })
 }
 
 /// Resolves `vw`/`vh`/`vmin`/`vmax` lengths against the current global

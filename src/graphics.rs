@@ -45,6 +45,67 @@ pub struct LinearGradient {
     pub stops: Arc<[(Color, f32)]>,
 }
 
+/// Shape of a radial CSS gradient.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RadialShape {
+    /// Same radius in both directions.
+    Circle,
+    /// Radii scaled independently to the box aspect ratio.
+    Ellipse,
+}
+
+/// How far a radial gradient's ending shape reaches (CSS `<radial-extent>`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RadialExtent {
+    /// Touch the nearest side of the box.
+    ClosestSide,
+    /// Touch the farthest side of the box.
+    FarthestSide,
+    /// Pass through the nearest corner of the box.
+    ClosestCorner,
+    /// Pass through the farthest corner of the box (the CSS default).
+    FarthestCorner,
+}
+
+/// Representation of a radial CSS gradient.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RadialGradient {
+    /// Ending shape.
+    pub shape: RadialShape,
+    /// Size of the ending shape.
+    pub extent: RadialExtent,
+    /// Center as fractions of the box size (0.5, 0.5 is the middle).
+    pub center: (f32, f32),
+    /// Color stops; positions are fractions of the gradient ray.
+    pub stops: Arc<[(Color, f32)]>,
+    /// `repeating-radial-gradient`: the stop list tiles outwards.
+    pub repeating: bool,
+}
+
+/// Representation of a conic CSS gradient.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ConicGradient {
+    /// Start angle in degrees, clockwise from 12 o'clock.
+    pub from: f32,
+    /// Center as fractions of the box size (0.5, 0.5 is the middle).
+    pub center: (f32, f32),
+    /// Color stops; positions are fractions of a full turn.
+    pub stops: Arc<[(Color, f32)]>,
+    /// `repeating-conic-gradient`: the stop list tiles around the circle.
+    pub repeating: bool,
+}
+
+/// Any CSS gradient image usable as a background.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Gradient {
+    /// `linear-gradient(...)`.
+    Linear(LinearGradient),
+    /// `radial-gradient(...)` / `repeating-radial-gradient(...)`.
+    Radial(RadialGradient),
+    /// `conic-gradient(...)` / `repeating-conic-gradient(...)`.
+    Conic(ConicGradient),
+}
+
 /// Representation of a rectangle in 2D space.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Rect {
@@ -255,8 +316,8 @@ pub enum DrawCommand {
         rect: Rect,
         /// Optional solid fill color.
         color: Option<Color>,
-        /// Optional linear gradient fill.
-        gradient: Option<LinearGradient>,
+        /// Optional gradient fill.
+        gradient: Option<Gradient>,
         /// Border corner radius.
         border_radius: f32,
         /// Border line width.
