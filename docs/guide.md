@@ -180,16 +180,18 @@ CSS is resolved at **compile time**: selectors are matched against the template 
 - Layout: `display` (`block`, `inline-block`, `inline`, `flex`, `none`), `flex`, `flex-direction`, `flex-wrap`, `flex-flow`, `flex-grow`, `flex-shrink`, `flex-basis`, `justify-content`, `align-items`, `align-self`, `align-content`, `gap`, `row-gap`, `column-gap`, `order`, `position` (`static`, `relative`, `absolute`), `top`/`right`/`bottom`/`left`, `float`, `overflow`, `direction`, `writing-mode`
 - Visual: `color`, `background`, `background-color`, `background-image`, `border*` (width, color, style, per side), `border-radius`, `box-shadow`
 - Gradients: `linear-gradient`, `radial-gradient`, `conic-gradient` and the `repeating-` radial/conic forms, with any CSS color, hard stops (`red 0deg 90deg`) and `from <angle>` / `at <position>`. Stop positions take `%` (and angles for conic); `px` stops are not supported. Conic gradients plus `border-radius: 50%` make rings, arcs and dials without a canvas — see the vehicle tab of `examples/showcase`.
-- Text: `font-size`, `font-weight`, `font` (size/weight only), `text-align`
+- Text: `font-size`, `font-weight`, `font` (size, weight and `/line-height`), `line-height`, `text-align`, `white-space` (`normal`, `nowrap`, `pre`, `pre-wrap`, `pre-line`), `overflow-wrap` / `word-wrap` (`break-word`, `anywhere`), `word-break` (`break-all`), `text-overflow` (`ellipsis`, with `overflow` other than `visible`)
 - Animation: `animation` and all `animation-*` longhands, with `@keyframes`
 
-Not supported, among others: `font-family` (fonts are compiled bitmap fonts), `line-height`, `opacity`, `transform`, `transition`, `display: grid`, `z-index`.
+Not supported, among others: `font-family` (fonts are compiled bitmap fonts), `opacity`, `transform`, `transition`, `display: grid`, `z-index`.
+
+**Text layout.** Text wraps to its container like in a browser: lines break at Unicode (UAX #14) break opportunities, so spaces, hyphens and between CJK characters; `text-align` aligns each line. A run of text and `{{ }}` values (`Hello {{ name }}, you have {{ n }} messages`) is one paragraph and wraps as a whole. Limits: inline elements (`<b>`, `<span>`, `<a>`) are separate boxes rather than part of the surrounding paragraph, so text after one starts a new box; there is no OpenType shaping (Roboto's kerning, ligatures, Arabic or Indic scripts); Thai, Lao, Khmer and Myanmar break only at spaces. For truncated single lines, use `white-space: nowrap; overflow: hidden; text-overflow: ellipsis` on the element holding the text.
 
 **Page background.** As in browsers, the background of `<html>` (or, if it has none, of `<body>`) paints the whole viewport, behind everything. Without one, the viewport is white, or `#121212` with `html { color-scheme: dark; }`. Every frame repaints from this canvas, so a translucent background never shows the previous frame. If an opaque, square-cornered box already covers the viewport (a full-screen `.app` div, as in the examples), no canvas fill is drawn at all.
 
 As in browsers, `box-sizing` defaults to `content-box`: `width: 800px; padding: 10px` takes up 820px. Add `* { box-sizing: border-box; }` if you prefer the other model.
 
-Unsupported **tags** fall back to a generic inline-block box (with a one-time warning). Elements with dedicated behaviour: `div`, `p`, `span`, `h1`–`h6`, `ul`/`li`, `table`/`tr`/`td`/`th` (+ `thead`/`tbody`/`tfoot`), `strong`/`b`, `img`, `button`, `input` (`type="checkbox"` / text), `progress`, `canvas`, `br`.
+Unsupported **tags** fall back to a generic inline-block box (with a one-time warning). Elements with dedicated behaviour: `div`, `p`, `pre`, `span`, `h1`–`h6`, `ul`/`li`, `table`/`tr`/`td`/`th` (+ `thead`/`tbody`/`tfoot`), `strong`/`b`, `img`, `button`, `input` (`type="checkbox"` / text), `progress`, `canvas`, `br`.
 
 ---
 

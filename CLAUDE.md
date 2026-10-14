@@ -39,7 +39,8 @@ Modules:
 - `css/`: values/properties parser, gradients (linear/radial/conic), `@keyframes`, `media` (`@media` split/match; `simplecss` drops at-rules).
 - `screen.rs`: global viewport (two atomics) + `Breakpoint`. `Runtime::set_size` → `Model::on_resize` → rebuild.
 - `backend/`: `winit_impl` (desktop), `linuxfb_impl`, `drm_impl`, `input/evdev`, `browser_impl`, `snapshot`, `common_loop`.
-- `font.rs`, `roboto_*.rs`: embedded fonts (fontdue; single-line text only).
+- `text.rs`: `ShapedText` (glyphs, advances, UAX #14 break segments via `unicode-linebreak`), line breaking, `GlyphRun`. Shaping is `TextMeasurer::shape` (fontdue advances in `FastMeasurer`, cached); layout measures text leaves with a taffy measure function (`Ui::compute_layout`).
+- `font.rs`, `roboto_*.rs`: embedded bitmap fonts (`no_std` path).
 
 Templates: `{{ expr }}`, `{% if %}/{% elif %}/{% else %}`, `{% if let %}`,
 `{% for x in xs %}` with `loop.index`/`loop.index0`, `data-on-click="msg:{{ arg }}"`
@@ -67,6 +68,13 @@ XERUNE_SNAPSHOT=/path/out.png [XERUNE_SNAPSHOT_SIZE=480x800] \
 ```
 
 Then Read the PNG. Write snapshots to the scratchpad, not the repo.
+
+Text must match Chromium: `tests/text/reference.html` lists Chromium's line
+breaks in `text_layout::line_breaks_match_chromium`. To compare a page, load
+it in `chromium --headless` with Roboto from `resources/fonts` via
+`@font-face` (`file://` URLs) and `tests/text/chromium_lines.js`, or take
+screenshots. `cargo run --release --example text_bench` times rebuild,
+layout and render of a text-heavy view.
 `animation` and `breakout` read `Instant::now()`, so their snapshots aren't
 deterministic.
 
@@ -101,7 +109,7 @@ ARM target build (user's setup):
 
 ## Known weak spots
 
-- Text: no wrapping, single-line measurement only.
+- Text: inline elements (`<b>`, `<span>`) are separate flex items, not one inline formatting context (`known_gaps::text_flows_around_inline_elements`). No OpenType shaping: fontdue ignores GPOS kerning (`known_gaps::gpos_kerning_narrows_lines`), no complex scripts or bidi; `harfrust` is the planned shaper behind `TextMeasurer::shape`. Thai/Lao/Khmer/Myanmar break only at spaces.
 - `:first-child` / `+` selectors don't see through `{% for %}` / `{% if %}`.
 - Same-named templates in different `examples/*/templates` resolve in
   `read_dir` order.

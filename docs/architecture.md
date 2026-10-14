@@ -48,7 +48,8 @@ Xerune parses CSS declarations, matching them to nodes via tags, classes, and ID
 3. **Viewport Units**: `vw`/`vh`/`vmin`/`vmax` lengths resolve against `src/screen.rs`'s global viewport at style-application time (`css::parse_px`).
 4. **Style Resolution**: CSS property values are resolved onto `ContainerStyle` values (margins, padding, align-items, flex-direction, colors, borders, font configuration).
 5. **Taffy Tree**: Layout properties (display, width, heights, paddings, flex configurations) are sent to a `TaffyTree` representing the DOM layout tree.
-6. **StyleCacheKey**: To optimize performance on embedded hardware, resolved styles are cached using tag, class, ID, inherited properties, **and the viewport size** (`vw`/`vh` depend on it) to avoid re-resolution.
+6. **Text**: each text node (a run of literal text and `{{ }}` values) is shaped once per build by `TextMeasurer::shape` into a `text::ShapedText`: glyph ids with advances plus its UAX #14 break segments, cached by the measurer by text, size and weight. Its taffy leaf has no fixed size; a measure function answers min-content (widest unbreakable piece), max-content (unbroken line) and the height at a given width with arithmetic over the segments. After layout, each text node's lines are broken at its final width (and cut for `text-overflow: ellipsis`).
+7. **StyleCacheKey**: To optimize performance on embedded hardware, resolved styles are cached using tag, class, ID, inherited properties, **and the viewport size** (`vw`/`vh` depend on it) to avoid re-resolution.
 
 ---
 
@@ -58,7 +59,7 @@ Once the Taffy tree computes the relative position and dimensions of every eleme
 1. **Layout Walk**: The engine walks the Taffy tree depth-first, maintaining absolute offsets.
 2. **Command Generation**: Nodes are translated into `DrawCommand` variants:
    - `DrawRect`: Renders solid background colors, gradients, borders, and border-radius properties.
-   - `DrawText`: Draws text using bitmap fonts.
+   - `DrawText`: One line of text, carrying its `GlyphRun` (glyph ids and advances from shaping). `fast_renderer` blits the glyph ids at their advances; without a run (text inputs) it lays the string out itself.
    - `DrawCheckbox`, `DrawSlider`, `DrawProgress`: Draws native UI primitives.
    - `DrawImage`: Blits raw images.
    - `DrawCanvas`: Blits custom user-drawn Canvas buffers.
