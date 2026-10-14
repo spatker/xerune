@@ -15,4 +15,5 @@
     {% if let Some(c) = cover %}<span>cover-{{ c }}</span>{% endif %}
     <div class="list">{% for i in 0..2 %}<b>loop-child</b>{% endfor %}</div>
     <div class="wrap">{% if on %}<div>{% for i in 0..2 %}<i>if-loop-descendant</i>{% endfor %}</div>{% endif %}</div>
+    <div>{% for flag in flags %}<p class="{% if flag %}red{% else %}blue{% endif %}">bool-loop-var</p>{% endfor %}</div>
 </div>

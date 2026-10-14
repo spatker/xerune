@@ -19,6 +19,7 @@ struct GrammarModel {
     title: String,
     cover: Option<String>,
     pairs: Vec<(String, u32)>,
+    flags: Vec<bool>,
 }
 
 impl Model for GrammarModel {
@@ -65,7 +66,19 @@ fn model(on: bool, cover: Option<&str>, title: &str) -> GrammarModel {
         title: title.to_string(),
         cover: cover.map(str::to_string),
         pairs: vec![("a".into(), 1), ("b".into(), 2)],
+        flags: vec![true, false],
     }
+}
+
+/// Loop variables are references (`&bool` here); a bare one used as a class
+/// condition inside an element must still compile and pick the branch.
+#[test]
+fn bool_loop_variable_as_class_condition() {
+    let t = texts(model(true, None, ""));
+    let colors: Vec<Color> = t.iter().filter(|(text, _)| text == "bool-loop-var").map(|(_, c)| *c).collect();
+    assert_eq!(colors.len(), 2);
+    assert!(colors.contains(&Color::from_rgba8(255, 0, 0, 255)));
+    assert!(colors.contains(&Color::from_rgba8(0, 0, 255, 255)));
 }
 
 #[test]

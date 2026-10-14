@@ -505,8 +505,15 @@ fn format_cond_test(cond: &CondTest<'_>, local_vars: &HashSet<String>) -> String
         // value would try to move out of the model.
         format!("let {} = &({})", format_target(target), expr_str)
     } else {
-        expr_str
+        as_bool(&expr_str)
     }
+}
+
+/// `expr` as a `bool`, accepting `&bool` too: loop variables are references
+/// into the iterated collection, so `{% for on in flags %}{% if on %}` sees
+/// a `&bool`.
+fn as_bool(expr: &str) -> String {
+    format!("(*::core::borrow::Borrow::<bool>::borrow(&({})))", expr)
 }
 
 /// Emit a template node that sits inside an HTML start tag. Inside a quoted
@@ -534,7 +541,7 @@ fn cond_test_as_bool(cond: &CondTest<'_>, local_vars: &HashSet<String>) -> Strin
             expr_str,
             format_target(target)
         ),
-        None => expr_str,
+        None => as_bool(&expr_str),
     }
 }
 
