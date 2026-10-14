@@ -15,19 +15,15 @@
     .track.active { background-color: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.10); }
     .track-num { font-size: 13px; color: #6d6687; width: 28px; text-align: center; flex-shrink: 0; }
     .track .cover { width: 48px; height: 48px; margin: 0 14px 0 6px; }
-    .track-text { display: flex; flex-direction: column; flex-grow: 1; flex-basis: 0px; min-width: 0px; margin-right: 12px; }
+    /* Title and album share the row 2:1; long names end in an ellipsis. */
+    .track-text { display: flex; flex-direction: column; flex-grow: 2; flex-basis: 0px; min-width: 0px; margin-right: 12px; }
     .track-title { font-size: 16px; font-weight: bold; color: #ffffff; }
     .track-artist { font-size: 13px; color: #9a93b3; margin-top: 3px; }
-    .track-album { font-size: 13px; color: #6d6687; width: 210px; flex-shrink: 0; }
+    .track-album { font-size: 13px; color: #6d6687; flex-grow: 1; flex-basis: 0px; min-width: 0px; max-width: 210px; margin-right: 12px; }
+    .track-title, .track-artist, .track-album { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
     .track-duration { font-size: 13px; color: #9a93b3; width: 44px; text-align: right; flex-shrink: 0; }
     .eq { display: flex; flex-direction: row; align-items: flex-end; gap: 2px; width: 28px; height: 16px; justify-content: center; flex-shrink: 0; }
     .eq-bar { width: 3px; border-radius: 1px; }
-
-    /* FIXME: workaround for missing text wrapping (known_gaps::text_wraps_to_its_container).
-       Titles can't wrap, so narrow windows drop the album column instead. */
-    @media (max-width: 640px) {
-        .track-album { display: none; }
-    }
 
     @media (orientation: portrait) {
         .list-head { flex-direction: column; align-items: flex-start; }
