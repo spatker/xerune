@@ -1,0 +1,24 @@
+<style>
+    body { margin: 0; background-color: #f4f4f6; color: #222233; }
+    .feed { display: flex; flex-direction: column; padding: 12px; gap: 10px; }
+    .card { display: flex; flex-direction: row; gap: 12px; padding: 12px; border-radius: 8px; background-color: #ffffff; }
+    .badge { width: 40px; height: 40px; border-radius: 20px; flex-shrink: 0; background-color: #6366f1; }
+    .text { display: flex; flex-direction: column; flex-grow: 1; flex-basis: 0px; min-width: 0px; }
+    .title { font-size: 18px; font-weight: bold; }
+    .meta { font-size: 12px; color: #777788; margin-top: 2px; }
+    .body { font-size: 14px; margin-top: 6px; }
+</style>
+
+<div class="feed">
+    {% for card in cards %}
+    <div class="card">
+        <div class="badge"></div>
+        <div class="text">
+            <div class="title">{{ card.title }}</div>
+            <div class="meta">{{ card.author }} - {{ loop.index }} min read</div>
+            <div class="body">{{ card.body }}</div>
+            <p>Static paragraph text that is also long enough to need several lines in a narrow column.</p>
+        </div>
+    </div>
+    {% endfor %}
+</div>
