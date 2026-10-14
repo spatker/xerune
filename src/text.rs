@@ -188,9 +188,11 @@ impl ShapedText {
         let mut trailing = 0.0f32;
         let mut emitted = false;
         for seg in &self.segments {
-            // The tolerance absorbs float error between the width text was
-            // measured at and the width layout hands back.
-            if end > start && width - trailing + seg.width - seg.trailing > max_width + 0.01 {
+            // The previous segment's spaces are mid-line once `seg` joins
+            // it; only `seg`'s own would hang. The tolerance absorbs float
+            // error between the width text was measured at and the width
+            // layout hands back.
+            if end > start && width + seg.width - seg.trailing > max_width + 0.01 {
                 emit(self.wrapped_line(start, end, width, trailing));
                 emitted = true;
                 start = end;
@@ -255,6 +257,14 @@ mod tests {
         assert_eq!(line_texts(text, &p, 1000.0), [text]);
         let widths: Vec<f32> = p.lines(55.0).iter().map(|l| l.width).collect();
         assert_eq!(widths, [50.0, 20.0, 40.0]);
+    }
+
+    #[test]
+    fn spaces_between_words_count() {
+        // "aa bb" is 50px: it must not fit in 45px.
+        let text = "aa bb";
+        assert_eq!(line_texts(text, &paragraph(text), 45.0), ["aa", "bb"]);
+        assert_eq!(line_texts(text, &paragraph(text), 50.0), ["aa bb"]);
     }
 
     #[test]
