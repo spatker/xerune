@@ -116,9 +116,8 @@ fn else_and_elif_class_branches_are_exclusive() {
 fn if_let_in_class_and_body() {
     let t = texts(model(false, Some("x"), ""));
     assert_eq!(color_of(&t, "if-let-class"), Color::from_rgba8(255, 0, 0, 255));
-    // Each `{{ expr }}` is its own text node.
-    assert_eq!(count(&t, "cover-"), 1);
-    assert_eq!(count(&t, "x"), 1);
+    // Text and `{{ expr }}` values form one run of text.
+    assert_eq!(count(&t, "cover-x"), 1);
 
     let t = texts(model(false, None, ""));
     assert_eq!(color_of(&t, "if-let-class"), Color::from_rgba8(0, 0, 255, 255));
@@ -134,12 +133,9 @@ fn string_literal_inside_double_quoted_attribute() {
 #[test]
 fn ranges_and_tuple_patterns_in_loops() {
     let t = texts(model(false, None, ""));
-    assert_eq!(count(&t, "range-"), 2);
-    assert_eq!(count(&t, "0"), 1);
-    assert_eq!(count(&t, "pair-"), 2);
-    assert_eq!((count(&t, "a"), count(&t, "b")), (1, 1));
-    // `1` and `2` appear as both the pair value and `loop.index`, `1` also from the range.
-    assert_eq!((count(&t, "1"), count(&t, "2")), (3, 2));
+    assert_eq!((count(&t, "range-0"), count(&t, "range-1")), (1, 1));
+    // `{{ k }}-{{ v }}-{{ loop.index }}`
+    assert_eq!((count(&t, "pair-a-1-1"), count(&t, "pair-b-2-2")), (1, 1));
 }
 
 #[test]

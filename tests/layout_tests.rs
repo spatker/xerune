@@ -840,6 +840,34 @@ mod text_layout {
         assert_eq!(crate::roboto_lines(Reference, 800.0, 480.0), expected);
     }
 
+    #[derive(XeruneTemplate)]
+    #[template(path = "tests/text/mixed_run.html")]
+    struct MixedRun {
+        name: String,
+        count: u32,
+    }
+    impl Model for MixedRun {
+        type Message = String;
+        fn update(&mut self, _msg: String, _context: &mut Context) {}
+    }
+
+    #[test]
+    fn text_and_values_wrap_as_one_paragraph() {
+        let mut rt = Runtime::new(MixedRun { name: "Ada".into(), count: 3 }, CharMeasurer);
+        crate::set_size(&mut rt, 400.0, 300.0);
+        let lines: Vec<String> = rt
+            .ui
+            .build_commands(&HashMap::new(), None)
+            .into_iter()
+            .filter_map(|c| match c {
+                DrawCommand::DrawText { text, .. } => Some(text),
+                _ => None,
+            })
+            .collect();
+        // 15 characters of 8px fit in 120px; lines break across the values.
+        assert_eq!(lines, ["Hello Ada, you", "have 3 new", "messages", "waiting."]);
+    }
+
     #[test]
     fn line_height_spaces_wrapped_lines() {
         let mut rt = Runtime::new(LineHeights, CharMeasurer);

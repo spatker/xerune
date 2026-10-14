@@ -277,8 +277,8 @@ impl UiBuilder {
         );
     }
 
-    /// Creates a text leaf styled from `parent_style` and appends it to
-    /// `parent`. Used by derive-generated templates; kept out of line so each
+    /// Creates a text leaf for a run of text styled from `parent_style` and
+    /// appends it to `parent`. Used by derive-generated templates; kept out of line so each
     /// text node in a template doesn't inline its own copy.
     pub fn append_text_node(
         &mut self,
@@ -304,14 +304,9 @@ impl UiBuilder {
         current_style.animation_fill_mode = Arc::from("none");
         current_style.animation_play_state = Arc::from("running");
 
-        let mut normalized = super::normalize_text(text);
-        // Text beside a `{{ }}` value is its own box: keep one edge space so
-        // the two don't run together. Whitespace-only text has no content.
-        let lead = text.starts_with(char::is_whitespace);
-        let trail = text.ends_with(char::is_whitespace);
-        if (lead || trail) && !normalized.is_empty() {
-            normalized = Cow::Owned(format!("{}{}{}", if lead { " " } else { "" }, normalized, if trail { " " } else { "" }));
-        }
+        // The derive passes whole runs of text and `{{ }}` values, so the
+        // spaces between pieces are inside `text`.
+        let normalized = super::normalize_text(text);
         // Sized by the layout's measure function (see `Ui::compute_layout`).
         let text_layout_style = Style::default();
         let node = self.taffy.new_leaf(text_layout_style.clone()).unwrap();

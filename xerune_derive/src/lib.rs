@@ -266,24 +266,76 @@ fn target_names(target: &Target<'_>, names: &mut HashSet<String>) {
     }
 }
 
-/// Whether the siblings right before/after `handle` are `{{ }}` placeholders.
-fn adjacent_exprs(handle: &Handle) -> (bool, bool) {
-    let Some(parent) = handle.parent.take() else {
-        return (false, false);
+/// A piece of an inline text run: literal text or a `{{ }}` value.
+enum TextPiece {
+    Literal(String),
+    Expr(proc_macro2::TokenStream),
+}
+
+/// `handle` as part of a text run, if it is text or a `{{ }}` placeholder.
+fn text_piece(handle: &Handle, local_vars: &HashSet<String>, dynamic_exprs: &HashMap<usize, &Expr<'_>>) -> Option<TextPiece> {
+    match &handle.data {
+        NodeData::Text { contents } => Some(TextPiece::Literal(contents.borrow().to_string())),
+        NodeData::Element { name, attrs, .. } if name.local.as_ref() == "template" => {
+            let attrs = attrs.borrow();
+            let id = attrs.iter().find(|a| a.name.local.as_ref() == "expr-id")?;
+            let expr = dynamic_exprs.get(&id.value.to_string().parse::<usize>().ok()?)?;
+            let tokens: proc_macro2::TokenStream = format_expr(expr, local_vars).parse().unwrap();
+            Some(TextPiece::Expr(tokens))
+        }
+        _ => None,
+    }
+}
+
+/// Compiles sibling nodes. Consecutive text and `{{ }}` values form one
+/// text node, like one run of text in a browser, so it wraps as a whole
+/// and keeps the spaces between its pieces.
+fn compile_children<'a>(
+    children: &[Handle],
+    rulesets: &[MediaRuleSet],
+    local_vars: &mut HashSet<String>,
+    dynamic_exprs: &HashMap<usize, &'a Expr<'a>>,
+    dynamic_loops: &HashMap<usize, &'a Node<'a>>,
+    dynamic_ifs: &HashMap<usize, &'a Node<'a>>,
+) -> Vec<proc_macro2::TokenStream> {
+    let mut code = Vec::new();
+    let mut run: Vec<TextPiece> = Vec::new();
+    let flush = |run: &mut Vec<TextPiece>, code: &mut Vec<proc_macro2::TokenStream>| {
+        let pieces = core::mem::take(run);
+        let has_content = pieces.iter().any(|p| match p {
+            TextPiece::Literal(t) => !t.trim().is_empty(),
+            TextPiece::Expr(_) => true,
+        });
+        if !has_content {
+            return;
+        }
+        if let [TextPiece::Literal(text)] = pieces.as_slice() {
+            code.push(quote! { builder.append_text_node(measurer, parent, &parent_style, #text); });
+            return;
+        }
+        let pushes = pieces.iter().map(|p| match p {
+            TextPiece::Literal(t) => quote! { text_run.push_str(#t); },
+            TextPiece::Expr(e) => quote! { text_run.push_str(&(#e).to_display_string()); },
+        });
+        code.push(quote! {
+            {
+                use ::xerune::ui::ToDisplayString;
+                let mut text_run = String::new();
+                #(#pushes)*
+                builder.append_text_node(measurer, parent, &parent_style, &text_run);
+            }
+        });
     };
-    handle.parent.set(Some(parent.clone()));
-    let Some(parent) = parent.upgrade() else {
-        return (false, false);
-    };
-    let siblings = parent.children.borrow();
-    let Some(pos) = siblings.iter().position(|s| std::rc::Rc::ptr_eq(s, handle)) else {
-        return (false, false);
-    };
-    let is_expr = |node: Option<&Handle>| match node.map(|n| &n.data) {
-        Some(NodeData::Element { attrs, .. }) => attrs.borrow().iter().any(|a| a.name.local.as_ref() == "expr-id"),
-        _ => false,
-    };
-    (is_expr(pos.checked_sub(1).and_then(|p| siblings.get(p))), is_expr(siblings.get(pos + 1)))
+    for child in children {
+        if let Some(piece) = text_piece(child, local_vars, dynamic_exprs) {
+            run.push(piece);
+            continue;
+        }
+        flush(&mut run, &mut code);
+        code.push(compile_dom_node(child, rulesets, local_vars, dynamic_exprs, dynamic_loops, dynamic_ifs));
+    }
+    flush(&mut run, &mut code);
+    code
 }
 
 fn get_node_children(handle: &Handle) -> Vec<Handle> {
@@ -1281,10 +1333,7 @@ fn compile_dom_node<'a>(
 ) -> proc_macro2::TokenStream {
     match &handle.data {
         NodeData::Document => {
-            let mut children_code = Vec::new();
-            for child in get_node_children(handle).iter() {
-                children_code.push(compile_dom_node(child, rulesets, local_vars, dynamic_exprs, dynamic_loops, dynamic_ifs));
-            }
+            let children_code = compile_children(&get_node_children(handle), rulesets, local_vars, dynamic_exprs, dynamic_loops, dynamic_ifs);
             quote! {
                 #(#children_code)*
             }
@@ -1332,10 +1381,7 @@ fn compile_dom_node<'a>(
                         loop_local_vars.insert("_loop_item_index".to_string());
                         loop_local_vars.insert("loop".to_string());
                         
-                        let mut children_code = Vec::new();
-                        for child in get_node_children(handle).iter() {
-                            children_code.push(compile_dom_node(child, rulesets, &mut loop_local_vars, dynamic_exprs, dynamic_loops, dynamic_ifs));
-                        }
+                        let children_code = compile_children(&get_node_children(handle), rulesets, &mut loop_local_vars, dynamic_exprs, dynamic_loops, dynamic_ifs);
                         
                         let var_tokens: proc_macro2::TokenStream = var_str.parse().unwrap();
                         let iter_tokens: proc_macro2::TokenStream = iter_str.parse().unwrap();
@@ -1384,10 +1430,7 @@ fn compile_dom_node<'a>(
                                 if let Some(target) = branch.cond.as_ref().and_then(|c| c.target.as_ref()) {
                                     target_names(target, &mut branch_local_vars);
                                 }
-                                let mut children_code = Vec::new();
-                                for child in get_node_children(&bh).iter() {
-                                    children_code.push(compile_dom_node(child, rulesets, &mut branch_local_vars, dynamic_exprs, dynamic_loops, dynamic_ifs));
-                                }
+                                let children_code = compile_children(&get_node_children(&bh), rulesets, &mut branch_local_vars, dynamic_exprs, dynamic_loops, dynamic_ifs);
                                 
                                 if let Some(ref cond) = branch.cond {
                                     let cond_str = format_cond_test(cond, local_vars);
@@ -1536,10 +1579,7 @@ fn compile_dom_node<'a>(
                 None => quote! { ::xerune::ui::ElementStyle::new(#tag, &parent_style) },
             };
 
-            let mut child_compilation = Vec::new();
-            for child in get_node_children(handle).iter() {
-                child_compilation.push(compile_dom_node(child, rulesets, local_vars, dynamic_exprs, dynamic_loops, dynamic_ifs));
-            }
+            let child_compilation = compile_children(&get_node_children(handle), rulesets, local_vars, dynamic_exprs, dynamic_loops, dynamic_ifs);
 
             quote! {
                 let (el, node) = {
@@ -1563,18 +1603,10 @@ fn compile_dom_node<'a>(
             }
         }
         NodeData::Text { contents } => {
-            let text = contents.borrow();
-            let trimmed = text.trim();
-            if trimmed.is_empty() {
+            let text = contents.borrow().to_string();
+            if text.trim().is_empty() {
                 return quote! {};
             }
-            // Text and `{{ }}` values become separate boxes, so collapse the
-            // whitespace between them to one space instead of dropping it:
-            // `core {{ n }}` must not render as "core0".
-            let (expr_before, expr_after) = adjacent_exprs(handle);
-            let lead = if expr_before && text.starts_with(char::is_whitespace) { " " } else { "" };
-            let trail = if expr_after && text.ends_with(char::is_whitespace) { " " } else { "" };
-            let text = format!("{}{}{}", lead, trimmed, trail);
             quote! {
                 builder.append_text_node(measurer, parent, &parent_style, #text);
             }
