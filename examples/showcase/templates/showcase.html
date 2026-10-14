@@ -1,597 +1,474 @@
 <style>
-    body {
-        margin: 0;
-    }
-    .showcase-container {
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+
+    .app {
         display: flex;
         flex-direction: column;
-        width: 820px;
-        height: 820px;
-        background: linear-gradient(160deg, #0f2027 0%, #203a43 50%, #2c5364 100%);
-        color: white;
-        padding: 30px;
-        font-family: 'Roboto', sans-serif;
-        box-sizing: border-box;
+        width: 100vw;
+        height: 100vh;
+        padding: 14px 18px 16px 18px;
+        background: linear-gradient(180deg, #0d1220 0%, #070a12 100%);
+        color: #e6ebf5;
+        overflow: hidden;
     }
 
-    /* Top Navbar Header */
-    .header-row {
-        display: flex;
-        flex-direction: row;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 20px;
-    }
-    .header-title {
-        font-size: 28px;
-        margin: 0;
-        font-weight: bold;
-        color: #ffffff;
-    }
-    .navbar {
-        display: flex;
-        flex-direction: row;
-        background-color: rgba(0, 0, 0, 0.3);
-        border-radius: 20px;
-        padding: 4px;
-        border: 2px solid rgba(255, 255, 255, 0.2);
-    }
-    .nav-btn {
-        display: flex;
-        padding: 8px 16px;
-        border-radius: 16px;
-        margin-right: 4px;
-        cursor: pointer;
-        background-color: transparent;
-        color: #aaaaaa;
-        font-size: 13px;
-        font-weight: bold;
-        align-items: center;
-    }
-    .nav-btn.active {
-        background: linear-gradient(90deg, #ff8a00, #e52e71);
-        color: #ffffff;
-        box-shadow: 0px 4px 12px rgba(255, 138, 0, 0.4);
-    }
+    /* ---------- header ---------- */
+    .top { display: flex; flex-direction: row; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+    .brand { display: flex; flex-direction: row; align-items: center; }
+    .logo { width: 26px; height: 26px; border-radius: 8px; margin-right: 10px;
+            background: conic-gradient(from 200deg, #22d3ee, #a78bfa, #f472b6, #22d3ee); }
+    .brand-name { font-size: 18px; font-weight: bold; color: #ffffff; }
+    .brand-sub { font-size: 12px; color: #5d6b85; margin-left: 10px; margin-top: 3px; }
+    .tabs { display: flex; flex-direction: row; background-color: #111827; border-radius: 12px; padding: 3px;
+            border: 1px solid rgba(255,255,255,0.06); }
+    .tab { display: flex; padding: 7px 14px; border-radius: 9px; font-size: 13px; color: #7c89a3; }
+    .tab.on { background-color: #1e293b; color: #ffffff; font-weight: bold; box-shadow: 0px 2px 8px rgba(0,0,0,0.5); }
 
-    /* Tab 0: Overview / Status Cards */
-    .status-cards-row {
-        display: flex;
-        flex-direction: row;
-        margin-bottom: 20px;
-    }
-    .status-card {
-        flex-grow: 1;
-        padding: 22px;
-        background-color: rgba(255,255,255,0.06);
-        border-radius: 16px;
-        border: 2px solid rgba(255,255,255,0.15);
-        box-shadow: 0px 8px 24px rgba(0, 0, 0, 0.35);
-    }
-    .status-card.mr {
-        margin-right: 20px;
-    }
-    .status-card h2 {
-        font-size: 15px;
-        color: #aaaaaa;
-        margin: 0 0 12px 0;
-    }
-    .status-indicator-row {
-        display: flex;
-        flex-direction: row;
-        align-items: center;
-        margin-bottom: 10px;
-    }
-    .indicator-outer {
-        padding: 6px;
-        background-color: rgba(0,255,0,0.2);
-        border-radius: 50%;
-        margin-right: 12px;
-        border: 1px solid #00ff00;
-    }
-    .indicator-inner {
-        width: 10px;
-        height: 10px;
-        border-radius: 5px;
-        background-color: #00ff00;
-        box-shadow: 0px 0px 8px #00ff00;
-    }
-    .status-value {
-        font-size: 24px;
-        font-weight: bold;
-        width: 120px;
-    }
-    .status-progress {
-        height: 8px;
-        border-radius: 4px;
-        background-color: rgba(255,255,255,0.1);
-        color: #00ff00;
-        width: 100%;
-    }
-    .status-users-row {
-        display: flex;
-        flex-direction: row;
-        align-items: flex-end;
-    }
-    .status-users-val {
-        font-size: 44px;
-        font-weight: bold;
-        margin: 0;
-        line-height: 1;
-        width: 120px;
-    }
-    .status-users-change {
-        font-size: 15px;
-        color: #ea5455;
-        margin-left: 10px;
-        margin-bottom: 6px;
-    }
+    .page { display: flex; flex-grow: 1; flex-direction: column; }
 
-    .main-grid {
-        display: flex;
-        flex-direction: row;
-        flex-grow: 1;
-    }
-    .list-panel {
-        display: flex;
-        flex-direction: column;
-        flex-grow: 2;
-        padding: 22px;
-        background-color: rgba(255,255,255,0.05);
-        border-radius: 16px;
-        border: 2px solid rgba(255,255,255,0.15);
-        box-shadow: 0px 10px 30px rgba(0, 0, 0, 0.4);
-        margin-right: 20px;
-    }
-    .list-panel h2 {
-        font-size: 17px;
-        margin: 0 0 15px 0;
-    }
-    .load-chart {
-        width: 400px;
-        height: 190px;
-        margin-bottom: 15px;
-        border-radius: 8px;
-        border: 2px solid rgba(255,255,255,0.4);
-        box-shadow: 0px 4px 16px rgba(0, 0, 0, 0.3);
-    }
-    .process-table {
-        width: 100%;
-    }
-    .process-table tr.header-tr {
-        border-color: rgba(255,255,255,0.2);
-    }
-    .process-table th {
-        text-align: left;
-        padding: 6px;
-        color: #aaa;
-        font-size: 13px;
-    }
-    .process-table td {
-        padding: 6px;
-        font-size: 13px;
-    }
+    /* ---------- shared bits ---------- */
+    .panel { display: flex; flex-direction: column; background-color: #0f1524; border-radius: 14px; padding: 14px;
+             border: 1px solid rgba(255,255,255,0.05); }
+    .panel-title { font-size: 11px; font-weight: bold; color: #5d6b85; margin-bottom: 10px; }
+    .bar { display: flex; height: 6px; border-radius: 3px; background-color: #1a2234; }
+    .bar-fill { height: 6px; border-radius: 3px; }
+    .chip { display: flex; font-size: 11px; font-weight: bold; padding: 4px 9px; border-radius: 9px; background-color: #111827; color: #5d6b85; }
+    .chip.ok { color: #34d399; background-color: rgba(16,185,129,0.12); }
+    .chip.warn { color: #fbbf24; background-color: rgba(251,191,36,0.12); }
+    .chip.bad { color: #fb7185; background-color: rgba(244,63,94,0.12); }
+    .btn { display: flex; justify-content: center; align-items: center; padding: 11px 16px; border-radius: 12px;
+           font-size: 13px; font-weight: bold; color: #ffffff; background-color: #141c2e;
+           border: 1px solid rgba(255,255,255,0.08); }
+    .btn.blue { background: linear-gradient(180deg, #0ea5e9 0%, #0369a1 100%); border: 1px solid rgba(125,211,252,0.4);
+                box-shadow: 0px 4px 14px rgba(14,165,233,0.30); }
+    .btn.rose { background: linear-gradient(180deg, #f43f5e 0%, #be123c 100%); border: 1px solid rgba(253,164,175,0.4);
+                box-shadow: 0px 4px 14px rgba(244,63,94,0.30); }
+    .btn.violet { background: linear-gradient(180deg, #8b5cf6 0%, #6d28d9 100%); border: 1px solid rgba(196,181,253,0.4);
+                  box-shadow: 0px 4px 14px rgba(139,92,246,0.30); }
 
-    /* Buttons with original box shadows */
-    .control-panel {
-        display: flex;
-        flex-direction: column;
-        flex-grow: 1;
-        padding: 22px;
-        background-color: rgba(255,255,255,0.05);
-        border-radius: 16px;
-        border: 2px solid rgba(255,255,255,0.15);
-        box-shadow: 0px 10px 30px rgba(0, 0, 0, 0.4);
-    }
-    .control-panel h2 {
-        font-size: 17px;
-        margin: 0 0 15px 0;
-    }
-    .control-panel h3 {
-        font-size: 13px;
-        color: #aaa;
-        margin: 0 0 10px 0;
-    }
-    .controls-container {
-        display: flex;
-        flex-direction: column;
-        align-items: stretch;
-    }
-    .btn-simulate {
-        display: flex;
-        padding: 14px;
-        background: linear-gradient(90deg, #ff8a00, #e52e71);
-        border-radius: 10px;
-        margin-bottom: 15px;
-        align-items: center;
-        border: 2px solid rgba(255,255,255,0.3);
-        box-shadow: 0px 6px 18px rgba(255, 138, 0, 0.35);
-        color: white;
-        cursor: pointer;
-    }
-    .btn-simulate span {
-        font-weight: bold;
-    }
-    .btn-add-user {
-        display: flex;
-        padding: 14px;
-        background-color: rgba(255,255,255,0.08);
-        border-radius: 10px;
-        border: 2px solid rgba(255,255,255,0.3);
-        box-shadow: 0px 4px 14px rgba(0, 0, 0, 0.3);
-        margin-bottom: 20px;
-        align-items: center;
-        color: white;
-        cursor: pointer;
-    }
-    .btn-add-user span {
-        font-weight: bold;
-    }
-    .config-checkbox-row {
-        display: flex;
-        flex-direction: row;
-        align-items: center;
-        margin-bottom: 12px;
-        cursor: pointer;
-    }
-    .config-checkbox-row.last {
-        margin-bottom: 0px;
-    }
-    .config-checkbox-row span {
-        font-size: 13px;
-    }
-    .config-checkbox-row input {
-        margin-right: 10px;
-    }
+    /* toggle switch built from two divs */
+    .switch-row { display: flex; flex-direction: row; align-items: center; justify-content: space-between; padding: 7px 0; }
+    .switch-label { display: flex; flex-direction: column; }
+    .switch-name { font-size: 13px; color: #e6ebf5; }
+    .switch-hint { font-size: 11px; color: #5d6b85; margin-top: 2px; }
+    .switch { display: flex; flex-direction: row; width: 40px; height: 22px; border-radius: 11px; padding: 3px;
+              background-color: #1e293b; justify-content: flex-start; }
+    .switch.on { background: linear-gradient(90deg, #0ea5e9 0%, #22d3ee 100%); justify-content: flex-end; }
+    .knob { width: 16px; height: 16px; border-radius: 8px; background-color: #e2e8f0; box-shadow: 0px 1px 3px rgba(0,0,0,0.5); }
 
-    /* Tab 1: Gauges & HMI */
-    .hmi-container {
-        display: flex;
-        flex-direction: column;
-        flex-grow: 1;
-    }
-    .gauges-row {
-        display: flex;
-        flex-direction: row;
-        margin-bottom: 20px;
-    }
-    .gauge-card {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        flex-grow: 1;
-        padding: 30px;
-        background-color: rgba(255,255,255,0.06);
-        border-radius: 16px;
-        border: 2px solid rgba(255,255,255,0.15);
-        box-shadow: 0px 8px 24px rgba(0, 0, 0, 0.35);
-        margin-right: 20px;
-    }
-    .gauge-card.last {
-        margin-right: 0px;
-    }
-    .gauge-circle {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        width: 180px;
-        height: 180px;
-        border-radius: 90px;
-        border: 8px solid #00c6ff;
-        background: radial-gradient(circle, rgba(0,198,255,0.15) 0%, rgba(0,0,0,0.6) 100%);
-        box-shadow: 0px 0px 24px rgba(0, 198, 255, 0.4);
-        margin-bottom: 15px;
-    }
-    .gauge-circle.rpm {
-        border-color: #ffaa00;
-        background: radial-gradient(circle, rgba(255,170,0,0.15) 0%, rgba(0,0,0,0.6) 100%);
-        box-shadow: 0px 0px 24px rgba(255, 170, 0, 0.4);
-    }
-    .gauge-num {
-        font-size: 46px;
-        font-weight: bold;
-        line-height: 1;
-    }
-    .gauge-unit {
-        font-size: 14px;
-        color: #aaa;
-        margin-top: 4px;
-    }
-    .hmi-actions-row {
-        display: flex;
-        flex-direction: row;
-    }
-    .btn-hmi-accel {
-        display: flex;
-        flex-grow: 1;
-        padding: 16px;
-        background: linear-gradient(90deg, #11998e, #38ef7d);
-        border-radius: 12px;
-        align-items: center;
-        justify-content: center;
-        border: 2px solid rgba(255,255,255,0.3);
-        box-shadow: 0px 6px 18px rgba(56, 239, 125, 0.35);
-        color: white;
-        font-weight: bold;
-        margin-right: 15px;
-        cursor: pointer;
-    }
-    .btn-hmi-brake {
-        display: flex;
-        flex-grow: 1;
-        padding: 16px;
-        background: linear-gradient(90deg, #cb2d3e, #ef473a);
-        border-radius: 12px;
-        align-items: center;
-        justify-content: center;
-        border: 2px solid rgba(255,255,255,0.3);
-        box-shadow: 0px 6px 18px rgba(239, 71, 58, 0.35);
-        color: white;
-        font-weight: bold;
-        margin-right: 15px;
-        cursor: pointer;
-    }
-    .btn-hmi-engine {
-        display: flex;
-        flex-grow: 1;
-        padding: 16px;
-        background: linear-gradient(90deg, #8e2de2, #4a00e0);
-        border-radius: 12px;
-        align-items: center;
-        justify-content: center;
-        border: 2px solid rgba(255,255,255,0.3);
-        box-shadow: 0px 6px 18px rgba(142, 45, 226, 0.35);
-        color: white;
-        font-weight: bold;
-        cursor: pointer;
-    }
+    /* ---------- system ---------- */
+    .tiles { display: flex; flex-direction: row; gap: 10px; margin-bottom: 10px; }
+    .tile { display: flex; flex-direction: row; align-items: center; flex-grow: 1; flex-basis: 0px;
+            background-color: #0f1524; border-radius: 14px; padding: 12px; border: 1px solid rgba(255,255,255,0.05); }
+    .donut { position: relative; width: 56px; height: 56px; margin-right: 12px; }
+    .donut-ring { position: absolute; left: 0px; top: 0px; width: 56px; height: 56px; border-radius: 50%; }
+    .donut-hole { position: absolute; left: 8px; top: 8px; width: 40px; height: 40px; border-radius: 50%;
+                  background-color: #0f1524; display: flex; justify-content: center; align-items: center;
+                  font-size: 12px; font-weight: bold; color: #ffffff; }
+    .tile-text { display: flex; flex-direction: column; }
+    .tile-name { font-size: 11px; font-weight: bold; color: #5d6b85; }
+    .tile-value { font-size: 20px; font-weight: bold; color: #ffffff; margin-top: 3px; }
+    .tile-delta { font-size: 11px; color: #34d399; margin-top: 2px; }
 
-    /* Tab 2: Medical Telemetry */
-    .medical-container {
-        display: flex;
-        flex-direction: column;
-        flex-grow: 1;
-    }
-    .vitals-row {
-        display: flex;
-        flex-direction: row;
-        margin-bottom: 20px;
-    }
-    .vital-card {
-        display: flex;
-        flex-direction: column;
-        flex-grow: 1;
-        padding: 20px;
-        background-color: rgba(0, 0, 0, 0.35);
-        border-radius: 14px;
-        border: 2px solid rgba(0, 255, 128, 0.25);
-        box-shadow: 0px 6px 20px rgba(0, 255, 128, 0.15);
-        margin-right: 15px;
-    }
-    .vital-card.last {
-        margin-right: 0px;
-    }
-    .vital-head {
-        font-size: 13px;
-        color: #aaa;
-        margin-bottom: 8px;
-    }
-    .vital-val {
-        font-size: 32px;
-        font-weight: bold;
-        color: #00ff88;
-    }
-    .ecg-card {
-        display: flex;
-        flex-direction: column;
-        padding: 20px;
-        background-color: rgba(0, 0, 0, 0.4);
-        border-radius: 16px;
-        border: 2px solid rgba(0, 255, 128, 0.3);
-        box-shadow: 0px 10px 30px rgba(0, 255, 128, 0.2);
-    }
-    .ecg-canvas {
-        width: 720px;
-        height: 200px;
-        border-radius: 8px;
-    }
+    .sys-main { display: flex; flex-direction: row; gap: 10px; flex-grow: 1; }
+    .cores { flex-grow: 3; flex-basis: 0px; }
+    .core-row { display: flex; flex-direction: row; align-items: center; margin-bottom: 9px; }
+    .core-name { font-size: 12px; color: #8b97ad; width: 52px; }
+    .core-bar { flex-grow: 1; height: 10px; border-radius: 5px; }
+    .core-fill { height: 10px; border-radius: 5px; background: linear-gradient(90deg, #22d3ee 0%, #a78bfa 70%, #f472b6 100%); }
+    .core-pct { font-size: 12px; font-weight: bold; color: #e6ebf5; width: 44px; text-align: right; }
+    .svc { display: flex; flex-direction: row; align-items: center; justify-content: space-between; padding: 6px 0;
+           border-bottom: 1px solid rgba(255,255,255,0.04); }
+    .svc-name { font-size: 13px; color: #e6ebf5; }
+    .svc-detail { font-size: 11px; color: #5d6b85; margin-top: 2px; }
+    .side { flex-grow: 2; flex-basis: 0px; }
+    .side-actions { display: flex; flex-direction: row; gap: 8px; margin-top: 10px; }
+    .side-actions .btn { flex-grow: 1; flex-basis: 0px; }
 
-    /* Tab 3: Widgets Gallery */
-    .widgets-container {
-        display: flex;
-        flex-direction: row;
-        flex-grow: 1;
+    /* ---------- vehicle cluster ---------- */
+    .cluster { display: flex; flex-direction: row; flex-grow: 1; align-items: center; justify-content: space-between; padding: 0 6px; }
+    .gauge { position: relative; width: 250px; height: 250px; }
+    .g-ring { position: absolute; border-radius: 50%; }
+    .g-face { left: 0px; top: 0px; width: 250px; height: 250px;
+              background: radial-gradient(circle, #141c2e 0%, #0b101c 62%, #070a12 100%);
+              box-shadow: 0px 0px 40px rgba(34,211,238,0.10); }
+    .gauge.rpm .g-face { box-shadow: 0px 0px 40px rgba(251,146,60,0.10); }
+    .g-ticks { left: 6px; top: 6px; width: 238px; height: 238px;
+        background: conic-gradient(from 225deg,
+          #64748b 0deg 1.2deg, transparent 1.2deg 26.4deg,
+          #64748b 26.4deg 27.6deg, transparent 27.6deg 53.4deg,
+          #64748b 53.4deg 54.6deg, transparent 54.6deg 80.4deg,
+          #64748b 80.4deg 81.6deg, transparent 81.6deg 107.4deg,
+          #64748b 107.4deg 108.6deg, transparent 108.6deg 134.4deg,
+          #64748b 134.4deg 135.6deg, transparent 135.6deg 161.4deg,
+          #64748b 161.4deg 162.6deg, transparent 162.6deg 188.4deg,
+          #64748b 188.4deg 189.6deg, transparent 189.6deg 215.4deg,
+          #64748b 215.4deg 216.6deg, transparent 216.6deg 242.4deg,
+          #64748b 242.4deg 243.6deg, transparent 243.6deg 268.8deg,
+          #64748b 268.8deg 270deg, transparent 270deg); }
+    .g-bezel { left: 14px; top: 14px; width: 222px; height: 222px; background-color: #0e1422; }
+    .g-track { left: 20px; top: 20px; width: 210px; height: 210px;
+               background: conic-gradient(from 225deg, #1a2234 0deg 270deg, transparent 270deg); }
+    .g-redline { left: 20px; top: 20px; width: 210px; height: 210px;
+                 background: conic-gradient(from 225deg, transparent 0deg 216deg, rgba(244,63,94,0.35) 216deg 270deg, transparent 270deg); }
+    .g-arc { left: 20px; top: 20px; width: 210px; height: 210px; }
+    .g-needle { left: 14px; top: 14px; width: 222px; height: 222px; }
+    .g-inner { left: 36px; top: 36px; width: 178px; height: 178px;
+               background: radial-gradient(circle, #121a2b 0%, #0c111d 100%);
+               border: 1px solid rgba(255,255,255,0.05);
+               display: flex; flex-direction: column; align-items: center; justify-content: center; }
+    .g-label { font-size: 11px; color: #5d6b85; font-weight: bold; margin-bottom: 2px; }
+    .g-value { font-size: 52px; font-weight: bold; color: #ffffff; }
+    .g-unit { font-size: 13px; color: #8b97ad; margin-top: 2px; }
+
+    .mid { display: flex; flex-direction: column; width: 230px; }
+    .gear-row { display: flex; flex-direction: row; justify-content: center; align-items: flex-end; margin-bottom: 14px; }
+    .gear { font-size: 15px; color: #3b4659; font-weight: bold; padding: 0 8px; }
+    .gear.on { font-size: 34px; color: #22d3ee; }
+    .gear-num { font-size: 15px; color: #22d3ee; font-weight: bold; margin-left: -6px; margin-right: 8px; }
+    .stat { margin-bottom: 8px; padding: 10px 12px; }
+    .stat-head { display: flex; flex-direction: row; justify-content: space-between; margin-bottom: 7px; }
+    .stat-name { font-size: 11px; color: #5d6b85; font-weight: bold; }
+    .stat-val { font-size: 12px; color: #e6ebf5; font-weight: bold; }
+    .fill-batt { background: linear-gradient(90deg, #10b981 0%, #a3e635 100%); }
+    .fill-temp { background: linear-gradient(90deg, #38bdf8 0%, #fbbf24 100%); }
+    .chips { display: flex; flex-direction: row; justify-content: center; gap: 6px; margin-top: 4px; }
+
+    .controls { display: flex; flex-direction: row; justify-content: center; gap: 12px; margin-top: 8px; }
+    .controls .btn { width: 150px; }
+
+    /* ---------- patient monitor ---------- */
+    .monitor { display: flex; flex-direction: row; gap: 10px; flex-grow: 1; }
+    .waves { flex-grow: 1; padding: 10px 12px; background-color: #03070a; border: 1px solid rgba(52,211,153,0.15); }
+    .wave-head { display: flex; flex-direction: row; justify-content: space-between; margin-bottom: 6px; }
+    .wave-name { font-size: 11px; font-weight: bold; }
+    .vitals { display: flex; flex-direction: column; gap: 8px; width: 200px; }
+    .vital { display: flex; flex-direction: column; flex-grow: 1; padding: 10px 12px; background-color: #03070a;
+             border-radius: 14px; border: 1px solid rgba(255,255,255,0.05); }
+    .vital-head { display: flex; flex-direction: row; justify-content: space-between; }
+    .vital-name { font-size: 11px; font-weight: bold; }
+    .vital-range { font-size: 10px; color: #3b4659; }
+    .vital-row { display: flex; flex-direction: row; align-items: flex-end; }
+    .vital-value { font-size: 38px; font-weight: bold; }
+    .vital-unit { font-size: 12px; color: #5d6b85; margin-left: 6px; margin-bottom: 7px; }
+    .c-ecg { color: #34d399; }
+    .c-spo2 { color: #22d3ee; }
+    .c-nibp { color: #fbbf24; }
+    .c-resp { color: #f0abfc; }
+
+    /* ---------- controls gallery ---------- */
+    .gallery { display: flex; flex-direction: row; gap: 10px; flex-grow: 1; }
+    .col { flex-grow: 1; flex-basis: 0px; }
+    .btn-stack { display: flex; flex-direction: column; gap: 8px; }
+    .stepper { display: flex; flex-direction: row; align-items: center; justify-content: space-between;
+               background-color: #0a0f1a; border-radius: 12px; padding: 4px; margin-top: 6px; }
+    .step-btn { display: flex; width: 38px; height: 34px; border-radius: 9px; background-color: #1e293b;
+                justify-content: center; align-items: center; font-size: 18px; font-weight: bold; color: #ffffff; }
+    .step-value { font-size: 20px; font-weight: bold; color: #ffffff; }
+    .level-row { display: flex; flex-direction: row; align-items: center; margin-top: 8px; }
+    .level-name { font-size: 12px; color: #8b97ad; width: 76px; }
+    .segments { display: flex; flex-direction: row; gap: 3px; }
+    .seg { flex-grow: 1; height: 16px; border-radius: 3px; background-color: #1a2234; }
+    .seg.on { background: linear-gradient(180deg, #a78bfa 0%, #7c3aed 100%); }
+    .dial-wrap { display: flex; justify-content: center; margin: 4px 0 8px 0; }
+    .dial { position: relative; width: 110px; height: 110px; }
+    .dial-ring { position: absolute; left: 0px; top: 0px; width: 110px; height: 110px; border-radius: 50%; }
+    .dial-hole { position: absolute; left: 12px; top: 12px; width: 86px; height: 86px; border-radius: 50%;
+                 background: radial-gradient(circle at 50% 30%, #1e293b 0%, #0f1524 100%);
+                 display: flex; flex-direction: column; justify-content: center; align-items: center; }
+    .dial-value { font-size: 26px; font-weight: bold; color: #ffffff; }
+    .dial-unit { font-size: 10px; color: #5d6b85; font-weight: bold; }
+
+    /* ---------- portrait (480x800) ---------- */
+    @media (orientation: portrait) {
+        .top { flex-direction: column; align-items: flex-start; }
+        .tabs { margin-top: 10px; }
+        .tiles { flex-wrap: wrap; }
+        .tile { flex-basis: 40%; }
+        .sys-main { flex-direction: column; }
+        .cluster { flex-wrap: wrap; justify-content: space-around; align-content: center; padding: 0px; }
+        .mid { width: 100%; margin: 14px 0; }
+        .monitor { flex-direction: column; }
+        .vitals { width: 100%; flex-direction: row; flex-wrap: wrap; }
+        .vital { flex-basis: 40%; }
+        .gallery { flex-direction: column; }
+        .gauge { width: 214px; height: 214px; }
+        .g-face { width: 214px; height: 214px; }
+        .g-ticks { left: 5px; top: 5px; width: 204px; height: 204px; }
+        .g-bezel { left: 12px; top: 12px; width: 190px; height: 190px; }
+        .g-track { left: 17px; top: 17px; width: 180px; height: 180px; }
+        .g-redline { left: 17px; top: 17px; width: 180px; height: 180px; }
+        .g-arc { left: 17px; top: 17px; width: 180px; height: 180px; }
+        .g-needle { left: 12px; top: 12px; width: 190px; height: 190px; }
+        .g-inner { left: 31px; top: 31px; width: 152px; height: 152px; }
+        .g-value { font-size: 44px; }
     }
 </style>
 
-<div class="showcase-container">
-
-    <!-- Header Row with Top Navbar -->
-    <div class="header-row">
-        <h1 class="header-title">🚀 Xerune Dashboard 🎨</h1>
-
-        <div class="navbar">
-            <div class="nav-btn {% if active_tab == 1 %}active{% endif %}" data-on-click="select_tab:1">
-                <span>💻 System</span>
-            </div>
-            <div class="nav-btn {% if active_tab == 2 %}active{% endif %}" data-on-click="select_tab:2">
-                <span>🚗 Gauges</span>
-            </div>
-            <div class="nav-btn {% if active_tab == 3 %}active{% endif %}" data-on-click="select_tab:3">
-                <span>🏥 Medical</span>
-            </div>
-            <div class="nav-btn {% if active_tab == 4 %}active{% endif %}" data-on-click="select_tab:4">
-                <span>🛠️ Controls</span>
-            </div>
+<div class="app">
+    <div class="top">
+        <div class="brand">
+            <div class="logo"></div>
+            <span class="brand-name">Xerune</span>
+            <span class="brand-sub">{{ self.subtitle() }}</span>
+        </div>
+        <div class="tabs">
+            <div class="tab {% if active_tab == 1 %}on{% endif %}" data-on-click="select_tab:1">System</div>
+            <div class="tab {% if active_tab == 2 %}on{% endif %}" data-on-click="select_tab:2">Vehicle</div>
+            <div class="tab {% if active_tab == 3 %}on{% endif %}" data-on-click="select_tab:3">Monitor</div>
+            <div class="tab {% if active_tab == 4 %}on{% endif %}" data-on-click="select_tab:4">Controls</div>
         </div>
     </div>
 
-    <!-- TAB 1: OVERVIEW & SYSTEM LOAD -->
+    <!-- ===================== SYSTEM ===================== -->
     {% if active_tab == 1 %}
-    <div class="status-cards-row">
-        <div class="status-card mr">
-            <h2>💻 SYSTEM STATUS</h2>
-            <div class="status-indicator-row">
-                <div class="indicator-outer">
-                    <div class="indicator-inner"></div>
+    <div class="page">
+        <div class="tiles">
+            <div class="tile">
+                <div class="donut">
+                    <div class="donut-ring" style="background: conic-gradient(#22d3ee 0%, #a78bfa {{ "{:.1}"|format(cpu) }}%, #1a2234 {{ "{:.1}"|format(cpu) }}%);"></div>
+                    <div class="donut-hole">{{ "{:.0}"|format(cpu) }}%</div>
                 </div>
-                <span class="status-value">{{ "{:.0}"|format(system_load_value) }}% Load</span>
+                <div class="tile-text">
+                    <span class="tile-name">CPU</span>
+                    <span class="tile-value">{{ "{:.2}"|format(cpu_ghz) }} GHz</span>
+                    <span class="tile-delta">4 cores</span>
+                </div>
             </div>
-            <progress value="{{ system_load_value }}" max="100.0" class="status-progress"></progress>
+            <div class="tile">
+                <div class="donut">
+                    <div class="donut-ring" style="background: conic-gradient(#34d399 0%, #a3e635 {{ "{:.1}"|format(mem) }}%, #1a2234 {{ "{:.1}"|format(mem) }}%);"></div>
+                    <div class="donut-hole">{{ "{:.0}"|format(mem) }}%</div>
+                </div>
+                <div class="tile-text">
+                    <span class="tile-name">MEMORY</span>
+                    <span class="tile-value">{{ "{:.1}"|format(self.mem_gb()) }} GB</span>
+                    <span class="tile-delta">of 4.0 GB</span>
+                </div>
+            </div>
+            <div class="tile">
+                <div class="donut">
+                    <div class="donut-ring" style="background: conic-gradient(#fbbf24 0%, #fb7185 {{ "{:.1}"|format(self.temp_pct()) }}%, #1a2234 {{ "{:.1}"|format(self.temp_pct()) }}%);"></div>
+                    <div class="donut-hole">{{ "{:.0}"|format(soc_temp) }}°</div>
+                </div>
+                <div class="tile-text">
+                    <span class="tile-name">SOC TEMP</span>
+                    <span class="tile-value">{{ "{:.1}"|format(soc_temp) }} °C</span>
+                    <span class="tile-delta">fan auto</span>
+                </div>
+            </div>
+            <div class="tile">
+                <div class="tile-text">
+                    <span class="tile-name">ACTIVE USERS</span>
+                    <span class="tile-value">{{ user_counter }}</span>
+                    <span class="tile-delta">+12% this week</span>
+                </div>
+            </div>
         </div>
 
-        <div class="status-card">
-            <h2>👥 ACTIVE USERS</h2>
-            <div class="status-users-row">
-                <span class="status-users-val">{{ user_counter }}</span>
-                <span class="status-users-change">+12% 🔥</span>
-            </div>
-        </div>
-    </div>
-
-    <div class="main-grid">
-        <div class="list-panel">
-            <h2>⚙️ System Processes</h2>
-            <canvas id="load_chart" width="400" height="200" class="load-chart"></canvas>
-            <table class="process-table">
-                <tr class="header-tr">
-                    <th style="width: 20%;">ID</th>
-                    <th style="width: 50%;">Name</th>
-                    <th style="width: 30%; text-align: right;">Status</th>
-                </tr>
-                {% for row in table_data %}
-                <tr>
-                    <td style="width: 20%; color: #ddd; font-weight: bold;">{{ row.id }}</td>
-                    <td style="width: 50%; color: #eee;">{{ row.name }}</td>
-                    <td style="width: 30%; color: #4caf50; text-align: right;">{{ row.status }}</td>
-                </tr>
+        <div class="sys-main">
+            <div class="panel cores">
+                <span class="panel-title">PER-CORE LOAD</span>
+                {% for core in cores %}
+                <div class="core-row">
+                    <span class="core-name">core {{ loop.index0 }}</span>
+                    <div class="bar core-bar"><div class="core-fill" style="width: {{ "{:.1}"|format(core) }}%;"></div></div>
+                    <span class="core-pct">{{ "{:.0}"|format(core) }}%</span>
+                </div>
                 {% endfor %}
-            </table>
-        </div>
-
-        <div class="control-panel">
-            <h2>🛠️ Quick Controls</h2>
-            <div class="controls-container">
-                <div data-on-click="increment_progress" class="btn-simulate">
-                    <span>⚡ Simulate Load (+10%)</span>
+                <span class="panel-title" style="margin-top: 6px;">SERVICES</span>
+                {% for svc in services %}
+                <div class="svc">
+                    <div class="tile-text">
+                        <span class="svc-name">{{ svc.name }}</span>
+                        <span class="svc-detail">{{ svc.detail }}</span>
+                    </div>
+                    <div class="chip {% if svc.ok %}ok{% endif %} {% if svc.warn %}warn{% endif %}">{{ svc.state }}</div>
                 </div>
+                {% endfor %}
+            </div>
 
-                <div data-on-click="increment_user_counter" class="btn-add-user">
-                    <span>➕ Add User</span>
+            <div class="panel side">
+                <span class="panel-title">CONFIGURATION</span>
+                <div class="switch-row" data-on-click="toggle_auto_scale">
+                    <div class="switch-label"><span class="switch-name">Auto-scaling</span><span class="switch-hint">spin up workers on load</span></div>
+                    <div class="switch {% if auto_scale %}on{% endif %}"><div class="knob"></div></div>
                 </div>
-
-                <h3>CONFIGURATIONS</h3>
-                <div class="config-checkbox-row" data-on-click="toggle_auto_scale">
-                    <input type="checkbox" {% if auto_scale %}checked{% endif %}>
-                    <span>🔥 Auto-Scaling</span>
+                <div class="switch-row" data-on-click="toggle_maintenance">
+                    <div class="switch-label"><span class="switch-name">Maintenance</span><span class="switch-hint">pause incoming jobs</span></div>
+                    <div class="switch {% if maintenance_mode %}on{% endif %}"><div class="knob"></div></div>
                 </div>
-                <div class="config-checkbox-row last" data-on-click="toggle_maintenance">
-                    <input type="checkbox" {% if maintenance_mode %}checked{% endif %}>
-                    <span>🛡️ Maintenance Mode</span>
+                <div class="side-actions">
+                    <div class="btn violet" data-on-click="increment_progress">Load spike</div>
+                    <div class="btn" data-on-click="increment_user_counter">Add user</div>
                 </div>
             </div>
         </div>
     </div>
     {% endif %}
 
-    <!-- TAB 2: GAUGES & HMI -->
+    <!-- ===================== VEHICLE ===================== -->
     {% if active_tab == 2 %}
-    <div class="hmi-container">
-        <div class="ecg-card" style="margin-bottom: 20px;">
-            <div style="display: flex; flex-direction: row; justify-content: space-between; margin-bottom: 12px; align-items: center;">
-                <h2 style="font-size: 16px; color: #00c6ff; margin: 0;">🏎️ DIGITAL COCKPIT INSTRUMENT CLUSTER</h2>
-                <span style="font-size: 13px; color: #ffaa00; font-weight: bold;">MODE: SPORT</span>
+    <div class="page">
+        <div class="cluster">
+            <div class="gauge">
+                <div class="g-ring g-face"></div>
+                <div class="g-ring g-ticks"></div>
+                <div class="g-ring g-bezel"></div>
+                <div class="g-ring g-track"></div>
+                <div class="g-ring g-arc" style="background: conic-gradient(from 225deg, #0e7490 0deg, #22d3ee {{ "{:.1}"|format(self.speed_deg()) }}deg, transparent {{ "{:.1}"|format(self.speed_deg()) }}deg);"></div>
+                <div class="g-ring g-needle" style="background: conic-gradient(from {{ "{:.1}"|format(self.speed_needle()) }}deg, #ffffff 0deg 3deg, transparent 3deg);"></div>
+                <div class="g-ring g-inner">
+                    <span class="g-label">SPEED</span>
+                    <span class="g-value">{{ "{:.0}"|format(speed_kmh) }}</span>
+                    <span class="g-unit">km/h</span>
+                </div>
             </div>
-            <canvas id="gauge_chart" width="720" height="260" style="width: 720px; height: 260px; border-radius: 12px; border: 2px solid rgba(0, 198, 255, 0.3);"></canvas>
+
+            <div class="mid">
+                <div class="gear-row">
+                    <span class="gear">P</span>
+                    <span class="gear">R</span>
+                    <span class="gear {% if !engine_running %}on{% endif %}">N</span>
+                    <span class="gear {% if engine_running %}on{% endif %}">D</span>
+                    {% if engine_running %}<span class="gear-num">{{ self.gear() }}</span>{% endif %}
+                </div>
+                <div class="panel stat">
+                    <div class="stat-head"><span class="stat-name">BATTERY</span><span class="stat-val">{{ "{:.0}"|format(battery_pct) }}%  ·  {{ "{:.0}"|format(self.range_km()) }} km</span></div>
+                    <div class="bar"><div class="bar-fill fill-batt" style="width: {{ "{:.1}"|format(battery_pct) }}%;"></div></div>
+                </div>
+                <div class="panel stat">
+                    <div class="stat-head"><span class="stat-name">CABIN</span><span class="stat-val">{{ "{:.1}"|format(target_temp) }} °C</span></div>
+                    <div class="bar"><div class="bar-fill fill-temp" style="width: {{ "{:.1}"|format(self.cabin_pct()) }}%;"></div></div>
+                </div>
+                <div class="chips">
+                    {% if engine_running %}<div class="chip ok">ENGINE ON</div>{% else %}<div class="chip">ENGINE OFF</div>{% endif %}
+                    {% if engine_rpm > 5000.0 %}<div class="chip bad">SHIFT UP</div>{% else %}<div class="chip warn">SPORT</div>{% endif %}
+                </div>
+            </div>
+
+            <div class="gauge rpm">
+                <div class="g-ring g-face"></div>
+                <div class="g-ring g-ticks"></div>
+                <div class="g-ring g-bezel"></div>
+                <div class="g-ring g-track"></div>
+                <div class="g-ring g-redline"></div>
+                <div class="g-ring g-arc" style="background: conic-gradient(from 225deg, #c2410c 0deg, #fb923c {{ "{:.1}"|format(self.rpm_deg()) }}deg, transparent {{ "{:.1}"|format(self.rpm_deg()) }}deg);"></div>
+                <div class="g-ring g-needle" style="background: conic-gradient(from {{ "{:.1}"|format(self.rpm_needle()) }}deg, #ffffff 0deg 3deg, transparent 3deg);"></div>
+                <div class="g-ring g-inner">
+                    <span class="g-label">RPM</span>
+                    <span class="g-value">{{ "{:.1}"|format(self.rpm_k()) }}</span>
+                    <span class="g-unit">x1000 rpm</span>
+                </div>
+            </div>
         </div>
 
-        <div class="vitals-row" style="margin-bottom: 20px;">
-            <div class="vital-card">
-                <span class="vital-head">SPEEDOMETER</span>
-                <span class="vital-val" style="color: #00c6ff;">⚡ {{ "{:.0}"|format(speed_kmh) }} <span style="font-size: 14px;">KM/H</span></span>
-            </div>
-            <div class="vital-card last">
-                <span class="vital-head">TACHOMETER</span>
-                <span class="vital-val" style="color: #ffaa00;">🔥 {{ "{:.0}"|format(engine_rpm) }} <span style="font-size: 14px;">RPM</span></span>
-            </div>
-        </div>
-
-        <div class="hmi-actions-row">
-            <div class="btn-hmi-accel" data-on-click="increment_speed">
-                <span>⚡ ACCELERATE (+10)</span>
-            </div>
-            <div class="btn-hmi-brake" data-on-click="decrement_speed">
-                <span>🛑 BRAKE (-10)</span>
-            </div>
-            <div class="btn-hmi-engine" data-on-click="toggle_engine">
-                <span>🔑 ENGINE: {% if engine_running %}ON{% else %}OFF{% endif %}</span>
-            </div>
+        <div class="controls">
+            <div class="btn blue" data-on-click="increment_speed">Accelerate</div>
+            <div class="btn rose" data-on-click="decrement_speed">Brake</div>
+            <div class="btn" data-on-click="toggle_engine">{% if engine_running %}Engine off{% else %}Engine on{% endif %}</div>
         </div>
     </div>
     {% endif %}
 
-    <!-- TAB 3: MEDICAL TELEMETRY -->
+    <!-- ===================== PATIENT MONITOR ===================== -->
     {% if active_tab == 3 %}
-    <div class="medical-container">
-        <div class="vitals-row">
-            <div class="vital-card">
-                <span class="vital-head">HEART RATE</span>
-                <span class="vital-val">❤️ {{ heart_rate_bpm }} <span style="font-size: 14px;">BPM</span></span>
+    <div class="page">
+        <div class="monitor">
+            <div class="panel waves">
+                <div class="wave-head"><span class="wave-name c-ecg">ECG  II</span><span class="vital-range">25 mm/s</span></div>
+                {% if portrait %}
+                <canvas id="waves_tall" width="424" height="430"></canvas>
+                {% else %}
+                <canvas id="waves_wide" width="512" height="330"></canvas>
+                {% endif %}
+                <div class="wave-head" style="margin-top: 4px;"><span class="wave-name c-spo2">PLETH</span><span class="vital-range">canvas + tiny-skia</span></div>
             </div>
-            <div class="vital-card">
-                <span class="vital-head">BLOOD OXYGEN</span>
-                <span class="vital-val" style="color: #00c6ff;">🫁 {{ spo2_pct }}%</span>
+            <div class="vitals">
+                <div class="vital">
+                    <div class="vital-head"><span class="vital-name c-ecg">HR</span><span class="vital-range">50 – 120</span></div>
+                    <div class="vital-row"><span class="vital-value c-ecg">{{ heart_rate_bpm }}</span><span class="vital-unit">bpm</span></div>
+                </div>
+                <div class="vital">
+                    <div class="vital-head"><span class="vital-name c-spo2">SpO2</span><span class="vital-range">90 – 100</span></div>
+                    <div class="vital-row"><span class="vital-value c-spo2">{{ spo2_pct }}</span><span class="vital-unit">%</span></div>
+                </div>
+                <div class="vital">
+                    <div class="vital-head"><span class="vital-name c-nibp">NIBP</span><span class="vital-range">mmHg</span></div>
+                    <div class="vital-row"><span class="vital-value c-nibp">{{ sys_bp }}/{{ dia_bp }}</span></div>
+                </div>
+                <div class="vital">
+                    <div class="vital-head"><span class="vital-name c-resp">RESP</span><span class="vital-range">8 – 30</span></div>
+                    <div class="vital-row"><span class="vital-value c-resp">{{ resp_rate }}</span><span class="vital-unit">rpm</span></div>
+                </div>
             </div>
-            <div class="vital-card last">
-                <span class="vital-head">BLOOD PRESSURE</span>
-                <span class="vital-val" style="color: #ffaa00;">🩸 {{ sys_bp }}/{{ dia_bp }}</span>
-            </div>
-        </div>
-
-        <div class="ecg-card">
-            <h2 style="font-size: 16px; color: #00ff88; margin: 0 0 15px 0;">📈 REAL-TIME ECG MONITOR (CANVAS API)</h2>
-            <canvas id="ecg_chart" width="720" height="200" class="ecg-canvas"></canvas>
         </div>
     </div>
     {% endif %}
 
-    <!-- TAB 4: CONTROLS & WIDGETS -->
+    <!-- ===================== CONTROLS ===================== -->
     {% if active_tab == 4 %}
-    <div class="widgets-container">
-        <div class="control-panel" style="margin-right: 20px;">
-            <h2>🎛️ INTERACTIVE CONTROLS</h2>
-
-            <div class="btn-simulate" data-on-click="increment_user_counter">
-                <span>➕ Increment Counter: {{ user_counter }}</span>
+    <div class="page">
+        <div class="gallery">
+            <div class="panel col">
+                <span class="panel-title">BUTTONS</span>
+                <div class="btn-stack">
+                    <div class="btn blue" data-on-click="increment_user_counter">Primary action</div>
+                    <div class="btn violet" data-on-click="increment_progress">Secondary</div>
+                    <div class="btn rose" data-on-click="reset_counter">Destructive</div>
+                    <div class="btn" data-on-click="increment_user_counter">Neutral</div>
+                </div>
+                <span class="panel-title" style="margin-top: 12px;">STEPPER</span>
+                <div class="stepper">
+                    <div class="step-btn" data-on-click="decrement_user_counter">−</div>
+                    <span class="step-value">{{ user_counter }}</span>
+                    <div class="step-btn" data-on-click="increment_user_counter">+</div>
+                </div>
             </div>
 
-            <div class="btn-add-user" data-on-click="increment_progress">
-                <span>⚡ Boost Load: {{ "{:.0}"|format(system_load_value) }}%</span>
+            <div class="panel col">
+                <span class="panel-title">TOGGLES</span>
+                <div class="switch-row" data-on-click="toggle_wifi">
+                    <div class="switch-label"><span class="switch-name">Wi-Fi</span><span class="switch-hint">{% if wifi %}connected{% else %}off{% endif %}</span></div>
+                    <div class="switch {% if wifi %}on{% endif %}"><div class="knob"></div></div>
+                </div>
+                <div class="switch-row" data-on-click="toggle_bluetooth">
+                    <div class="switch-label"><span class="switch-name">Bluetooth</span><span class="switch-hint">{% if bluetooth %}2 devices{% else %}off{% endif %}</span></div>
+                    <div class="switch {% if bluetooth %}on{% endif %}"><div class="knob"></div></div>
+                </div>
+                <div class="switch-row" data-on-click="toggle_auto_scale">
+                    <div class="switch-label"><span class="switch-name">Auto-scaling</span><span class="switch-hint">system tab</span></div>
+                    <div class="switch {% if auto_scale %}on{% endif %}"><div class="knob"></div></div>
+                </div>
+                <div class="switch-row" data-on-click="toggle_maintenance">
+                    <div class="switch-label"><span class="switch-name">Maintenance</span><span class="switch-hint">system tab</span></div>
+                    <div class="switch {% if maintenance_mode %}on{% endif %}"><div class="knob"></div></div>
+                </div>
             </div>
 
-            <h3>CONFIGURATIONS</h3>
-            <div class="config-checkbox-row" data-on-click="toggle_auto_scale">
-                <input type="checkbox" {% if auto_scale %}checked{% endif %}>
-                <span>🔥 Auto-Scaling</span>
-            </div>
-            <div class="config-checkbox-row last" data-on-click="toggle_maintenance">
-                <input type="checkbox" {% if maintenance_mode %}checked{% endif %}>
-                <span>🛡️ Maintenance Mode</span>
-            </div>
-        </div>
-
-        <div class="list-panel">
-            <h2>📊 METRICS & TELEMETRY SUMMARY</h2>
-            <div style="font-size: 15px; line-height: 2.0; color: #d0e0f0;">
-                <p>• System Load: <strong style="color: #00ff88;">{{ "{:.1}"|format(system_load_value) }}%</strong></p>
-                <p>• Vehicle Engine: <strong style="color: #00c6ff;">{% if engine_running %}Active ({{ "{:.0}"|format(speed_kmh) }} km/h){% else %}Stopped{% endif %}</strong></p>
-                <p>• Patient Heart Rate: <strong style="color: #ffaa00;">{{ heart_rate_bpm }} BPM</strong></p>
-                <p>• Active Users: <strong style="color: #ffffff;">{{ user_counter }}</strong></p>
+            <div class="panel col">
+                <span class="panel-title">VOLUME</span>
+                <div class="dial-wrap">
+                    <div class="dial">
+                        <div class="dial-ring" style="background: conic-gradient(from 180deg, #7c3aed 0%, #f472b6 {{ self.volume_pct() }}%, #1a2234 {{ self.volume_pct() }}%);"></div>
+                        <div class="dial-hole">
+                            <span class="dial-value">{{ self.volume_pct() }}</span>
+                            <span class="dial-unit">PERCENT</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="segments">
+                    {% for seg in self.volume_segments() %}
+                    <div class="seg {% if seg.on %}on{% endif %}"></div>
+                    {% endfor %}
+                </div>
+                <div class="controls" style="margin-top: 10px;">
+                    <div class="btn" data-on-click="volume_down" style="width: 60px;">−</div>
+                    <div class="btn violet" data-on-click="volume_up" style="width: 60px;">+</div>
+                </div>
             </div>
         </div>
     </div>
     {% endif %}
-
 </div>
