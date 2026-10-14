@@ -266,6 +266,26 @@ fn target_names(target: &Target<'_>, names: &mut HashSet<String>) {
     }
 }
 
+/// Whether the siblings right before/after `handle` are `{{ }}` placeholders.
+fn adjacent_exprs(handle: &Handle) -> (bool, bool) {
+    let Some(parent) = handle.parent.take() else {
+        return (false, false);
+    };
+    handle.parent.set(Some(parent.clone()));
+    let Some(parent) = parent.upgrade() else {
+        return (false, false);
+    };
+    let siblings = parent.children.borrow();
+    let Some(pos) = siblings.iter().position(|s| std::rc::Rc::ptr_eq(s, handle)) else {
+        return (false, false);
+    };
+    let is_expr = |node: Option<&Handle>| match node.map(|n| &n.data) {
+        Some(NodeData::Element { attrs, .. }) => attrs.borrow().iter().any(|a| a.name.local.as_ref() == "expr-id"),
+        _ => false,
+    };
+    (is_expr(pos.checked_sub(1).and_then(|p| siblings.get(p))), is_expr(siblings.get(pos + 1)))
+}
+
 fn get_node_children(handle: &Handle) -> Vec<Handle> {
     if let NodeData::Element { name, template_contents, .. } = &handle.data {
         if name.local.as_ref() == "template" {
@@ -1517,8 +1537,15 @@ fn compile_dom_node<'a>(
             if trimmed.is_empty() {
                 return quote! {};
             }
+            // Text and `{{ }}` values become separate boxes, so collapse the
+            // whitespace between them to one space instead of dropping it:
+            // `core {{ n }}` must not render as "core0".
+            let (expr_before, expr_after) = adjacent_exprs(handle);
+            let lead = if expr_before && text.starts_with(char::is_whitespace) { " " } else { "" };
+            let trail = if expr_after && text.ends_with(char::is_whitespace) { " " } else { "" };
+            let text = format!("{}{}{}", lead, trimmed, trail);
             quote! {
-                builder.append_text_node(measurer, parent, &parent_style, #trimmed);
+                builder.append_text_node(measurer, parent, &parent_style, #text);
             }
         }
         _ => quote! {},

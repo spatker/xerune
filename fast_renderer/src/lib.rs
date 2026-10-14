@@ -229,8 +229,13 @@ impl<'a> TextMeasurer for FastMeasurer<'a> {
                     if gy + gh > max_y { max_y = gy + gh; }
                 }
 
-                let width = if max_x > min_x { max_x - min_x } else { 0.0 };
-                
+                let mut width = if max_x > min_x { max_x - min_x } else { 0.0 };
+                // Ink bounds ignore a trailing space, but it must still
+                // separate this text from whatever box follows.
+                if text.ends_with(' ') {
+                    width += ttf_fonts[font_index].metrics(' ', font_size).advance_width;
+                }
+
                 let height = if let Some(metrics) = ttf_fonts[font_index].horizontal_line_metrics(font_size) {
                     metrics.new_line_size
                 } else {

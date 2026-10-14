@@ -294,7 +294,14 @@ impl UiBuilder {
         current_style.animation_fill_mode = Arc::from("none");
         current_style.animation_play_state = Arc::from("running");
 
-        let normalized = super::normalize_text(text);
+        let mut normalized = super::normalize_text(text);
+        // Text beside a `{{ }}` value is its own box: keep one edge space so
+        // the two don't run together. Whitespace-only text has no content.
+        let lead = text.starts_with(char::is_whitespace);
+        let trail = text.ends_with(char::is_whitespace);
+        if (lead || trail) && !normalized.is_empty() {
+            normalized = Cow::Owned(format!("{}{}{}", if lead { " " } else { "" }, normalized, if trail { " " } else { "" }));
+        }
         let (width, height) = measurer.measure_text(&normalized, current_style.font_size, current_style.weight);
         let text_layout_style = Style {
             size: Size { width: Dimension::length(width), height: Dimension::length(height) },
