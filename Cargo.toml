@@ -40,6 +40,8 @@ linuxfb = ["dep:linuxfb", "dep:libc", "std"]
 evdev = ["dep:evdev", "dep:libc", "std"]
 winit = ["dep:winit", "dep:softbuffer", "std"]
 browser = ["dep:wasm-bindgen", "dep:serde", "dep:serde_json", "std"]
+# Embed the ~10 MB NotoColorEmoji font in the examples for color emoji.
+emoji = []
 
 [dependencies]
 xerune_derive = { version = "0.1.0", path = "xerune_derive" }

@@ -102,7 +102,7 @@ See [`examples/todo/templates/todo_list.html`](examples/todo/templates/todo_list
 ```bash
 cargo run --release --example todo
 cargo run --release --example music_player
-cargo run --release --example showcase
+cargo run --release --example showcase --features emoji   # embeds the color emoji font (~10 MB)
 cargo run --release --example responsive   # resize the window to see @media / vw adaptation
 ```
 

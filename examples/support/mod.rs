@@ -65,11 +65,15 @@ where
     let roboto_regular = fontdue::Font::from_bytes(font_data, fontdue::FontSettings::default()).unwrap();
     let font_data_bold = include_bytes!("../../resources/fonts/Roboto-Bold.ttf") as &[u8];
     let roboto_bold = fontdue::Font::from_bytes(font_data_bold, fontdue::FontSettings::default()).unwrap();
-    let font_data_emoji = include_bytes!("../../resources/fonts/NotoColorEmoji.ttf") as &[u8];
     let emoji_font_stub = fontdue::Font::from_bytes(font_data, fontdue::FontSettings::default()).unwrap();
 
     let fonts = vec![roboto_regular, roboto_bold, emoji_font_stub];
-    let font_bytes: &'static [&'static [u8]] = Box::leak(Box::new(vec![font_data, font_data_bold, font_data_emoji]));
+    #[allow(unused_mut)]
+    let mut font_bytes = vec![font_data, font_data_bold];
+    // The color emoji font is ~10 MB; only embed it when asked to.
+    #[cfg(feature = "emoji")]
+    font_bytes.push(include_bytes!("../../resources/fonts/NotoColorEmoji.ttf") as &[u8]);
+    let font_bytes: &'static [&'static [u8]] = Box::leak(Box::new(font_bytes));
     let fonts_ref: &'static [fontdue::Font] = Box::leak(Box::new(fonts));
 
     let mut caches = RenderCaches::new();
