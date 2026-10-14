@@ -25,6 +25,41 @@ pub enum TextAlign {
     Right,
 }
 
+/// CSS `line-height`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum LineHeight {
+    /// From the font's metrics.
+    Normal,
+    /// A multiple of the font size; inherited as the multiple.
+    Number(f32),
+    /// An absolute height in pixels.
+    Length(f32),
+    /// A percentage of the font size, as a fraction. Inherited as the
+    /// resulting length (see [`LineHeight::inherited`]).
+    Percent(f32),
+}
+
+impl LineHeight {
+    /// The value a child inherits from an element with `font_size`:
+    /// percentages compute to a length on the element that sets them.
+    pub fn inherited(self, font_size: f32) -> Self {
+        match self {
+            LineHeight::Percent(p) => LineHeight::Length(p * font_size),
+            other => other,
+        }
+    }
+
+    /// Line height in pixels, given the font's `normal` line height.
+    pub fn resolve(self, font_size: f32, normal: f32) -> f32 {
+        match self {
+            LineHeight::Normal => normal,
+            LineHeight::Number(n) => n * font_size,
+            LineHeight::Length(px) => px,
+            LineHeight::Percent(p) => p * font_size,
+        }
+    }
+}
+
 /// Text direction.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Direction {
@@ -163,6 +198,8 @@ pub struct ContainerStyle {
     pub display: Display,
     /// Text horizontal alignment.
     pub text_align: Option<TextAlign>,
+    /// Height of a line of text.
+    pub line_height: LineHeight,
     /// Ordering index within a Flexbox layout.
     pub order: i32,
     /// Text writing direction.
@@ -247,6 +284,7 @@ impl Default for ContainerStyle {
             overflow: Overflow::Visible,
             display: Display::Block,
             text_align: None,
+            line_height: LineHeight::Normal,
             order: 0,
             direction: Direction::Ltr,
             writing_mode: WritingMode::HorizontalTb,

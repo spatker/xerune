@@ -744,6 +744,53 @@ fn todo_list_scrolls_in_portrait() {
     assert!(bottom <= 800.5, "scroll container ends at {bottom}px, below the 800px window");
 }
 
+mod text_layout {
+    use std::collections::HashMap;
+    use xerune::*;
+
+    /// 8px per character, 16px tall lines.
+    struct CharMeasurer;
+    impl TextMeasurer for CharMeasurer {
+        fn measure_text(&self, text: &str, _font_size: f32, _weight: u16) -> (f32, f32) {
+            (text.chars().count() as f32 * 8.0, 16.0)
+        }
+    }
+
+    #[derive(XeruneTemplate)]
+    #[template(path = "tests/line_height.html")]
+    struct LineHeights;
+    impl Model for LineHeights {
+        type Message = String;
+        fn update(&mut self, _msg: String, _context: &mut Context) {}
+    }
+
+    fn line_y(commands: &[DrawCommand], text: &str) -> f32 {
+        commands
+            .iter()
+            .find_map(|c| match c {
+                DrawCommand::DrawText { text: t, rect, .. } if t == text => Some(rect.y),
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("no line {text:?}"))
+    }
+
+    #[test]
+    fn line_height_spaces_wrapped_lines() {
+        let mut rt = Runtime::new(LineHeights, CharMeasurer);
+        crate::set_size(&mut rt, 400.0, 600.0);
+        let commands = rt.ui.build_commands(&HashMap::new(), None);
+        let gap = |first: &str, second: &str| line_y(&commands, second) - line_y(&commands, first);
+        // A number multiplies the font size; normal here is 16px.
+        assert_eq!(gap("aaaa bbbb", "cccc"), 32.0);
+        // A percentage is inherited as the length it computed to (30px), not
+        // re-applied to the child's 20px font.
+        assert_eq!(gap("dddd eeee", "ffff"), 30.0);
+        // `font: <size>/<line-height>`, from a stylesheet and inline.
+        assert_eq!(gap("gggg hhhh", "iiii"), 25.0);
+        assert_eq!(gap("jjjj kkkk", "llll"), 15.0);
+    }
+}
+
 mod known_gaps {
     //! Things the engine gets wrong today. Each test describes the correct
     //! (browser) behavior and is ignored with a FIXME until it is fixed:

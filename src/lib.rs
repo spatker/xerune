@@ -70,7 +70,7 @@ pub use graphics::{Color, Gradient, LinearGradient, RadialGradient, RadialShape,
 pub use images::{Image, ImageStatus, ImageStore};
 #[cfg(feature = "std")]
 pub use images::{DefaultImageLoader, ImageError, ImageLoader};
-pub use style::{Overflow, ContainerStyle, RenderData, Display, TextAlign, Direction, WritingMode, FlexDirection, FlexWrap, AlignContent, AlignItems, CssJustifyContent, Position, BoxSizing};
+pub use style::{Overflow, ContainerStyle, RenderData, Display, TextAlign, LineHeight, Direction, WritingMode, FlexDirection, FlexWrap, AlignContent, AlignItems, CssJustifyContent, Position, BoxSizing};
 pub use model::{Model, InputEvent, XeruneMessage, NoMessage};
 pub use ui::{Interaction, Ui, TemplateLayout, UiBuilder};
 #[cfg(feature = "std")]

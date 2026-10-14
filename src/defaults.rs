@@ -57,6 +57,8 @@ pub fn get_default_style(tag: &str, parent_style: &ContainerStyle) -> StyleBundl
     let mut bundle = StyleBundle::default();
     bundle.container_style = parent_style.clone();
 
+    bundle.container_style.line_height = parent_style.line_height.inherited(parent_style.font_size);
+
     // Reset non-inherited CSS properties
     bundle.container_style.background_color = None;
     bundle.container_style.background_gradient = None;

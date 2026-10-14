@@ -960,6 +960,20 @@ struct MediaRuleSet {
     guard: Option<proc_macro2::TokenStream>,
 }
 
+/// `simplecss` cuts a value off at `/` and loses the rest of the rule, so the
+/// `/` of `/<number>` (the line-height in `font: 14px/1.4`) becomes U+2044
+/// FRACTION SLASH, which the runtime's `font` parser accepts. Mirrors
+/// `xerune::css::rewrite_for_simplecss`.
+fn protect_slashes(css: &str) -> String {
+    let mut out = String::with_capacity(css.len());
+    let mut chars = css.chars().peekable();
+    while let Some(c) = chars.next() {
+        let before_number = chars.peek().is_some_and(|n| n.is_ascii_digit() || *n == '.');
+        out.push(if c == '/' && before_number { '\u{2044}' } else { c });
+    }
+    out
+}
+
 /// Splits stylesheet text into `(query, css)` regions; `query == None` marks
 /// top-level rules. Mirrors `xerune::css::media::split_segments` semantics
 /// (kept as a standalone copy because proc-macro crates cannot depend on
@@ -1904,7 +1918,7 @@ fn expand_template(input: &DeriveInput, template: &TemplateRef) -> proc_macro2::
     for (query, text) in &media_pieces {
         keyframes_css.push_str(text);
         keyframes_css.push('\n');
-        let sheet_text: &'static str = Box::leak(text.clone().into_boxed_str());
+        let sheet_text: &'static str = Box::leak(protect_slashes(text).into_boxed_str());
         let sheet = simplecss::StyleSheet::parse(sheet_text);
         let guard = match query {
             None => None,

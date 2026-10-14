@@ -908,8 +908,8 @@ fn shape_texts(render_data: &NodeMap<RenderData>, measurer: &impl TextMeasurer) 
 }
 
 /// Height of one line of `paragraph`.
-fn line_height(paragraph: &Arc<crate::text::ShapedText>, _style: &ContainerStyle) -> f32 {
-    paragraph.metrics.normal_line_height()
+fn line_height(paragraph: &Arc<crate::text::ShapedText>, style: &ContainerStyle) -> f32 {
+    style.line_height.resolve(style.font_size, paragraph.metrics.normal_line_height())
 }
 
 /// Taffy measure function for a text leaf: CSS min/max-content widths, and
@@ -945,8 +945,9 @@ fn push_text_lines(
 ) {
     let line_h = line_height(paragraph, style);
     let m = paragraph.metrics;
-    // Half the leading goes above the text (CSS 2 10.8.1).
-    let baseline = (line_h - (m.ascent + m.descent)) / 2.0 + m.ascent;
+    // Half the leading goes above the text (CSS 2 10.8.1), floored like
+    // Chromium so odd leading puts the extra pixel below.
+    let baseline = ((line_h - (m.ascent + m.descent)) / 2.0).floor() + m.ascent;
     let glyphs = &paragraph.glyphs;
     let byte = |i: u32| glyphs.get(i as usize).map_or(text.len(), |g| g.cluster as usize);
     for (i, line) in lines.iter().enumerate() {

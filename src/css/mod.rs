@@ -18,10 +18,15 @@ use taffy::prelude::*;
 use taffy::style::Style;
 use crate::alloc_prelude::*;
 
+/// Stands in for `/` in values that pass through `simplecss` (U+2044 FRACTION
+/// SLASH, which never occurs in CSS).
+const SLASH: char = '\u{2044}';
+
 /// Rewrites a stylesheet into something `simplecss` can match against the
 /// classes the DOM builder adds: `:nth-child(N)` becomes `.nth-child-N` and
-/// `:last-child` becomes `.last-child`. `/<number>` (e.g. the line-height part
-/// of a `font` shorthand) is dropped.
+/// `:last-child` becomes `.last-child`. `simplecss` cuts a value off at `/`
+/// and loses the rest of the rule, so the `/` of `/<number>` (the line-height
+/// of a `font` shorthand) becomes [`SLASH`].
 #[cfg(feature = "std")]
 pub(crate) fn rewrite_for_simplecss(css: &str) -> String {
     const NTH: &str = ":nth-child(";
@@ -51,10 +56,8 @@ pub(crate) fn rewrite_for_simplecss(css: &str) -> String {
         out.push_str(&rest[..pos]);
         let after = &rest[pos + 1..];
         let num = after.len() - after.trim_start_matches(|c: char| c.is_ascii_digit() || c == '.').len();
-        if num == 0 {
-            out.push('/');
-        }
-        rest = &after[num..];
+        out.push(if num == 0 { '/' } else { SLASH });
+        rest = after;
     }
     out.push_str(rest);
     out
@@ -173,6 +176,27 @@ pub fn parse_inline_style(style_str: &str, current_style: &mut ContainerStyle, t
     }
 }
 
+/// Parses a `line-height` value. Negative values are invalid.
+fn parse_line_height(val: &str) -> Option<crate::style::LineHeight> {
+    use crate::style::LineHeight;
+    let val = val.trim();
+    let lh = if val == "normal" {
+        LineHeight::Normal
+    } else if let Ok(n) = val.parse::<f32>() {
+        LineHeight::Number(n)
+    } else if let Some(p) = val.strip_suffix('%') {
+        LineHeight::Percent(p.trim().parse::<f32>().ok()? / 100.0)
+    } else if let Some(em) = val.strip_suffix("em").filter(|v| !v.ends_with('r')) {
+        LineHeight::Percent(em.trim().parse().ok()?)
+    } else {
+        LineHeight::Length(parse_px(val)?)
+    };
+    match lh {
+        LineHeight::Number(v) | LineHeight::Length(v) | LineHeight::Percent(v) if v < 0.0 => None,
+        lh => Some(lh),
+    }
+}
+
 /// Applies a list of `(property, value)` declarations in order.
 pub fn apply_declarations(declarations: &[(&str, &str)], current_style: &mut ContainerStyle, taffy_style: &mut Style) {
     for (prop, val) in declarations {
@@ -240,14 +264,24 @@ pub fn apply_declaration(prop: &str, val: &str, current_style: &mut ContainerSty
             }
         }
         "font" => {
+            // The shorthand resets line-height unless it gives one (`14px/1.4`).
+            current_style.line_height = crate::style::LineHeight::Normal;
             let parts: Vec<&str> = val.split_whitespace().collect();
             for part in parts {
-                let subparts: Vec<&str> = part.split('/').collect();
+                let subparts: Vec<&str> = part.split(['/', SLASH]).collect();
                 if let Some(size) = parse_px(subparts[0]) {
                     current_style.font_size = size;
+                    if let Some(lh) = subparts.get(1).and_then(|v| parse_line_height(v)) {
+                        current_style.line_height = lh;
+                    }
                 } else if subparts[0] == "bold" {
                     current_style.weight = 1;
                 }
+            }
+        }
+        "line-height" => {
+            if let Some(lh) = parse_line_height(val) {
+                current_style.line_height = lh;
             }
         }
         "box-shadow" => {
@@ -830,9 +864,14 @@ mod tests {
     }
 
     #[test]
-    fn rewrite_for_simplecss_drops_slash_numbers() {
-        assert_eq!(rewrite_for_simplecss("font: 16px/1.5 sans"), "font: 16px sans");
-        assert_eq!(rewrite_for_simplecss("a/b /2/3."), "a/b ");
+    fn rewrite_for_simplecss_protects_slash_numbers() {
+        assert_eq!(rewrite_for_simplecss("font: 16px/1.5 sans"), "font: 16px\u{2044}1.5 sans");
+        assert_eq!(rewrite_for_simplecss("a/b /2/3."), "a/b \u{2044}2\u{2044}3.");
         assert_eq!(rewrite_for_simplecss("x/"), "x/");
+        // The whole rule survives simplecss.
+        let css = rewrite_for_simplecss("p { font: 16px/1.5 sans; color: red; }");
+        let sheet = simplecss::StyleSheet::parse(&css);
+        assert_eq!(sheet.rules[0].declarations.len(), 2);
     }
 }
+
