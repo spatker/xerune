@@ -57,18 +57,23 @@
              justify-content: center; align-items: center; margin-right: 12px; flex-shrink: 0; }
     .check.done { border: 2px solid #f472b6; background: linear-gradient(135deg, #f472b6 0%, #8b5cf6 100%); }
     .check-dot { width: 8px; height: 8px; border-radius: 4px; background-color: #ffffff; }
-    .text { flex-grow: 1; font-size: 16px; color: #ece9f6; }
+    .text { flex-grow: 1; flex-basis: 0px; min-width: 0px; margin-right: 10px; font-size: 16px; color: #ece9f6; }
     .text.done { color: #5f567f; }
-    .tag { display: flex; font-size: 11px; font-weight: bold; padding: 4px 9px; border-radius: 8px; margin-right: 10px;
+    .tag { display: flex; flex-shrink: 0; font-size: 11px; font-weight: bold; padding: 4px 9px; border-radius: 8px; margin-right: 10px;
            color: #c4b5fd; background-color: rgba(139,92,246,0.15); }
     .tag.home { color: #67e8f9; background-color: rgba(34,211,238,0.12); }
     .tag.fun { color: #fda4af; background-color: rgba(244,63,94,0.13); }
-    .remove { display: flex; width: 28px; height: 28px; border-radius: 8px; justify-content: center; align-items: center;
+    .remove { display: flex; flex-shrink: 0; width: 28px; height: 28px; border-radius: 8px; justify-content: center; align-items: center;
               font-size: 18px; color: #6b6290; background-color: rgba(255,255,255,0.04); }
 
     .empty { display: flex; flex-direction: column; align-items: center; margin-top: 60px; }
     .empty-big { font-size: 22px; font-weight: bold; color: #ffffff; }
     .empty-small { font-size: 13px; color: #8b80b0; margin-top: 6px; }
+
+    /* Very narrow windows: drop the chips before titles collide with them. */
+    @media (max-width: 460px) {
+        .tag { display: none; }
+    }
 
     /* ---------- portrait (480x800): sidebar becomes a header strip ---------- */
     @media (orientation: portrait) {
