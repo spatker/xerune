@@ -433,6 +433,20 @@ impl ElementStyle {
         }
     }
 
+    /// Like [`ElementStyle::new`] for an `<input>` with a literal `type`:
+    /// starts from that widget's defaults so matched CSS can override them.
+    #[inline(never)]
+    pub fn new_input(input_type: &str, parent_style: &crate::style::ContainerStyle) -> Self {
+        let mut el = Self::new("input", parent_style);
+        if let Some(key) = crate::defaults::input_defaults_key(input_type) {
+            let defaults = crate::defaults::get_default_style(key, parent_style);
+            el.layout = defaults.taffy_style;
+            el.style = defaults.container_style;
+            el.parsed.element_type = defaults.element_type;
+        }
+        el
+    }
+
     /// Applies matched CSS `(property, value)` declarations.
     #[inline(never)]
     pub fn apply(&mut self, declarations: &[(&str, &str)]) {

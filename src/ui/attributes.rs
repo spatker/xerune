@@ -204,18 +204,21 @@ pub fn parse_attributes_generic<'a>(
             },
             "style" => css::parse_inline_style(value, current_style, layout_style),
             "type" if tag == "input" => {
-                if value == "checkbox" {
-                    parsed.element_type = defaults::ElementType::Checkbox;
-                    layout_style.size = Size { width: length(20.0), height: length(20.0) };
-                    layout_style.margin = taffy::geometry::Rect { left: length(5.0), right: length(5.0), top: length(0.0), bottom: length(0.0) };
-                } else if value == "range" {
-                    parsed.element_type = defaults::ElementType::Slider;
-                    layout_style.size = Size { width: length(100.0), height: length(20.0) };
-                } else if value == "text" {
-                    let text_defaults = defaults::get_default_style("input_text", current_style);
-                    parsed.element_type = text_defaults.element_type;
-                    *layout_style = text_defaults.taffy_style;
-                    *current_style = text_defaults.container_style;
+                // Compiled templates with a literal `type` start from these
+                // defaults (`ElementStyle::new_input`) so CSS can override
+                // them; only a dynamic `type` still needs them applied here.
+                if let Some(key) = defaults::input_defaults_key(value) {
+                    let type_defaults = defaults::get_default_style(key, current_style);
+                    if parsed.element_type != type_defaults.element_type {
+                        parsed.element_type = type_defaults.element_type;
+                        if value == "text" {
+                            *layout_style = type_defaults.taffy_style;
+                            *current_style = type_defaults.container_style;
+                        } else {
+                            layout_style.size = type_defaults.taffy_style.size;
+                            layout_style.margin = type_defaults.taffy_style.margin;
+                        }
+                    }
                 }
             },
             "value" => {

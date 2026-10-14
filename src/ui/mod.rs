@@ -709,11 +709,14 @@ fn traverse_layout(
 
                 if let Some(t) = text {
                     if !t.is_empty() {
+                        // Inset by the left padding and center one line vertically.
+                        let pad_x = if style.padding_left > 0.0 { style.padding_left } else { 8.0 };
+                        let line_h = style.font_size * 1.2;
                         let text_rect = Rect {
-                            x: rect.x + 8.0,
-                            y: rect.y + 5.0,
-                            width: rect.width - 16.0,
-                            height: rect.height - 10.0,
+                            x: rect.x + pad_x,
+                            y: rect.y + ((rect.height - line_h) * 0.5).max(0.0),
+                            width: (rect.width - 2.0 * pad_x).max(0.0),
+                            height: line_h.min(rect.height),
                         };
                         commands.push(DrawCommand::DrawText {
                             text: t.clone(),

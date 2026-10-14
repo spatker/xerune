@@ -1505,6 +1505,16 @@ fn compile_dom_node<'a>(
                 }
             }
 
+            // A literal input `type` picks the widget defaults up front, so
+            // the CSS rules below apply on top of them.
+            let static_input_type = attrs.borrow().iter()
+                .find(|a| tag == "input" && a.name.local.as_ref() == "type" && !a.value.contains("{{") && !a.value.contains("{%"))
+                .map(|a| a.value.to_string());
+            let element_style = match static_input_type {
+                Some(input_type) => quote! { ::xerune::ui::ElementStyle::new_input(#input_type, &parent_style) },
+                None => quote! { ::xerune::ui::ElementStyle::new(#tag, &parent_style) },
+            };
+
             let mut child_compilation = Vec::new();
             for child in get_node_children(handle).iter() {
                 child_compilation.push(compile_dom_node(child, rulesets, local_vars, dynamic_exprs, dynamic_loops, dynamic_ifs));
@@ -1517,7 +1527,7 @@ fn compile_dom_node<'a>(
                         #(#static_attrs,)*
                         #(#dynamic_attrs),*
                     ];
-                    let mut el = ::xerune::ui::ElementStyle::new(#tag, &parent_style);
+                    let mut el = #element_style;
                     // Match and apply CSS rules
                     #(#rule_applications)*
                     let node = builder.begin_element(&mut el, parent, attrs_slice, message_validator);

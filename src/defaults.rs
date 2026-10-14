@@ -21,6 +21,17 @@ pub enum ElementType {
     TextInput,
 }
 
+/// The [`get_default_style`] key for `<input type="...">`, if the type has
+/// its own widget.
+pub fn input_defaults_key(input_type: &str) -> Option<&'static str> {
+    match input_type {
+        "text" => Some("input_text"),
+        "checkbox" => Some("input_checkbox"),
+        "range" => Some("input_range"),
+        _ => None,
+    }
+}
+
 /// A structure bundling taffy layout Style, ContainerStyle and ElementType.
 pub struct StyleBundle {
     /// The Taffy layout style mapping.
@@ -235,6 +246,18 @@ pub fn get_default_style(tag: &str, parent_style: &ContainerStyle) -> StyleBundl
             bundle.container_style.border_radius = 4.0;
             bundle.container_style.border_width = 1.0;
             bundle.container_style.border_color = Some(crate::Color::from_rgba8(200, 200, 200, 255));
+        }
+        "input_checkbox" => {
+            bundle.element_type = ElementType::Checkbox;
+            bundle.taffy_style.size = Size { width: length(20.0), height: length(20.0) };
+            bundle.taffy_style.margin = taffy::geometry::Rect {
+                left: length(5.0), right: length(5.0),
+                top: length(0.0), bottom: length(0.0)
+            };
+        }
+        "input_range" => {
+            bundle.element_type = ElementType::Slider;
+            bundle.taffy_style.size = Size { width: length(100.0), height: length(20.0) };
         }
         "canvas" => {
             bundle.element_type = ElementType::Canvas;
