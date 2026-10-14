@@ -193,7 +193,7 @@ Unsupported **tags** fall back to a generic inline-block box (with a one-time wa
 
 ## 4. Responsive Design
 
-A single template adapts to any screen size using standard CSS building blocks, plus a small Rust-side API. See `examples/responsive` for a complete dashboard demo (resize the window to watch the layout switch).
+A single template adapts to any screen size using standard CSS building blocks, plus a small Rust-side API. `examples/showcase` targets an 800x480 panel, switches to a portrait (480x800) layout with an `orientation` media query, and uses `on_resize` to pick a canvas size. Resize the window, or render headlessly with `XERUNE_SNAPSHOT=out.png XERUNE_SNAPSHOT_SIZE=480x800`, to see the switch.
 
 ### Media Queries
 
