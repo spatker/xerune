@@ -237,6 +237,9 @@ pub struct ContainerStyle {
     pub overflow_wrap: crate::text::WordBreak,
     /// `word-break: break-all`.
     pub word_break_all: bool,
+    /// `text-overflow: ellipsis`. On a text node: its parent clips and
+    /// asked for an ellipsis.
+    pub text_overflow_ellipsis: bool,
     /// Ordering index within a Flexbox layout.
     pub order: i32,
     /// Text writing direction.
@@ -325,6 +328,7 @@ impl Default for ContainerStyle {
             white_space: WhiteSpace::Normal,
             overflow_wrap: crate::text::WordBreak::Normal,
             word_break_all: false,
+            text_overflow_ellipsis: false,
             order: 0,
             direction: Direction::Ltr,
             writing_mode: WritingMode::HorizontalTb,

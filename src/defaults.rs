@@ -68,6 +68,7 @@ pub fn get_default_style(tag: &str, parent_style: &ContainerStyle) -> StyleBundl
     bundle.container_style.border_color = None;
     bundle.container_style.border_bottom_only = false;
     bundle.container_style.overflow = crate::Overflow::Visible;
+    bundle.container_style.text_overflow_ellipsis = false;
     bundle.container_style.order = 0;
     bundle.container_style.flex_direction = FlexDirection::Row;
     bundle.container_style.flex_wrap = FlexWrap::NoWrap;

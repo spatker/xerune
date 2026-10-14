@@ -1,7 +1,6 @@
 use taffy::prelude::*;
 use crate::style::{ContainerStyle, RenderData, BoxSizing, Display, CssJustifyContent, TextAlign, Direction, AlignItems, AlignSelf, AlignContent};
 #[cfg(feature = "std")]
-use crate::style::Overflow;
 #[cfg(feature = "std")]
 use crate::graphics::TextMeasurer;
 #[cfg(feature = "std")]
@@ -211,21 +210,7 @@ pub(crate) fn resolve_styles(
     };
 
     if meta.tag == "#text" {
-        let mut current_style = parent_style;
-        current_style.background_color = None;
-        current_style.background_gradient = None;
-        current_style.border_width = 0.0;
-        current_style.border_radius = 0.0;
-        current_style.border_color = None;
-        current_style.overflow = Overflow::Visible;
-        current_style.animation_name = None;
-        current_style.animation_duration = 0.0;
-        current_style.animation_timing_function = std::sync::Arc::from("ease");
-        current_style.animation_delay = 0.0;
-        current_style.animation_iteration_count = crate::style::AnimationIterationCount::Count(1.0);
-        current_style.animation_direction = std::sync::Arc::from("normal");
-        current_style.animation_fill_mode = std::sync::Arc::from("none");
-        current_style.animation_play_state = std::sync::Arc::from("running");
+        let current_style = super::text_style(&parent_style);
 
         if let Some(ref text) = meta.text {
             let normalized = super::collapse_white_space(text, current_style.white_space);

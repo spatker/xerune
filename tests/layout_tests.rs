@@ -937,6 +937,45 @@ mod text_layout {
         assert_eq!(line_y(&commands, "line") - line_y(&commands, "blank"), 32.0);
     }
 
+    #[derive(XeruneTemplate)]
+    #[template(path = "tests/text/ellipsis.html")]
+    struct Ellipsis;
+    impl Model for Ellipsis {
+        type Message = String;
+        fn update(&mut self, _msg: String, _context: &mut Context) {}
+    }
+
+    #[test]
+    fn text_overflow_ellipsis() {
+        let mut rt = Runtime::new(Ellipsis, CharMeasurer);
+        crate::set_size(&mut rt, 400.0, 300.0);
+        let texts: Vec<(String, f32)> = rt
+            .ui
+            .build_commands(&HashMap::new(), None)
+            .into_iter()
+            .filter_map(|c| match c {
+                DrawCommand::DrawText { text, rect, .. } => Some((text, rect.x)),
+                _ => None,
+            })
+            .collect();
+        let texts: Vec<(&str, f32)> = texts.iter().map(|(t, x)| (t.as_str(), *x)).collect();
+        assert_eq!(
+            texts,
+            [
+                // 8px characters and ellipsis: 11 characters + "…" fit in 100px.
+                ("abcdefghijk", 0.0),
+                ("\u{2026}", 88.0),
+                // Without overflow: hidden there is nothing to cut.
+                ("qrstuvwxyzqrstuv", 0.0),
+                // Text directly in a clipping flex container is cut to it,
+                // though the anonymous flex item itself is wider.
+                ("ABCDEFGHIJK", 0.0),
+                ("\u{2026}", 88.0),
+                ("short", 0.0),
+            ]
+        );
+    }
+
     #[test]
     fn line_height_spaces_wrapped_lines() {
         let mut rt = Runtime::new(LineHeights, CharMeasurer);

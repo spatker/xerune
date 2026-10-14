@@ -287,22 +287,7 @@ impl UiBuilder {
         parent_style: &crate::style::ContainerStyle,
         text: &str,
     ) {
-        let mut current_style = parent_style.clone();
-        current_style.background_color = None;
-        current_style.background_gradient = None;
-        current_style.box_shadow = None;
-        current_style.border_width = 0.0;
-        current_style.border_radius = 0.0;
-        current_style.border_color = None;
-        current_style.overflow = crate::Overflow::Visible;
-        current_style.animation_name = None;
-        current_style.animation_duration = 0.0;
-        current_style.animation_timing_function = Arc::from("ease");
-        current_style.animation_delay = 0.0;
-        current_style.animation_iteration_count = crate::style::AnimationIterationCount::Count(1.0);
-        current_style.animation_direction = Arc::from("normal");
-        current_style.animation_fill_mode = Arc::from("none");
-        current_style.animation_play_state = Arc::from("running");
+        let current_style = super::text_style(parent_style);
 
         // The derive passes whole runs of text and `{{ }}` values, so the
         // spaces between pieces are inside `text`.

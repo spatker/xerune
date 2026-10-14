@@ -298,6 +298,11 @@ pub fn apply_declaration(prop: &str, val: &str, current_style: &mut ContainerSty
             }
             _ => {}
         },
+        "text-overflow" => match val.trim() {
+            "clip" => current_style.text_overflow_ellipsis = false,
+            "ellipsis" => current_style.text_overflow_ellipsis = true,
+            _ => {}
+        },
         "white-space" => {
             use crate::style::WhiteSpace;
             current_style.white_space = match val.trim() {

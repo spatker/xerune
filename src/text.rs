@@ -136,6 +136,9 @@ pub struct Line {
     pub end: u32,
     /// Advance of the visible glyphs.
     pub width: f32,
+    /// The line was cut short and an ellipsis follows it (see
+    /// [`ShapedText::truncate`]).
+    pub ellipsis: bool,
 }
 
 impl ShapedText {
@@ -261,7 +264,7 @@ impl ShapedText {
         // there: otherwise they separate it from whatever comes next on the
         // line (`core {{ n }}`).
         if line.end > line.start || !line.emitted {
-            emit(Line { start: line.start, end: line.end, width: line.width });
+            emit(Line { start: line.start, end: line.end, width: line.width, ellipsis: false });
         }
     }
 
@@ -278,6 +281,30 @@ impl ShapedText {
         Segment { end, width, trailing: if space { width } else { 0.0 }, forced: seg.forced && end == seg.end }
     }
 
+    /// `line` if it fits in `max_width`; otherwise its longest start that
+    /// fits together with an ellipsis `ellipsis_width` wide, cut between
+    /// graphemes (CSS `text-overflow: ellipsis`).
+    pub fn truncate(&self, line: Line, max_width: f32, ellipsis_width: f32) -> Line {
+        if line.width <= max_width + EPSILON {
+            return line;
+        }
+        let budget = max_width - ellipsis_width;
+        let (mut end, mut width) = (line.start, 0.0);
+        while end < line.end {
+            let mut next = end + 1;
+            while next < line.end && self.flags[next as usize] & GLYPH_JOINED != 0 {
+                next += 1;
+            }
+            let w: f32 = self.glyphs[end as usize..next as usize].iter().map(|g| g.advance).sum();
+            if width + w > budget + EPSILON {
+                break;
+            }
+            width += w;
+            end = next;
+        }
+        Line { start: line.start, end, width, ellipsis: true }
+    }
+
     /// A line ending at a break: its trailing spaces hang, so they neither
     /// count nor get drawn.
     fn wrapped_line(&self, start: u32, end: u32, width: f32, trailing: f32) -> Line {
@@ -287,7 +314,7 @@ impl ShapedText {
             visible_end -= 1;
             hanging -= self.glyphs[visible_end as usize].advance;
         }
-        Line { start, end: visible_end, width: width - trailing }
+        Line { start, end: visible_end, width: width - trailing, ellipsis: false }
     }
 }
 
@@ -358,6 +385,18 @@ mod tests {
         let g = &p.glyphs;
         let byte = |i: u32| g.get(i as usize).map_or(text.len(), |g| g.cluster as usize);
         p.lines(max_width, WordBreak::Normal).iter().map(|l| &text[byte(l.start)..byte(l.end)]).collect()
+    }
+
+    #[test]
+    fn truncate_makes_room_for_the_ellipsis() {
+        let p = paragraph("abcdefgh");
+        let line = p.lines(f32::INFINITY, WordBreak::Normal)[0];
+        assert_eq!(p.truncate(line, 100.0, 10.0), line, "fits: unchanged");
+        // 50px: four letters and a 10px ellipsis.
+        let cut = p.truncate(line, 50.0, 10.0);
+        assert_eq!((cut.start, cut.end, cut.width, cut.ellipsis), (0, 4, 40.0, true));
+        // Not even the ellipsis fits: nothing of the text is left.
+        assert_eq!(p.truncate(line, 5.0, 10.0).end, 0);
     }
 
     #[test]
@@ -466,6 +505,6 @@ mod tests {
     #[test]
     fn empty_text_has_one_empty_line() {
         let p = paragraph("");
-        assert_eq!(p.lines(100.0, WordBreak::Normal), [Line { start: 0, end: 0, width: 0.0 }]);
+        assert_eq!(p.lines(100.0, WordBreak::Normal), [Line { start: 0, end: 0, width: 0.0, ellipsis: false }]);
     }
 }

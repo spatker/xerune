@@ -1,0 +1,11 @@
+<style>
+    body { margin: 0; }
+    .clip { width: 100px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    .visible { width: 100px; white-space: nowrap; text-overflow: ellipsis; }
+    .flex { display: flex; width: 100px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    .fits { width: 200px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+</style>
+<div class="clip">abcdefghijklmnop</div>
+<div class="visible">qrstuvwxyzqrstuv</div>
+<div class="flex">ABCDEFGHIJKLMNOP</div>
+<div class="fits">short</div>

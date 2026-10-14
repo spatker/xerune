@@ -85,6 +85,8 @@ pub struct Ui {
     pub paragraphs: NodeMap<Arc<crate::text::ShapedText>>,
     /// Lines of every text node at its laid out width.
     pub text_lines: NodeMap<Vec<crate::text::Line>>,
+    /// The shaped "…" of text nodes with `text-overflow: ellipsis`.
+    pub ellipses: NodeMap<Arc<crate::text::ShapedText>>,
 }
 
 impl Ui {
@@ -143,7 +145,7 @@ impl Ui {
             _ => None,
         });
 
-        let paragraphs = shape_texts(&render_data, measurer);
+        let (paragraphs, ellipses) = shape_texts(&render_data, measurer);
         Ok(Self {
             taffy,
             render_data,
@@ -157,6 +159,7 @@ impl Ui {
             body,
             paragraphs,
             text_lines: NodeMap::new(),
+            ellipses,
         })
     }
 
@@ -311,7 +314,7 @@ impl Ui {
         }
 
         let (html, body) = (builder.html, builder.body);
-        let paragraphs = {
+        let (paragraphs, ellipses) = {
             profile!("shape_texts");
             shape_texts(&builder.render_data, measurer)
         };
@@ -329,6 +332,7 @@ impl Ui {
             body,
             paragraphs,
             text_lines: NodeMap::new(),
+            ellipses,
         })
     }
 
@@ -452,7 +456,7 @@ impl Ui {
                 let _ = self.taffy.set_style(self.root, style);
             }
         }
-        let Ui { taffy, render_data, paragraphs, text_lines, root, .. } = self;
+        let Ui { taffy, render_data, paragraphs, text_lines, ellipses, root, .. } = self;
         taffy.compute_layout_with_measure(*root, available_space, |known, available, node, _, _| {
             match (paragraphs.get(node), render_data.get(node)) {
                 (Some(paragraph), Some(RenderData::Text(_, style))) => measure_paragraph(paragraph, style, known, available),
@@ -462,9 +466,23 @@ impl Ui {
         // Break at the unrounded width: the one the text was measured at.
         text_lines.clear();
         for (node, paragraph) in paragraphs.iter() {
-            let width = taffy.unrounded_layout(node).content_box_width();
+            let layout = taffy.unrounded_layout(node);
+            let width = layout.content_box_width();
             let Some(RenderData::Text(_, style)) = render_data.get(node) else { continue };
-            text_lines.insert(node, paragraph.lines(wrap_width(style, width), style.word_break()));
+            let mut lines = paragraph.lines(wrap_width(style, width), style.word_break());
+            if let Some(ellipsis) = ellipses.get(node) {
+                // Lines must fit the clipping parent, which a text leaf can
+                // be wider than (an anonymous flex item, say).
+                let parent_room = taffy
+                    .parent(node)
+                    .map(|p| taffy.unrounded_layout(p))
+                    .map_or(f32::INFINITY, |p| p.content_box_width() + p.padding.left + p.border.left - layout.location.x);
+                let room = width.min(parent_room);
+                for line in &mut lines {
+                    *line = paragraph.truncate(*line, room, ellipsis.width());
+                }
+            }
+            text_lines.insert(node, lines);
         }
         Ok(())
     }
@@ -492,6 +510,7 @@ impl Ui {
             &self.render_data,
             &self.paragraphs,
             &self.text_lines,
+            &self.ellipses,
             &self.scroll_offsets,
             0.0,
             0.0,
@@ -755,6 +774,7 @@ fn traverse_layout(
     render_data: &NodeMap<RenderData>,
     paragraphs: &NodeMap<Arc<crate::text::ShapedText>>,
     text_lines: &NodeMap<Vec<crate::text::Line>>,
+    ellipses: &NodeMap<Arc<crate::text::ShapedText>>,
     scroll_offsets: &NodeMap<(f32, f32)>,
     offset_x: f32,
     offset_y: f32,
@@ -821,7 +841,7 @@ fn traverse_layout(
         match data {
             RenderData::Text(text, style) => {
                 if let (Some(paragraph), Some(lines)) = (paragraphs.get(root), text_lines.get(root)) {
-                    push_text_lines(commands, text, style, paragraph, lines, rect);
+                    push_text_lines(commands, text, style, paragraph, lines, ellipses.get(root), rect);
                 }
             },
             RenderData::Image(src, style) => {
@@ -929,13 +949,37 @@ fn traverse_layout(
 
     if let Ok(children) = taffy.children(root) {
         for child in children {
-            traverse_layout(taffy, child, render_data, paragraphs, text_lines, scroll_offsets, child_offset_x, child_offset_y, commands, focused_id, canvas_source);
+            traverse_layout(taffy, child, render_data, paragraphs, text_lines, ellipses, scroll_offsets, child_offset_x, child_offset_y, commands, focused_id, canvas_source);
         }
     }
 
     if overflow != Overflow::Visible {
         commands.push(DrawCommand::PopClip);
     }
+}
+
+/// Style of a text node in an element styled `parent_style`: the
+/// inherited text properties, without the parent's box decorations.
+pub(crate) fn text_style(parent_style: &ContainerStyle) -> ContainerStyle {
+    let mut style = parent_style.clone();
+    style.background_color = None;
+    style.background_gradient = None;
+    style.box_shadow = None;
+    style.border_width = 0.0;
+    style.border_radius = 0.0;
+    style.border_color = None;
+    // An ellipsis needs the parent to clip what overflows.
+    style.text_overflow_ellipsis = parent_style.text_overflow_ellipsis && parent_style.overflow != Overflow::Visible;
+    style.overflow = Overflow::Visible;
+    style.animation_name = None;
+    style.animation_duration = 0.0;
+    style.animation_timing_function = Arc::from("ease");
+    style.animation_delay = 0.0;
+    style.animation_iteration_count = crate::style::AnimationIterationCount::Count(1.0);
+    style.animation_direction = Arc::from("normal");
+    style.animation_fill_mode = Arc::from("none");
+    style.animation_play_state = Arc::from("running");
+    style
 }
 
 /// Layout style of a text leaf whose parent has `parent_style` (the text's
@@ -955,15 +999,23 @@ pub(crate) fn text_leaf_style(parent_style: &ContainerStyle) -> Style {
     style
 }
 
-/// Shapes the text of every text node.
-fn shape_texts(render_data: &NodeMap<RenderData>, measurer: &impl TextMeasurer) -> NodeMap<Arc<crate::text::ShapedText>> {
+/// Shaped text node contents, by node.
+type ShapedTexts = NodeMap<Arc<crate::text::ShapedText>>;
+
+/// Shapes the text of every text node, and the "…" of those that may need
+/// one.
+fn shape_texts(render_data: &NodeMap<RenderData>, measurer: &impl TextMeasurer) -> (ShapedTexts, ShapedTexts) {
     let mut paragraphs = NodeMap::new();
+    let mut ellipses = NodeMap::new();
     for (node, data) in render_data.iter() {
         if let RenderData::Text(text, style) = data {
             paragraphs.insert(node, measurer.shape(text, style.font_size, style.weight));
+            if style.text_overflow_ellipsis {
+                ellipses.insert(node, measurer.shape("\u{2026}", style.font_size, style.weight));
+            }
         }
     }
-    paragraphs
+    (paragraphs, ellipses)
 }
 
 /// Height of one line of `paragraph`.
@@ -1000,13 +1052,15 @@ fn measure_paragraph(
     Size { width, height }
 }
 
-/// Emits one `DrawText` per line of a laid out text node at `rect`.
+/// Emits one `DrawText` per line of a laid out text node at `rect`, plus
+/// one for each line's ellipsis.
 fn push_text_lines(
     commands: &mut Vec<DrawCommand>,
     text: &str,
     style: &ContainerStyle,
     paragraph: &Arc<crate::text::ShapedText>,
     lines: &[crate::text::Line],
+    ellipsis: Option<&Arc<crate::text::ShapedText>>,
     rect: Rect,
 ) {
     let line_h = line_height(paragraph, style);
@@ -1014,38 +1068,69 @@ fn push_text_lines(
     // Half the leading goes above the text (CSS 2 10.8.1), floored like
     // Chromium so odd leading puts the extra pixel below.
     let baseline = ((line_h - (m.ascent + m.descent)) / 2.0).floor() + m.ascent;
-    let glyphs = &paragraph.glyphs;
     for (i, line) in lines.iter().enumerate() {
-        if line.end <= line.start {
-            continue;
-        }
-        // From the first glyph's character to the end of the last glyph's,
-        // leaving out newlines and hanging spaces.
-        let start = glyphs[line.start as usize].cluster as usize;
-        let last = glyphs[line.end as usize - 1].cluster as usize;
-        let end = last + text[last..].chars().next().map_or(0, char::len_utf8);
+        let ellipsis = ellipsis.filter(|_| line.ellipsis);
+        let ellipsis_width = ellipsis.map_or(0.0, |e| e.width());
+        let y = rect.y + i as f32 * line_h;
         // Lines too wide for the box stay at the start edge.
-        let free = (rect.width - line.width).max(0.0);
+        let free = (rect.width - line.width - ellipsis_width).max(0.0);
         let offset = match style.text_align {
             Some(crate::style::TextAlign::Center) => free / 2.0,
             Some(crate::style::TextAlign::Right) => free,
             _ => 0.0,
         };
-        commands.push(DrawCommand::DrawText {
-            text: text[start..end].to_string(),
-            rect: Rect { x: rect.x + offset, y: rect.y + i as f32 * line_h, width: line.width, height: line_h },
-            color: style.color,
-            font_size: style.font_size,
-            weight: style.weight,
-            run: Some(crate::text::GlyphRun {
-                shaped: paragraph.clone(),
-                start: line.start,
-                end: line.end,
-                text_start: start as u32,
-                baseline,
-            }),
-        });
+        if line.end > line.start {
+            push_line(commands, text, style, paragraph, line, Rect { x: rect.x + offset, y, width: line.width, height: line_h }, baseline);
+        }
+        if let Some(ellipsis) = ellipsis {
+            commands.push(DrawCommand::DrawText {
+                text: "\u{2026}".to_string(),
+                rect: Rect { x: rect.x + offset + line.width, y, width: ellipsis_width, height: line_h },
+                color: style.color,
+                font_size: style.font_size,
+                weight: style.weight,
+                run: Some(crate::text::GlyphRun {
+                    shaped: ellipsis.clone(),
+                    start: 0,
+                    end: ellipsis.glyphs.len() as u32,
+                    text_start: 0,
+                    baseline,
+                }),
+            });
+        }
     }
+}
+
+/// Emits the `DrawText` of one line of `paragraph`.
+fn push_line(
+    commands: &mut Vec<DrawCommand>,
+    text: &str,
+    style: &ContainerStyle,
+    paragraph: &Arc<crate::text::ShapedText>,
+    line: &crate::text::Line,
+    rect: Rect,
+    baseline: f32,
+) {
+    let glyphs = &paragraph.glyphs;
+    // From the first glyph's character to the end of the last glyph's,
+    // leaving out newlines and hanging spaces.
+    let start = glyphs[line.start as usize].cluster as usize;
+    let last = glyphs[line.end as usize - 1].cluster as usize;
+    let end = last + text[last..].chars().next().map_or(0, char::len_utf8);
+    commands.push(DrawCommand::DrawText {
+        text: text[start..end].to_string(),
+        rect,
+        color: style.color,
+        font_size: style.font_size,
+        weight: style.weight,
+        run: Some(crate::text::GlyphRun {
+            shaped: paragraph.clone(),
+            start: line.start,
+            end: line.end,
+            text_start: start as u32,
+            baseline,
+        }),
+    });
 }
 
 /// Recursively traverses children nodes to hit-test a point against layout boundaries.
