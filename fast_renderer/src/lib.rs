@@ -11,6 +11,7 @@ pub mod rounded_rect;
 use fontdue::Font;
 use xerune::{DrawCommand, Rect, RenderResources, Renderer, TextMeasurer};
 use xerune::alloc_prelude::*;
+use xerune::text::{LineMetrics, ShapedGlyph, ShapedText};
 
 use blitter::{pack_color, blend_solid_rect, blend_pixel, blend_glyph_span, div_255, calc_pixel_index};
 use rounded_rect::{draw_rounded_rect, draw_rounded_border, draw_box_shadow};
@@ -165,6 +166,134 @@ impl BoundedMeasureCache {
 thread_local! {
     static MEASURE_CACHE: std::cell::RefCell<BoundedMeasureCache> =
         std::cell::RefCell::new(BoundedMeasureCache::new(MAX_MEASURE_CACHE_ENTRIES));
+    static SHAPE_CACHE: std::cell::RefCell<ShapeCache> =
+        std::cell::RefCell::new(ShapeCache::new(MAX_SHAPE_CACHE_ENTRIES));
+}
+
+/// How many shaped runs [`FastMeasurer::shape`] keeps, oldest evicted first.
+/// Every text run of a view is shaped on each rebuild, so this should exceed
+/// the number of distinct runs on screen.
+///
+/// Configurable at compile time via `FAST_RENDERER_MAX_SHAPE_CACHE` (default:
+/// 1024). Set to 0 to disable.
+#[cfg(feature = "std")]
+pub const MAX_SHAPE_CACHE_ENTRIES: usize =
+    parse_usize_opt(option_env!("FAST_RENDERER_MAX_SHAPE_CACHE"), 1024);
+
+/// Font source marker for color emoji glyphs in a [`ShapedText`]; their id is
+/// meaningless and the renderer looks the character up by cluster instead.
+pub const EMOJI_FONT: u16 = u16::MAX;
+
+#[cfg(feature = "std")]
+struct ShapeCache {
+    entries: HashMap<String, Vec<(u32, u16, Arc<ShapedText>)>>,
+    order: std::collections::VecDeque<String>,
+    max_entries: usize,
+}
+
+#[cfg(feature = "std")]
+impl ShapeCache {
+    fn new(max_entries: usize) -> Self {
+        Self { entries: HashMap::new(), order: std::collections::VecDeque::new(), max_entries }
+    }
+
+    fn get(&self, text: &str, font_size_bits: u32, weight: u16) -> Option<Arc<ShapedText>> {
+        self.entries
+            .get(text)?
+            .iter()
+            .find(|(sz, wt, _)| *sz == font_size_bits && *wt == weight)
+            .map(|(_, _, shaped)| shaped.clone())
+    }
+
+    fn insert(&mut self, text: &str, font_size_bits: u32, weight: u16, shaped: Arc<ShapedText>) {
+        if self.max_entries == 0 {
+            return;
+        }
+        if let Some(list) = self.entries.get_mut(text) {
+            list.push((font_size_bits, weight, shaped));
+            return;
+        }
+        if self.entries.len() >= self.max_entries {
+            if let Some(oldest) = self.order.pop_front() {
+                self.entries.remove(&oldest);
+            }
+        }
+        self.order.push_back(text.to_string());
+        self.entries.insert(text.to_string(), vec![(font_size_bits, weight, shaped)]);
+    }
+}
+
+#[cfg(feature = "std")]
+pub fn shape_cache_len() -> usize {
+    SHAPE_CACHE.with(|cache| cache.borrow().entries.len())
+}
+
+/// Font metrics rounded to whole pixels, as browsers do, so lines start on
+/// pixel boundaries.
+fn rounded_metrics(ascent: f32, descent: f32, line_gap: f32) -> LineMetrics {
+    LineMetrics { ascent: ascent.round(), descent: descent.round(), line_gap: line_gap.round() }
+}
+
+impl<'a> FastMeasurer<'a> {
+    fn shape_uncached(&self, text: &str, font_size: f32, weight: u16) -> ShapedText {
+        let mut shaped = ShapedText::default();
+        match &self.fonts {
+            #[cfg(feature = "std")]
+            FontSource::Ttf(ttf_fonts) => {
+                let Some(font_index) = ttf_font_index(ttf_fonts, weight) else {
+                    return shaped;
+                };
+                let font = &ttf_fonts[font_index];
+                if let Some(m) = font.horizontal_line_metrics(font_size) {
+                    shaped.metrics = rounded_metrics(m.ascent, -m.descent, m.line_gap);
+                }
+                for (i, c) in text.char_indices() {
+                    if c == '\u{fe0f}' {
+                        continue;
+                    }
+                    let id = font.lookup_glyph_index(c);
+                    let advance = if c.is_control() { 0.0 } else { font.metrics_indexed(id, font_size).advance_width };
+                    // Characters the font lacks are drawn as color emoji when
+                    // an emoji font is available (see the renderer), a bit
+                    // wider than the font's missing-glyph box.
+                    let (font, advance) = if is_emoji(c, id) {
+                        (EMOJI_FONT, advance + font_size * 0.85)
+                    } else {
+                        (font_index as u16, advance)
+                    };
+                    shaped.glyphs.push(ShapedGlyph { cluster: i as u32, font, id, advance });
+                }
+            }
+            FontSource::Bitmap(bitmap_fonts) => {
+                let Some(font) = find_best_bitmap_font(bitmap_fonts, font_size, weight) else {
+                    return shaped;
+                };
+                shaped.metrics = LineMetrics { ascent: font.line_height, descent: 0.0, line_gap: 0.0 };
+                for (i, c) in text.char_indices() {
+                    let (id, advance) = match font.glyphs.binary_search_by_key(&c, |g| g.character) {
+                        Ok(idx) => (idx as u16, font.glyphs[idx].x_advance as f32),
+                        Err(_) => (u16::MAX, 0.0),
+                    };
+                    shaped.glyphs.push(ShapedGlyph { cluster: i as u32, font: 0, id, advance });
+                }
+            }
+        }
+        shaped
+    }
+}
+
+#[cfg(feature = "std")]
+fn ttf_font_index(fonts: &[Font], weight: u16) -> Option<usize> {
+    match fonts.len() {
+        0 => None,
+        1 => Some(0),
+        _ => Some(if weight > 0 { 1 } else { 0 }),
+    }
+}
+
+#[cfg(feature = "std")]
+fn is_emoji(c: char, glyph_index: u16) -> bool {
+    (c as u32) >= 0x2000 || glyph_index == 0
 }
 
 #[cfg(feature = "std")]
@@ -173,6 +302,22 @@ pub fn measure_cache_len() -> usize {
 }
 
 impl<'a> TextMeasurer for FastMeasurer<'a> {
+    fn shape(&self, text: &str, font_size: f32, weight: u16) -> Arc<ShapedText> {
+        profile!("text_shape");
+        #[cfg(feature = "std")]
+        {
+            let size_bits = font_size.to_bits();
+            if let Some(shaped) = SHAPE_CACHE.with(|cache| cache.borrow().get(text, size_bits, weight)) {
+                return shaped;
+            }
+            let shaped = Arc::new(self.shape_uncached(text, font_size, weight));
+            SHAPE_CACHE.with(|cache| cache.borrow_mut().insert(text, size_bits, weight, shaped.clone()));
+            shaped
+        }
+        #[cfg(not(feature = "std"))]
+        Arc::new(self.shape_uncached(text, font_size, weight))
+    }
+
     fn measure_text(&self, text: &str, font_size: f32, weight: u16) -> (f32, f32) {
         profile!("text_measure");
         if text.trim().is_empty() {
@@ -474,6 +619,10 @@ impl<'a> TextMeasurer for FastRenderer<'a> {
     fn measure_text(&self, text: &str, font_size: f32, weight: u16) -> (f32, f32) {
         let measurer = FastMeasurer { fonts: self.fonts };
         measurer.measure_text(text, font_size, weight)
+    }
+
+    fn shape(&self, text: &str, font_size: f32, weight: u16) -> Arc<ShapedText> {
+        FastMeasurer { fonts: self.fonts }.shape(text, font_size, weight)
     }
 }
 
@@ -1539,5 +1688,52 @@ mod tests {
         assert!(w > 0.0);
         assert!(h > 0.0);
         assert_eq!(measure_cache_len(), MAX_MEASURE_CACHE_ENTRIES);
+    }
+
+    fn roboto() -> Vec<Font> {
+        let regular = include_bytes!("../../resources/fonts/Roboto-Regular.ttf") as &[u8];
+        let bold = include_bytes!("../../resources/fonts/Roboto-Bold.ttf") as &[u8];
+        vec![
+            Font::from_bytes(regular, fontdue::FontSettings::default()).unwrap(),
+            Font::from_bytes(bold, fontdue::FontSettings::default()).unwrap(),
+        ]
+    }
+
+    #[test]
+    fn shape_uses_fractional_advances() {
+        let fonts = roboto();
+        let measurer = FastMeasurer { fonts: (&fonts).into() };
+        let text = "The quick brown fox jumps over the lazy dog";
+        let shaped = measurer.shape(text, 14.0, 0);
+        assert_eq!(shaped.glyphs.len(), text.chars().count());
+        // Chromium lays this out 276.36px wide with Roboto 14px; rounding
+        // every advance up would make it 293px.
+        assert!((shaped.width() - 276.4).abs() < 1.0, "width {}", shaped.width());
+        let m = shaped.metrics;
+        // Chromium: `line-height: normal` is 16px for Roboto 14px.
+        assert_eq!((m.ascent, m.descent, m.line_gap), (13.0, 3.0, 0.0));
+        assert!(shaped.glyphs.windows(2).all(|w| w[0].cluster < w[1].cluster));
+        assert_ne!(measurer.shape(text, 14.0, 1).glyphs[0].font, shaped.glyphs[0].font);
+    }
+
+    #[test]
+    fn shape_is_cached() {
+        let fonts = roboto();
+        let measurer = FastMeasurer { fonts: (&fonts).into() };
+        let a = measurer.shape("cached run", 15.0, 0);
+        let b = measurer.shape("cached run", 15.0, 0);
+        assert!(Arc::ptr_eq(&a, &b));
+        assert!(!Arc::ptr_eq(&a, &measurer.shape("cached run", 16.0, 0)));
+    }
+
+    #[test]
+    fn shape_bitmap_fonts() {
+        let fonts: &[xerune::font::BitmapFont] = &[xerune::font::DEFAULT_ROBOTO_REGULAR];
+        let measurer = FastMeasurer { fonts: fonts.into() };
+        let shaped = measurer.shape("Hi you", 14.0, 0);
+        let font = &fonts[0];
+        let expected: f32 = "Hi you".chars().map(|c| font.lookup_glyph(c).unwrap().x_advance as f32).sum();
+        assert_eq!(shaped.width(), expected);
+        assert_eq!(shaped.metrics.normal_line_height(), font.line_height);
     }
 }

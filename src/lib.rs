@@ -52,6 +52,8 @@ pub mod runtime;
 
 /// CSS parsers and animation utilities.
 pub mod css;
+/// Shaped text runs and line layout.
+pub mod text;
 /// Global viewport (screen) size state and breakpoint helpers.
 pub mod screen;
 /// Default styles for standard HTML element tags.

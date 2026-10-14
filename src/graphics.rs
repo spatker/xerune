@@ -430,6 +430,31 @@ impl DrawCommand {
 pub trait TextMeasurer {
     /// Measures the width and height of a string when rendered with specified font parameters.
     fn measure_text(&self, text: &str, font_size: f32, weight: u16) -> (f32, f32);
+
+    /// Shapes `text` into glyphs with advances, which layout breaks into
+    /// lines and renderers draw.
+    ///
+    /// The default treats every character as one glyph (id 0) as wide as
+    /// [`measure_text`](Self::measure_text) says, with the measured height
+    /// as ascent. That is enough for layout with measurers that have no
+    /// fonts; real renderers implement this to get glyph ids and kerning.
+    fn shape(&self, text: &str, font_size: f32, weight: u16) -> Arc<crate::text::ShapedText> {
+        let mut buf = [0u8; 4];
+        let glyphs = text
+            .char_indices()
+            .map(|(i, c)| crate::text::ShapedGlyph {
+                cluster: i as u32,
+                font: 0,
+                id: 0,
+                advance: self.measure_text(c.encode_utf8(&mut buf), font_size, weight).0,
+            })
+            .collect();
+        let ascent = self.measure_text("x", font_size, weight).1;
+        Arc::new(crate::text::ShapedText {
+            glyphs,
+            metrics: crate::text::LineMetrics { ascent, descent: 0.0, line_gap: 0.0 },
+        })
+    }
 }
 
 /// Read-only pixel resources a renderer may draw from. Renderers never load anything
