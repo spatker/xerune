@@ -261,6 +261,26 @@ pub fn parse_attributes_generic<'a>(
     }
 }
 
+/// Non-generic [`parse_attributes_generic`] for derive-generated templates,
+/// so each element in a template doesn't instantiate its own copy.
+pub fn parse_attribute_slice(
+    tag: &str,
+    attrs: &[(Cow<'static, str>, Cow<'_, str>)],
+    current_style: &mut ContainerStyle,
+    layout_style: &mut Style,
+    parsed: &mut ParsedAttributes,
+    message_validator: &dyn Fn(&str) -> bool,
+) {
+    parse_attributes_generic(
+        tag,
+        attrs.iter().map(|(k, v)| (k.as_ref(), v.as_ref())),
+        current_style,
+        layout_style,
+        parsed,
+        &message_validator,
+    );
+}
+
 #[cfg(feature = "dynamic-parser")]
 pub(crate) fn parse_attributes(
     tag: &str,

@@ -171,6 +171,13 @@ pub fn parse_inline_style(style_str: &str, current_style: &mut ContainerStyle, t
     }
 }
 
+/// Applies a list of `(property, value)` declarations in order.
+pub fn apply_declarations(declarations: &[(&str, &str)], current_style: &mut ContainerStyle, taffy_style: &mut Style) {
+    for (prop, val) in declarations {
+        apply_declaration(prop, val, current_style, taffy_style);
+    }
+}
+
 /// Applies a single CSS key-value declaration to the given styling structures.
 pub fn apply_declaration(prop: &str, val: &str, current_style: &mut ContainerStyle, taffy_style: &mut Style) {
     match prop {

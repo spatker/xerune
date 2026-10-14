@@ -232,6 +232,79 @@ impl UiBuilder {
             meta.children.push(child);
         }
     }
+
+    /// Parses `el`'s attributes, then creates its taffy node and appends it to
+    /// `parent`. Returns the new node; pass it and `el` to
+    /// [`finish_element`](Self::finish_element) once its children are built.
+    #[inline(never)]
+    pub fn begin_element(
+        &mut self,
+        el: &mut ElementStyle,
+        parent: NodeId,
+        attrs: &[(Cow<'static, str>, Cow<'_, str>)],
+        message_validator: &dyn Fn(&str) -> bool,
+    ) -> NodeId {
+        super::attributes::parse_attribute_slice(el.tag, attrs, &mut el.style, &mut el.layout, &mut el.parsed, message_validator);
+        let node = self.taffy.new_leaf(el.layout.clone()).unwrap();
+        self.append_child(parent, node);
+        node
+    }
+
+    /// Resolves `el`'s final style after its children have been appended.
+    #[inline(never)]
+    pub fn finish_element(&mut self, mut el: ElementStyle, node: NodeId, parent_style: &crate::style::ContainerStyle) {
+        super::style_resolution::finalize_node_style(
+            node,
+            el.tag,
+            parent_style,
+            &mut el.layout,
+            &mut el.style,
+            &el.parsed,
+            &mut self.taffy,
+            &mut self.render_data,
+            &mut self.interactions,
+            &mut self.base_styles,
+        );
+    }
+
+    /// Creates a text leaf styled from `parent_style` and appends it to
+    /// `parent`. Used by derive-generated templates; kept out of line so each
+    /// text node in a template doesn't inline its own copy.
+    pub fn append_text_node(
+        &mut self,
+        measurer: &impl crate::TextMeasurer,
+        parent: NodeId,
+        parent_style: &crate::style::ContainerStyle,
+        text: &str,
+    ) {
+        let mut current_style = parent_style.clone();
+        current_style.background_color = None;
+        current_style.background_gradient = None;
+        current_style.box_shadow = None;
+        current_style.border_width = 0.0;
+        current_style.border_radius = 0.0;
+        current_style.border_color = None;
+        current_style.overflow = crate::Overflow::Visible;
+        current_style.animation_name = None;
+        current_style.animation_duration = 0.0;
+        current_style.animation_timing_function = Arc::from("ease");
+        current_style.animation_delay = 0.0;
+        current_style.animation_iteration_count = crate::style::AnimationIterationCount::Count(1.0);
+        current_style.animation_direction = Arc::from("normal");
+        current_style.animation_fill_mode = Arc::from("none");
+        current_style.animation_play_state = Arc::from("running");
+
+        let normalized = super::normalize_text(text);
+        let (width, height) = measurer.measure_text(&normalized, current_style.font_size, current_style.weight);
+        let text_layout_style = Style {
+            size: Size { width: Dimension::length(width), height: Dimension::length(height) },
+            ..Style::default()
+        };
+        let node = self.taffy.new_leaf(text_layout_style.clone()).unwrap();
+        self.render_data.insert(node, RenderData::Text(normalized.into_owned(), current_style.clone()));
+        self.base_styles.insert(node, (text_layout_style, current_style));
+        self.append_child(parent, node);
+    }
 }
 
 #[cfg(feature = "std")]
@@ -324,5 +397,38 @@ impl<'a> simplecss::Element for TaffyElementWrapper<'a> {
             }
             _ => false,
         }
+    }
+}
+
+/// Style of a derive-generated template element while it is being built.
+///
+/// The element-building steps are out-of-line functions taking this bundle so
+/// that the generated `build_ui` doesn't inline style setup and drop glue for
+/// every element in the template.
+pub struct ElementStyle {
+    tag: &'static str,
+    layout: Style,
+    /// The element's computed style; its children inherit from this.
+    pub style: crate::style::ContainerStyle,
+    parsed: super::attributes::ParsedAttributes,
+}
+
+impl ElementStyle {
+    /// Starts from the default style of `tag`, inheriting from `parent_style`.
+    #[inline(never)]
+    pub fn new(tag: &'static str, parent_style: &crate::style::ContainerStyle) -> Self {
+        let defaults = crate::defaults::get_default_style(tag, parent_style);
+        Self {
+            tag,
+            layout: defaults.taffy_style,
+            style: defaults.container_style,
+            parsed: super::attributes::ParsedAttributes::new(defaults.element_type),
+        }
+    }
+
+    /// Applies matched CSS `(property, value)` declarations.
+    #[inline(never)]
+    pub fn apply(&mut self, declarations: &[(&str, &str)]) {
+        crate::css::apply_declarations(declarations, &mut self.style, &mut self.layout);
     }
 }

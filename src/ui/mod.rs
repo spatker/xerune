@@ -7,7 +7,7 @@ pub mod style_resolution;
 
 pub use node_map::{NodeMap, NodeMapIter, NodeMapValues};
 pub use metadata::NodeMetadata;
-pub use builder::UiBuilder;
+pub use builder::{ElementStyle, UiBuilder};
 #[cfg(feature = "std")]
 pub use style_resolution::{cache_config, stylesheet_cache_len};
 
