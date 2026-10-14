@@ -16,7 +16,18 @@ pub struct CalculatorModel {
     pub previous_value: Option<f64>,
     pub pending_operation: Option<String>,
     pub new_input: bool,
+    /// Most recent calculations first.
+    #[serde(default)]
+    pub history: Vec<HistoryEntry>,
 }
+
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+pub struct HistoryEntry {
+    pub expr: String,
+    pub result: String,
+}
+
+const HISTORY_LEN: usize = 4;
 
 impl Default for CalculatorModel {
     fn default() -> Self {
@@ -25,11 +36,49 @@ impl Default for CalculatorModel {
             previous_value: None,
             pending_operation: None,
             new_input: true,
+            history: Vec::new(),
         }
     }
 }
 
 impl CalculatorModel {
+    fn symbol(op: &str) -> &'static str {
+        match op {
+            "+" => "+",
+            "-" => "−",
+            "*" => "×",
+            "/" => "÷",
+            _ => "?",
+        }
+    }
+
+    /// The pending `a op` shown above the display.
+    pub fn expression(&self) -> String {
+        match (self.previous_value, &self.pending_operation) {
+            (Some(prev), Some(op)) => format!("{} {}", Self::format_result(prev), Self::symbol(op)),
+            _ => String::new(),
+        }
+    }
+
+    /// Highlights the operator waiting for its second operand.
+    pub fn pending(&self, op: &str) -> bool {
+        self.new_input && self.pending_operation.as_deref() == Some(op)
+    }
+
+    /// Shrink long numbers so up to 12 characters fit the display.
+    pub fn value_size(&self) -> u32 {
+        match self.display.len() {
+            0..=7 => 64,
+            8..=9 => 52,
+            _ => 40,
+        }
+    }
+
+    /// Nothing typed since the last clear: the clear key shows "AC".
+    pub fn is_fresh(&self) -> bool {
+        self.display == "0" && self.pending_operation.is_none()
+    }
+
     fn format_result(result: f64) -> String {
         if result.is_nan() {
             return "Error".to_string();
@@ -81,8 +130,11 @@ impl CalculatorModel {
                     }
                     _ => current,
                 };
+                let expr = format!("{} {} {}", Self::format_result(prev), Self::symbol(op), self.display);
                 self.display = Self::format_result(result);
                 self.previous_value = Some(result);
+                self.history.insert(0, HistoryEntry { expr, result: self.display.clone() });
+                self.history.truncate(HISTORY_LEN);
             }
         }
     }
@@ -95,6 +147,8 @@ pub enum Msg {
     Operation(String),
     Equals,
     Clear,
+    Negate,
+    Percent,
 }
 
 impl Model for CalculatorModel {
@@ -136,6 +190,19 @@ impl Model for CalculatorModel {
                 self.pending_operation = None;
                 self.new_input = true;
             }
+            Msg::Negate => {
+                if let Ok(v) = self.display.parse::<f64>() {
+                    if v != 0.0 {
+                        self.display = Self::format_result(-v);
+                    }
+                }
+            }
+            Msg::Percent => {
+                if let Ok(v) = self.display.parse::<f64>() {
+                    self.display = Self::format_result(v / 100.0);
+                    self.new_input = true;
+                }
+            }
             Msg::Clear => {
                 self.display = "0".to_string();
                 self.previous_value = None;
@@ -159,19 +226,19 @@ pub fn run_native(render_frame: impl FnMut(&mut Runtime<CalculatorModel, Measure
     )))]
     {
         use xerune::backend::Backend;
-        xerune::backend::WinitBackend::new().run("Xerune Calculator", 400, 500, runtime, render_frame, | _ | {})?
+        xerune::backend::WinitBackend::new().run("Xerune Calculator", 800, 480, runtime, render_frame, | _ | {})?
     }
 
     #[cfg(all(target_os = "linux", feature = "linuxfb", feature = "evdev", not(feature = "drm")))]
     {
         use xerune::backend::Backend;
-        xerune::backend::LinuxFbBackend::new().run("Xerune Calculator", 400, 500, runtime, render_frame, | _ | {})?;
+        xerune::backend::LinuxFbBackend::new().run("Xerune Calculator", 800, 480, runtime, render_frame, | _ | {})?;
     }
 
     #[cfg(all(target_os = "linux", feature = "drm", feature = "evdev"))]
     {
         use xerune::backend::Backend;
-        xerune::backend::DrmBackend::new().run("Xerune Calculator", 400, 500, runtime, render_frame, | _ | {})?;
+        xerune::backend::DrmBackend::new().run("Xerune Calculator", 800, 480, runtime, render_frame, | _ | {})?;
     }
 
     Ok(())
