@@ -736,3 +736,102 @@ fn todo_list_scrolls_in_portrait() {
     }
     assert!(bottom <= 800.5, "scroll container ends at {bottom}px, below the 800px window");
 }
+
+mod known_gaps {
+    //! Things the engine gets wrong today. Each test describes the correct
+    //! (browser) behavior and is ignored with a FIXME until it is fixed:
+    //! `cargo test -- --ignored` lists what is still broken. Remove the
+    //! `#[ignore]` together with the fix.
+    use std::collections::HashMap;
+    use xerune::*;
+
+    /// 8px per character, so long text really is long.
+    struct CharMeasurer;
+    impl TextMeasurer for CharMeasurer {
+        fn measure_text(&self, text: &str, _font_size: f32, _weight: u16) -> (f32, f32) {
+            (text.chars().count() as f32 * 8.0, 16.0)
+        }
+    }
+
+    macro_rules! gap_model {
+        ($name:ident, $path:literal) => {
+            #[derive(XeruneTemplate)]
+            #[template(path = $path)]
+            struct $name;
+            impl Model for $name {
+                type Message = String;
+                fn update(&mut self, _msg: String, _context: &mut Context) {}
+            }
+        };
+    }
+    gap_model!(TextWrap, "tests/gaps/text_wrap.html");
+    gap_model!(Placeholder, "tests/gaps/placeholder.html");
+    gap_model!(ImgShadow, "tests/gaps/img_shadow.html");
+    gap_model!(CanvasResize, "tests/gaps/canvas_resize.html");
+    gap_model!(Order, "tests/gaps/order.html");
+
+    fn runtime<M: Model + ui::TemplateLayout + 'static>(model: M, w: f32, h: f32) -> Runtime<M, CharMeasurer> {
+        let mut runtime = Runtime::new(model, CharMeasurer);
+        runtime.set_size(w, h);
+        runtime
+    }
+
+    fn text_rect(commands: &[DrawCommand], text: &str) -> Rect {
+        commands
+            .iter()
+            .find_map(|c| match c {
+                DrawCommand::DrawText { text: t, rect, .. } if t.contains(text) => Some(*rect),
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("no text {text:?}"))
+    }
+
+    #[test]
+    #[ignore = "FIXME: text never wraps; each run is one fixed-width line (fontdue measures single lines)"]
+    fn text_wraps_to_its_container() {
+        let rt = runtime(TextWrap, 400.0, 300.0);
+        let commands = rt.ui.build_commands(&HashMap::new(), None);
+        let lines: Vec<Rect> = commands
+            .iter()
+            .filter_map(|c| match c {
+                DrawCommand::DrawText { rect, .. } => Some(*rect),
+                _ => None,
+            })
+            .collect();
+        assert!(lines.iter().all(|r| r.width <= 100.0), "a line overflows the 100px box: {lines:?}");
+        assert!(lines.len() > 1, "expected the sentence on several lines");
+    }
+
+    #[test]
+    #[ignore = "FIXME: <input placeholder> is not supported"]
+    fn empty_input_shows_placeholder() {
+        let rt = runtime(Placeholder, 400.0, 300.0);
+        let commands = rt.ui.build_commands(&HashMap::new(), None);
+        text_rect(&commands, "Type here");
+    }
+
+    #[test]
+    #[ignore = "FIXME: <img> paints only the image, no box-shadow (or background/border)"]
+    fn image_box_shadow_is_drawn() {
+        let rt = runtime(ImgShadow, 400.0, 300.0);
+        let commands = rt.ui.build_commands(&HashMap::new(), None);
+        assert!(commands.iter().any(|c| matches!(c, DrawCommand::DrawBoxShadow { .. })));
+    }
+
+    #[test]
+    #[ignore = "FIXME: a canvas keeps the pixel size of its first layout"]
+    fn canvas_follows_its_layout_size() {
+        let mut rt = runtime(CanvasResize, 800.0, 480.0);
+        assert_eq!(rt.context().canvases["c"].width, 100);
+        rt.set_size(480.0, 800.0);
+        assert_eq!(rt.context().canvases["c"].width, 60);
+    }
+
+    #[test]
+    #[ignore = "FIXME: `order` is parsed but not applied in compiled templates"]
+    fn flex_order_reorders_items() {
+        let rt = runtime(Order, 400.0, 300.0);
+        let commands = rt.ui.build_commands(&HashMap::new(), None);
+        assert!(text_rect(&commands, "first").x < text_rect(&commands, "second").x);
+    }
+}

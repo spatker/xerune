@@ -23,7 +23,8 @@
     .eq { display: flex; flex-direction: row; align-items: flex-end; gap: 2px; width: 28px; height: 16px; justify-content: center; flex-shrink: 0; }
     .eq-bar { width: 3px; border-radius: 1px; }
 
-    /* Narrow windows: drop the album column before titles collide with it. */
+    /* FIXME: workaround for missing text wrapping (known_gaps::text_wraps_to_its_container).
+       Titles can't wrap, so narrow windows drop the album column instead. */
     @media (max-width: 640px) {
         .track-album { display: none; }
     }

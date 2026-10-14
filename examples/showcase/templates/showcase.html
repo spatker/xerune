@@ -47,7 +47,10 @@
     .btn.violet { background: linear-gradient(180deg, #8b5cf6 0%, #6d28d9 100%); border: 1px solid rgba(196,181,253,0.4);
                   box-shadow: 0px 4px 14px rgba(139,92,246,0.30); }
 
-    /* toggle switch built from two divs */
+    /* Toggle switch built from two divs.
+       FIXME: the built-in <input type="checkbox">, <input type="range"> and
+       <progress> draw with fixed grey colors that CSS can't change, so every
+       control in this file is built from divs instead. */
     .switch-row { display: flex; flex-direction: row; align-items: center; justify-content: space-between; padding: 7px 0; }
     .switch-label { display: flex; flex-direction: column; }
     .switch-name { font-size: 13px; color: #e6ebf5; }
@@ -378,6 +381,8 @@
         <div class="monitor">
             <div class="panel waves">
                 <div class="wave-head"><span class="wave-name c-ecg">ECG  II</span><span class="vital-range">25 mm/s</span></div>
+                <!-- FIXME: two canvases only because a canvas keeps its first layout size
+                     (known_gaps::canvas_follows_its_layout_size); one canvas sized by CSS should do. -->
                 {% if portrait %}
                 <canvas id="waves_tall" width="424" height="430"></canvas>
                 {% else %}

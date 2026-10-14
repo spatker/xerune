@@ -41,6 +41,8 @@
 <div class="view player-view" style="left: {{ player_x }}px;{% if transition_progress == 0.0 %} display: none;{% endif %}">
     <div class="art-col">
         <div data-on-click="back" class="back"><div class="ico-tri-left"></div><span>Library</span></div>
+        <!-- FIXME: wrapper only because <img> ignores box-shadow
+             (known_gaps::image_box_shadow_is_drawn). -->
         <div class="art-glow" style="box-shadow: 0px 18px 50px {{ current_track.accent }}55;">
             <img src="{{ current_track.cover_url }}" class="cover art" />
         </div>

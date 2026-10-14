@@ -53,6 +53,8 @@ impl Service {
 pub struct ShowcaseModel {
     pub active_tab: usize, // 1 = System, 2 = Vehicle, 3 = Monitor, 4 = Controls
     /// Set from the viewport in `on_resize`; picks the monitor canvas size.
+    /// FIXME: only needed because a canvas keeps its first layout size
+    /// (known_gaps::canvas_follows_its_layout_size).
     #[serde(default)]
     pub portrait: bool,
 

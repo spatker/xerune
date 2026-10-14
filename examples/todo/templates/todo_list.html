@@ -70,7 +70,8 @@
     .empty-big { font-size: 22px; font-weight: bold; color: #ffffff; }
     .empty-small { font-size: 13px; color: #8b80b0; margin-top: 6px; }
 
-    /* Very narrow windows: drop the chips before titles collide with them. */
+    /* FIXME: workaround for missing text wrapping (known_gaps::text_wraps_to_its_container).
+       Titles can't wrap, so in very narrow windows they would run over the chips. */
     @media (max-width: 460px) {
         .tag { display: none; }
     }
@@ -117,6 +118,8 @@
             <input type="text" id="todo_input" value="{{ new_item_title }}" class="todo-input">
             <div data-on-click="add" class="add-btn">Add task</div>
         </div>
+        <!-- FIXME: stand-in for <input placeholder>, which isn't supported
+             (known_gaps::empty_input_shows_placeholder). -->
         <span class="hint">Click the field to type · Enter adds · arrow keys move · Enter toggles</span>
 
         <div class="todo-list">
