@@ -284,7 +284,7 @@
                         <span class="svc-name">{{ svc.name }}</span>
                         <span class="svc-detail">{{ svc.detail }}</span>
                     </div>
-                    <div class="chip {% if svc.ok %}ok{% endif %} {% if svc.warn %}warn{% endif %}">{{ svc.state }}</div>
+                    <div class="chip {% if svc.tone == "ok" %}ok{% endif %} {% if svc.tone == "warn" %}warn{% endif %}">{{ svc.state }}</div>
                 </div>
                 {% endfor %}
             </div>
@@ -451,16 +451,16 @@
                 <span class="panel-title">VOLUME</span>
                 <div class="dial-wrap">
                     <div class="dial">
-                        <div class="dial-ring" style="background: conic-gradient(from 180deg, #7c3aed 0%, #f472b6 {{ self.volume_pct() }}%, #1a2234 {{ self.volume_pct() }}%);"></div>
+                        <div class="dial-ring" style="background: conic-gradient(from 180deg, #7c3aed 0%, #f472b6 {{ volume * 10 }}%, #1a2234 {{ volume * 10 }}%);"></div>
                         <div class="dial-hole">
-                            <span class="dial-value">{{ self.volume_pct() }}</span>
+                            <span class="dial-value">{{ volume * 10 }}</span>
                             <span class="dial-unit">PERCENT</span>
                         </div>
                     </div>
                 </div>
                 <div class="segments">
-                    {% for seg in self.volume_segments() %}
-                    <div class="seg {% if seg.on %}on{% endif %}"></div>
+                    {% for on in self.volume_segments() %}
+                    <div class="seg {% if on %}on{% endif %}"></div>
                     {% endfor %}
                 </div>
                 <div class="controls" style="margin-top: 10px;">

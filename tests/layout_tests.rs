@@ -242,14 +242,6 @@ impl TodoItem {
     fn new(title: &str, completed: bool) -> Self {
         Self { title: title.to_string(), tag: "work".to_string(), completed }
     }
-
-    fn is_home(&self) -> bool {
-        self.tag == "home"
-    }
-
-    fn is_fun(&self) -> bool {
-        self.tag == "fun"
-    }
 }
 
 #[derive(Debug, PartialEq, XeruneMessage)]

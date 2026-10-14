@@ -38,19 +38,14 @@ pub struct Service {
     pub name: String,
     pub detail: String,
     pub state: String,
-    /// Status chip tone; neither means neutral.
-    pub ok: bool,
-    pub warn: bool,
+    /// Status chip tone: `ok`, `warn` or empty for neutral.
+    pub tone: String,
 }
 
 impl Service {
-    fn new(name: &str, detail: &str, state: &str, ok: bool, warn: bool) -> Self {
-        Self { name: name.into(), detail: detail.into(), state: state.into(), ok, warn }
+    fn new(name: &str, detail: &str, state: &str, tone: &str) -> Self {
+        Self { name: name.into(), detail: detail.into(), state: state.into(), tone: tone.into() }
     }
-}
-
-pub struct Segment {
-    pub on: bool,
 }
 
 #[derive(XeruneTemplate, Serialize, Deserialize)]
@@ -113,9 +108,9 @@ impl Default for ShowcaseModel {
             cores: vec![34.0, 52.0, 21.0, 45.0],
             user_counter: 1234,
             services: vec![
-                Service::new("render-engine", "fast_renderer · 60 fps", "RUNNING", true, false),
-                Service::new("telemetry", "mqtt://fleet.local", "SYNCING", false, true),
-                Service::new("ota-updater", "next check 02:00", "IDLE", false, false),
+                Service::new("render-engine", "fast_renderer · 60 fps", "RUNNING", "ok"),
+                Service::new("telemetry", "mqtt://fleet.local", "SYNCING", "warn"),
+                Service::new("ota-updater", "next check 02:00", "IDLE", ""),
             ],
             auto_scale: true,
             maintenance_mode: false,
@@ -201,12 +196,8 @@ impl ShowcaseModel {
         ((self.soc_temp - 30.0) / 60.0 * 100.0).clamp(0.0, 100.0)
     }
 
-    pub fn volume_pct(&self) -> u32 {
-        self.volume * 10
-    }
-
-    pub fn volume_segments(&self) -> Vec<Segment> {
-        (0..10).map(|i| Segment { on: i < self.volume }).collect()
+    pub fn volume_segments(&self) -> Vec<bool> {
+        (0..10).map(|i| i < self.volume).collect()
     }
 
     /// Needle wedge start: 1.5° before the arc end so the 3° wedge centers on it.

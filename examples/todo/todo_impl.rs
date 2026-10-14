@@ -50,16 +50,6 @@ pub struct TodoItem {
     pub completed: bool,
 }
 
-impl TodoItem {
-    pub fn is_home(&self) -> bool {
-        self.tag == "home"
-    }
-
-    pub fn is_fun(&self) -> bool {
-        self.tag == "fun"
-    }
-}
-
 impl TodoList {
     pub fn done_count(&self) -> usize {
         self.items.iter().filter(|i| i.completed).count()

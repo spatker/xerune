@@ -124,7 +124,7 @@
             <div class="item {% if loop.index0 == active_item %}active{% endif %}" data-on-click="toggle:{{ loop.index0 }}">
                 <div class="check {% if item.completed %}done{% endif %}">{% if item.completed %}<div class="check-dot"></div>{% endif %}</div>
                 <span class="text {% if item.completed %}done{% endif %}">{{ item.title }}</span>
-                <div class="tag {% if item.is_home() %}home{% endif %} {% if item.is_fun() %}fun{% endif %}">{{ item.tag }}</div>
+                <div class="tag {% if item.tag == "home" %}home{% endif %} {% if item.tag == "fun" %}fun{% endif %}">{{ item.tag }}</div>
                 <div data-on-click="remove:{{ loop.index0 }}" class="remove">×</div>
             </div>
             {% endfor %}
