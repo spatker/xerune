@@ -27,10 +27,19 @@ impl LcgRng {
         (x as f32) / (u32::MAX as f32)
     }
 
-    fn next_u8(&mut self) -> u8 {
-        self.next_f32().mul_add(255.0, 0.0) as u8
-    }
 }
+
+/// Item fills: one palette instead of random RGB, same translucency.
+const PALETTE: [&str; 8] = [
+    "rgba(244, 114, 182, 0.8)",
+    "rgba(167, 139, 250, 0.8)",
+    "rgba(96, 165, 250, 0.8)",
+    "rgba(34, 211, 238, 0.8)",
+    "rgba(52, 211, 153, 0.8)",
+    "rgba(163, 230, 53, 0.8)",
+    "rgba(251, 191, 36, 0.8)",
+    "rgba(251, 113, 133, 0.8)",
+];
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct Item {
@@ -54,6 +63,13 @@ pub struct AnimationModel {
     pub render_time: Option<f32>,
     pub item_count: usize,
     pub render_time_ms: String,
+    /// Viewport the items bounce in, from `on_resize`.
+    #[serde(default = "default_bounds")]
+    pub bounds: (f32, f32),
+}
+
+fn default_bounds() -> (f32, f32) {
+    (800.0, 480.0)
 }
 
 impl AnimationModel {
@@ -61,16 +77,14 @@ impl AnimationModel {
         let mut rng = LcgRng::new(12345);
         let mut items = Vec::with_capacity(count);
         for i in 0..count {
+            let size = 10.0 + rng.next_f32() * 30.0;
             items.push(Item {
-                x: rng.next_f32() * 780.0,
-                y: rng.next_f32() * 460.0,
+                x: rng.next_f32() * (800.0 - size),
+                y: rng.next_f32() * (480.0 - size),
                 vx: (rng.next_f32() - 0.5) * 5.0,
                 vy: (rng.next_f32() - 0.5) * 5.0,
-                size: 10.0 + rng.next_f32() * 30.0,
-                color: format!("rgba({}, {}, {}, 0.8)", 
-                    rng.next_u8(), 
-                    rng.next_u8(), 
-                    rng.next_u8()),
+                size,
+                color: PALETTE[(rng.next_f32() * PALETTE.len() as f32) as usize % PALETTE.len()].to_string(),
                 text: format!("{}", i + 1),
             });
         }
@@ -83,6 +97,7 @@ impl AnimationModel {
             render_time: None,
             item_count: count,
             render_time_ms: "0.00".to_string(),
+            bounds: default_bounds(),
         }
     }
 }
@@ -97,6 +112,10 @@ pub enum AnimationMsg {
 impl Model for AnimationModel {
     type Message = AnimationMsg;
 
+    fn on_resize(&mut self, width: f32, height: f32, _context: &mut xerune::Context) {
+        self.bounds = (width, height);
+    }
+
     fn update(&mut self, msg: Self::Message, _context: &mut xerune::Context) {
         match msg {
             AnimationMsg::RenderTime(ms) => {
@@ -108,8 +127,11 @@ impl Model for AnimationModel {
                     item.x += item.vx;
                     item.y += item.vy;
                     
-                    if item.x < 0.0 || item.x > 780.0 { item.vx *= -1.0; }
-                    if item.y < 0.0 || item.y > 460.0 { item.vy *= -1.0; }
+                    let (w, h) = self.bounds;
+                    if item.x < 0.0 { item.vx = item.vx.abs(); }
+                    if item.x + item.size > w { item.vx = -item.vx.abs(); }
+                    if item.y < 0.0 { item.vy = item.vy.abs(); }
+                    if item.y + item.size > h { item.vy = -item.vy.abs(); }
                 }
                 
                 self.frame_count += 1;
