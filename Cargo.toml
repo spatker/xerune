@@ -69,6 +69,8 @@ libc = { version = "0.2", optional = true }
 simplecss = { version = "0.2.2", optional = true }
 bytemuck = { version = "1.14", default-features = false }
 png = { version = "0.17", optional = true }
+# UAX #14 line break opportunities (no_std).
+unicode-linebreak = "0.1.5"
 ureq = { version = "2", optional = true }
 
 [dev-dependencies]
