@@ -15,6 +15,9 @@ pub struct UiBuilder {
     pub node_to_handle: NodeMap<Handle>,
     pub base_styles: NodeMap<(Style, crate::style::ContainerStyle)>,
     pub keyframes: HashMap<String, crate::css::KeyframesAnimation>,
+    /// The first `<html>` and `<body>` built, for the canvas background.
+    pub html: Option<NodeId>,
+    pub body: Option<NodeId>,
 }
 
 
@@ -32,6 +35,8 @@ impl UiBuilder {
             node_to_handle: NodeMap::with_capacity(capacity),
             base_styles: NodeMap::with_capacity(capacity),
             keyframes: HashMap::new(),
+            html: None,
+            body: None,
         }
     }
 
@@ -247,6 +252,11 @@ impl UiBuilder {
         super::attributes::parse_attribute_slice(el.tag, attrs, &mut el.style, &mut el.layout, &mut el.parsed, message_validator);
         let node = self.taffy.new_leaf(el.layout.clone()).unwrap();
         self.append_child(parent, node);
+        match el.tag {
+            "html" if self.html.is_none() => self.html = Some(node),
+            "body" if self.body.is_none() => self.body = Some(node),
+            _ => {}
+        }
         node
     }
 

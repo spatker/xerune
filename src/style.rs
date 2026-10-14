@@ -225,6 +225,8 @@ pub struct ContainerStyle {
     pub animation_fill_mode: Arc<str>,
     /// Animation play state control state.
     pub animation_play_state: Arc<str>,
+    /// `color-scheme: dark`: the default canvas color is dark instead of white.
+    pub color_scheme_dark: bool,
 }
 
 impl Default for ContainerStyle {
@@ -276,6 +278,7 @@ impl Default for ContainerStyle {
             animation_direction: Arc::from("normal"),
             animation_fill_mode: Arc::from("none"),
             animation_play_state: Arc::from("running"),
+            color_scheme_dark: false,
         }
     }
 }

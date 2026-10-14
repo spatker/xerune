@@ -77,6 +77,10 @@ pub struct Ui {
     pub base_styles: NodeMap<(Style, ContainerStyle)>,
     /// Parsed keyframe animations.
     pub keyframes: HashMap<String, css::KeyframesAnimation>,
+    /// The `<html>` and `<body>` nodes, whose background paints the canvas.
+    pub html: Option<NodeId>,
+    /// See [`Ui::html`].
+    pub body: Option<NodeId>,
 }
 
 impl Ui {
@@ -129,6 +133,12 @@ impl Ui {
             &mut base_styles,
         ).ok_or(TaffyError::ChildIndexOutOfBounds { parent: NodeId::new(0), child_index: 0, child_count: 0 })?;  
 
+        let (html, body) = find_html_body(&taffy, root, |node| match node_to_handle.get(&node).map(|h| &h.data) {
+            Some(markup5ever_rcdom::NodeData::Element { name, .. }) => matches!(name.local.as_ref(), "html" | "body")
+                .then(|| if name.local.as_ref() == "html" { "html" } else { "body" }),
+            _ => None,
+        });
+
         Ok(Self {
             taffy,
             render_data,
@@ -138,6 +148,8 @@ impl Ui {
             node_to_handle,
             base_styles,
             keyframes,
+            html,
+            body,
         })
     }
 
@@ -291,6 +303,8 @@ impl Ui {
             keyframes = cached.keyframes.clone();
         }
 
+        let (html, body) = (builder.html, builder.body);
+
         Ok(Self {
             taffy: builder.taffy,
             render_data: builder.render_data,
@@ -300,6 +314,8 @@ impl Ui {
             node_to_handle: builder.node_to_handle,
             base_styles,
             keyframes,
+            html,
+            body,
         })
     }
 
@@ -428,16 +444,66 @@ impl Ui {
     }
 
     /// Traverses the layout tree and builds the hardware-agnostic rendering draw commands list.
+    ///
+    /// Like a browser, every frame starts from the canvas: the background of
+    /// `<html>`, else of `<body>`, else white (dark with `color-scheme:
+    /// dark`), so repainted regions never show the previous frame. The
+    /// element whose background moved to the canvas doesn't paint it again,
+    /// and when an opaque box already covers the viewport no canvas fill is
+    /// emitted at all.
     pub fn build_commands(&self, _canvases: &HashMap<String, Canvas>, focused_id: Option<&str>) -> Vec<DrawCommand> {
-        layout_to_draw_commands(
+        let source = [self.html, self.body].into_iter().flatten().find_map(|node| match self.render_data.get(&node) {
+            Some(RenderData::Container(style)) if style.background_color.is_some() || style.background_gradient.is_some() => {
+                Some((node, style))
+            }
+            _ => None,
+        });
+
+        let mut content = Vec::new();
+        traverse_layout(
             &self.taffy,
             self.root,
             &self.render_data,
             &self.scroll_offsets,
             0.0,
             0.0,
-            focused_id
-        )
+            &mut content,
+            focused_id,
+            source.map(|(node, _)| node),
+        );
+
+        let viewport = match self.taffy.layout(self.root) {
+            Ok(l) => Rect { x: 0.0, y: 0.0, width: l.size.width, height: l.size.height },
+            Err(_) => return content,
+        };
+        if covers_viewport(&content, viewport) {
+            return content;
+        }
+
+        let canvas_rect = |color: Option<crate::Color>, gradient: Option<crate::Gradient>| DrawCommand::DrawRect {
+            rect: viewport,
+            color,
+            gradient,
+            border_radius: 0.0,
+            border_width: 0.0,
+            border_color: None,
+            border_style: crate::style::BorderStyle::None,
+            border_bottom_only: false,
+        };
+        let mut commands = Vec::with_capacity(content.len() + 2);
+        let source_opaque = source.is_some_and(|(_, s)| is_opaque_fill(s.background_color, s.background_gradient.as_ref()));
+        if !source_opaque {
+            // The browser default canvas, under a translucent page background
+            // or on its own.
+            let dark = self.html.and_then(|n| self.render_data.get(&n)).is_some_and(|d| d.style().color_scheme_dark);
+            let default = if dark { crate::Color::from_rgba8(0x12, 0x12, 0x12, 255) } else { crate::Color::WHITE };
+            commands.push(canvas_rect(Some(default), None));
+        }
+        if let Some((_, style)) = source {
+            commands.push(canvas_rect(style.background_color, style.background_gradient.clone()));
+        }
+        commands.extend(content);
+        commands
     }
 
     /// Performs a hit test check for coordinates (x, y) and returns the corresponding interaction
@@ -557,18 +623,61 @@ impl ToDisplayString for bool {
     }
 }
 
-fn layout_to_draw_commands(
-    taffy: &TaffyTree,
-    root: NodeId,
-    render_data: &NodeMap<RenderData>,
-    scroll_offsets: &NodeMap<(f32, f32)>,
-    offset_x: f32,
-    offset_y: f32,
-    focused_id: Option<&str>,
-) -> Vec<DrawCommand> {
-    let mut commands = Vec::new();
-    traverse_layout(taffy, root, render_data, scroll_offsets, offset_x, offset_y, &mut commands, focused_id);
-    commands
+/// Finds `<html>` and its `<body>` near the top of the tree.
+#[cfg(feature = "dynamic-parser")]
+fn find_html_body<'a>(taffy: &TaffyTree, root: NodeId, tag: impl Fn(NodeId) -> Option<&'a str>) -> (Option<NodeId>, Option<NodeId>) {
+    let children = |n: NodeId| taffy.children(n).unwrap_or_default();
+    let html = if tag(root) == Some("html") {
+        Some(root)
+    } else {
+        children(root).into_iter().find(|&c| tag(c) == Some("html"))
+    };
+    let body = html.and_then(|h| children(h).into_iter().find(|&c| tag(c) == Some("body")));
+    (html, body)
+}
+
+/// Whether a fill paints every pixel of its rect fully opaque.
+fn is_opaque_fill(color: Option<crate::Color>, gradient: Option<&crate::Gradient>) -> bool {
+    match gradient {
+        Some(crate::Gradient::Linear(g)) => g.stops.iter().all(|(c, _)| c.a == 255),
+        Some(crate::Gradient::Radial(g)) => g.stops.iter().all(|(c, _)| c.a == 255),
+        Some(crate::Gradient::Conic(g)) => g.stops.iter().all(|(c, _)| c.a == 255),
+        None => color.is_some_and(|c| c.a == 255),
+    }
+}
+
+/// Whether some opaque, square-cornered rect paints the whole viewport, so
+/// a canvas fill underneath would never be seen.
+fn covers_viewport(commands: &[DrawCommand], viewport: Rect) -> bool {
+    const SLACK: f32 = 0.5;
+    let contains = |r: &Rect| {
+        r.x <= viewport.x + SLACK
+            && r.y <= viewport.y + SLACK
+            && r.x + r.width >= viewport.x + viewport.width - SLACK
+            && r.y + r.height >= viewport.y + viewport.height - SLACK
+    };
+    // Clips only shrink what a rect can cover; track whether all active
+    // clips still contain the viewport.
+    let mut clips: Vec<bool> = Vec::new();
+    for cmd in commands {
+        match cmd {
+            DrawCommand::Clip { rect } => clips.push(contains(rect)),
+            DrawCommand::PopClip => {
+                clips.pop();
+            }
+            DrawCommand::DrawRect { rect, color, gradient, border_radius, .. } => {
+                if *border_radius <= 0.0
+                    && contains(rect)
+                    && clips.iter().all(|&c| c)
+                    && is_opaque_fill(*color, gradient.as_ref())
+                {
+                    return true;
+                }
+            }
+            _ => {}
+        }
+    }
+    false
 }
 
 fn traverse_layout(
@@ -580,6 +689,7 @@ fn traverse_layout(
     offset_y: f32,
     commands: &mut Vec<DrawCommand>,
     focused_id: Option<&str>,
+    canvas_source: Option<NodeId>,
 ) {
     let layout = match taffy.layout(root) {
         Ok(l) => l,
@@ -620,11 +730,14 @@ fn traverse_layout(
                 });
             }
 
-            if style.background_color.is_some() || style.background_gradient.is_some() || style.border_width > 0.0 {
+            // A background propagated to the canvas is painted there instead.
+            let on_canvas = canvas_source == Some(root);
+            let (bg_color, bg_gradient) = if on_canvas { (None, None) } else { (style.background_color, style.background_gradient.clone()) };
+            if bg_color.is_some() || bg_gradient.is_some() || style.border_width > 0.0 {
                  commands.push(DrawCommand::DrawRect {
                     rect,
-                    color: style.background_color,
-                    gradient: style.background_gradient.clone(),
+                    color: bg_color,
+                    gradient: bg_gradient,
                     border_radius: style.border_radius,
                     border_width: style.border_width,
                     border_color: style.border_color,
@@ -748,7 +861,7 @@ fn traverse_layout(
 
     if let Ok(children) = taffy.children(root) {
         for child in children {
-            traverse_layout(taffy, child, render_data, scroll_offsets, child_offset_x, child_offset_y, commands, focused_id);
+            traverse_layout(taffy, child, render_data, scroll_offsets, child_offset_x, child_offset_y, commands, focused_id, canvas_source);
         }
     }
 

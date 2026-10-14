@@ -192,6 +192,11 @@ pub fn apply_declaration(prop: &str, val: &str, current_style: &mut ContainerSty
                 _ => {}
             }
         }
+        "color-scheme" => {
+            // Without a user preference to consult, "light dark" means light.
+            let mut words = val.split_whitespace();
+            current_style.color_scheme_dark = val.contains("dark") && !words.any(|w| w == "light");
+        }
         "text-align" => {
             match val {
                 "left" => current_style.text_align = Some(TextAlign::Left),

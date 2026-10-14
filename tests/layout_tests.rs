@@ -636,3 +636,81 @@ fn test_html_root_fills_viewport_width() {
     assert_eq!(runtime.ui.taffy.layout(html).unwrap().size.width, 800.0);
     assert_eq!(runtime.ui.taffy.layout(body).unwrap().size.width, 800.0);
 }
+
+mod canvas {
+    //! The canvas background: browsers paint `<html>`'s background (else
+    //! `<body>`'s, else white) behind every frame.
+    use super::MockMeasurer;
+    use std::collections::HashMap;
+    use xerune::*;
+
+    macro_rules! canvas_model {
+        ($name:ident, $path:literal) => {
+            #[derive(XeruneTemplate)]
+            #[template(path = $path)]
+            struct $name;
+            impl Model for $name {
+                type Message = String;
+                fn update(&mut self, _msg: String, _context: &mut Context) {}
+            }
+        };
+    }
+    canvas_model!(BodyBg, "tests/canvas/body_bg.html");
+    canvas_model!(NoBg, "tests/canvas/no_bg.html");
+    canvas_model!(Covered, "tests/canvas/covered.html");
+    canvas_model!(Dark, "tests/canvas/dark.html");
+    canvas_model!(Translucent, "tests/canvas/translucent.html");
+
+    const VIEWPORT: Rect = Rect { x: 0.0, y: 0.0, width: 320.0, height: 200.0 };
+
+    fn commands<M: Model + ui::TemplateLayout + 'static>(model: M) -> Vec<DrawCommand> {
+        let mut runtime = Runtime::new(model, MockMeasurer);
+        runtime.set_size(VIEWPORT.width, VIEWPORT.height);
+        runtime.ui.build_commands(&HashMap::new(), None)
+    }
+
+    /// Colors of full-viewport rects, in paint order.
+    fn canvas_fills(commands: &[DrawCommand]) -> Vec<Color> {
+        commands
+            .iter()
+            .filter_map(|c| match c {
+                DrawCommand::DrawRect { rect, color: Some(color), .. } if *rect == VIEWPORT => Some(*color),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn body_background_moves_to_the_canvas() {
+        let cmds = commands(BodyBg);
+        assert_eq!(canvas_fills(&cmds), [Color::new(255, 0, 0, 255)]);
+        let red_rects = cmds
+            .iter()
+            .filter(|c| matches!(c, DrawCommand::DrawRect { color: Some(c), .. } if c.r == 255 && c.g == 0))
+            .count();
+        assert_eq!(red_rects, 1, "body must not paint its background a second time");
+    }
+
+    #[test]
+    fn no_background_gets_a_white_canvas() {
+        assert_eq!(canvas_fills(&commands(NoBg)), [Color::WHITE]);
+    }
+
+    #[test]
+    fn opaque_full_screen_box_skips_the_canvas() {
+        assert_eq!(canvas_fills(&commands(Covered)), [Color::new(0x10, 0x20, 0x30, 255)]);
+    }
+
+    #[test]
+    fn color_scheme_dark_darkens_the_default_canvas() {
+        assert_eq!(canvas_fills(&commands(Dark)), [Color::new(0x12, 0x12, 0x12, 255)]);
+    }
+
+    #[test]
+    fn translucent_background_is_painted_over_white() {
+        let fills = canvas_fills(&commands(Translucent));
+        assert_eq!(fills.len(), 2);
+        assert_eq!(fills[0], Color::WHITE);
+        assert_eq!((fills[1].r, fills[1].a), (255, 127));
+    }
+}
