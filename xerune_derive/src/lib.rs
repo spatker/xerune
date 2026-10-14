@@ -753,15 +753,16 @@ struct MacroElementWrapper {
     active_classes: HashSet<String>,
 }
 
+/// Classes an element always has: literal names outside any `{% if %}`.
+/// Parses the template syntax rather than splitting on whitespace, which
+/// would read the words of `{% if on %}` as classes `if` and `on`.
 fn get_static_classes(handle: &Handle) -> HashSet<String> {
     let mut static_classes = HashSet::new();
     if let NodeData::Element { ref attrs, .. } = handle.data {
         if let Some(attr) = attrs.borrow().iter().find(|a| a.name.local.as_ref() == "class") {
-            let class_val = attr.value.as_ref();
-            let parts = class_val.split_whitespace();
-            for part in parts {
-                if !part.contains("{%") && !part.contains("{{") && !part.contains("%}") && !part.contains("}}") {
-                    static_classes.insert(part.to_string());
+            for (class, cond) in get_classes_and_conditions(attr.value.as_ref(), &HashSet::new()) {
+                if cond.is_none() {
+                    static_classes.insert(class);
                 }
             }
         }
@@ -846,11 +847,10 @@ impl simplecss::Element for MacroElementWrapper {
 
     fn attribute_matches(&self, local_name: &str, operator: simplecss::AttributeOperator<'_>) -> bool {
         if local_name == "class" {
-            for cls in &self.active_classes {
-                if operator.matches(cls) {
-                    return true;
-                }
-            }
+            // Only the classes active in this matching pass count. The raw
+            // attribute is template source: `{% if on %}on{% endif %}`
+            // contains the word `on` whether or not the class is applied.
+            return self.active_classes.iter().any(|cls| operator.matches(cls));
         }
         if let NodeData::Element { ref attrs, .. } = self.handle.data {
             for attr in attrs.borrow().iter() {

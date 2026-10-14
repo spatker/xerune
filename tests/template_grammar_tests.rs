@@ -70,6 +70,19 @@ fn model(on: bool, cover: Option<&str>, title: &str) -> GrammarModel {
     }
 }
 
+/// The words inside `{% if red %}` are template source, not classes: a
+/// variable named like the class it toggles must not switch it on for
+/// every item, and `{% endif %}` must not make an ancestor match `.endif`.
+#[test]
+fn template_keywords_are_not_classes() {
+    let t = texts(model(true, None, ""));
+    let colors: Vec<Color> = t.iter().filter(|(text, _)| text == "var-named-like-class").map(|(_, c)| *c).collect();
+    assert_eq!(colors.len(), 2);
+    assert!(colors.contains(&Color::from_rgba8(255, 0, 0, 255)));
+    assert!(colors.contains(&Color::from_rgba8(0, 0, 255, 255)));
+    assert_ne!(color_of(&t, "template-keyword-not-a-class"), Color::from_rgba8(255, 0, 0, 255));
+}
+
 /// `{{ a * 10 }}` used to expand to `a * 10.to_display_string()`.
 #[test]
 fn arithmetic_in_text_expressions() {

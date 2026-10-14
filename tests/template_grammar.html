@@ -4,6 +4,7 @@
     .green { color: #00ff00; }
     .list > b { color: #ff0000; }
     .wrap i { color: #0000ff; }
+    .endif em { color: #ff0000; }
 </style>
 <div>
     <p class="{% if on %}red{% else %}blue{% endif %}">if-else</p>
@@ -16,5 +17,7 @@
     <div class="list">{% for i in 0..2 %}<b>loop-child</b>{% endfor %}</div>
     <div class="wrap">{% if on %}<div>{% for i in 0..2 %}<i>if-loop-descendant</i>{% endfor %}</div>{% endif %}</div>
     <span>{{ pairs.len() * 100 + 7 }}</span>
+    <div>{% for red in flags %}<p class="{% if red %}red{% else %}blue{% endif %}">var-named-like-class</p>{% endfor %}</div>
+    <div class="{% if off %}green{% endif %}"><em>template-keyword-not-a-class</em></div>
     <div>{% for flag in flags %}<p class="{% if flag %}red{% else %}blue{% endif %}">bool-loop-var</p>{% endfor %}</div>
 </div>
