@@ -22,7 +22,7 @@ macro_rules! profile {
     ($($tt:tt)*) => {};
 }
 
-use crate::graphics::{Context, Damage, DrawCommand, Rect, TextMeasurer, Renderer, RenderResources};
+use crate::graphics::{Context, Damage, DrawCommand, Rect, TextMeasurer, Renderer, RenderResources, Surface};
 use crate::images::ImageStore;
 use crate::style::{ContainerStyle, RenderData, AnimationIterationCount};
 use crate::model::{InputEvent, Model};
@@ -495,9 +495,12 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
         dirty
     }
 
-    /// Renders the current layout tree state, drawing only what changed since
-    /// the previous frame, and returns the repainted areas.
-    pub fn render(&mut self, renderer: &mut impl Renderer) -> Damage {
+    /// Renders the current layout tree state into `target`, drawing only what
+    /// changed since the previous frame, and returns the repainted areas.
+    ///
+    /// `target` must hold the previous frame, as drawn by this method; the
+    /// first frame, a viewport change and newly loaded images repaint all.
+    pub fn render(&mut self, renderer: &mut impl Renderer, target: &mut Surface<'_>) -> Damage {
         profile!("render");
         let commands = self.ui.build_commands(&self.context.canvases, self.focused_id.as_deref());
 
@@ -521,12 +524,8 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
         }
 
         let resources = RenderResources::new(&self.context.canvases, &self.images);
-        if self.full_repaint {
-            renderer.render(&commands, &resources, None);
-        } else {
-            for area in damage.rects() {
-                renderer.render(&commands, &resources, Some(*area));
-            }
+        for area in damage.rects() {
+            renderer.render(target, &commands, &resources, *area);
         }
         self.full_repaint = false;
         self.last_commands = commands;

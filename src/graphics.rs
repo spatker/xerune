@@ -578,10 +578,163 @@ impl<'a> RenderResources<'a> {
     }
 }
 
-/// Trait defining a renderer backend that executes draw commands to present graphics.
-pub trait Renderer: TextMeasurer {
-    /// Renders a set of draw commands onto the canvas/display buffer, optimizing for a dirty rectangle region.
-    fn render(&mut self, commands: &[DrawCommand], resources: &RenderResources<'_>, dirty_rect: Option<Rect>);
+/// Pixel storage of a [`Surface`]. More formats (RGB565) will be added.
+#[non_exhaustive]
+pub enum Pixels<'a> {
+    /// 32-bit pixels `0xXXRRGGBB`, blue in the low byte: DRM/fbdev `XRGB8888`, softbuffer.
+    Xrgb8888(&'a mut [u32]),
+    /// 32-bit pixels `0xXXBBGGRR`, red in the low byte.
+    Xbgr8888(&'a mut [u32]),
+}
+
+/// How the display is mounted relative to the UI, clockwise.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Rotation {
+    /// Upright.
+    #[default]
+    Deg0,
+    /// Rotated a quarter turn clockwise.
+    Deg90,
+    /// Upside down.
+    Deg180,
+    /// Rotated a quarter turn counterclockwise.
+    Deg270,
+}
+
+impl Rotation {
+    /// From degrees (0, 90, 180, 270); `None` for any other angle.
+    pub fn from_degrees(degrees: u32) -> Option<Self> {
+        match degrees {
+            0 => Some(Self::Deg0),
+            90 => Some(Self::Deg90),
+            180 => Some(Self::Deg180),
+            270 => Some(Self::Deg270),
+            _ => None,
+        }
+    }
+
+    /// The angle in degrees.
+    pub fn degrees(self) -> u32 {
+        match self {
+            Self::Deg0 => 0,
+            Self::Deg90 => 90,
+            Self::Deg180 => 180,
+            Self::Deg270 => 270,
+        }
+    }
+}
+
+/// The pixels a [`Renderer`] draws into: the whole screen, or a band of it
+/// (see [`Surface::with_origin`]) when memory is too short for a full frame.
+pub struct Surface<'a> {
+    pixels: Pixels<'a>,
+    width: u32,
+    height: u32,
+    stride: usize,
+    origin: (i32, i32),
+    rotation: Rotation,
+}
+
+impl<'a> Surface<'a> {
+    /// A buffer of `width` x `height` pixels in rows of `width` pixels,
+    /// showing the screen from its top-left corner.
+    ///
+    /// # Panics
+    /// If `pixels` holds fewer than `width * height` pixels.
+    pub fn new(pixels: Pixels<'a>, width: u32, height: u32) -> Self {
+        let surface = Self { pixels, width, height, stride: width as usize, origin: (0, 0), rotation: Rotation::Deg0 };
+        surface.check_len();
+        surface
+    }
+
+    /// Rows are `stride` pixels apart in memory (a display's pitch), for
+    /// unrotated surfaces.
+    ///
+    /// # Panics
+    /// If `stride` is less than the width, the surface is rotated, or the
+    /// buffer is too short.
+    pub fn with_stride(mut self, stride: usize) -> Self {
+        assert!(stride >= self.width as usize, "stride {stride} is less than the width {}", self.width);
+        assert!(self.rotation == Rotation::Deg0, "rotated surfaces must have packed rows");
+        self.stride = stride;
+        self.check_len();
+        self
+    }
+
+    /// Pixel (0, 0) shows the screen point (`x`, `y`): the surface is a band
+    /// or tile of a larger screen, as when rendering in strips.
+    pub fn with_origin(mut self, x: i32, y: i32) -> Self {
+        self.origin = (x, y);
+        self
+    }
+
+    /// The display is mounted rotated. `width` and `height` stay the size of
+    /// the UI; the buffer holds rows of the display, packed (a quarter turn
+    /// makes them `height` pixels long).
+    pub fn with_rotation(mut self, rotation: Rotation) -> Self {
+        self.rotation = rotation;
+        self.stride = match rotation {
+            Rotation::Deg90 | Rotation::Deg270 => self.height as usize,
+            Rotation::Deg0 | Rotation::Deg180 => self.width as usize,
+        };
+        self.check_len();
+        self
+    }
+
+    fn check_len(&self) {
+        // Rows and pixels per row as stored, which a quarter turn swaps.
+        let (rows, columns) = match self.rotation {
+            Rotation::Deg90 | Rotation::Deg270 => (self.width, self.height),
+            Rotation::Deg0 | Rotation::Deg180 => (self.height, self.width),
+        };
+        let needed = if rows == 0 { 0 } else { (rows as usize - 1) * self.stride + columns as usize };
+        let len = match &self.pixels {
+            Pixels::Xrgb8888(p) | Pixels::Xbgr8888(p) => p.len(),
+        };
+        assert!(len >= needed, "{len} pixels are too few for a {}x{} surface", self.width, self.height);
+    }
+
+    /// Width in UI pixels.
+    pub fn width(&self) -> u32 {
+        self.width
+    }
+
+    /// Height in UI pixels.
+    pub fn height(&self) -> u32 {
+        self.height
+    }
+
+    /// Pixels from one row to the next in memory.
+    pub fn stride(&self) -> usize {
+        self.stride
+    }
+
+    /// The screen point shown by pixel (0, 0).
+    pub fn origin(&self) -> (i32, i32) {
+        self.origin
+    }
+
+    /// How the display is mounted.
+    pub fn rotation(&self) -> Rotation {
+        self.rotation
+    }
+
+    /// The part of the screen this surface shows.
+    pub fn area(&self) -> Rect {
+        Rect::new(self.origin.0 as f32, self.origin.1 as f32, self.width as f32, self.height as f32)
+    }
+
+    /// The pixel buffer.
+    pub fn pixels_mut(&mut self) -> &mut Pixels<'a> {
+        &mut self.pixels
+    }
+}
+
+/// Draws [`DrawCommand`]s into a [`Surface`].
+pub trait Renderer {
+    /// Draws `commands` into `target`, changing only pixels inside `area`
+    /// (screen coordinates). For a full repaint, pass `target.area()`.
+    fn render(&mut self, target: &mut Surface<'_>, commands: &[DrawCommand], resources: &RenderResources<'_>, area: Rect);
 }
 
 #[cfg(test)]

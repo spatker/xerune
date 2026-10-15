@@ -334,7 +334,7 @@ fn test_todo_layout_comparison() {
 fn test_tiled_rendering_identity() {
     use std::collections::HashMap;
     use fontdue::Font;
-    use xerune_render::FastRenderer;
+    use xerune_render::SoftwareRenderer;
 
     // Load font
     let font_data = std::fs::read("resources/fonts/Roboto-Regular.ttf").expect("Failed to read font file");
@@ -358,29 +358,25 @@ fn test_tiled_rendering_identity() {
     let commands = runtime.ui.build_commands(&HashMap::new(), None);
 
     // 1. Full-screen rendering
+    let (canvases, images) = (HashMap::new(), xerune::ImageStore::new());
+    let resources = xerune::RenderResources::new(&canvases, &images);
     let mut full_buffer = vec![0u32; 800 * 600];
-    let mut image_cache1 = HashMap::new();
-    let mut glyph_cache1 = HashMap::new();
     {
-        let mut renderer = FastRenderer::new(&mut full_buffer, 800, 600, &fonts, &mut image_cache1, &mut glyph_cache1);
-        renderer.render(&commands, &xerune::RenderResources::new(&HashMap::new(), &xerune::ImageStore::new()), None);
+        let mut target = Surface::new(Pixels::Xrgb8888(&mut full_buffer), 800, 600);
+        let area = target.area();
+        SoftwareRenderer::new(&fonts).render(&mut target, &commands, &resources, area);
     }
 
-    // 2. Tile-based rendering
+    // 2. Rendering in 50-row bands, each copied to the screen
     let mut tiled_buffer = vec![0u32; 800 * 600];
-    let mut image_cache2 = HashMap::new();
-    let mut glyph_cache2 = HashMap::new();
-    {
-        // 50-pixel height tile
-        let mut tile_buffer = vec![0u32; 800 * 50];
-        let mut renderer = FastRenderer::new(&mut tile_buffer, 800, 50, &fonts, &mut image_cache2, &mut glyph_cache2);
-        renderer.render_tiled(&commands, &xerune::RenderResources::new(&HashMap::new(), &xerune::ImageStore::new()), None, 600, |tx, ty, tw, th, pixels| {
-            for dy in 0..th {
-                let src_start = (dy * tw) as usize;
-                let dst_start = ((ty + dy as i32) * 800 + tx) as usize;
-                tiled_buffer[dst_start .. dst_start + tw as usize].copy_from_slice(&pixels[src_start .. src_start + tw as usize]);
-            }
-        });
+    let mut renderer = SoftwareRenderer::new(&fonts);
+    let mut band = vec![0u32; 800 * 50];
+    for y in (0..600).step_by(50) {
+        band.fill(0);
+        let mut target = Surface::new(Pixels::Xrgb8888(&mut band), 800, 50).with_origin(0, y as i32);
+        let area = target.area();
+        renderer.render(&mut target, &commands, &resources, area);
+        tiled_buffer[y * 800..(y + 50) * 800].copy_from_slice(&band);
     }
 
     // 3. Compare pixel buffers
@@ -390,7 +386,7 @@ fn test_tiled_rendering_identity() {
 #[test]
 fn test_bitmap_font_rendering() {
     use std::collections::HashMap;
-    use xerune_render::FastRenderer;
+    use xerune_render::SoftwareRenderer;
     use xerune::font::{DEFAULT_ROBOTO_REGULAR, DEFAULT_ROBOTO_BOLD};
 
     let fonts = vec![DEFAULT_ROBOTO_REGULAR, DEFAULT_ROBOTO_BOLD];
@@ -407,11 +403,9 @@ fn test_bitmap_font_rendering() {
     ];
 
     let mut buffer = vec![0u32; 200 * 50];
-    let mut image_cache = HashMap::new();
-    let mut glyph_cache = HashMap::new();
-
-    let mut renderer = FastRenderer::new(&mut buffer, 200, 50, &fonts, &mut image_cache, &mut glyph_cache);
-    renderer.render(&commands, &xerune::RenderResources::new(&HashMap::new(), &xerune::ImageStore::new()), None);
+    let mut target = Surface::new(Pixels::Xrgb8888(&mut buffer), 200, 50);
+    let area = target.area();
+    SoftwareRenderer::new(&fonts).render(&mut target, &commands, &xerune::RenderResources::new(&HashMap::new(), &xerune::ImageStore::new()), area);
 
     // Verify that some pixels are drawn (not all zeros)
     let non_zero_count = buffer.iter().filter(|&&pixel| pixel != 0).count();
@@ -559,7 +553,7 @@ fn test_timer_cancellation() {
 #[test]
 fn test_dirty_rect_rasterization_culling() {
     use std::collections::HashMap;
-    use xerune_render::FastRenderer;
+    use xerune_render::SoftwareRenderer;
     use xerune::font::DEFAULT_ROBOTO_REGULAR;
 
     let fonts = vec![DEFAULT_ROBOTO_REGULAR];
@@ -582,13 +576,10 @@ fn test_dirty_rect_rasterization_culling() {
     ];
 
     let mut buffer = vec![0u32; 200 * 200];
-    let mut image_cache = HashMap::new();
-    let mut glyph_cache = HashMap::new();
 
-    // Render with dirty_rect restricted to the second rectangle only
-    let dirty_rect = Some(Rect::new(90.0, 90.0, 70.0, 70.0));
-    let mut renderer = FastRenderer::new(&mut buffer, 200, 200, &fonts, &mut image_cache, &mut glyph_cache);
-    renderer.render(&commands, &xerune::RenderResources::new(&HashMap::new(), &xerune::ImageStore::new()), dirty_rect);
+    // Render with the area restricted to the second rectangle only
+    let mut target = Surface::new(Pixels::Xrgb8888(&mut buffer), 200, 200);
+    SoftwareRenderer::new(&fonts).render(&mut target, &commands, &xerune::RenderResources::new(&HashMap::new(), &xerune::ImageStore::new()), Rect::new(90.0, 90.0, 70.0, 70.0));
 
     // Verify first rect (0,0..50,50) was culled and untouched (0)
     let first_rect_pixel = buffer[0];
@@ -1116,7 +1107,7 @@ mod todo_impl;
 mod damage {
     use super::*;
     use xerune::images::{DefaultImageLoader, ImageError, ImageLoader};
-    use xerune_render::FastRenderer;
+    use xerune_render::SoftwareRenderer;
 
     use super::{calculator_impl, music_player_impl, showcase_impl, todo_impl};
 
@@ -1150,8 +1141,7 @@ mod damage {
     struct Session<M: Model + ui::TemplateLayout> {
         runtime: Runtime<M, xerune_render::FastMeasurer<'static>>,
         buffer: Vec<u32>,
-        images: std::collections::HashMap<String, (u32, u32, Vec<u32>)>,
-        glyphs: std::collections::HashMap<(usize, u16, u32), xerune_render::CachedGlyph>,
+        renderer: SoftwareRenderer<'static>,
     }
 
     impl<M: Model + ui::TemplateLayout + 'static> Session<M> {
@@ -1162,8 +1152,7 @@ mod damage {
             let mut session = Self {
                 runtime,
                 buffer: vec![0; (W * H) as usize],
-                images: Default::default(),
-                glyphs: Default::default(),
+                renderer: SoftwareRenderer::new(fonts()),
             };
             session.render_and_compare("first frame");
             session
@@ -1172,15 +1161,29 @@ mod damage {
         /// Renders the next frame as the event loop does and compares it
         /// with a full repaint of the same commands.
         fn render_and_compare(&mut self, step: &str) {
-            let mut renderer = FastRenderer::new(&mut self.buffer, W, H, fonts(), &mut self.images, &mut self.glyphs);
-            self.runtime.render(&mut renderer);
+            self.runtime.render(&mut self.renderer, &mut Surface::new(Pixels::Xrgb8888(&mut self.buffer), W, H));
 
             let commands = self.runtime.ui.build_commands(&self.runtime.context().canvases, None);
             let mut full = vec![0; (W * H) as usize];
-            let (mut images, mut glyphs) = Default::default();
-            let mut renderer = FastRenderer::new(&mut full, W, H, fonts(), &mut images, &mut glyphs);
             let resources = RenderResources::new(&self.runtime.context().canvases, self.runtime.images());
-            Renderer::render(&mut renderer, &commands, &resources, None);
+            let mut target = Surface::new(Pixels::Xrgb8888(&mut full), W, H);
+            let area = target.area();
+            SoftwareRenderer::new(fonts()).render(&mut target, &commands, &resources, area);
+
+            // The same frame drawn in 40-row bands, as with too little memory
+            // for a full frame.
+            let mut renderer = SoftwareRenderer::new(fonts());
+            let mut band = vec![0; (W * 40) as usize];
+            for y in (0..H).step_by(40) {
+                let rows = 40.min(H - y);
+                let mut target = Surface::new(Pixels::Xrgb8888(&mut band), W, rows).with_origin(0, y as i32);
+                let area = target.area();
+                renderer.render(&mut target, &commands, &resources, area);
+                let rows = (y * W) as usize..((y + rows) * W) as usize;
+                if let Some(i) = band[..rows.len()].iter().zip(&full[rows.clone()]).position(|(a, b)| a != b) {
+                    panic!("after {step}: banded pixel ({}, {}) differs from a full repaint", i as u32 % W, y + i as u32 / W);
+                }
+            }
 
             let wrong = self.buffer.iter().zip(&full).position(|(a, b)| a != b);
             if let Some(i) = wrong {

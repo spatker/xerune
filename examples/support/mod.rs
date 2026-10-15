@@ -1,25 +1,9 @@
-pub struct RenderCaches {
-    pub image_cache: std::collections::HashMap<String, (u32, u32, Vec<u32>)>,
-    pub glyph_cache: std::collections::HashMap<(usize, u16, u32), xerune_render::CachedGlyph>,
-}
-
-impl RenderCaches {
-    pub fn new() -> Self {
-        Self {
-            image_cache: Default::default(),
-            glyph_cache: Default::default(),
-        }
-    }
-}
-
 pub fn render_frame<M, TM>(
     runtime: &mut xerune::Runtime<M, TM>,
     buffer: &mut [u32],
     width: u32,
     height: u32,
-    fonts_ref: &'static [fontdue::Font],
-    _font_bytes_ref: Option<&'static [&'static [u8]]>,
-    caches: &mut RenderCaches,
+    renderer: &mut xerune_render::SoftwareRenderer<'static>,
 ) -> xerune::Damage
 where
     M: xerune::Model + xerune::ui::TemplateLayout + 'static,
@@ -28,26 +12,10 @@ where
     let rotation = std::env::var("XERUNE_ROTATION")
         .ok()
         .and_then(|s| s.parse::<u32>().ok())
-        .unwrap_or(0);
-
-    let (phys_w, phys_h) = match rotation {
-        90 | 270 => (height, width),
-        _ => (width, height),
-    };
-
-    let mut renderer = xerune_render::FastRenderer::new(
-        buffer,
-        width,
-        height,
-        fonts_ref,
-        &mut caches.image_cache,
-        &mut caches.glyph_cache,
-    );
-    if rotation != 0 {
-        renderer = renderer.with_rotation(phys_w, phys_h, rotation);
-    }
-    renderer.font_bytes = _font_bytes_ref;
-    runtime.render(&mut renderer)
+        .and_then(xerune::Rotation::from_degrees)
+        .unwrap_or_default();
+    let mut target = xerune::Surface::new(xerune::Pixels::Xrgb8888(buffer), width, height).with_rotation(rotation);
+    runtime.render(renderer, &mut target)
 }
 
 pub fn run_native_app<M, TM, R>(runner: R) -> anyhow::Result<()>
@@ -76,10 +44,10 @@ where
     let font_bytes: &'static [&'static [u8]] = Box::leak(Box::new(font_bytes));
     let fonts_ref: &'static [fontdue::Font] = Box::leak(Box::new(fonts));
 
-    let mut caches = RenderCaches::new();
+    let mut renderer = xerune_render::SoftwareRenderer::new(fonts_ref).with_font_bytes(font_bytes);
     let render_fn = Box::new(
         move |runtime: &mut xerune::Runtime<M, TM>, buffer: &mut [u32], width: u32, height: u32| {
-            render_frame(runtime, buffer, width, height, fonts_ref, Some(font_bytes), &mut caches)
+            render_frame(runtime, buffer, width, height, &mut renderer)
         },
     );
 

@@ -8,7 +8,7 @@
 
 use std::time::{Duration, Instant};
 
-use xerune_render::{FastMeasurer, FastRenderer};
+use xerune_render::{FastMeasurer, SoftwareRenderer};
 use xerune::{Context, Model, Runtime, XeruneTemplate};
 
 #[derive(Clone)]
@@ -85,8 +85,7 @@ fn main() {
     runtime.set_size(width as f32, height as f32);
 
     let mut buffer = vec![0u32; (width * height) as usize];
-    let mut image_cache = Default::default();
-    let mut glyph_cache = Default::default();
+    let mut renderer = SoftwareRenderer::new(fonts);
 
     let mut rebuild = Vec::with_capacity(iters);
     let mut commands = Vec::with_capacity(iters);
@@ -105,8 +104,8 @@ fn main() {
         // A rebuild forgets the previous frame, so this is a full repaint
         // (command building, diffing and drawing).
         let t = Instant::now();
-        let mut renderer = FastRenderer::new(&mut buffer, width, height, fonts, &mut image_cache, &mut glyph_cache);
-        runtime.render(&mut renderer);
+        let mut target = xerune::Surface::new(xerune::Pixels::Xrgb8888(&mut buffer), width, height);
+        runtime.render(&mut renderer, &mut target);
         render.push(t.elapsed());
     }
 

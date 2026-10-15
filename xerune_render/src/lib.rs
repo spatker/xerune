@@ -9,7 +9,7 @@ pub mod rounded_rect;
 
 #[cfg(feature = "std")]
 use fontdue::Font;
-use xerune::{DrawCommand, Rect, RenderResources, Renderer, TextMeasurer};
+use xerune::{DrawCommand, Pixels, Rect, RenderResources, Renderer, Rotation, Surface, TextMeasurer};
 use xerune::alloc_prelude::*;
 use xerune::text::{LineMetrics, ShapedGlyph, ShapedText};
 
@@ -676,64 +676,103 @@ fn blit_glyph(buffer: &mut [u32], cached: &CachedGlyph, gx: i32, gy: i32, px: f3
     }
 }
 
-pub struct FastRenderer<'a> {
-    pub buffer: &'a mut [u32],
-    pub width: u32,
-    pub height: u32,
-    pub physical_width: u32,
-    pub physical_height: u32,
-    pub fonts: FontSource<'a>,
-    pub font_bytes: Option<&'a [&'a [u8]]>,
-    pub clip_stack: Vec<Rect>,
-    pub swap_rb: bool,
-    pub rotate: bool,
-    pub rotation: u32,
-    pub x_offset: i32,
-    pub y_offset: i32,
-    pub image_cache: &'a mut HashMap<String, (u32, u32, Vec<u32>)>, // src -> (width, height, packed pixels)
-    pub glyph_cache: &'a mut HashMap<(usize, u16, u32), CachedGlyph>,
+/// Draws [`DrawCommand`]s in software. Keeps the rasterized glyphs and
+/// converted images between frames.
+pub struct SoftwareRenderer<'f> {
+    fonts: FontSource<'f>,
+    font_bytes: Option<&'f [&'f [u8]]>,
+    image_cache: HashMap<String, (u32, u32, Vec<u32>)>, // src -> (width, height, packed pixels)
+    glyph_cache: HashMap<(usize, u16, u32), CachedGlyph>,
+    clip_stack: Vec<Rect>,
     #[cfg(feature = "std")]
-    pub layout: fontdue::layout::Layout,
+    layout: fontdue::layout::Layout,
 }
 
-impl<'a> FastRenderer<'a> {
-    pub fn new<F: Into<FontSource<'a>>>(
-        buffer: &'a mut [u32],
-        width: u32,
-        height: u32,
-        fonts: F,
-        image_cache: &'a mut HashMap<String, (u32, u32, Vec<u32>)>,
-        glyph_cache: &'a mut HashMap<(usize, u16, u32), CachedGlyph>,
-    ) -> Self {
+impl<'f> SoftwareRenderer<'f> {
+    pub fn new<F: Into<FontSource<'f>>>(fonts: F) -> Self {
         Self {
-            buffer,
-            width,
-            height,
-            physical_width: width,
-            physical_height: height,
             fonts: fonts.into(),
             font_bytes: None,
+            image_cache: HashMap::new(),
+            glyph_cache: HashMap::new(),
             clip_stack: Vec::new(),
-            swap_rb: false,
-            rotate: false,
-            rotation: 0,
-            x_offset: 0,
-            y_offset: 0,
-            image_cache,
-            glyph_cache,
             #[cfg(feature = "std")]
             layout: fontdue::layout::Layout::new(fontdue::layout::CoordinateSystem::PositiveYDown),
         }
     }
 
-    pub fn with_rotation(mut self, physical_width: u32, physical_height: u32, rotation: u32) -> Self {
-        self.physical_width = physical_width;
-        self.physical_height = physical_height;
-        self.rotation = rotation;
-        self.rotate = rotation != 0;
+    /// The font files behind the fonts, to find color emoji in.
+    pub fn with_font_bytes(mut self, font_bytes: &'f [&'f [u8]]) -> Self {
+        self.font_bytes = Some(font_bytes);
         self
     }
+}
 
+impl Renderer for SoftwareRenderer<'_> {
+    fn render(&mut self, target: &mut Surface<'_>, commands: &[DrawCommand], resources: &RenderResources<'_>, area: Rect) {
+        // Follow the image store's evictions: the converted pixels of an image
+        // that is no longer drawn would otherwise stay here forever.
+        self.image_cache.retain(|src, _| resources.images.get(src).is_some());
+
+        let (width, height, stride, origin, rotation) =
+            (target.width(), target.height(), target.stride(), target.origin(), target.rotation());
+        let (buffer, swap_rb) = match target.pixels_mut() {
+            Pixels::Xrgb8888(pixels) => (&mut **pixels, false),
+            Pixels::Xbgr8888(pixels) => (&mut **pixels, true),
+            _ => unimplemented!("pixel format"),
+        };
+        let (physical_width, physical_height) = match rotation {
+            Rotation::Deg90 | Rotation::Deg270 => (height, width),
+            Rotation::Deg0 | Rotation::Deg180 => (stride as u32, height),
+        };
+        let mut frame = Frame {
+            buffer,
+            width,
+            height,
+            physical_width,
+            physical_height,
+            fonts: self.fonts,
+            font_bytes: self.font_bytes,
+            clip_stack: &mut self.clip_stack,
+            swap_rb,
+            rotate: rotation != Rotation::Deg0,
+            rotation: rotation.degrees(),
+            x_offset: origin.0,
+            y_offset: origin.1,
+            image_cache: &mut self.image_cache,
+            glyph_cache: &mut self.glyph_cache,
+            #[cfg(feature = "std")]
+            layout: &mut self.layout,
+        };
+        frame.draw(commands, resources, area);
+        self.clip_stack.clear();
+    }
+}
+
+/// One render call: the target's pixels and the renderer's state, borrowed.
+struct Frame<'a> {
+    buffer: &'a mut [u32],
+    width: u32,
+    height: u32,
+    physical_width: u32,
+    #[allow(dead_code)]
+    physical_height: u32,
+    fonts: FontSource<'a>,
+    font_bytes: Option<&'a [&'a [u8]]>,
+    clip_stack: &'a mut Vec<Rect>,
+    swap_rb: bool,
+    #[allow(dead_code)]
+    rotate: bool,
+    rotation: u32,
+    x_offset: i32,
+    y_offset: i32,
+    image_cache: &'a mut HashMap<String, (u32, u32, Vec<u32>)>,
+    glyph_cache: &'a mut HashMap<(usize, u16, u32), CachedGlyph>,
+    #[cfg(feature = "std")]
+    layout: &'a mut fontdue::layout::Layout,
+}
+
+impl Frame<'_> {
     fn get_clip_rect(&self) -> Option<Rect> {
         self.clip_stack.last().copied()
     }
@@ -747,65 +786,12 @@ impl<'a> FastRenderer<'a> {
             height: r.height,
         }
     }
-
-    pub fn render_tiled<F>(
-        &mut self,
-        commands: &[DrawCommand],
-        resources: &RenderResources<'_>,
-        dirty_rect: Option<Rect>,
-        screen_height: u32,
-        mut flush_cb: F,
-    ) where
-        F: FnMut(i32, i32, u32, u32, &[u32]),
-    {
-        let mut y = 0;
-        let tile_h = self.height as i32;
-        while y < screen_height as i32 {
-            self.y_offset = y;
-            self.x_offset = 0;
-
-            let tile_rect = Rect {
-                x: 0.0,
-                y: y as f32,
-                width: self.width as f32,
-                height: self.height as f32,
-            };
-
-            let overlap = match dirty_rect {
-                Some(dr) => tile_rect.intersects(&dr),
-                None => true,
-            };
-
-            if overlap {
-                self.buffer.fill(0);
-                self.render(commands, resources, dirty_rect);
-                let actual_h = (screen_height as i32 - y).min(tile_h) as u32;
-                flush_cb(0, y, self.width, actual_h, &self.buffer[.. (self.width * actual_h) as usize]);
-            }
-
-            y += tile_h;
-        }
-    }
 }
 
-impl<'a> TextMeasurer for FastRenderer<'a> {
-    fn measure_text(&self, text: &str, font_size: f32, weight: u16) -> (f32, f32) {
-        let measurer = FastMeasurer { fonts: self.fonts };
-        measurer.measure_text(text, font_size, weight)
-    }
-
-    fn shape(&self, text: &str, font_size: f32, weight: u16) -> Arc<ShapedText> {
-        FastMeasurer { fonts: self.fonts }.shape(text, font_size, weight)
-    }
-}
-
-impl<'a> Renderer for FastRenderer<'a> {
-    fn render(&mut self, commands: &[DrawCommand], resources: &RenderResources<'_>, dirty_rect: Option<Rect>) {
+impl Frame<'_> {
+    /// Draws `commands`, changing only pixels inside `area` (screen coordinates).
+    fn draw(&mut self, commands: &[DrawCommand], resources: &RenderResources<'_>, area: Rect) {
         profile!("render_full");
-        // Follow the image store's evictions: the converted pixels of an image
-        // that is no longer drawn would otherwise stay here forever.
-        self.image_cache.retain(|src, _| resources.images.get(src).is_some());
-
         let tile_rect = Rect {
             x: self.x_offset as f32,
             y: self.y_offset as f32,
@@ -813,12 +799,8 @@ impl<'a> Renderer for FastRenderer<'a> {
             height: self.height as f32,
         };
 
-        let active_clip = match dirty_rect {
-            Some(dr) => match tile_rect.intersect(&dr) {
-                Some(inter) => inter,
-                None => return,
-            },
-            None => tile_rect,
+        let Some(active_clip) = tile_rect.intersect(&area) else {
+            return;
         };
 
         let local_base_clip = Rect {
@@ -885,8 +867,8 @@ impl<'a> Renderer for FastRenderer<'a> {
                         self.width,
                         self.height,
                         self.physical_width,
-                        local_rect.x as i32,
-                        local_rect.y as i32,
+                        floor_i32(local_rect.x),
+                        floor_i32(local_rect.y),
                         local_rect.width as i32,
                         local_rect.height as i32,
                         *border_radius,
@@ -918,8 +900,8 @@ impl<'a> Renderer for FastRenderer<'a> {
                             self.width,
                             self.height,
                             self.physical_width,
-                            local_rect.x as i32,
-                            local_rect.y as i32,
+                            floor_i32(local_rect.x),
+                            floor_i32(local_rect.y),
                             local_rect.width as i32,
                             local_rect.height as i32,
                             *border_radius,
@@ -941,8 +923,8 @@ impl<'a> Renderer for FastRenderer<'a> {
                                 self.width,
                                 self.height,
                                 self.physical_width,
-                                local_rect.x as i32,
-                                local_rect.y as i32,
+                                floor_i32(local_rect.x),
+                                floor_i32(local_rect.y),
                                 local_rect.width as i32,
                                 local_rect.height as i32,
                                 *border_radius,
@@ -959,8 +941,8 @@ impl<'a> Renderer for FastRenderer<'a> {
                             self.width,
                             self.height,
                             self.physical_width,
-                            local_rect.x as i32,
-                            local_rect.y as i32,
+                            floor_i32(local_rect.x),
+                            floor_i32(local_rect.y),
                             local_rect.width as i32,
                             local_rect.height as i32,
                             *border_radius,
@@ -1016,12 +998,12 @@ impl<'a> Renderer for FastRenderer<'a> {
                             if let Some(run) = run {
                                 // Shaped glyphs: positions are the advances.
                                 profile!("text_rasterize_blend");
-                                let baseline = (local_rect.y + run.baseline).round() as i32;
+                                let baseline = round_i32(local_rect.y + run.baseline);
                                 let emoji_top = floor_i32(local_rect.y + run.baseline - run.shaped.metrics.ascent + px * 0.10);
                                 let mut pen = local_rect.x;
                                 let glyphs = run.shaped.glyphs.get(run.start as usize..run.end as usize).unwrap_or(&[]);
                                 for glyph in glyphs {
-                                    let x = pen.round() as i32;
+                                    let x = round_i32(pen);
                                     pen += glyph.advance;
                                     let (key, fallback_font, emoji) = if glyph.font == EMOJI_FONT {
                                         let c = text
@@ -1205,8 +1187,8 @@ impl<'a> Renderer for FastRenderer<'a> {
                             self.width,
                             self.height,
                             self.physical_width,
-                            local_rect.x as i32,
-                            local_rect.y as i32,
+                            floor_i32(local_rect.x),
+                            floor_i32(local_rect.y),
                             local_rect.width as i32,
                             local_rect.height as i32,
                             grey,
@@ -1224,8 +1206,8 @@ impl<'a> Renderer for FastRenderer<'a> {
                         self.width,
                         self.height,
                         self.physical_width,
-                        local_rect.x as i32,
-                        local_rect.y as i32,
+                        floor_i32(local_rect.x),
+                        floor_i32(local_rect.y),
                         local_rect.width as i32,
                         local_rect.height as i32,
                         0.0,
@@ -1237,8 +1219,8 @@ impl<'a> Renderer for FastRenderer<'a> {
                     );
                     if *checked {
                         let inset = 4;
-                        let inner_x = local_rect.x as i32 + inset;
-                        let inner_y = local_rect.y as i32 + inset;
+                        let inner_x = floor_i32(local_rect.x) + inset;
+                        let inner_y = floor_i32(local_rect.y) + inset;
                         let inner_w = local_rect.width as i32 - inset * 2;
                         let inner_h = local_rect.height as i32 - inset * 2;
                         let packed = pack_color(*color, self.swap_rb);
@@ -1270,7 +1252,7 @@ impl<'a> Renderer for FastRenderer<'a> {
                         self.width,
                         self.height,
                         self.physical_width,
-                        local_rect.x as i32,
+                        floor_i32(local_rect.x),
                         track_y as i32,
                         local_rect.width as i32,
                         track_h as i32,
@@ -1289,7 +1271,7 @@ impl<'a> Renderer for FastRenderer<'a> {
                             self.width,
                             self.height,
                             self.physical_width,
-                            local_rect.x as i32,
+                            floor_i32(local_rect.x),
                             track_y as i32,
                             active_w as i32,
                             track_h as i32,
@@ -1356,8 +1338,8 @@ impl<'a> Renderer for FastRenderer<'a> {
                         self.width,
                         self.height,
                         self.physical_width,
-                        local_rect.x as i32,
-                        local_rect.y as i32,
+                        floor_i32(local_rect.x),
+                        floor_i32(local_rect.y),
                         local_rect.width as i32,
                         local_rect.height as i32,
                         local_rect.height / 2.0,
@@ -1376,8 +1358,8 @@ impl<'a> Renderer for FastRenderer<'a> {
                             self.width,
                             self.height,
                             self.physical_width,
-                            local_rect.x as i32,
-                            local_rect.y as i32,
+                            floor_i32(local_rect.x),
+                            floor_i32(local_rect.y),
                             active_w as i32,
                             local_rect.height as i32,
                             local_rect.height / 2.0,
@@ -1442,8 +1424,8 @@ pub fn blit_image_rgba(
         (0, 0, logical_w as i32, logical_h as i32)
     };
 
-    let rx = rect.x as i32;
-    let ry = rect.y as i32;
+    let rx = floor_i32(rect.x);
+    let ry = floor_i32(rect.y);
     let rw = rect.width as i32;
     let rh = rect.height as i32;
 
@@ -1557,8 +1539,8 @@ pub fn blit_image(
         (0, 0, logical_w as i32, logical_h as i32)
     };
 
-    let rx = rect.x as i32;
-    let ry = rect.y as i32;
+    let rx = floor_i32(rect.x);
+    let ry = floor_i32(rect.y);
     let rw = rect.width as i32;
     let rh = rect.height as i32;
 
@@ -1648,6 +1630,13 @@ fn floor_i32(v: f32) -> i32 {
     if (i as f32) > v { i - 1 } else { i }
 }
 
+/// Nearest integer, halves rounding up. Unlike `f32::round` (halves away from
+/// zero) it commutes with integer offsets, so a band or tile places things
+/// where the full frame does.
+fn round_i32(v: f32) -> i32 {
+    floor_i32(v + 0.5)
+}
+
 pub trait F32Ext {
     fn round(self) -> f32;
     fn ceil(self) -> f32;
@@ -1712,46 +1701,121 @@ impl F32Ext for f32 {
 mod tests {
     use super::*;
 
-    #[test]
-    fn dirty_culling_preserves_clip_stack() {
-        let mut buffer = vec![0xff000000; 200 * 20];
-        let mut images = HashMap::new();
-        let mut glyphs = HashMap::new();
+    fn no_resources() -> (HashMap<String, xerune::Canvas>, xerune::ImageStore) {
+        (HashMap::new(), xerune::ImageStore::new())
+    }
+
+    /// Draws `commands` into a fresh `width` x `height` buffer filled with
+    /// `background`, changing only `area`.
+    fn draw(width: u32, height: u32, background: u32, commands: &[DrawCommand], area: Rect) -> Vec<u32> {
+        let mut buffer = vec![background; (width * height) as usize];
         let fonts: &[xerune::BitmapFont] = &[];
-        let mut renderer = FastRenderer::new(
-            &mut buffer, 200, 20, fonts, &mut images, &mut glyphs,
-        );
-        let rect = |x, width, color| DrawCommand::DrawRect {
-            rect: Rect::new(x, 0.0, width, 10.0),
+        let (canvases, images) = no_resources();
+        let mut target = Surface::new(Pixels::Xrgb8888(&mut buffer), width, height);
+        SoftwareRenderer::new(fonts).render(&mut target, commands, &RenderResources::new(&canvases, &images), area);
+        buffer
+    }
+
+    fn rect(x: f32, y: f32, width: f32, height: f32, color: xerune::Color) -> DrawCommand {
+        DrawCommand::DrawRect {
+            rect: Rect::new(x, y, width, height),
             color: Some(color),
             gradient: None,
             border_radius: 0.0,
             border: xerune::style::Borders::NONE,
+        }
+    }
+
+    /// A scene with gradients, rounded corners, borders, a shadow and clips.
+    fn scene() -> Vec<DrawCommand> {
+        use xerune::style::{BorderSide, Borders};
+        let gradient = |angle| {
+            Some(xerune::Gradient::Linear(xerune::LinearGradient {
+                angle,
+                stops: Arc::from([(xerune::Color::new(200, 40, 90, 255), 0.0), (xerune::Color::new(30, 60, 220, 255), 1.0)]),
+            }))
         };
+        vec![
+            DrawCommand::DrawRect { rect: Rect::new(0.0, 0.0, 64.0, 48.0), color: None, gradient: gradient(160.0), border_radius: 0.0, border: Borders::NONE },
+            DrawCommand::DrawBoxShadow { rect: Rect::new(8.0, 8.0, 30.0, 20.0), border_radius: 6.0, offset_x: 0.0, offset_y: 3.0, blur_radius: 6.0, spread_radius: 0.0, color: xerune::Color::new(0, 0, 0, 120), inset: false },
+            DrawCommand::DrawRect { rect: Rect::new(8.0, 8.0, 30.0, 20.0), color: Some(xerune::Color::new(240, 240, 240, 230)), gradient: None, border_radius: 6.0, border: Borders { top: BorderSide::solid(2.0, xerune::Color::new(90, 90, 90, 255)), ..Borders::NONE } },
+            DrawCommand::Clip { rect: Rect::new(30.0, 20.0, 30.0, 25.0) },
+            DrawCommand::DrawRect { rect: Rect::new(20.0, 15.0, 40.0, 30.0), color: None, gradient: gradient(90.0), border_radius: 9.0, border: Borders::NONE },
+            DrawCommand::PopClip,
+            rect(2.5, 40.25, 50.0, 5.5, xerune::Color::new(20, 200, 120, 160)),
+        ]
+    }
+
+    #[test]
+    fn dirty_culling_preserves_clip_stack() {
         let commands = [
             DrawCommand::Clip { rect: Rect::new(100.0, 0.0, 10.0, 10.0) },
-            rect(0.0, 10.0, xerune::Color::new(255, 0, 0, 255)),
+            rect(0.0, 0.0, 10.0, 10.0, xerune::Color::new(255, 0, 0, 255)),
             DrawCommand::PopClip,
-            rect(10.0, 100.0, xerune::Color::new(0, 255, 0, 255)),
+            rect(10.0, 0.0, 100.0, 10.0, xerune::Color::new(0, 255, 0, 255)),
         ];
-
-        renderer.render(&commands, &xerune::RenderResources::new(&HashMap::new(), &xerune::ImageStore::new()), Some(Rect::new(0.0, 0.0, 20.0, 20.0)));
-        assert!(renderer.clip_stack.is_empty());
+        let buffer = draw(200, 20, 0xff000000, &commands, Rect::new(0.0, 0.0, 20.0, 20.0));
         assert_eq!(buffer[0], 0xff000000, "Clipped child must remain invisible");
         assert_eq!(buffer[10], 0xff00ff00, "Sibling must render after PopClip");
         assert_eq!(buffer[20], 0xff000000, "Dirty-region clip must remain active");
     }
 
     #[test]
-    fn image_cache_follows_image_store_evictions() {
-        let mut buffer = vec![0; 4];
-        let mut images = HashMap::new();
-        images.insert("gone.png".to_string(), (1, 1, vec![0xffffffff]));
-        let mut glyphs = HashMap::new();
+    fn bands_draw_the_same_pixels_as_a_full_frame() {
+        let (width, height) = (64, 48);
+        let commands = scene();
+        let full = draw(width, height, 0, &commands, Rect::new(0.0, 0.0, width as f32, height as f32));
+
+        // As on a microcontroller: one 7-row band buffer, flushed after each band.
         let fonts: &[xerune::BitmapFont] = &[];
-        let mut renderer = FastRenderer::new(&mut buffer, 2, 2, fonts, &mut images, &mut glyphs);
-        renderer.render(&[], &xerune::RenderResources::new(&HashMap::new(), &xerune::ImageStore::new()), None);
-        assert!(images.is_empty(), "pixels of an evicted image must be dropped");
+        let mut renderer = SoftwareRenderer::new(fonts);
+        let (canvases, images) = no_resources();
+        let mut screen = vec![0u32; (width * height) as usize];
+        let mut band = vec![0u32; (width * 7) as usize];
+        for y in (0..height).step_by(7) {
+            let rows = 7.min(height - y);
+            band.fill(0);
+            let mut target = Surface::new(Pixels::Xrgb8888(&mut band), width, rows).with_origin(0, y as i32);
+            let area = target.area();
+            renderer.render(&mut target, &commands, &RenderResources::new(&canvases, &images), area);
+            let start = (y * width) as usize;
+            screen[start..start + (rows * width) as usize].copy_from_slice(&band[..(rows * width) as usize]);
+        }
+        if let Some(i) = screen.iter().zip(&full).position(|(a, b)| a != b) {
+            panic!("banded rendering differs at ({}, {}): {:08x} vs {:08x}", i as u32 % width, i as u32 / width, screen[i], full[i]);
+        }
+    }
+
+    #[test]
+    fn a_padded_stride_draws_the_same_image() {
+        let (width, height, stride) = (64u32, 48u32, 80usize);
+        let commands = scene();
+        let full = draw(width, height, 0, &commands, Rect::new(0.0, 0.0, width as f32, height as f32));
+
+        let fonts: &[xerune::BitmapFont] = &[];
+        let (canvases, images) = no_resources();
+        let pad = 0x12345678;
+        let mut padded = vec![pad; stride * height as usize];
+        let mut target = Surface::new(Pixels::Xrgb8888(&mut padded), width, height).with_stride(stride);
+        let area = target.area();
+        SoftwareRenderer::new(fonts).render(&mut target, &commands, &RenderResources::new(&canvases, &images), area);
+        for y in 0..height as usize {
+            assert_eq!(&padded[y * stride..y * stride + width as usize], &full[y * width as usize..(y + 1) * width as usize], "row {y}");
+            assert!(padded[y * stride + width as usize..(y + 1) * stride].iter().all(|p| *p == pad), "padding of row {y} was written");
+        }
+    }
+
+    #[test]
+    fn image_cache_follows_image_store_evictions() {
+        let fonts: &[xerune::BitmapFont] = &[];
+        let mut renderer = SoftwareRenderer::new(fonts);
+        renderer.image_cache.insert("gone.png".to_string(), (1, 1, vec![0xffffffff]));
+        let mut buffer = vec![0; 4];
+        let (canvases, images) = no_resources();
+        let mut target = Surface::new(Pixels::Xrgb8888(&mut buffer), 2, 2);
+        let area = target.area();
+        renderer.render(&mut target, &[], &RenderResources::new(&canvases, &images), area);
+        assert!(renderer.image_cache.is_empty(), "pixels of an evicted image must be dropped");
     }
 
     #[test]
@@ -1775,10 +1839,6 @@ mod tests {
     #[test]
     fn border_sides_meet_on_the_corner_diagonal() {
         use xerune::style::{BorderSide, Borders};
-        let mut buffer = vec![0xffffffff; 20 * 20];
-        let (mut images, mut glyphs) = (HashMap::new(), HashMap::new());
-        let fonts: &[xerune::BitmapFont] = &[];
-        let mut renderer = FastRenderer::new(&mut buffer, 20, 20, fonts, &mut images, &mut glyphs);
         let (red, blue) = (xerune::Color::new(255, 0, 0, 255), xerune::Color::new(0, 0, 255, 255));
         let none = BorderSide { width: 0.0, ..BorderSide::solid(0.0, red) };
         let commands = [DrawCommand::DrawRect {
@@ -1788,7 +1848,7 @@ mod tests {
             border_radius: 0.0,
             border: Borders { top: BorderSide::solid(4.0, red), left: BorderSide::solid(4.0, blue), right: none, bottom: none },
         }];
-        renderer.render(&commands, &xerune::RenderResources::new(&HashMap::new(), &xerune::ImageStore::new()), None);
+        let buffer = draw(20, 20, 0xffffffff, &commands, Rect::new(0.0, 0.0, 20.0, 20.0));
         let at = |x: usize, y: usize| buffer[y * 20 + x];
         assert_eq!(at(10, 1), 0xffff0000, "top band");
         assert_eq!(at(1, 10), 0xff0000ff, "left band");

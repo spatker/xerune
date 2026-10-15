@@ -12,7 +12,7 @@ use std::{
     collections::{BTreeMap, HashMap}, env, fs, io::Write, path::{Path, PathBuf},
     process::{Command, Stdio}, time::{Duration, Instant},
 };
-use xerune_render::{FastMeasurer, FastRenderer};
+use xerune_render::{FastMeasurer, SoftwareRenderer};
 use markup5ever_rcdom::{Handle, NodeData, RcDom};
 use rayon::prelude::*;
 use tiny_skia::Pixmap;
@@ -127,9 +127,8 @@ fn render(document: Document, root: &Path, fonts: &'static [fontdue::Font]) -> R
     runtime.set_size(WIDTH as f32, HEIGHT as f32);
     runtime.wait_for_images(Duration::from_secs(5));
     let mut buffer = vec![0xffff_ffffu32; (WIDTH * HEIGHT) as usize];
-    let (mut images, mut glyphs) = (HashMap::new(), HashMap::new());
-    let mut renderer = FastRenderer::new(&mut buffer, WIDTH, HEIGHT, fonts, &mut images, &mut glyphs);
-    runtime.render(&mut renderer);
+    let mut target = xerune::Surface::new(xerune::Pixels::Xrgb8888(&mut buffer), WIDTH, HEIGHT);
+    runtime.render(&mut SoftwareRenderer::new(fonts), &mut target);
     let mut pixmap = Pixmap::new(WIDTH, HEIGHT).unwrap();
     // 0xAARRGGBB words to opaque RGBA bytes.
     for (pixel, bytes) in buffer.iter().zip(pixmap.data_mut().chunks_exact_mut(4)) {

@@ -34,8 +34,8 @@ mod todo_impl;
 use std::time::{Duration, Instant};
 
 use xerune::images::{DefaultImageLoader, ImageError, ImageLoader};
-use xerune::{Model, RenderResources, Runtime, TemplateLayout};
-use xerune_render::{FastMeasurer, FastRenderer};
+use xerune::{Model, Pixels, RenderResources, Runtime, Surface, TemplateLayout};
+use xerune_render::{FastMeasurer, SoftwareRenderer};
 
 /// Loads local images only, so results do not depend on the network.
 struct LocalImages(DefaultImageLoader);
@@ -78,10 +78,9 @@ impl Bench {
         runtime.tick();
 
         let mut buffer = vec![0u32; (width * height) as usize];
-        let mut image_cache = Default::default();
-        let mut glyph_cache = Default::default();
+        let mut renderer = SoftwareRenderer::new(self.fonts);
         // Warm the glyph and image caches as a running app has them.
-        runtime.render(&mut FastRenderer::new(&mut buffer, width, height, self.fonts, &mut image_cache, &mut glyph_cache));
+        runtime.render(&mut renderer, &mut Surface::new(Pixels::Xrgb8888(&mut buffer), width, height));
 
         let wants = |phase: &str| self.phase.as_deref().is_none_or(|p| p == phase);
         let mut line = format!("{name:<13}");
@@ -92,8 +91,9 @@ impl Bench {
             let mut samples = Vec::with_capacity(self.iters);
             for _ in 0..self.iters {
                 let t = Instant::now();
-                let mut renderer = FastRenderer::new(&mut buffer, width, height, self.fonts, &mut image_cache, &mut glyph_cache);
-                xerune::Renderer::render(&mut renderer, &commands, &resources, None);
+                let mut target = Surface::new(Pixels::Xrgb8888(&mut buffer), width, height);
+                let area = target.area();
+                xerune::Renderer::render(&mut renderer, &mut target, &commands, &resources, area);
                 samples.push(t.elapsed());
             }
             let hash = xerune::model::hash_bytes(bytemuck::cast_slice(&buffer));
@@ -109,8 +109,7 @@ impl Bench {
                 update.push(t.elapsed());
 
                 let t = Instant::now();
-                let mut renderer = FastRenderer::new(&mut buffer, width, height, self.fonts, &mut image_cache, &mut glyph_cache);
-                let damage = runtime.render(&mut renderer);
+                let damage = runtime.render(&mut renderer, &mut Surface::new(Pixels::Xrgb8888(&mut buffer), width, height));
                 render.push(t.elapsed());
                 let screen = xerune::Rect::new(0.0, 0.0, width as f32, height as f32);
                 area += damage.rects().iter().filter_map(|d| d.intersect(&screen)).map(|d| d.width * d.height).sum::<f32>();

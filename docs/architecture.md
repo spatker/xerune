@@ -64,7 +64,8 @@ Once the Taffy tree computes the relative position and dimensions of every eleme
    - `DrawImage`: Blits raw images.
    - `DrawCanvas`: Blits custom user-drawn Canvas buffers.
 3. **Clip Rectangles**: Overflows are restricted by generating `Clip` and `PopClip` commands.
-4. **Execution**: The renderer implementation (e.g., xerune_render) executes the commands onto the screen buffer.
+4. **Damage**: `Runtime::render` diffs the commands with the previous frame's (Myers' diff: inserted and removed commands) and repaints only those areas, as a `Damage` of up to 8 rectangles. The first frame, a viewport change and newly loaded images repaint everything.
+5. **Execution**: A `Renderer` (normally `xerune_render::SoftwareRenderer`) draws the commands into a `Surface`, one damaged rectangle at a time. A surface has a pixel format, a row stride (a display's pitch), a rotation, and an origin: it can be a band of the screen, so a device without memory for a full frame renders in strips, with the same pixels as a full frame.
 
 
 ---
