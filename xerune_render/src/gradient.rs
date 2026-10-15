@@ -720,6 +720,8 @@ pub fn draw_shaded_rounded_rect(
         }
     };
 
+    // Where per-pixel stepping starts, independent of the clip.
+    let box_left = (box_cx - half_w) as i32;
     for py in start_y..end_y {
         let fy = py as f32 + 0.5;
         let qy = (fy - box_cy).abs() - inner_h;
@@ -753,22 +755,45 @@ pub fn draw_shaded_rounded_rect(
                 let offset = shader.colors.start * scale;
                 let v = (fy - shader.cy) * inv_ry;
                 let vv = v * v;
-                let mut u = (span_lo as f32 + 0.5 - shader.cx) * inv_rx;
-                for _ in span_lo..span_hi {
-                    let t = (u * u + vv).sqrt();
-                    let color = table[(t * scale - offset).clamp(0.0, max) as usize];
-                    if let Some(dst) = buffer.get_mut(idx as usize) {
-                        blend_pixel(dst, color);
+                // `u` is computed exactly at the start of every 16-pixel block
+                // (counted from the box edge) and stepped inside it, so each
+                // pixel gets the same color whatever the clip; a span starting
+                // inside a block first steps up to its start.
+                const BLOCK: i32 = 16;
+                let center = 0.5 - shader.cx;
+                let mut px = span_lo;
+                let mut block = box_left + (span_lo - box_left).div_euclid(BLOCK) * BLOCK;
+                while px < span_hi {
+                    let mut u = (block as f32 + center) * inv_rx;
+                    for _ in block..px {
+                        u += inv_rx;
                     }
-                    u += inv_rx;
-                    idx += stride;
+                    let block_end = (block + BLOCK).min(span_hi);
+                    for _ in px..block_end {
+                        let t = (u * u + vv).sqrt();
+                        let color = table[(t * scale - offset).clamp(0.0, max) as usize];
+                        if let Some(dst) = buffer.get_mut(idx as usize) {
+                            blend_pixel(dst, color);
+                        }
+                        u += inv_rx;
+                        idx += stride;
+                    }
+                    px = block_end;
+                    block += BLOCK;
                 }
-            } else if let Some((mut u, du)) = shader.linear_row(span_lo, fy, level) {
+            } else if let Some((u_box, du)) = shader.linear_row(box_left, fy, level) {
                 // Linear: the table index advances by a constant per pixel.
+                // Stepped in 16.16 fixed point from the box's left edge, so
+                // every pixel gets the same index whatever the clip, and
+                // integer steps avoid a float-to-int conversion per pixel.
+                // The box spans at most the table's length (2048), well
+                // within range.
                 let table = &shader.colors.levels[level];
-                let max = (table.len() - 1) as f32;
+                let max = (table.len() - 1) as i32;
+                let du = (du * 65536.0) as i32;
+                let mut u = (u_box * 65536.0) as i32 + (span_lo - box_left) * du;
                 for _ in span_lo..span_hi {
-                    let color = table[u.clamp(0.0, max) as usize];
+                    let color = table[(u >> 16).clamp(0, max) as usize];
                     if let Some(dst) = buffer.get_mut(idx as usize) {
                         blend_pixel(dst, color);
                     }
