@@ -2,6 +2,13 @@
 name = "fast_renderer"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.85"
+description = "Software rasterizer for Xerune draw commands: rects, borders, shadows, gradients, images and text"
+license = "MIT"
+repository = "https://github.com/spatker/xerune"
+keywords = ["rasterizer", "embedded", "software-rendering", "xerune"]
+categories = ["embedded", "rendering", "graphics"]
+include = ["/src"]
 
 [dependencies]
 xerune = { version = "0.1.0", path = "../", default-features = false }

@@ -8,6 +8,7 @@ repository = "https://github.com/spatker/xerune"
 readme = "../README.md"
 keywords = ["html", "renderer", "embedded", "mvu", "gui"]
 categories = ["embedded", "gui", "rendering"]
+rust-version = "1.85"
 
 [lib]
 proc-macro = true
