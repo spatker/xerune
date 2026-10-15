@@ -637,6 +637,38 @@ fn test_html_root_fills_viewport_width() {
     assert_eq!(runtime.ui.taffy.layout(body).unwrap().size.width, 784.0);
 }
 
+#[derive(XeruneTemplate)]
+#[template(source = r#"<html><head><style>
+  html { font-size: 10px }
+  body { margin: 0 }
+  .a { width: 2em; font-size: 20px; height: 1rem }
+  .b { font-size: 2em }
+  .c { width: 3em; height: 1px }
+</style></head><body><div class="a"></div><div class="b"><div class="c"></div></div></body></html>"#)]
+struct FontRelativeModel;
+
+impl Model for FontRelativeModel {
+    type Message = MockMsg;
+    fn update(&mut self, _msg: Self::Message, _context: &mut Context) {}
+}
+
+#[test]
+fn em_is_relative_to_the_font_size_and_rem_to_the_root() {
+    let mut runtime = Runtime::new(FontRelativeModel, MockMeasurer);
+    crate::set_size(&mut runtime, 800.0, 600.0);
+    let ui = &runtime.ui;
+    let html = ui.taffy.children(ui.root).unwrap()[0];
+    let body = ui.taffy.children(html).unwrap()[0];
+    let [a, b] = ui.taffy.children(body).unwrap()[..] else { panic!() };
+    let c = ui.taffy.children(b).unwrap()[0];
+    let size = |n| ui.taffy.layout(n).unwrap().size;
+    // `font-size` applies before `width: 2em`, though it comes after it.
+    assert_eq!(size(a).width, 40.0);
+    assert_eq!(size(a).height, 10.0, "1rem is html's 10px");
+    // `font-size: 2em` doubles body's 10px; `.c` inherits 20px.
+    assert_eq!(size(c).width, 60.0);
+}
+
 mod canvas {
     //! The canvas background: browsers paint `<html>`'s background (else
     //! `<body>`'s, else white) behind every frame.

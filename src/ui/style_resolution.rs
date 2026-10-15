@@ -334,16 +334,20 @@ pub(crate) fn resolve_styles(
         let mut l_style = defaults.taffy_style;
         let mut c_style = defaults.container_style;
 
-        for &index in &cache_key.matched_rules {
-            for decl in &stylesheet.rules[index].declarations {
-                let name_lower;
-                let name = if decl.name.chars().any(|c| c.is_ascii_uppercase()) {
-                    name_lower = decl.name.to_lowercase();
-                    &name_lower
-                } else {
-                    decl.name
-                };
-                css::apply_declaration(name, decl.value, &mut c_style, &mut l_style);
+        for font_pass in [true, false] {
+            for &index in &cache_key.matched_rules {
+                for decl in &stylesheet.rules[index].declarations {
+                    let name_lower;
+                    let name = if decl.name.chars().any(|c| c.is_ascii_uppercase()) {
+                        name_lower = decl.name.to_lowercase();
+                        &name_lower
+                    } else {
+                        decl.name
+                    };
+                    if css::sets_font_size(name) == font_pass {
+                        css::apply_declaration(name, decl.value, &mut c_style, &mut l_style);
+                    }
+                }
             }
         }
         let pair = (l_style, c_style);

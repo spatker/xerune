@@ -22,25 +22,25 @@
 # css/CSS2/visudet                       3    21    12%     14
 # css/CSS2/visuren                       0    26     0%      8
 # css/css-align                          0    57     0%      5
-# css/css-backgrounds                   35   468     7%    144
+# css/css-backgrounds                   36   467     7%    144
 # css/css-borders                        1    56     2%     17
 # css/css-box                            0     2     0%     65
 # css/css-cascade                        2    29     6%     19
 # css/css-color                          1   280     0%     25
 # css/css-conditional                   14   117    11%     34
 # css/css-display                        0    42     0%     38
-# css/css-flexbox                       32   751     4%    189
+# css/css-flexbox                       38   745     5%    189
 # css/css-images                        23   172    12%    201
 # css/css-overflow                      11   134     8%    278
 # css/css-position                       1    83     1%     66
 # css/css-sizing                         8   377     2%    146
 # css/css-text                          90   814    10%    213
 # css/css-ui                             8   118     6%     65
-# css/css-values                         6   146     4%     59
+# css/css-values                         7   145     5%     59
 # css/css-variables                      0   180     0%      2
 # css/mediaqueries                       0    47     0%     11
 # css/selectors                          4    86     4%    135
-# total                                248  8184     3%   1992
+# total                                256  8176     3%   1992
 FAIL css/CSS2/abspos/abspos-containing-block-initial-004a.xht
 FAIL css/CSS2/abspos/abspos-containing-block-initial-004b.xht
 FAIL css/CSS2/abspos/abspos-containing-block-initial-004c.xht
@@ -4351,7 +4351,6 @@ FAIL css/css-backgrounds/background-clip/clip-rounded-corner.html
 FAIL css/css-backgrounds/background-clip/clip-text-blend-mode.html
 FAIL css/css-backgrounds/background-clip/clip-text-composited-descendant-with-bg-color.html
 FAIL css/css-backgrounds/background-clip/clip-text-descendants.html
-FAIL css/css-backgrounds/background-clip/clip-text-ellipsis.html
 FAIL css/css-backgrounds/background-clip/clip-text-flex.html
 FAIL css/css-backgrounds/background-clip/clip-text-fragmentation.html
 FAIL css/css-backgrounds/background-clip/clip-text-inline-block-child.html
@@ -5335,7 +5334,6 @@ FAIL css/css-flexbox/abspos/flex-abspos-staticpos-margin-001.html
 FAIL css/css-flexbox/abspos/flex-abspos-staticpos-margin-002.html
 FAIL css/css-flexbox/abspos/flex-abspos-staticpos-margin-003.html
 FAIL css/css-flexbox/abspos/flexbox_absolute-atomic.html
-FAIL css/css-flexbox/abspos/flexbox_inline-abspos.html
 FAIL css/css-flexbox/abspos/position-absolute-006.html
 FAIL css/css-flexbox/abspos/position-absolute-007.html
 FAIL css/css-flexbox/abspos/position-absolute-008.html
@@ -5367,6 +5365,7 @@ FAIL css/css-flexbox/align-items-005.htm
 FAIL css/css-flexbox/align-items-006.html
 FAIL css/css-flexbox/align-items-007.html
 FAIL css/css-flexbox/align-items-009.html
+FAIL css/css-flexbox/align-items-baseline-overflow-non-visible.html
 FAIL css/css-flexbox/align-self-001.html
 FAIL css/css-flexbox/align-self-002.html
 FAIL css/css-flexbox/align-self-003.html
@@ -5777,7 +5776,6 @@ FAIL css/css-flexbox/flexbox_align-self-center.html
 FAIL css/css-flexbox/flexbox_align-self-flexend.html
 FAIL css/css-flexbox/flexbox_align-self-flexstart.html
 FAIL css/css-flexbox/flexbox_align-self-stretch.html
-FAIL css/css-flexbox/flexbox_block.html
 FAIL css/css-flexbox/flexbox_box-clear.html
 FAIL css/css-flexbox/flexbox_columns-flexitems-2.html
 FAIL css/css-flexbox/flexbox_columns-flexitems.html
@@ -5872,11 +5870,7 @@ FAIL css/css-flexbox/flexbox_generated-nested-flex.html
 FAIL css/css-flexbox/flexbox_generated.html
 FAIL css/css-flexbox/flexbox_inline-float.html
 FAIL css/css-flexbox/flexbox_inline.html
-FAIL css/css-flexbox/flexbox_item-bottom-float.html
 FAIL css/css-flexbox/flexbox_item-clear.html
-FAIL css/css-flexbox/flexbox_item-float.html
-FAIL css/css-flexbox/flexbox_item-top-float.html
-FAIL css/css-flexbox/flexbox_item-vertical-align.html
 FAIL css/css-flexbox/flexbox_justifycontent-center.html
 FAIL css/css-flexbox/flexbox_justifycontent-end-rtl.html
 FAIL css/css-flexbox/flexbox_justifycontent-end.html
@@ -5898,7 +5892,6 @@ FAIL css/css-flexbox/flexbox_justifycontent-stretch.html
 FAIL css/css-flexbox/flexbox_margin-auto-overflow.html
 FAIL css/css-flexbox/flexbox_margin-auto.html
 FAIL css/css-flexbox/flexbox_margin-left-ex.html
-FAIL css/css-flexbox/flexbox_margin.html
 FAIL css/css-flexbox/flexbox_nested-flex.html
 FAIL css/css-flexbox/flexbox_order-abspos-space-around.html
 FAIL css/css-flexbox/flexbox_order-box.html
@@ -7903,7 +7896,6 @@ FAIL css/css-values/urls/cross-origin/url-image-set-cross-origin-anonymous-negat
 FAIL css/css-values/urls/integrity/url-image-integrity-negative.sub.html
 FAIL css/css-values/vh-calc-support-pct.html
 FAIL css/css-values/vh-calc-support.html
-FAIL css/css-values/vh-em-inherit.html
 FAIL css/css-values/vh-inherit.html
 FAIL css/css-values/viewport-unit-011.html
 FAIL css/css-values/viewport-units-001-print.html

@@ -205,6 +205,10 @@ pub struct ContainerStyle {
     pub color: Color,
     /// Font size in pixels.
     pub font_size: f32,
+    /// The parent's font size: what `em` means in `font-size` itself.
+    pub parent_font_size: f32,
+    /// The root element's font size, for `rem`.
+    pub root_font_size: f32,
     /// Font weight (0 for Regular, 1 for Bold).
     pub weight: u16,
     /// Optional solid background fill color.
@@ -311,6 +315,8 @@ impl Default for ContainerStyle {
         Self {
             color: Color::from_rgba8(0, 0, 0, 255),
             font_size: 16.0,
+            parent_font_size: 16.0,
+            root_font_size: 16.0,
             weight: 0,
             background_color: None,
             border_radius: 0.0,

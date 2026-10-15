@@ -58,6 +58,11 @@ pub fn get_default_style(tag: &str, parent_style: &ContainerStyle) -> StyleBundl
     bundle.container_style = parent_style.clone();
 
     bundle.container_style.line_height = parent_style.line_height.inherited(parent_style.font_size);
+    bundle.container_style.parent_font_size = parent_style.font_size;
+    if tag == "body" {
+        // `<body>` is the root's child: `rem` is the root's font size from here on.
+        bundle.container_style.root_font_size = parent_style.font_size;
+    }
 
     // Reset non-inherited CSS properties
     bundle.container_style.background_color = None;

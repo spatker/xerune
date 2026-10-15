@@ -155,22 +155,13 @@ pub fn parse_inline_style(style_str: &str, current_style: &mut ContainerStyle, t
         }
     }
 
-    let mut rest = style_str;
-    while !rest.is_empty() {
-        let decl;
-        if let Some(semi_idx) = rest.find(';') {
-            decl = &rest[..semi_idx];
-            rest = &rest[semi_idx + 1..];
-        } else {
-            decl = rest;
-            rest = "";
-        }
-        
-        if let Some(colon_idx) = decl.find(':') {
-            let key = decl[..colon_idx].trim();
-            let val = decl[colon_idx + 1..].trim();
-            if !key.is_empty() && !val.is_empty() {
-                apply_declaration(key, val, current_style, taffy_style);
+    for font_pass in [true, false] {
+        for decl in style_str.split(';') {
+            if let Some((key, val)) = decl.split_once(':') {
+                let (key, val) = (key.trim(), val.trim());
+                if !key.is_empty() && !val.is_empty() && sets_font_size(key) == font_pass {
+                    apply_declaration(key, val, current_style, taffy_style);
+                }
             }
         }
     }
@@ -197,15 +188,70 @@ fn parse_line_height(val: &str) -> Option<crate::style::LineHeight> {
     }
 }
 
-/// Applies a list of `(property, value)` declarations in order.
+/// Applies a list of `(property, value)` declarations in cascade order.
 pub fn apply_declarations(declarations: &[(&str, &str)], current_style: &mut ContainerStyle, taffy_style: &mut Style) {
-    for (prop, val) in declarations {
-        apply_declaration(prop, val, current_style, taffy_style);
+    for font_pass in [true, false] {
+        for (prop, val) in declarations {
+            if sets_font_size(prop) == font_pass {
+                apply_declaration(prop, val, current_style, taffy_style);
+            }
+        }
     }
+}
+
+/// Whether `prop` can change the font size. Those declarations are applied
+/// first, because `em` lengths in the others depend on the result.
+pub fn sets_font_size(prop: &str) -> bool {
+    matches!(prop, "font-size" | "font")
+}
+
+/// Rewrites `em` and `rem` lengths in `val` as `px`, or returns `None` if
+/// there are none.
+fn resolve_font_relative_lengths(val: &str, em: f32, rem: f32) -> Option<String> {
+    if !val.contains("em") {
+        return None;
+    }
+    let bytes = val.as_bytes();
+    let is_word = |b: u8| b.is_ascii_alphanumeric() || b == b'_' || b == b'-' || b == b'.';
+    let mut out = String::new();
+    let (mut last, mut from) = (0, 0);
+    while let Some(pos) = val[from..].find("em") {
+        let unit_end = from + pos + 2;
+        from = unit_end;
+        let is_rem = from - 2 > 0 && bytes[from - 3] == b'r';
+        let unit_start = if is_rem { unit_end - 3 } else { unit_end - 2 };
+        let mut start = unit_start;
+        while start > 0 && (bytes[start - 1].is_ascii_digit() || bytes[start - 1] == b'.') {
+            start -= 1;
+        }
+        if start > 0 && matches!(bytes[start - 1], b'-' | b'+') {
+            start -= 1;
+        }
+        let bounded = (start == 0 || !is_word(bytes[start - 1])) && (unit_end == bytes.len() || !is_word(bytes[unit_end]));
+        let Ok(n) = val[start..unit_start].parse::<f32>() else { continue };
+        if bounded {
+            out.push_str(&val[last..start]);
+            out.push_str(&format!("{}px", n * if is_rem { rem } else { em }));
+            last = unit_end;
+        }
+    }
+    (last > 0).then(|| out + &val[last..])
 }
 
 /// Applies a single CSS key-value declaration to the given styling structures.
 pub fn apply_declaration(prop: &str, val: &str, current_style: &mut ContainerStyle, taffy_style: &mut Style) {
+    // `line-height: 1.5em` stays relative: it is resolved where it is used.
+    if prop != "line-height" {
+        // In `font-size` itself, `em` is the parent's font size.
+        let em = if sets_font_size(prop) { current_style.parent_font_size } else { current_style.font_size };
+        if let Some(val) = resolve_font_relative_lengths(val, em, current_style.root_font_size) {
+            return apply_resolved_declaration(prop, &val, current_style, taffy_style);
+        }
+    }
+    apply_resolved_declaration(prop, val, current_style, taffy_style)
+}
+
+fn apply_resolved_declaration(prop: &str, val: &str, current_style: &mut ContainerStyle, taffy_style: &mut Style) {
     match prop {
         "display" => {
             match val {
@@ -254,6 +300,8 @@ pub fn apply_declaration(prop: &str, val: &str, current_style: &mut ContainerSty
         "font-size" => {
             if let Some(size) = parse_px(val) {
                 current_style.font_size = size;
+            } else if let Some(Ok(p)) = val.strip_suffix('%').map(|p| p.trim().parse::<f32>()) {
+                current_style.font_size = current_style.parent_font_size * p / 100.0;
             }
         }
         "font-weight" => {
@@ -887,7 +935,20 @@ pub fn apply_declaration(prop: &str, val: &str, current_style: &mut ContainerSty
 
 #[cfg(all(test, feature = "std"))]
 mod tests {
-    use super::rewrite_for_simplecss;
+    use super::{resolve_font_relative_lengths, rewrite_for_simplecss};
+
+    #[test]
+    fn em_and_rem_lengths_become_px() {
+        let resolve = |v| resolve_font_relative_lengths(v, 20.0, 10.0);
+        assert_eq!(resolve("1em 0").as_deref(), Some("20px 0"));
+        assert_eq!(resolve("-0.5em .5rem 2px").as_deref(), Some("-10px 5px 2px"));
+        assert_eq!(resolve("bold 1.5em/1.2 Ahem").as_deref(), Some("bold 30px/1.2 Ahem"));
+        assert_eq!(resolve("1px solid red"), None);
+        // Not lengths: words and URLs that merely contain "em".
+        assert_eq!(resolve("lorem"), None);
+        assert_eq!(resolve("url(a2em.png)"), None);
+        assert_eq!(resolve("system-ui, 'Emoji'"), None);
+    }
 
     #[test]
     fn rewrite_for_simplecss_rewrites_structural_pseudo_classes() {

@@ -386,8 +386,9 @@ pub(crate) fn dom_to_taffy(
             let mut parsed = ParsedAttributes::new(defaults.element_type);
             
             let el_wrapper = ElementWrapper(handle.clone());
-            for rule in &stylesheet.rules {
-                if rule.selector.matches(&el_wrapper) {
+            let matched: Vec<_> = stylesheet.rules.iter().filter(|rule| rule.selector.matches(&el_wrapper)).collect();
+            for font_pass in [true, false] {
+                for rule in &matched {
                     for decl in &rule.declarations {
                         let name_lower;
                         let name = if decl.name.chars().any(|c| c.is_ascii_uppercase()) {
@@ -396,7 +397,9 @@ pub(crate) fn dom_to_taffy(
                         } else {
                             decl.name
                         };
-                        css::apply_declaration(name, decl.value, &mut current_style, &mut layout_style);
+                        if css::sets_font_size(name) == font_pass {
+                            css::apply_declaration(name, decl.value, &mut current_style, &mut layout_style);
+                        }
                     }
                 }
             }
