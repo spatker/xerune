@@ -1,7 +1,7 @@
 #[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::*;
 
-#[cfg(target_arch = "x86")]
+#[cfg(all(target_arch = "x86", target_feature = "sse2"))]
 use core::arch::x86::*;
 
 #[cfg(target_arch = "aarch64")]
@@ -68,7 +68,7 @@ pub fn blend_solid_span(dst: &mut [u32], color: u32) {
         
         let mut chunks_std = dst;
         
-        #[cfg(any(target_arch = "x86_64", target_arch = "x86"))]
+        #[cfg(any(target_arch = "x86_64", all(target_arch = "x86", target_feature = "sse2")))]
         {
             let (simd_slice, remainder) = chunks_std.split_at_mut(chunks_std.len() - chunks_std.len() % 4);
             chunks_std = remainder;
@@ -284,7 +284,7 @@ pub fn blend_glyph_span(dst: &mut [u32], coverage: &[u8], color: u32) {
     let mut chunks_dst = dst;
     let mut chunks_cov = coverage;
 
-    #[cfg(any(target_arch = "x86_64", target_arch = "x86"))]
+    #[cfg(any(target_arch = "x86_64", all(target_arch = "x86", target_feature = "sse2")))]
     {
         let len = chunks_dst.len().min(chunks_cov.len());
         let simd_len = len - len % 4;
