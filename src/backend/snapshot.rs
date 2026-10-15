@@ -82,11 +82,11 @@ impl SnapshotBackend {
 
     /// Bring `runtime` into the configured state and render one frame,
     /// returning the `0x00RRGGBB` pixels and the size used.
-    pub fn render<M, TM, F>(&self, runtime: &mut Runtime<M, TM>, render_fn: &mut F, width: u32, height: u32) -> Result<(Vec<u32>, u32, u32), BackendError>
+    pub fn render<M, TM, R>(&self, runtime: &mut Runtime<M, TM>, renderer: &mut R, width: u32, height: u32) -> Result<(Vec<u32>, u32, u32), BackendError>
     where
         M: Model + crate::ui::TemplateLayout + 'static,
         TM: TextMeasurer + 'static,
-        F: FnMut(&mut Runtime<M, TM>, &mut [u32], u32, u32) -> crate::graphics::Damage,
+        R: crate::Renderer,
     {
         let (width, height) = self.size.unwrap_or((width, height));
         runtime.set_size(width as f32, height as f32);
@@ -111,7 +111,7 @@ impl SnapshotBackend {
         runtime.wait_for_images(IMAGE_TIMEOUT);
 
         let mut buffer = vec![0u32; width as usize * height as usize];
-        render_fn(runtime, &mut buffer, width, height);
+        runtime.render(renderer, &mut crate::Surface::new(crate::Pixels::Xrgb8888(&mut buffer), width, height));
         Ok((buffer, width, height))
     }
 }
@@ -143,21 +143,21 @@ impl EventProxy for SnapshotProxy {
 impl Backend for SnapshotBackend {
     type Proxy = SnapshotProxy;
 
-    fn run<M, TM, F>(
+    fn run<M, TM, R>(
         self,
         _title: &str,
         width: u32,
         height: u32,
         mut runtime: Runtime<M, TM>,
-        mut render_fn: F,
+        mut renderer: R,
         _setup: impl FnOnce(Self::Proxy) + 'static,
     ) -> Result<(), BackendError>
     where
         M: Model + crate::ui::TemplateLayout + 'static,
         TM: TextMeasurer + 'static,
-        F: FnMut(&mut Runtime<M, TM>, &mut [u32], u32, u32) -> crate::graphics::Damage + 'static,
+        R: crate::Renderer + 'static,
     {
-        let (pixels, w, h) = self.render(&mut runtime, &mut render_fn, width, height)?;
+        let (pixels, w, h) = self.render(&mut runtime, &mut renderer, width, height)?;
         write_png(&self.path, &pixels, w, h)?;
         log::info!("xerune: wrote {}x{} snapshot to {}", w, h, self.path.display());
         Ok(())

@@ -52,6 +52,12 @@ impl TextMeasurer for Measurer {
     }
 }
 
+struct NoRenderer;
+
+impl crate::Renderer for NoRenderer {
+    fn render(&mut self, _: &mut crate::Surface<'_>, _: &[crate::DrawCommand], _: &crate::RenderResources<'_>, _: Rect) {}
+}
+
 struct NoInput;
 
 impl InputSource for NoInput {
@@ -115,7 +121,7 @@ impl TestLoop {
                 logical_w: 1, logical_h: 1, disp_w: 1, disp_h: 1, rotation: 0,
             };
             let _ = run_embedded_event_loop(
-                runtime, |_, _, _, _| None, NoInput, presenter, surface, messages,
+                runtime, NoRenderer, NoInput, presenter, surface, messages,
             );
         });
         Self { proxy: proxy_rx.recv().unwrap(), events, stop, thread: Some(thread) }

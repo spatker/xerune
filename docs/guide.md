@@ -106,10 +106,30 @@ The one exception is `<input type="checkbox" {% if done %}checked{% endif %}>`.
 
 For small components and tests, a template can be inline instead of a file: `#[template(source = r#"<p>{{ name }}</p>"#)]`.
 
-### 3. Running with a Backend
+### 3. Running the App
 
-Each example includes a native runner supporting desktop (`WinitBackend`) and embedded Linux (`LinuxFbBackend`, `DrmBackend`).
-See [`examples/todo/main.rs`](../examples/todo/main.rs) and [`examples/todo/todo_impl.rs`](../examples/todo/todo_impl.rs) for the runner setup:
+`xerune_render` provides the fonts (which the runtime measures text with) and
+the software renderer; `App` runs both on a window or a display:
+
+```rust
+use xerune::{App, Runtime};
+use xerune_render::{Fonts, SoftwareRenderer};
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let fonts = Fonts::ttf(include_bytes!("Roboto-Regular.ttf"), Some(include_bytes!("Roboto-Bold.ttf")))?;
+    let runtime = Runtime::new(TodoList::default(), fonts.clone());
+    App::new(runtime).title("Todo").size(800, 480).run(SoftwareRenderer::new(fonts))?;
+    Ok(())
+}
+```
+
+`App::run` picks the backend when the app starts, among those compiled in:
+a window (`winit`) in a desktop session, else DRM/KMS, else the fbdev
+framebuffer; `XERUNE_BACKEND=winit|drm|fbdev` overrides it. So one binary
+built with `winit,drm,evdev` runs on a desktop and on the device.
+`App::on_start` receives a `Messenger` for sending messages from other
+threads. `Fonts::bitmap(&xerune::font::DEFAULT_ROBOTO)` uses the bundled
+prerasterized fonts instead of TrueType.
 
 ```bash
 cargo run --release --example todo
@@ -315,7 +335,7 @@ cargo run --example todo
 | `XERUNE_SNAPSHOT_MESSAGES` | `;`-separated messages dispatched in order (same strings as `data-on-click`); an unknown message is an error |
 | `XERUNE_SNAPSHOT_TIME_MS` | Simulated time to run before rendering, so timers fire and animations progress (default 0) |
 
-The frame goes through the app's own render function, so fonts and drawing match the real app. Pending images are awaited (up to 10 s). The backend's `setup` callback is not run, since background producers would make the output nondeterministic; drive state with messages instead. To snapshot from code, use `xerune::backend::SnapshotBackend` directly.
+The frame goes through the app's own renderer, so fonts and drawing match the real app. Pending images are awaited (up to 10 s). `App::on_start` is not run, since background producers would make the output nondeterministic; drive state with messages instead. To snapshot from code, use `xerune::backend::SnapshotBackend` directly.
 
 ---
 
@@ -327,25 +347,14 @@ Configure `Cargo.toml` features to enable embedded backends:
 xerune = { version = "0.1", features = ["linuxfb", "drm", "evdev"] }
 ```
 
-### Linux Framebuffer (`/dev/fb0`)
-```rust
-use xerune::backend::LinuxFbBackend;
+`App::run` (see section 1) uses DRM/KMS or the fbdev framebuffer
+`/dev/fb0` outside a desktop session; `XERUNE_BACKEND=drm` or `=fbdev`
+forces one. To run a specific backend directly, `App::run_on(BackendKind::Drm, renderer)`,
+or `DrmBackend::new().run(...)` / `LinuxFbBackend::new().run(...)`.
 
-let backend = LinuxFbBackend::new();
-backend.run("Xerune App", 800, 480, runtime, render_callback, |_proxy| {})?;
-```
-
-### DRM/KMS (Direct Rendering Manager)
-```rust
-use xerune::backend::DrmBackend;
-
-let backend = DrmBackend::new();
-backend.run("Xerune App", 800, 480, runtime, render_callback, |_proxy| {})?;
-```
-To rotate the DRM output, export the `XERUNE_ROTATION` environment variable:
-```bash
-export XERUNE_ROTATION=90
-```
+The display's size comes from its mode. For a display mounted rotated,
+export `XERUNE_ROTATION=90` (or 180, 270); fbdev also rotates a portrait
+framebuffer by itself. Touch input is mapped to the rotated UI.
 
 ---
 

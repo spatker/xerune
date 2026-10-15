@@ -32,23 +32,23 @@ impl WinitBackend {
 impl Backend for WinitBackend {
     type Proxy = WinitProxy;
 
-    fn run<M, TM, F>(
+    fn run<M, TM, R>(
         self,
         title: &str,
         width: u32,
         height: u32,
         mut runtime: Runtime<M, TM>,
-        mut render_fn: F,
+        mut renderer: R,
         setup: impl FnOnce(Self::Proxy) + 'static,
     ) -> Result<(), BackendError>
     where
         M: Model + crate::ui::TemplateLayout + 'static,
         TM: TextMeasurer + 'static,
-        F: FnMut(&mut Runtime<M, TM>, &mut [u32], u32, u32) -> crate::graphics::Damage + 'static,
+        R: crate::Renderer + 'static,
     {
         // `XERUNE_SNAPSHOT=out.png` renders headlessly instead (see `backend::snapshot`).
         if let Some(snapshot) = super::SnapshotBackend::from_env() {
-            return snapshot?.run(title, width, height, runtime, render_fn, |_| {});
+            return snapshot?.run(title, width, height, runtime, renderer, |_| {});
         }
         let event_loop = winit::event_loop::EventLoopBuilder::<String>::with_user_event().build()
             .map_err(|e| BackendError::Init(e.to_string()))?;
@@ -144,7 +144,8 @@ impl Backend for WinitBackend {
                             
                             runtime.set_size(width as f32, height as f32);
 
-                            render_fn(&mut runtime, &mut app_buffer, width, height);
+                            let mut target = crate::Surface::new(crate::Pixels::Xrgb8888(&mut app_buffer), width, height);
+                            runtime.render(&mut renderer, &mut target);
 
                             buffer.copy_from_slice(&app_buffer);
                             if let Err(e) = buffer.present() {

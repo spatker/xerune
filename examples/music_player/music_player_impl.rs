@@ -1,12 +1,5 @@
 use serde::{Serialize, Deserialize};
-use xerune::{Runtime, Model, XeruneMessage, XeruneTemplate};
-
-#[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm")))]
-use xerune_render::Fonts;
-
-#[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm")))]
-pub type Measurer = Fonts;
-
+use xerune::{Model, XeruneMessage, XeruneTemplate};
 
 // Simple self-contained LCG random generator to guarantee 100% WASM compatibility
 struct LcgRng {
@@ -375,37 +368,6 @@ impl Model for MusicPlayerModel {
          }
          self.update_derived_fields();
     }
-}
-
-#[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm")))]
-pub fn run_native(render_frame: impl FnMut(&mut Runtime<MusicPlayerModel, Measurer>, &mut [u32], u32, u32) -> xerune::Damage + 'static, fonts: Fonts) -> anyhow::Result<()> {
-    let model = MusicPlayerModel::new(None);
-    let measurer = fonts;
-    
-    let runtime = Runtime::new(model, measurer);
-
-    #[cfg(not(any(
-        all(target_os = "linux", feature = "linuxfb", feature = "evdev"),
-        all(target_os = "linux", feature = "drm", feature = "evdev")
-    )))]
-    {
-        use xerune::backend::Backend;
-        xerune::backend::WinitBackend::new().run("Xerune Music Player", 800, 480, runtime, render_frame, |_| {})?
-    }
-
-    #[cfg(all(target_os = "linux", feature = "linuxfb", feature = "evdev", not(feature = "drm")))]
-    {
-        use xerune::backend::Backend;
-        xerune::backend::LinuxFbBackend::new().run("Xerune Music Player", 800, 480, runtime, render_frame, |_| {})?;
-    }
-
-    #[cfg(all(target_os = "linux", feature = "drm", feature = "evdev"))]
-    {
-        use xerune::backend::Backend;
-        xerune::backend::DrmBackend::new().run("Xerune Music Player", 800, 480, runtime, render_frame, |_| {})?;
-    }
-
-    Ok(())
 }
 
 #[cfg(test)]

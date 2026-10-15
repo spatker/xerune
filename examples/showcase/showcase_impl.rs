@@ -1,12 +1,6 @@
 use serde::{Serialize, Deserialize};
 use tiny_skia::{Color, LineCap, LineJoin, Paint, PathBuilder, PixmapMut, Rect, Stroke, Transform};
-use xerune::{Runtime, Model, XeruneMessage, XeruneTemplate};
-
-#[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm")))]
-use xerune_render::Fonts;
-
-#[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm")))]
-pub type Measurer = Fonts;
+use xerune::{Model, XeruneMessage, XeruneTemplate};
 
 /// Simulation step; the vehicle needles and monitor traces advance per tick.
 pub const TICK_MS: u32 = 50;
@@ -402,35 +396,3 @@ impl Model for ShowcaseModel {
     }
 }
 
-#[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm")))]
-pub fn run_native(render_frame: impl FnMut(&mut Runtime<ShowcaseModel, Measurer>, &mut [u32], u32, u32) -> xerune::Damage + 'static, fonts: Fonts) -> anyhow::Result<()> {
-    let model = ShowcaseModel::default();
-    let measurer = fonts;
-
-    let mut runtime = Runtime::new(model, measurer);
-
-    runtime.set_interval("tick".to_string(), TICK_MS);
-
-    #[cfg(not(any(
-        all(target_os = "linux", feature = "linuxfb", feature = "evdev"),
-        all(target_os = "linux", feature = "drm", feature = "evdev")
-    )))]
-    {
-        use xerune::backend::Backend;
-        xerune::backend::WinitBackend::new().run("Xerune Showcase", 800, 480, runtime, render_frame, |_| {})?
-    }
-
-    #[cfg(all(target_os = "linux", feature = "linuxfb", feature = "evdev", not(feature = "drm")))]
-    {
-        use xerune::backend::Backend;
-        xerune::backend::LinuxFbBackend::new().run("Xerune Showcase", 800, 480, runtime, render_frame, |_| {})?;
-    }
-
-    #[cfg(all(target_os = "linux", feature = "drm", feature = "evdev"))]
-    {
-        use xerune::backend::Backend;
-        xerune::backend::DrmBackend::new().run("Xerune Showcase", 800, 480, runtime, render_frame, |_| {})?;
-    }
-
-    Ok(())
-}

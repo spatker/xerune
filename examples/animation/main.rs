@@ -2,6 +2,10 @@
 mod support;
 mod animation_impl;
 
-fn main() -> anyhow::Result<()> {
-    support::run_native_app(|render_fn, fonts| animation_impl::run_native(render_fn, fonts))
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let fonts = support::setup();
+    let mut runtime = xerune::Runtime::new(animation_impl::AnimationModel::new(100), fonts.clone());
+    runtime.set_interval("tick".to_string(), 16);
+    xerune::App::new(runtime).title("Xerune Animation Benchmark").run(xerune_render::SoftwareRenderer::new(fonts))?;
+    Ok(())
 }

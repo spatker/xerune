@@ -1,14 +1,7 @@
 use serde::{Serialize, Deserialize};
 use std::collections::HashSet;
 use std::f32::consts::PI;
-use xerune::{Runtime, Model, XeruneMessage, XeruneTemplate};
-
-#[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm")))]
-use xerune_render::Fonts;
-
-#[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm")))]
-pub type Measurer = Fonts;
-
+use xerune::{Model, XeruneMessage, XeruneTemplate};
 
 const GAME_WIDTH: f32 = 800.0;
 const GAME_HEIGHT: f32 = 480.0;
@@ -362,34 +355,3 @@ impl Model for BreakoutModel {
     }
 }
 
-#[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm")))]
-pub fn run_native(render_frame: impl FnMut(&mut Runtime<BreakoutModel, Measurer>, &mut [u32], u32, u32) -> xerune::Damage + 'static, fonts: Fonts) -> anyhow::Result<()> {
-    let model = BreakoutModel::default();
-    let measurer = fonts;
-    
-    let mut runtime = Runtime::new(model, measurer);
-    runtime.set_timeout("tick".to_string(), 16);
-
-    #[cfg(not(any(
-        all(target_os = "linux", feature = "linuxfb", feature = "evdev"),
-        all(target_os = "linux", feature = "drm", feature = "evdev")
-    )))]
-    {
-        use xerune::backend::Backend;
-        xerune::backend::WinitBackend::new().run("Xerune Breakout", GAME_WIDTH as u32, GAME_HEIGHT as u32, runtime, render_frame, |_| {})?
-    }
-
-    #[cfg(all(target_os = "linux", feature = "linuxfb", feature = "evdev", not(feature = "drm")))]
-    {
-        use xerune::backend::Backend;
-        xerune::backend::LinuxFbBackend::new().run("Xerune Breakout", GAME_WIDTH as u32, GAME_HEIGHT as u32, runtime, render_frame, |_| {})?;
-    }
-
-    #[cfg(all(target_os = "linux", feature = "drm", feature = "evdev"))]
-    {
-        use xerune::backend::Backend;
-        xerune::backend::DrmBackend::new().run("Xerune Breakout", GAME_WIDTH as u32, GAME_HEIGHT as u32, runtime, render_frame, |_| {})?;
-    }
-
-    Ok(())
-}

@@ -1,12 +1,5 @@
 use serde::{Serialize, Deserialize};
-use xerune::{Runtime, Model, XeruneMessage, XeruneTemplate};
-
-#[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm")))]
-use xerune_render::Fonts;
-
-#[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm")))]
-pub type Measurer = Fonts;
-
+use xerune::{Model, XeruneMessage, XeruneTemplate};
 
 // Simple LCG for random numbers to avoid 'rand' dependency
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -152,34 +145,3 @@ impl Model for AnimationModel {
     }
 }
 
-#[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm")))]
-pub fn run_native(render_frame: impl FnMut(&mut Runtime<AnimationModel, Measurer>, &mut [u32], u32, u32) -> xerune::Damage + 'static, fonts: Fonts) -> anyhow::Result<()> {
-    let model = AnimationModel::new(100);
-    let measurer = fonts;
-    
-    let mut runtime = Runtime::new(model, measurer);
-    runtime.set_interval("tick".to_string(), 16);
-
-    #[cfg(not(any(
-        all(target_os = "linux", feature = "linuxfb", feature = "evdev"),
-        all(target_os = "linux", feature = "drm", feature = "evdev")
-    )))]
-    {
-        use xerune::backend::Backend;
-        xerune::backend::WinitBackend::new().run("Xerune Animation Benchmark", 800, 480, runtime, render_frame, |_| {})?
-    }
-
-    #[cfg(all(target_os = "linux", feature = "linuxfb", feature = "evdev", not(feature = "drm")))]
-    {
-        use xerune::backend::Backend;
-        xerune::backend::LinuxFbBackend::new().run("Xerune Animation Benchmark", 800, 480, runtime, render_frame, |_| {})?;
-    }
-
-    #[cfg(all(target_os = "linux", feature = "drm", feature = "evdev"))]
-    {
-        use xerune::backend::Backend;
-        xerune::backend::DrmBackend::new().run("Xerune Animation Benchmark", 800, 480, runtime, render_frame, |_| {})?;
-    }
-
-    Ok(())
-}

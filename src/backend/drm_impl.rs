@@ -218,23 +218,23 @@ impl DrmBackend {
 impl Backend for DrmBackend {
     type Proxy = MpscProxy;
 
-    fn run<M, TM, F>(
+    fn run<M, TM, R>(
         self,
         title: &str,
         width: u32,
         height: u32,
         runtime: Runtime<M, TM>,
-        render_fn: F,
+        renderer: R,
         setup: impl FnOnce(Self::Proxy) + 'static,
     ) -> Result<(), BackendError>
     where
         M: Model + crate::ui::TemplateLayout + 'static,
         TM: TextMeasurer + 'static,
-        F: FnMut(&mut Runtime<M, TM>, &mut [u32], u32, u32) -> crate::graphics::Damage + 'static,
+        R: crate::Renderer + 'static,
     {
         // `XERUNE_SNAPSHOT=out.png` renders headlessly instead (see `backend::snapshot`).
         if let Some(snapshot) = super::SnapshotBackend::from_env() {
-            return snapshot?.run(title, width, height, runtime, render_fn, |_| {});
+            return snapshot?.run(title, width, height, runtime, renderer, |_| {});
         }
         log::info!("Initializing DRM/KMS Backend...");
         let card = Card::open_dri_card()?;
@@ -325,6 +325,6 @@ impl Backend for DrmBackend {
             rotation,
         };
 
-        run_embedded_event_loop(runtime, render_fn, input_source, presenter, surface, msg_rx)
+        run_embedded_event_loop(runtime, renderer, input_source, presenter, surface, msg_rx)
     }
 }

@@ -1,6 +1,17 @@
 #[cfg(feature = "winit")]
 pub(crate) mod winit_impl;
 
+#[cfg(all(
+    not(target_arch = "wasm32"),
+    any(feature = "winit", all(target_os = "linux", feature = "evdev", any(feature = "drm", feature = "linuxfb")))
+))]
+mod app;
+#[cfg(all(
+    not(target_arch = "wasm32"),
+    any(feature = "winit", all(target_os = "linux", feature = "evdev", any(feature = "drm", feature = "linuxfb")))
+))]
+pub use app::{App, BackendKind, Messenger};
+
 /// Hardware input abstraction interface.
 pub mod input;
 
@@ -100,17 +111,20 @@ pub trait Backend {
     type Proxy: EventProxy + Clone + Send + 'static;
 
     /// Runs the backend application event loop.
-    fn run<M, TM, F>(
+    ///
+    /// `renderer` draws each frame into the display's pixels, which the
+    /// backend describes (size, format, rotation) as a [`crate::Surface`].
+    fn run<M, TM, R>(
         self,
         title: &str,
         width: u32,
         height: u32,
         runtime: crate::Runtime<M, TM>,
-        render_fn: F,
+        renderer: R,
         setup: impl FnOnce(Self::Proxy) + 'static,
     ) -> Result<(), BackendError>
     where
         M: crate::Model + crate::ui::TemplateLayout + 'static,
         TM: crate::TextMeasurer + 'static,
-        F: FnMut(&mut crate::Runtime<M, TM>, &mut [u32], u32, u32) -> crate::graphics::Damage + 'static;
+        R: crate::Renderer + 'static;
 }

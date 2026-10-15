@@ -2,6 +2,9 @@
 mod support;
 mod todo_impl;
 
-fn main() -> anyhow::Result<()> {
-    support::run_native_app(|render_fn, fonts| todo_impl::run_native(render_fn, fonts))
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let fonts = support::setup();
+    let runtime = xerune::Runtime::new(todo_impl::TodoList::default(), fonts.clone());
+    xerune::App::new(runtime).title("Xerune Todo").run(xerune_render::SoftwareRenderer::new(fonts))?;
+    Ok(())
 }

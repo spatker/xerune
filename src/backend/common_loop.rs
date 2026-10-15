@@ -16,9 +16,9 @@ pub trait FramePresenter {
 
 /// Generic event loop for embedded Linux backends.
 /// Input and message producers must unpark this thread after queuing events.
-pub fn run_embedded_event_loop<M, TM, F, I, P>(
+pub fn run_embedded_event_loop<M, TM, R, I, P>(
     mut runtime: Runtime<M, TM>,
-    mut render_fn: F,
+    mut renderer: R,
     mut input_source: I,
     mut presenter: P,
     surface: SurfaceInfo,
@@ -27,7 +27,7 @@ pub fn run_embedded_event_loop<M, TM, F, I, P>(
 where
     M: Model + crate::ui::TemplateLayout + 'static,
     TM: TextMeasurer + 'static,
-    F: FnMut(&mut Runtime<M, TM>, &mut [u32], u32, u32) -> crate::graphics::Damage + 'static,
+    R: crate::Renderer,
     I: InputSource,
     P: FramePresenter,
 {
@@ -74,7 +74,11 @@ where
 
         // Render and present
         if dirty {
-            let damage = render_fn(&mut runtime, &mut local_buffer, w, h);
+            // The presenter copies these pixels as they are: draw them in
+            // the display's orientation.
+            let rotation = crate::Rotation::from_degrees(surface.rotation).unwrap_or_default();
+            let mut target = crate::Surface::new(crate::Pixels::Xrgb8888(&mut local_buffer), w, h).with_rotation(rotation);
+            let damage = runtime.render(&mut renderer, &mut target);
             // Presenters copy one rectangle (`None`: everything); an empty one
             // when nothing changed.
             let effective_damage = if is_forced {

@@ -9,7 +9,7 @@ mod expectations;
 mod tests;
 
 use std::{
-    collections::{BTreeMap, HashMap}, env, fs, io::Write, path::{Path, PathBuf},
+    collections::BTreeMap, env, fs, io::Write, path::{Path, PathBuf},
     process::{Command, Stdio}, time::{Duration, Instant},
 };
 use xerune_render::{Fonts, SoftwareRenderer};
