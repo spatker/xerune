@@ -83,12 +83,24 @@ pub mod cache_config {
 }
 
 #[cfg(feature = "std")]
+type StyleSheetRef<'a> = simplecss::StyleSheet<'a>;
+
+#[cfg(feature = "std")]
+self_cell::self_cell!(
+    /// A parsed stylesheet together with the CSS text its rules borrow from.
+    struct ParsedStyleSheet {
+        owner: Box<str>,
+        #[covariant]
+        dependent: StyleSheetRef,
+    }
+);
+
+#[cfg(feature = "std")]
 pub(crate) struct CachedStyles {
-    pub(crate) stylesheet: simplecss::StyleSheet<'static>,
+    sheet: ParsedStyleSheet,
     pub(crate) keyframes: HashMap<String, css::KeyframesAnimation>,
     pub(crate) has_nth_or_last_child: bool,
     pub(crate) style_cache: std::cell::RefCell<HashMap<StyleCacheKey, (Style, ContainerStyle)>>,
-    _css: Box<str>,
 }
 
 #[cfg(feature = "std")]
@@ -98,19 +110,16 @@ impl CachedStyles {
         keyframes: HashMap<String, css::KeyframesAnimation>,
         has_nth_or_last_child: bool,
     ) -> Self {
-        let boxed_css = css_str.into_boxed_str();
-        // Safety: `_css` is stored in the same heap allocation inside `Rc<CachedStyles>`.
-        // It is never mutated or moved while `CachedStyles` exists, so the slice reference
-        // into its contents remains valid for the lifetime of `CachedStyles`.
-        let static_str: &'static str = unsafe { &*(boxed_css.as_ref() as *const str) };
-        let stylesheet = simplecss::StyleSheet::parse(static_str);
         Self {
-            stylesheet,
+            sheet: ParsedStyleSheet::new(css_str.into_boxed_str(), |css| simplecss::StyleSheet::parse(css)),
             keyframes,
             has_nth_or_last_child,
             style_cache: std::cell::RefCell::new(HashMap::with_capacity(cache_config::MAX_STYLE_RULE_CACHE_ENTRIES)),
-            _css: boxed_css,
         }
+    }
+
+    pub(crate) fn stylesheet(&self) -> &simplecss::StyleSheet<'_> {
+        self.sheet.borrow_dependent()
     }
 }
 

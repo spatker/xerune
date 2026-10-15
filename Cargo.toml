@@ -25,6 +25,7 @@ std = [
     "taffy/std",
     "dep:csscolorparser",
     "dep:simplecss",
+    "dep:self_cell",
     "dep:env_logger",
     "dep:png",
     "http",
@@ -72,6 +73,8 @@ png = { version = "0.17", optional = true }
 # UAX #14 line break opportunities (no_std).
 unicode-linebreak = "0.1.5"
 ureq = { version = "2", optional = true }
+# Owns the CSS text next to the `simplecss::StyleSheet` borrowing it.
+self_cell = { version = "1", optional = true }
 
 [dev-dependencies]
 coarse-prof = "0.2.6"

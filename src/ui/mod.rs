@@ -304,7 +304,7 @@ impl Ui {
                     &mut builder.interactions,
                     default_style,
                     message_validator,
-                    &cached.stylesheet,
+                    cached.stylesheet(),
                     &builder.node_metadata,
                     &mut base_styles,
                     &mut *style_cache,
