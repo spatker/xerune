@@ -102,48 +102,56 @@ pub fn get_default_style(tag: &str, parent_style: &ContainerStyle) -> StyleBundl
     bundle.container_style.animation_fill_mode = Arc::from("none");
     bundle.container_style.animation_play_state = Arc::from("running");
 
+    // The HTML rendering section's default styles (html.css in browsers).
     bundle.container_style.display = match tag {
         "tr" => Display::Flex,
-        "html" | "div" | "body" | "p" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "ul" | "li" | "table" | "tbody" | "thead" | "tfoot" => Display::Block,
+        "html" | "body" | "div" | "p" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "hgroup"
+        | "header" | "footer" | "main" | "nav" | "section" | "article" | "aside" | "search"
+        | "address" | "blockquote" | "center" | "figure" | "figcaption" | "form" | "fieldset"
+        | "legend" | "details" | "summary" | "dialog" | "hr" | "pre" | "listing" | "xmp"
+        | "plaintext" | "ul" | "ol" | "menu" | "dir" | "li" | "dl" | "dt" | "dd"
+        | "table" | "tbody" | "thead" | "tfoot" => Display::Block,
         _ => Display::InlineBlock,
     };
 
+    let em = parent_style.font_size;
+    let mut margins = |block: f32, inline: f32, font_size: f32| {
+        bundle.taffy_style.margin = taffy::geometry::Rect {
+            left: length(inline), right: length(inline),
+            top: length(block * font_size), bottom: length(block * font_size),
+        };
+    };
+    // Headings: font size relative to the parent, margins relative to the heading.
+    let heading = match tag {
+        "h1" => Some((2.0, 0.67)),
+        "h2" => Some((1.5, 0.83)),
+        "h3" => Some((1.17, 1.0)),
+        "h4" => Some((1.0, 1.33)),
+        "h5" => Some((0.83, 1.67)),
+        "h6" => Some((0.67, 2.33)),
+        _ => None,
+    };
+    if let Some((size, margin)) = heading {
+        margins(margin, 0.0, size * em);
+        bundle.container_style.font_size = size * em;
+        bundle.container_style.weight = 1;
+    }
     match tag {
-        "h1" => {
-            bundle.container_style.font_size = 32.0;
-            bundle.taffy_style.margin = taffy::geometry::Rect {
-                left: length(0.0), right: length(0.0),
-                top: length(20.0), bottom: length(20.0)
-            };
-        }
-        "h2" => {
-            bundle.container_style.font_size = 24.0;
-            bundle.taffy_style.margin = taffy::geometry::Rect {
-                left: length(0.0), right: length(0.0),
-                top: length(15.0), bottom: length(15.0)
-            };
-        }
-        "p" => {
-            bundle.taffy_style.margin = taffy::geometry::Rect {
-                left: length(0.0), right: length(0.0),
-                top: length(10.0), bottom: length(10.0)
-            };
-        }
+        "p" | "dl" | "listing" | "plaintext" | "xmp" => margins(1.0, 0.0, em),
+        "blockquote" | "figure" => margins(1.0, 40.0, em),
         "pre" => {
+            margins(1.0, 0.0, em);
             bundle.container_style.white_space = crate::style::WhiteSpace::Pre;
         }
-        "ul" => {
-            bundle.taffy_style.padding = taffy::geometry::Rect {
-                left: length(20.0), right: length(0.0),
-                top: length(0.0), bottom: length(0.0)
-            };
+        "ul" | "ol" | "menu" | "dir" => {
+            margins(1.0, 0.0, em);
+            bundle.taffy_style.padding.left = length(40.0);
         }
-        "li" => {
-            bundle.taffy_style.margin = taffy::geometry::Rect {
-                left: length(0.0), right: length(0.0),
-                top: length(2.0), bottom: length(2.0)
-            };
-        }
+        "dd" => bundle.taffy_style.margin.left = length(40.0),
+        _ => {}
+    }
+
+    match tag {
         "div" => {
         }
         "body" => {
@@ -164,38 +172,6 @@ pub fn get_default_style(tag: &str, parent_style: &ContainerStyle) -> StyleBundl
             bundle.element_type = ElementType::Checkbox;
             bundle.taffy_style.size = Size { width: length(20.0), height: length(20.0) };
             bundle.taffy_style.margin = taffy::geometry::Rect { left: length(5.0), right: length(5.0), top: length(0.0), bottom: length(0.0) };
-        }
-        "h3" => {
-            bundle.container_style.font_size = 20.0;
-            bundle.container_style.weight = 1;
-            bundle.taffy_style.margin = taffy::geometry::Rect {
-                left: length(0.0), right: length(0.0),
-                top: length(12.0), bottom: length(12.0)
-            };
-        }
-        "h4" => {
-            bundle.container_style.font_size = 18.0;
-            bundle.container_style.weight = 1;
-            bundle.taffy_style.margin = taffy::geometry::Rect {
-                left: length(0.0), right: length(0.0),
-                top: length(10.0), bottom: length(10.0)
-            };
-        }
-        "h5" => {
-            bundle.container_style.font_size = 16.0;
-            bundle.container_style.weight = 1;
-            bundle.taffy_style.margin = taffy::geometry::Rect {
-                left: length(0.0), right: length(0.0),
-                top: length(8.0), bottom: length(8.0)
-            };
-        }
-        "h6" => {
-            bundle.container_style.font_size = 14.0;
-            bundle.container_style.weight = 1;
-            bundle.taffy_style.margin = taffy::geometry::Rect {
-                left: length(0.0), right: length(0.0),
-                top: length(6.0), bottom: length(6.0)
-            };
         }
         "table" | "tbody" | "thead" | "tfoot" => {
              bundle.taffy_style.padding = taffy::geometry::Rect {
