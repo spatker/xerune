@@ -765,7 +765,8 @@ fn apply_resolved_declaration(prop: &str, val: &str, current_style: &mut Contain
           }
          "overflow" => {
              match val {
-                 "hidden" => current_style.overflow = crate::Overflow::Hidden,
+                 // `clip` also forbids programmatic scrolling, which Xerune has none of.
+                 "hidden" | "clip" => current_style.overflow = crate::Overflow::Hidden,
                  "scroll" => current_style.overflow = crate::Overflow::Scroll,
                  "auto" => current_style.overflow = crate::Overflow::Scroll,
                  "visible" => current_style.overflow = crate::Overflow::Visible,

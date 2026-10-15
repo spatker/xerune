@@ -31,7 +31,7 @@
 # css/css-display                        3     3    39     7%     38
 # css/css-flexbox                      247   209   536    32%    189
 # css/css-images                        27     4   170    14%    199
-# css/css-overflow                      24    13   121    17%    278
+# css/css-overflow                      26    15   119    18%    278
 # css/css-position                       4     3    80     5%     66
 # css/css-sizing                        29    21   356     8%    146
 # css/css-text                         110    20   794    12%    213
@@ -40,7 +40,7 @@
 # css/css-variables                     15    15   165     8%      2
 # css/mediaqueries                       0     0    47     0%     11
 # css/selectors                         12     8    78    13%    135
-# total                               1026   770  7419    12%   1979
+# total                               1028   772  7417    12%   1979
 FAIL css/CSS2/abspos/abspos-containing-block-initial-004a.xht
 FAIL css/CSS2/abspos/abspos-containing-block-initial-004b.xht
 FAIL css/CSS2/abspos/abspos-containing-block-initial-004c.xht
@@ -5566,7 +5566,6 @@ FAIL css/css-images/tiled-radial-gradients.html
 FAIL css/css-images/tools/template-object-fit-test.html
 FAIL css/css-images/tools/template-object-position-test.html
 FAIL css/css-overflow/button-with-scrollable-descendant.html
-FAIL css/css-overflow/clip-001.html
 FAIL css/css-overflow/clip-002.html
 FAIL css/css-overflow/clip-003.html
 FAIL css/css-overflow/clip-004.html
@@ -5644,9 +5643,8 @@ FAIL css/css-overflow/overflow-clip-margin-004.html
 FAIL css/css-overflow/overflow-clip-margin-006.html
 FAIL css/css-overflow/overflow-clip-margin-009.html
 FAIL css/css-overflow/overflow-clip-margin-010.html
-FAIL css/css-overflow/overflow-clip-margin-013.html
+FAIL css/css-overflow/overflow-clip-margin-011.html
 FAIL css/css-overflow/overflow-clip-margin-014.html
-FAIL css/css-overflow/overflow-clip-margin-015.html
 FAIL css/css-overflow/overflow-clip-margin-016.html
 FAIL css/css-overflow/overflow-clip-margin-017.html
 FAIL css/css-overflow/overflow-clip-margin-021.html
