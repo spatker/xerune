@@ -464,12 +464,15 @@ impl Shader {
             Gradient::Linear(g) => &g.stops,
             Gradient::Radial(g) => &g.stops,
             Gradient::Conic(g) => &g.stops,
+            // A kind added to xerune after this renderer: not drawn.
+            _ => return None,
         };
         let (first, last) = (stops.first()?.1, stops.last()?.1);
         let repeating = match gradient {
             Gradient::Linear(_) => false,
             Gradient::Radial(g) => g.repeating,
             Gradient::Conic(g) => g.repeating,
+            _ => return None,
         };
         let colors = match gradient {
             _ if repeating => ColorLut::cached(stops, first, last, true, swap_rb),
@@ -527,6 +530,7 @@ impl Shader {
                 cy: y + g.center.1 * h,
                 kind: ShaderKind::Conic { from: g.from / 360.0 },
             }),
+            _ => None,
         }
     }
 

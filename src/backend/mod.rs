@@ -76,6 +76,7 @@ impl EventProxy for MpscProxy {
 
 /// Error representation when initializing or executing windowing/hardware backends.
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum BackendError {
     /// Error during platform initialization.
     Init(String),

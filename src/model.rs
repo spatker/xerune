@@ -79,6 +79,7 @@ pub fn hash_bytes(bytes: &[u8]) -> u64 {
 }
 
 /// Events representing user interactions or inputs forwarded to the UI runtime.
+#[non_exhaustive]
 pub enum InputEvent {
     /// Click/tap gesture at coordinates.
     Click {

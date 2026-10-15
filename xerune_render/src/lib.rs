@@ -1449,6 +1449,8 @@ impl Frame<'_> {
                         );
                     }
                 }
+                // A command added to xerune after this renderer: skipped.
+                _ => {}
             }
         }
 

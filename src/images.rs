@@ -36,6 +36,7 @@ impl Image {
 
 /// Load state of an image source.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ImageStatus {
     /// Queued or being fetched/decoded in the background.
     Loading,
@@ -228,6 +229,7 @@ mod loader {
 
     /// Errors produced while fetching or decoding an image.
     #[derive(Debug)]
+    #[non_exhaustive]
     pub enum ImageError {
         /// Local file could not be read.
         Io(std::io::Error),

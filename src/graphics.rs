@@ -97,6 +97,7 @@ pub struct ConicGradient {
 
 /// Any CSS gradient image usable as a background.
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub enum Gradient {
     /// `linear-gradient(...)`.
     Linear(LinearGradient),
@@ -298,7 +299,7 @@ impl Canvas {
 }
 
 /// Commands representing context actions to execute on the runtime.
-pub enum ContextCommand {
+pub(crate) enum ContextCommand {
     /// Scroll the viewport to ensure a specific interaction element is visible.
     ScrollIntoView(String),
     /// Clear an active timer by message name.
@@ -390,6 +391,7 @@ impl Default for Context {
 
 /// Commands defining hardware-agnostic layout drawing primitives.
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub enum DrawCommand {
     /// Restrict drawing within a specific clipping bounds.
     Clip {
