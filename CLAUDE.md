@@ -80,6 +80,9 @@ WPT: `WPT_DIR=~/data/code/js/wpt cargo run --release -p wpt_runner [-- FILTER] [
 `animation` and `breakout` read `Instant::now()`, so their snapshots aren't
 deterministic.
 
+CI (`.github/workflows/ci.yml`, rustc 1.85.1): workspace tests + examples,
+`cargo check` for armv7 with `drm,linuxfb,evdev`, and the studio for wasm32.
+
 ARM target build (user's setup):
 `cargo zigbuild --target armv7-unknown-linux-gnueabihf.2.39 --features "drm,evdev" --release --example X`
 
