@@ -319,7 +319,7 @@ fn compile_children<'a>(
         });
         code.push(quote! {
             {
-                use ::xerune::ui::ToDisplayString;
+                use ::xerune::__private::ToDisplayString;
                 let mut text_run = String::new();
                 #(#pushes)*
                 builder.append_text_node(measurer, parent, &parent_style, &text_run);
@@ -1121,12 +1121,12 @@ enum MediaFeature {
 impl MediaFeature {
     fn tokens(&self) -> proc_macro2::TokenStream {
         match self {
-            MediaFeature::MinWidth(v) => quote! { ::xerune::css::media::Feature::MinWidth(#v) },
-            MediaFeature::MaxWidth(v) => quote! { ::xerune::css::media::Feature::MaxWidth(#v) },
-            MediaFeature::MinHeight(v) => quote! { ::xerune::css::media::Feature::MinHeight(#v) },
-            MediaFeature::MaxHeight(v) => quote! { ::xerune::css::media::Feature::MaxHeight(#v) },
-            MediaFeature::Landscape => quote! { ::xerune::css::media::Feature::Landscape },
-            MediaFeature::Portrait => quote! { ::xerune::css::media::Feature::Portrait },
+            MediaFeature::MinWidth(v) => quote! { ::xerune::__private::Feature::MinWidth(#v) },
+            MediaFeature::MaxWidth(v) => quote! { ::xerune::__private::Feature::MaxWidth(#v) },
+            MediaFeature::MinHeight(v) => quote! { ::xerune::__private::Feature::MinHeight(#v) },
+            MediaFeature::MaxHeight(v) => quote! { ::xerune::__private::Feature::MaxHeight(#v) },
+            MediaFeature::Landscape => quote! { ::xerune::__private::Feature::Landscape },
+            MediaFeature::Portrait => quote! { ::xerune::__private::Feature::Portrait },
         }
     }
 }
@@ -1230,7 +1230,7 @@ fn compile_media_guard(query: &str) -> MediaGuard {
         if unsatisfiable {
             // Emit an impossible group; other comma-groups may still match.
             group_tokens.push(quote! {
-                ::xerune::css::media::FeatureGroup { negated: false, features: &[::xerune::css::media::Feature::MinWidth(f32::INFINITY)] }
+                ::xerune::__private::FeatureGroup { negated: false, features: &[::xerune::__private::Feature::MinWidth(f32::INFINITY)] }
             });
             any_effective = true;
             continue;
@@ -1243,7 +1243,7 @@ fn compile_media_guard(query: &str) -> MediaGuard {
             // a negated group token.
             let feats = features.iter().map(|f| f.tokens());
             group_tokens.push(quote! {
-                ::xerune::css::media::FeatureGroup { negated: true, features: &[#(#feats),*] }
+                ::xerune::__private::FeatureGroup { negated: true, features: &[#(#feats),*] }
             });
             any_effective = true;
             continue;
@@ -1257,7 +1257,7 @@ fn compile_media_guard(query: &str) -> MediaGuard {
 
         let feats = features.iter().map(|f| f.tokens());
         group_tokens.push(quote! {
-            ::xerune::css::media::FeatureGroup { negated: false, features: &[#(#feats),*] }
+            ::xerune::__private::FeatureGroup { negated: false, features: &[#(#feats),*] }
         });
         any_effective = true;
     }
@@ -1267,7 +1267,7 @@ fn compile_media_guard(query: &str) -> MediaGuard {
     }
 
     MediaGuard::Guard(quote! {
-        ::xerune::css::media::matches_query(&[#(#group_tokens),*])
+        ::xerune::__private::matches_query(&[#(#group_tokens),*])
     })
 }
 
@@ -1356,7 +1356,7 @@ fn compile_dom_node<'a>(
                     let expr_tokens: proc_macro2::TokenStream = expr_str.parse().unwrap();
                     return quote! {
                         {
-                            use ::xerune::ui::ToDisplayString;
+                            use ::xerune::__private::ToDisplayString;
                             let text_val = (#expr_tokens).to_display_string().into_owned();
                             builder.append_text_node(measurer, parent, &parent_style, &text_val);
                         }
@@ -1575,8 +1575,8 @@ fn compile_dom_node<'a>(
                 .find(|a| tag == "input" && a.name.local.as_ref() == "type" && !a.value.contains("{{") && !a.value.contains("{%"))
                 .map(|a| a.value.to_string());
             let element_style = match static_input_type {
-                Some(input_type) => quote! { ::xerune::ui::ElementStyle::new_input(#input_type, &parent_style) },
-                None => quote! { ::xerune::ui::ElementStyle::new(#tag, &parent_style) },
+                Some(input_type) => quote! { ::xerune::__private::ElementStyle::new_input(#input_type, &parent_style) },
+                None => quote! { ::xerune::__private::ElementStyle::new(#tag, &parent_style) },
             };
 
             let child_compilation = compile_children(&get_node_children(handle), rulesets, local_vars, dynamic_exprs, dynamic_loops, dynamic_ifs);
@@ -2042,7 +2042,7 @@ fn expand_template(input: &DeriveInput, template: &TemplateRef) -> proc_macro2::
     let keyframes_init = if keyframes_css.is_empty() {
         quote! {}
     } else {
-        quote! { builder.keyframes = ::xerune::css::parse_keyframes(#keyframes_css); }
+        quote! { builder.set_keyframes(::xerune::__private::parse_keyframes(#keyframes_css)); }
     };
 
     let mut local_vars = HashSet::new();
@@ -2051,18 +2051,18 @@ fn expand_template(input: &DeriveInput, template: &TemplateRef) -> proc_macro2::
     let expanded = quote! {
         #(#dummy_includes)*
 
-        impl ::xerune::ui::TemplateLayout for #name {
+        impl ::xerune::__private::TemplateLayout for #name {
             fn stylesheet(&self) -> &'static str {
                 ""
             }
 
             fn build_ui(
                 &self,
-                builder: &mut ::xerune::ui::UiBuilder,
+                builder: &mut ::xerune::__private::UiBuilder,
                 measurer: &impl ::xerune::TextMeasurer,
-                default_style: &::xerune::style::ContainerStyle,
+                default_style: &::xerune::__private::ContainerStyle,
                 message_validator: &impl Fn(&str) -> bool,
-            ) -> ::xerune::taffy::NodeId {
+            ) -> ::xerune::__private::NodeId {
                 const _: () = {
                     const fn const_str_eq(a: &str, b: &str) -> bool {
                         let a_bytes = a.as_bytes();
@@ -2095,19 +2095,8 @@ fn expand_template(input: &DeriveInput, template: &TemplateRef) -> proc_macro2::
                 };
 
                 #keyframes_init
-                // The initial containing block: a block box the size of the viewport.
-                let parent_layout = ::xerune::taffy::style::Style {
-                    display: ::xerune::taffy::style::Display::Block,
-                    size: ::xerune::taffy::geometry::Size {
-                        width: ::xerune::taffy::style::Dimension::percent(1.0),
-                        height: ::xerune::taffy::style::Dimension::percent(1.0),
-                    },
-                    ..::xerune::taffy::style::Style::default()
-                };
-                let parent = builder.taffy.new_leaf(parent_layout.clone()).unwrap();
+                let parent = builder.begin_root(default_style);
                 let parent_style = default_style.clone();
-                builder.render_data.insert(parent, ::xerune::style::RenderData::Container(parent_style.clone()));
-                builder.base_styles.insert(parent, (parent_layout, parent_style.clone()));
                 {
                     let parent = parent;
                     let parent_style = parent_style;
@@ -2242,7 +2231,7 @@ pub fn derive_xerune_message(input: TokenStream) -> TokenStream {
     let expanded = quote! {
         #from_str_impl
 
-        impl ::xerune::model::XeruneMessage for #name {
+        impl ::xerune::XeruneMessage for #name {
             const VALID_PREFIXES: &'static [&'static str] = &[#(#prefix_matches),*];
             const VALID_EXACT: &'static [&'static str] = &[#(#exact_matches),*];
         }

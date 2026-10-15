@@ -46,7 +46,8 @@ browser = ["dep:wasm-bindgen", "dep:serde", "dep:serde_json", "std"]
 emoji = []
 
 [dependencies]
-xerune_derive = { version = "0.1.0", path = "xerune_derive" }
+# Exact: generated code uses `xerune::__private`, which changes with the macro.
+xerune_derive = { version = "=0.1.0", path = "xerune_derive" }
 wasm-bindgen = { version = "0.2", optional = true }
 serde = { version = "1.0", features = ["derive"], optional = true }
 serde_json = { version = "1.0", optional = true }

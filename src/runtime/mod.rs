@@ -58,7 +58,8 @@ pub struct TouchState {
 pub struct Runtime<M, R> {
     model: M,
     measurer: R,
-    /// The current resolved UI structure mapping.
+    /// The current resolved UI structure mapping. Internal.
+    #[doc(hidden)]
     pub ui: Ui,
     default_style: ContainerStyle,
     pub(crate) scroll_offsets: NodeMap<(f32, f32)>,
@@ -568,6 +569,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
     /// When `size` is fully definite this is equivalent to [`Self::set_size`]
     /// (including resize notification and rebuild); otherwise it only updates
     /// the layout constraints.
+    #[doc(hidden)]
     pub fn compute_layout(&mut self, size: Size<AvailableSpace>) {
         let definite = match (size.width, size.height) {
             (AvailableSpace::Definite(w), AvailableSpace::Definite(h)) => Some((w, h)),

@@ -40,6 +40,26 @@ impl UiBuilder {
         }
     }
 
+    /// The initial containing block: a block box the size of the viewport,
+    /// with the inherited `default_style`. Generated `build_ui` code starts
+    /// here.
+    pub fn begin_root(&mut self, default_style: &crate::style::ContainerStyle) -> NodeId {
+        let layout = Style {
+            display: Display::Block,
+            size: Size { width: Dimension::percent(1.0), height: Dimension::percent(1.0) },
+            ..Style::default()
+        };
+        let root = self.taffy.new_leaf(layout.clone()).unwrap();
+        self.render_data.insert(root, RenderData::Container(default_style.clone()));
+        self.base_styles.insert(root, (layout, default_style.clone()));
+        root
+    }
+
+    /// The template's `@keyframes` rules.
+    pub fn set_keyframes(&mut self, keyframes: HashMap<String, crate::css::KeyframesAnimation>) {
+        self.keyframes = keyframes;
+    }
+
     fn parse_attrs_cow(attrs: &mut [(Cow<'static, str>, Cow<'static, str>)]) -> (Option<Cow<'static, str>>, Option<Cow<'static, str>>, Option<String>, Option<Vec<(String, String)>>) {
         let mut class = None;
         let mut id = None;

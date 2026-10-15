@@ -45,11 +45,15 @@ use crate::css;
 /// Mapped interaction message identifier.
 pub type Interaction = String;
 
-/// Trait defining a programmatically compiled template that can layout a UI structure.
+/// A view compiled from an HTML template, implemented by
+/// `#[derive(XeruneTemplate)]`. Its methods are internal and change with the
+/// derive macro.
 pub trait TemplateLayout {
     /// The CSS stylesheet content accompanying this template.
+    #[doc(hidden)]
     fn stylesheet(&self) -> &'static str;
     /// Builds the layout tree onto the builder, returning the root NodeId.
+    #[doc(hidden)]
     fn build_ui(
         &self,
         builder: &mut UiBuilder,
