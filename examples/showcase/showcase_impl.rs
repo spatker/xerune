@@ -5,7 +5,7 @@ use tiny_skia::{Color, LineCap, LineJoin, Paint, PathBuilder, PixmapMut, Rect, S
 use xerune::{Runtime, Model, XeruneMessage, XeruneTemplate};
 
 #[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm")))]
-use fast_renderer::FastMeasurer;
+use xerune_render::FastMeasurer;
 
 #[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm")))]
 pub type Measurer = FastMeasurer<'static>;
@@ -110,7 +110,7 @@ impl Default for ShowcaseModel {
             cores: vec![34.0, 52.0, 21.0, 45.0],
             user_counter: 1234,
             services: vec![
-                Service::new("render-engine", "fast_renderer · 60 fps", "RUNNING", "ok"),
+                Service::new("render-engine", "xerune_render · 60 fps", "RUNNING", "ok"),
                 Service::new("telemetry", "mqtt://fleet.local", "SYNCING", "warn"),
                 Service::new("ota-updater", "next check 02:00", "IDLE", ""),
             ],

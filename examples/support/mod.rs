@@ -1,6 +1,6 @@
 pub struct RenderCaches {
     pub image_cache: std::collections::HashMap<String, (u32, u32, Vec<u32>)>,
-    pub glyph_cache: std::collections::HashMap<(usize, u16, u32), fast_renderer::CachedGlyph>,
+    pub glyph_cache: std::collections::HashMap<(usize, u16, u32), xerune_render::CachedGlyph>,
 }
 
 impl RenderCaches {
@@ -35,7 +35,7 @@ where
         _ => (width, height),
     };
 
-    let mut renderer = fast_renderer::FastRenderer::new(
+    let mut renderer = xerune_render::FastRenderer::new(
         buffer,
         width,
         height,

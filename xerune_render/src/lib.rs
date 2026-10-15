@@ -102,21 +102,21 @@ const fn parse_usize_opt(opt: Option<&'static str>, default: usize) -> usize {
 
 /// Compile-time cache capacity limits for text measurement in embedded environments.
 ///
-/// Can be configured at compile time via `FAST_RENDERER_MAX_MEASURE_CACHE` (default: 64).
+/// Can be configured at compile time via `XERUNE_RENDER_MAX_MEASURE_CACHE` (default: 64).
 /// Set to 0 to disable text measurement caching.
 #[cfg(feature = "std")]
 pub const MAX_MEASURE_CACHE_ENTRIES: usize =
-    parse_usize_opt(option_env!("FAST_RENDERER_MAX_MEASURE_CACHE"), 64);
+    parse_usize_opt(option_env!("XERUNE_RENDER_MAX_MEASURE_CACHE"), 64);
 
 /// How many rasterized glyphs (font, glyph, size) the glyph cache keeps
 /// before it is emptied. Every distinct font size adds entries, so without a
 /// limit an animated `font-size` grows the cache forever.
 ///
-/// Configurable at compile time via `FAST_RENDERER_MAX_GLYPH_CACHE`
+/// Configurable at compile time via `XERUNE_RENDER_MAX_GLYPH_CACHE`
 /// (default: 2048, about 0.5 MB of 16 px glyphs).
 #[cfg(feature = "std")]
 pub const MAX_GLYPH_CACHE_ENTRIES: usize =
-    parse_usize_opt(option_env!("FAST_RENDERER_MAX_GLYPH_CACHE"), 2048);
+    parse_usize_opt(option_env!("XERUNE_RENDER_MAX_GLYPH_CACHE"), 2048);
 
 #[cfg(feature = "std")]
 struct BoundedMeasureCache {
@@ -184,11 +184,11 @@ thread_local! {
 /// Every text run of a view is shaped on each rebuild, so this should exceed
 /// the number of distinct runs on screen.
 ///
-/// Configurable at compile time via `FAST_RENDERER_MAX_SHAPE_CACHE` (default:
+/// Configurable at compile time via `XERUNE_RENDER_MAX_SHAPE_CACHE` (default:
 /// 1024). Set to 0 to disable.
 #[cfg(feature = "std")]
 pub const MAX_SHAPE_CACHE_ENTRIES: usize =
-    parse_usize_opt(option_env!("FAST_RENDERER_MAX_SHAPE_CACHE"), 1024);
+    parse_usize_opt(option_env!("XERUNE_RENDER_MAX_SHAPE_CACHE"), 1024);
 
 /// Font source marker for color emoji glyphs in a [`ShapedText`]; their id is
 /// meaningless and the renderer looks the character up by cluster instead.

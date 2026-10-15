@@ -6,7 +6,7 @@ use std::f32::consts::PI;
 use xerune::{Runtime, Model, XeruneMessage, XeruneTemplate};
 
 #[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm")))]
-use fast_renderer::FastMeasurer;
+use xerune_render::FastMeasurer;
 
 #[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm")))]
 pub type Measurer = FastMeasurer<'static>;

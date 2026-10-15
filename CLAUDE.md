@@ -2,7 +2,7 @@
 
 CPU-only HTML/CSS renderer and Elm-style (MVU) UI framework for embedded
 Linux without a GPU (ARMv7 boards, fbdev, DRM/KMS). Templates are HTML/CSS
-compiled to Rust by a proc macro; layout is Taffy; drawing is `fast_renderer`.
+compiled to Rust by a proc macro; layout is Taffy; drawing is `xerune_render`.
 
 User docs: `README.md`, `docs/guide.md` (API, templates, snapshots, embedded),
 `docs/architecture.md` (pipeline). Read those for feature details; this file is
@@ -14,7 +14,7 @@ the working notes.
 |---|---|
 | `src/` | `xerune` lib: runtime, UI tree, CSS, backends |
 | `xerune_derive/` | `XeruneTemplate` / `XeruneMessage` macros. One big `lib.rs`: template parser, CSS splitting, codegen of `build_ui` |
-| `fast_renderer/` | Software rasterizer (blits, rounded rects, gradients, glyphs). Has a `no_std` mode |
+| `xerune_render/` | Software rasterizer (blits, rounded rects, gradients, glyphs). Has a `no_std` mode |
 | `studio/` | WASM inspector (`wasm-pack build --target web`, `features = ["browser"]`) |
 | `wpt_runner/` | WPT reftests vs Chromium screenshots; scope in `suites.txt`, known failures in `expectations.txt` (`docs/guide.md` §10) |
 | `examples/<name>/` | `main.rs` + `<name>_impl.rs` + `templates/*.html`; shared render loop in `examples/support/` |
@@ -29,7 +29,7 @@ the working notes.
    style resolution → fresh Taffy tree.
 3. Taffy layout → walk → absolute `DrawCommand`s (rects, text, images,
    checkbox/slider/progress, canvas, clip push/pop).
-4. `Renderer` (normally `fast_renderer`) draws into a `u32` buffer; the backend presents it.
+4. `Renderer` (normally `xerune_render`) draws into a `u32` buffer; the backend presents it.
 
 Modules:
 - `model.rs`: `Model`, `InputEvent`, `hash_bytes` (FNV, for fingerprints).
@@ -88,7 +88,7 @@ ARM target build (user's setup):
 - Toolchain stays at rustc 1.85.1 (edition 2024), no nightly / build-std.
 - Release profile keeps `opt-level = 3`; smaller opt-levels hurt the renderer on ARM.
 - Keep the `http` feature (remote images via ureq) in `std`.
-- Rendering (`fast_renderer`) is the bottleneck on target hardware, not layout.
+- Rendering (`xerune_render`) is the bottleneck on target hardware, not layout.
   Benchmark changes to fill/blit paths.
 - Don't touch `drm_impl.rs` / `linuxfb_impl.rs` behavior without hardware to test on.
 
@@ -104,7 +104,7 @@ ARM target build (user's setup):
   (`@media (orientation: portrait)`); check both sizes. No decorative emoji
   (they render as boxes without `--features emoji`; Roboto lacks arrows and ✓).
 - Commits: kernel style, `subsystem: summary` (e.g. `xerune_derive: ...`,
-  `examples: todo: ...`, `fast_renderer: ...`), short body explaining why.
+  `examples: todo: ...`, `xerune_render: ...`), short body explaining why.
   One work unit per commit, committed as each unit is done.
 - Match the surrounding code; keep docs (`docs/guide.md`, this file) in sync
   when behavior changes.

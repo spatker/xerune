@@ -230,7 +230,7 @@ pub(crate) fn parse_border_style(val: &str) -> Option<crate::style::BorderStyle>
         "solid" => BorderStyle::Solid,
         "dashed" => BorderStyle::Dashed,
         "dotted" => BorderStyle::Dotted,
-        // FIXME: drawn as solid lines; fast_renderer has no double or 3D
+        // FIXME: drawn as solid lines; xerune_render has no double or 3D
         // (groove, ridge, inset, outset) borders.
         "double" | "groove" | "ridge" | "inset" | "outset" => BorderStyle::Solid,
         _ => return None,

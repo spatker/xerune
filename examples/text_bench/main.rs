@@ -8,7 +8,7 @@
 
 use std::time::{Duration, Instant};
 
-use fast_renderer::{FastMeasurer, FastRenderer};
+use xerune_render::{FastMeasurer, FastRenderer};
 use xerune::{Context, Model, Runtime, XeruneTemplate};
 
 #[derive(Clone)]

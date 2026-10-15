@@ -59,12 +59,12 @@ Once the Taffy tree computes the relative position and dimensions of every eleme
 1. **Layout Walk**: The engine walks the Taffy tree depth-first, maintaining absolute offsets.
 2. **Command Generation**: Nodes are translated into `DrawCommand` variants:
    - `DrawRect`: Renders solid background colors, gradients, borders, and border-radius properties.
-   - `DrawText`: One line of text, carrying its `GlyphRun` (glyph ids and advances from shaping). `fast_renderer` blits the glyph ids at their advances; without a run (text inputs) it lays the string out itself.
+   - `DrawText`: One line of text, carrying its `GlyphRun` (glyph ids and advances from shaping). `xerune_render` blits the glyph ids at their advances; without a run (text inputs) it lays the string out itself.
    - `DrawCheckbox`, `DrawSlider`, `DrawProgress`: Draws native UI primitives.
    - `DrawImage`: Blits raw images.
    - `DrawCanvas`: Blits custom user-drawn Canvas buffers.
 3. **Clip Rectangles**: Overflows are restricted by generating `Clip` and `PopClip` commands.
-4. **Execution**: The renderer implementation (e.g., fast_renderer) executes the commands onto the screen buffer.
+4. **Execution**: The renderer implementation (e.g., xerune_render) executes the commands onto the screen buffer.
 
 
 ---

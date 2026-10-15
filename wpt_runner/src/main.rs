@@ -12,7 +12,7 @@ use std::{
     collections::{BTreeMap, HashMap}, env, fs, io::Write, path::{Path, PathBuf},
     process::{Command, Stdio}, time::{Duration, Instant},
 };
-use fast_renderer::{FastMeasurer, FastRenderer};
+use xerune_render::{FastMeasurer, FastRenderer};
 use markup5ever_rcdom::{Handle, NodeData, RcDom};
 use rayon::prelude::*;
 use tiny_skia::Pixmap;

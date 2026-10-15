@@ -1,5 +1,5 @@
 [workspace]
-members = ["wpt_runner", "fast_renderer", "xerune_derive", "studio"]
+members = ["wpt_runner", "xerune_render", "xerune_derive", "studio"]
 
 
 [package]
@@ -84,7 +84,7 @@ winit = "0.29.15"
 softbuffer = "0.4.1"
 tiny-skia = "0.12.0"
 fontdue = "0.9.3"
-fast_renderer = { path = "fast_renderer", features = ["profile"] }
+xerune_render = { path = "xerune_render", features = ["profile"] }
 
 
 serde = { version = "1.0", features = ["derive"] }

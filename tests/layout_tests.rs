@@ -334,7 +334,7 @@ fn test_todo_layout_comparison() {
 fn test_tiled_rendering_identity() {
     use std::collections::HashMap;
     use fontdue::Font;
-    use fast_renderer::FastRenderer;
+    use xerune_render::FastRenderer;
 
     // Load font
     let font_data = std::fs::read("resources/fonts/Roboto-Regular.ttf").expect("Failed to read font file");
@@ -350,7 +350,7 @@ fn test_tiled_rendering_identity() {
         active_item: 0,
         new_item_title: "abc".to_string(),
     };
-    let measurer = fast_renderer::FastMeasurer { fonts: (&fonts).into() };
+    let measurer = xerune_render::FastMeasurer { fonts: (&fonts).into() };
     let mut runtime = Runtime::new(model, measurer);
     crate::set_size(&mut runtime, 800.0, 600.0);
 
@@ -390,7 +390,7 @@ fn test_tiled_rendering_identity() {
 #[test]
 fn test_bitmap_font_rendering() {
     use std::collections::HashMap;
-    use fast_renderer::FastRenderer;
+    use xerune_render::FastRenderer;
     use xerune::font::{DEFAULT_ROBOTO_REGULAR, DEFAULT_ROBOTO_BOLD};
 
     let fonts = vec![DEFAULT_ROBOTO_REGULAR, DEFAULT_ROBOTO_BOLD];
@@ -559,7 +559,7 @@ fn test_timer_cancellation() {
 #[test]
 fn test_dirty_rect_rasterization_culling() {
     use std::collections::HashMap;
-    use fast_renderer::FastRenderer;
+    use xerune_render::FastRenderer;
     use xerune::font::DEFAULT_ROBOTO_REGULAR;
 
     let fonts = vec![DEFAULT_ROBOTO_REGULAR];
@@ -601,7 +601,7 @@ fn test_dirty_rect_rasterization_culling() {
 
 #[test]
 fn test_zero_copy_canvas_blitting() {
-    use fast_renderer::blit_image_rgba;
+    use xerune_render::blit_image_rgba;
 
     let mut buffer = vec![0u32; 100 * 100];
     // 2x2 RGBA image
@@ -861,7 +861,7 @@ fn roboto_lines<M: Model + ui::TemplateLayout + 'static>(model: M, width: f32, h
             font(include_bytes!("../resources/fonts/Roboto-Bold.ttf")),
         ]
     });
-    let mut runtime = Runtime::new(model, fast_renderer::FastMeasurer { fonts: fonts.into() });
+    let mut runtime = Runtime::new(model, xerune_render::FastMeasurer { fonts: fonts.into() });
     set_size(&mut runtime, width, height);
     runtime
         .ui
