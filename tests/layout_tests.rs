@@ -694,6 +694,32 @@ fn inline_flex_sits_in_the_line_and_lays_out_a_row() {
     assert_eq!(ui.taffy.layout(second).unwrap().location.x, 20.0);
 }
 
+#[derive(XeruneTemplate)]
+#[template(source = r#"<div style="position: relative; width: 100px; height: 100px">
+  <div style="position: absolute; z-index: 2; width: 50px; height: 50px; background: #ff0000" data-on-click="tick"></div>
+  <div style="position: absolute; width: 50px; height: 50px; background: #00ff00"></div>
+  <div style="position: absolute; z-index: -1; width: 50px; height: 50px; background: #0000ff"></div>
+</div>"#)]
+struct ZIndexModel;
+
+impl Model for ZIndexModel {
+    type Message = MockMsg;
+    fn update(&mut self, _msg: Self::Message, _context: &mut Context) {}
+}
+
+#[test]
+fn z_index_orders_painting_and_hit_testing() {
+    let mut runtime = Runtime::new(ZIndexModel, MockMeasurer);
+    crate::set_size(&mut runtime, 800.0, 600.0);
+    let colors: Vec<_> = runtime.ui.build_commands(&std::collections::HashMap::new(), None).iter().filter_map(|c| match c {
+        DrawCommand::DrawRect { color: Some(c), rect, .. } if rect.width == 50.0 => Some((c.r, c.g, c.b)),
+        _ => None,
+    }).collect();
+    assert_eq!(colors, [(0, 0, 255), (0, 255, 0), (255, 0, 0)], "z-index -1, auto, 2");
+    let (interaction, _) = runtime.ui.hit_test(20.0, 20.0).expect("hit");
+    assert!(format!("{interaction:?}").contains("tick"), "the topmost box gets the click: {interaction:?}");
+}
+
 mod canvas {
     //! The canvas background: browsers paint `<html>`'s background (else
     //! `<body>`'s, else white) behind every frame.

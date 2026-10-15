@@ -764,6 +764,13 @@ fn apply_resolved_declaration(prop: &str, val: &str, current_style: &mut Contain
                   _ => {}
               }
           }
+         "z-index" => {
+             if val == "auto" {
+                 current_style.z_index = None;
+             } else if let Ok(z) = val.parse::<i32>() {
+                 current_style.z_index = Some(z);
+             }
+         }
          "overflow" => {
              match val {
                  // `clip` also forbids programmatic scrolling, which Xerune has none of.

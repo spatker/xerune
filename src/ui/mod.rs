@@ -504,19 +504,19 @@ impl Ui {
         });
 
         let mut content = Vec::new();
-        traverse_layout(
-            &self.taffy,
-            self.root,
-            &self.render_data,
-            &self.paragraphs,
-            &self.text_lines,
-            &self.ellipses,
-            &self.scroll_offsets,
-            0.0,
-            0.0,
+        paint_layer(
+            &Painter {
+                taffy: &self.taffy,
+                render_data: &self.render_data,
+                paragraphs: &self.paragraphs,
+                text_lines: &self.text_lines,
+                ellipses: &self.ellipses,
+                scroll_offsets: &self.scroll_offsets,
+                focused_id,
+                canvas_source: source.map(|(node, _)| node),
+            },
+            &Deferred { node: self.root, offset_x: 0.0, offset_y: 0.0, clips: Vec::new(), z: 0 },
             &mut content,
-            focused_id,
-            source.map(|(node, _)| node),
         );
 
         let viewport = match self.taffy.layout(self.root) {
@@ -768,23 +768,86 @@ fn covers_viewport(commands: &[DrawCommand], viewport: Rect) -> bool {
     false
 }
 
+/// What painting needs from the `Ui`.
+struct Painter<'a> {
+    taffy: &'a TaffyTree,
+    render_data: &'a NodeMap<RenderData>,
+    paragraphs: &'a NodeMap<Arc<crate::text::ShapedText>>,
+    text_lines: &'a NodeMap<Vec<crate::text::Line>>,
+    ellipses: &'a NodeMap<Arc<crate::text::ShapedText>>,
+    scroll_offsets: &'a NodeMap<(f32, f32)>,
+    focused_id: Option<&'a str>,
+    canvas_source: Option<NodeId>,
+}
+
+/// A positioned element, painted after the in-flow content of its stacking
+/// context, inside the clips of its ancestors.
+struct Deferred {
+    node: NodeId,
+    offset_x: f32,
+    offset_y: f32,
+    clips: Vec<Rect>,
+    z: i32,
+}
+
+/// The paint layer of `node` in a parent laid out as `parent_is_flex`:
+/// `Some(z)` for a positioned element or a flex item with a `z-index`
+/// (`auto` counts as 0), `None` for in-flow content.
+fn paint_layer_of(node: NodeId, parent_is_flex: bool, render_data: &NodeMap<RenderData>) -> Option<i32> {
+    let Some(RenderData::Container(style)) = render_data.get(&node) else { return None };
+    let positioned = style.position != crate::style::Position::Static;
+    match style.z_index {
+        Some(z) if positioned || parent_is_flex => Some(z),
+        _ if positioned => Some(0),
+        _ => None,
+    }
+}
+
+/// Paints `layer.node` as a stacking context, in CSS order: its own box,
+/// positioned descendants with a negative `z-index`, its in-flow content,
+/// positioned descendants with `z-index: auto` or 0 in tree order, then
+/// positive `z-index`. Each positioned descendant is painted the same way;
+/// unlike CSS, one with `z-index: auto` keeps its positioned descendants to
+/// itself.
+fn paint_layer(painter: &Painter, layer: &Deferred, commands: &mut Vec<DrawCommand>) {
+    for &rect in &layer.clips {
+        commands.push(DrawCommand::Clip { rect });
+    }
+    let mut own = Vec::new();
+    let mut clips = layer.clips.clone();
+    let mut deferred = Vec::new();
+    let box_end = traverse_layout(painter, layer.node, layer.offset_x, layer.offset_y, &mut own, &mut clips, &mut deferred);
+    deferred.sort_by_key(|d| d.z); // stable: ties keep tree order
+    let mut rest = own.split_off(box_end);
+    commands.append(&mut own);
+    let below = deferred.iter().take_while(|d| d.z < 0).count();
+    for d in &deferred[..below] {
+        paint_layer(painter, d, commands);
+    }
+    commands.append(&mut rest);
+    for d in &deferred[below..] {
+        paint_layer(painter, d, commands);
+    }
+    for _ in &layer.clips {
+        commands.push(DrawCommand::PopClip);
+    }
+}
+
+/// Paints `root` and its in-flow descendants; positioned descendants go to
+/// `deferred`. Returns the length `commands` had after `root`'s own box.
 fn traverse_layout(
-    taffy: &TaffyTree,
+    painter: &Painter,
     root: NodeId,
-    render_data: &NodeMap<RenderData>,
-    paragraphs: &NodeMap<Arc<crate::text::ShapedText>>,
-    text_lines: &NodeMap<Vec<crate::text::Line>>,
-    ellipses: &NodeMap<Arc<crate::text::ShapedText>>,
-    scroll_offsets: &NodeMap<(f32, f32)>,
     offset_x: f32,
     offset_y: f32,
     commands: &mut Vec<DrawCommand>,
-    focused_id: Option<&str>,
-    canvas_source: Option<NodeId>,
-) {
+    clips: &mut Vec<Rect>,
+    deferred: &mut Vec<Deferred>,
+) -> usize {
+    let Painter { taffy, render_data, paragraphs, text_lines, ellipses, scroll_offsets, focused_id, canvas_source } = *painter;
     let layout = match taffy.layout(root) {
         Ok(l) => l,
-        Err(_) => return,
+        Err(_) => return commands.len(),
     };
     
     let x = offset_x + layout.location.x;
@@ -804,7 +867,7 @@ fn traverse_layout(
 
         if let Some(style) = maybe_style {
             if style.display == crate::style::Display::None {
-                return;
+                return commands.len();
             }
             overflow = style.overflow;
 
@@ -933,8 +996,10 @@ fn traverse_layout(
         }
     }
 
+    let box_end = commands.len();
     if overflow != Overflow::Visible {
         commands.push(DrawCommand::Clip { rect });
+        clips.push(rect);
     }
 
     let mut child_offset_x = x;
@@ -947,15 +1012,35 @@ fn traverse_layout(
         }
     }
 
-    if let Ok(children) = taffy.children(root) {
-        for child in children {
-            traverse_layout(taffy, child, render_data, paragraphs, text_lines, ellipses, scroll_offsets, child_offset_x, child_offset_y, commands, focused_id, canvas_source);
+    let is_flex = matches!(render_data.get(&root), Some(RenderData::Container(s)) if s.display.is_flex());
+    for child in taffy.children(root).unwrap_or_default() {
+        match paint_layer_of(child, is_flex, render_data) {
+            Some(z) => deferred.push(Deferred { node: child, offset_x: child_offset_x, offset_y: child_offset_y, clips: clips.clone(), z }),
+            None => { traverse_layout(painter, child, child_offset_x, child_offset_y, commands, clips, deferred); }
         }
     }
 
     if overflow != Overflow::Visible {
         commands.push(DrawCommand::PopClip);
+        clips.pop();
     }
+    box_end
+}
+
+/// Orders `children` the way [`paint_layer`] paints them, for hit testing:
+/// negative `z-index`, in-flow, `auto`/0, positive. Only siblings are
+/// ordered here.
+fn paint_order(mut children: Vec<NodeId>, parent: NodeId, render_data: &NodeMap<RenderData>) -> Vec<NodeId> {
+    let parent_is_flex = matches!(render_data.get(&parent), Some(RenderData::Container(s)) if s.display.is_flex());
+    let layer = |child: &NodeId| match paint_layer_of(*child, parent_is_flex, render_data) {
+        None => (1, 0),
+        Some(z) if z < 0 => (0, z),
+        Some(z) => (2, z),
+    };
+    if children.iter().any(|c| layer(c) != (1, 0)) {
+        children.sort_by_key(layer); // stable: ties keep tree order
+    }
+    children
 }
 
 /// Style of a text node in an element styled `parent_style`: the
@@ -1183,7 +1268,7 @@ pub fn hit_test_recursive(
         }
 
         if let Ok(children) = taffy.children(root) {
-             for child in children.iter().rev() {
+             for child in paint_order(children, root, render_data).iter().rev() {
                  if let Some(hit) = hit_test_recursive(taffy, *child, scroll_offsets, render_data, x, y, child_abs_x, child_abs_y) {
                      return Some(hit);
                  }

@@ -12,9 +12,9 @@
 # css/CSS2/cascade                      14    14    14    50%      4
 # css/CSS2/colors                        5     5    14    26%      0
 # css/CSS2/linebox                       1     1   181     1%      8
-# css/CSS2/margin-padding-clear          6     5   664     1%     12
+# css/CSS2/margin-padding-clear          8     7   662     1%     12
 # css/CSS2/normal-flow                  24    22   647     4%     75
-# css/CSS2/positioning                   9     9   477     2%     34
+# css/CSS2/positioning                  10    10   476     2%     34
 # css/CSS2/selectors                    48    47   477     9%     20
 # css/CSS2/syntax                      105   105   152    41%     18
 # css/CSS2/text                        145   142   234    38%     30
@@ -29,18 +29,18 @@
 # css/css-color                         44    43   237    16%     25
 # css/css-conditional                   14     0   117    11%     34
 # css/css-display                        3     3    39     7%     38
-# css/css-flexbox                      247   209   536    32%    189
+# css/css-flexbox                      249   210   534    32%    189
 # css/css-images                        27     4   170    14%    199
-# css/css-overflow                      26    15   119    18%    278
+# css/css-overflow                      28    17   117    19%    278
 # css/css-position                       4     3    80     5%     66
 # css/css-sizing                        29    21   356     8%    146
-# css/css-text                         110    20   794    12%    213
+# css/css-text                         127    37   777    14%    213
 # css/css-ui                             8     0   118     6%     65
 # css/css-values                        16     9   136    11%     59
 # css/css-variables                     15    15   165     8%      2
 # css/mediaqueries                       0     0    47     0%     11
 # css/selectors                         12     8    78    13%    135
-# total                               1028   772  7417    12%   1979
+# total                               1052   795  7393    12%   1979
 FAIL css/CSS2/abspos/abspos-containing-block-initial-004a.xht
 FAIL css/CSS2/abspos/abspos-containing-block-initial-004b.xht
 FAIL css/CSS2/abspos/abspos-containing-block-initial-004c.xht
@@ -1270,8 +1270,6 @@ FAIL css/CSS2/margin-padding-clear/margin-collapse-114.xht
 FAIL css/CSS2/margin-padding-clear/margin-collapse-115.xht
 FAIL css/CSS2/margin-padding-clear/margin-collapse-116.xht
 FAIL css/CSS2/margin-padding-clear/margin-collapse-130.xht
-FAIL css/CSS2/margin-padding-clear/margin-collapse-137.xht
-FAIL css/CSS2/margin-padding-clear/margin-collapse-138.xht
 FAIL css/CSS2/margin-padding-clear/margin-collapse-155.xht
 FAIL css/CSS2/margin-padding-clear/margin-collapse-156.xht
 FAIL css/CSS2/margin-padding-clear/margin-collapse-159.xht
@@ -2867,7 +2865,6 @@ FAIL css/CSS2/positioning/right-applies-to-012.xht
 FAIL css/CSS2/positioning/right-applies-to-013.xht
 FAIL css/CSS2/positioning/right-applies-to-014.xht
 FAIL css/CSS2/positioning/right-applies-to-015.xht
-FAIL css/CSS2/positioning/right-offset-003.xht
 FAIL css/CSS2/positioning/right-offset-004.xht
 FAIL css/CSS2/positioning/right-offset-percentage-001.xht
 FAIL css/CSS2/positioning/top-004.xht
@@ -5021,7 +5018,6 @@ FAIL css/css-flexbox/flex-basis-010.html
 FAIL css/css-flexbox/flex-basis-011.html
 FAIL css/css-flexbox/flex-basis-012.html
 FAIL css/css-flexbox/flex-basis-item-margins-001.html
-FAIL css/css-flexbox/flex-box-wrap.html
 FAIL css/css-flexbox/flex-cross-size-border-box-001.html
 FAIL css/css-flexbox/flex-direction-row-vertical.html
 FAIL css/css-flexbox/flex-direction.html
@@ -5173,7 +5169,6 @@ FAIL css/css-flexbox/flexbox-flex-wrap-nowrap.htm
 FAIL css/css-flexbox/flexbox-flex-wrap-vert-001.html
 FAIL css/css-flexbox/flexbox-flex-wrap-vert-002.html
 FAIL css/css-flexbox/flexbox-gap-position-absolute.html
-FAIL css/css-flexbox/flexbox-items-as-stacking-contexts-003.html
 FAIL css/css-flexbox/flexbox-min-height-auto-001.html
 FAIL css/css-flexbox/flexbox-min-height-auto-002a.html
 FAIL css/css-flexbox/flexbox-min-height-auto-002b.html
@@ -5638,9 +5633,7 @@ FAIL css/css-overflow/overflow-body-propagation-010.html
 FAIL css/css-overflow/overflow-body-propagation-012.html
 FAIL css/css-overflow/overflow-clip-content-visual-overflow.html
 FAIL css/css-overflow/overflow-clip-margin-001.html
-FAIL css/css-overflow/overflow-clip-margin-003.html
 FAIL css/css-overflow/overflow-clip-margin-004.html
-FAIL css/css-overflow/overflow-clip-margin-006.html
 FAIL css/css-overflow/overflow-clip-margin-009.html
 FAIL css/css-overflow/overflow-clip-margin-010.html
 FAIL css/css-overflow/overflow-clip-margin-011.html
@@ -6224,17 +6217,6 @@ FAIL css/css-text/line-break/line-break-strict-018.xht
 FAIL css/css-text/line-break/line-break-strict-hyphens-001.html
 FAIL css/css-text/line-break/line-break-strict-hyphens-002.html
 FAIL css/css-text/line-break/line-break-strict-hyphens-003.html
-FAIL css/css-text/line-breaking/line-breaking-001.html
-FAIL css/css-text/line-breaking/line-breaking-002.html
-FAIL css/css-text/line-breaking/line-breaking-003.html
-FAIL css/css-text/line-breaking/line-breaking-004.html
-FAIL css/css-text/line-breaking/line-breaking-005.html
-FAIL css/css-text/line-breaking/line-breaking-006.html
-FAIL css/css-text/line-breaking/line-breaking-007.html
-FAIL css/css-text/line-breaking/line-breaking-008.html
-FAIL css/css-text/line-breaking/line-breaking-009.html
-FAIL css/css-text/line-breaking/line-breaking-010.html
-FAIL css/css-text/line-breaking/line-breaking-011.html
 FAIL css/css-text/line-breaking/line-breaking-013.html
 FAIL css/css-text/line-breaking/line-breaking-014.html
 FAIL css/css-text/line-breaking/line-breaking-015.html
@@ -6242,16 +6224,10 @@ FAIL css/css-text/line-breaking/line-breaking-016.html
 FAIL css/css-text/line-breaking/line-breaking-017.html
 FAIL css/css-text/line-breaking/line-breaking-018.html
 FAIL css/css-text/line-breaking/line-breaking-021.html
-FAIL css/css-text/line-breaking/line-breaking-030.html
-FAIL css/css-text/line-breaking/line-breaking-031.html
-FAIL css/css-text/line-breaking/line-breaking-032.html
 FAIL css/css-text/line-breaking/line-breaking-atomic-001.html
 FAIL css/css-text/line-breaking/line-breaking-atomic-002.html
 FAIL css/css-text/line-breaking/line-breaking-atomic-007.html
 FAIL css/css-text/line-breaking/line-breaking-atomic-008.html
-FAIL css/css-text/line-breaking/line-breaking-ic-001.html
-FAIL css/css-text/line-breaking/line-breaking-ic-002.html
-FAIL css/css-text/line-breaking/line-breaking-ic-003.html
 FAIL css/css-text/line-breaking/line-breaking-replaced-001.html
 FAIL css/css-text/line-breaking/line-breaking-replaced-004.html
 FAIL css/css-text/line-breaking/line-breaking-replaced-005.html

@@ -300,6 +300,8 @@ pub struct ContainerStyle {
     pub align_self: Option<AlignSelf>,
     /// Position configuration.
     pub position: Position,
+    /// `z-index`; `None` is `auto`.
+    pub z_index: Option<i32>,
     /// Flags if this element has floated formatting.
     pub is_floated: bool,
     /// Box sizing policy.
@@ -342,6 +344,7 @@ impl Default for ContainerStyle {
             box_shadow: None,
             background_gradient: None,
             overflow: Overflow::Visible,
+            z_index: None,
             display: Display::Block,
             text_align: None,
             line_height: LineHeight::Normal,
