@@ -167,87 +167,32 @@ pub fn parse_length_percentage_auto(val: &str) -> Option<LengthPercentageAuto> {
     None
 }
 
-pub(crate) fn parse_padding(val: &str) -> Option<taffy::geometry::Rect<LengthPercentage>> {
-    let parts: Vec<&str> = val.split_whitespace().collect();
-    match parts.len() {
-        1 => {
-            if let Some(v) = parse_length_percentage(parts[0]) {
-                Some(taffy::geometry::Rect {
-                    left: v,
-                    right: v,
-                    top: v,
-                    bottom: v,
-                })
-            } else {
-                None
-            }
+/// Expands a 1-4 value box shorthand (`margin`, `padding`, ...) into
+/// top/right/bottom/left: missing right copies top, bottom copies top, left
+/// copies right.
+pub(crate) fn parse_sides<T: Copy>(val: &str, parse: impl Fn(&str) -> Option<T>) -> Option<taffy::geometry::Rect<T>> {
+    let mut values = [None; 4];
+    let mut count = 0;
+    for part in val.split_whitespace() {
+        if count == 4 {
+            return None;
         }
-        2 => {
-            let v = parse_length_percentage(parts[0])?;
-            let h = parse_length_percentage(parts[1])?;
-            Some(taffy::geometry::Rect {
-                left: h,
-                right: h,
-                top: v,
-                bottom: v,
-            })
-        }
-        4 => {
-            let t = parse_length_percentage(parts[0])?;
-            let r = parse_length_percentage(parts[1])?;
-            let b = parse_length_percentage(parts[2])?;
-            let l = parse_length_percentage(parts[3])?;
-            Some(taffy::geometry::Rect {
-                left: l,
-                right: r,
-                top: t,
-                bottom: b,
-            })
-        }
-        _ => None
+        values[count] = Some(parse(part)?);
+        count += 1;
     }
+    let top = values[0]?;
+    let right = values[1].unwrap_or(top);
+    let bottom = values[2].unwrap_or(top);
+    let left = values[3].unwrap_or(right);
+    Some(taffy::geometry::Rect { left, right, top, bottom })
+}
+
+pub(crate) fn parse_padding(val: &str) -> Option<taffy::geometry::Rect<LengthPercentage>> {
+    parse_sides(val, parse_length_percentage)
 }
 
 pub(crate) fn parse_margin(val: &str) -> Option<taffy::geometry::Rect<LengthPercentageAuto>> {
-    let parts: Vec<&str> = val.split_whitespace().collect();
-    
-    match parts.len() {
-        1 => {
-            if let Some(v) = parse_length_percentage_auto(parts[0]) {
-                Some(taffy::geometry::Rect {
-                    left: v,
-                    right: v,
-                    top: v,
-                    bottom: v,
-                })
-            } else {
-                None
-            }
-        }
-        2 => {
-            let v = parse_length_percentage_auto(parts[0])?;
-            let h = parse_length_percentage_auto(parts[1])?;
-            Some(taffy::geometry::Rect {
-                left: h,
-                right: h,
-                top: v,
-                bottom: v,
-            })
-        }
-        4 => {
-            let t = parse_length_percentage_auto(parts[0])?;
-            let r = parse_length_percentage_auto(parts[1])?;
-            let b = parse_length_percentage_auto(parts[2])?;
-            let l = parse_length_percentage_auto(parts[3])?;
-            Some(taffy::geometry::Rect {
-                left: l,
-                right: r,
-                top: t,
-                bottom: b,
-            })
-        }
-        _ => None
-    }
+    parse_sides(val, parse_length_percentage_auto)
 }
 
 pub fn parse_box_shadow(val: &str) -> Option<crate::style::BoxShadow> {

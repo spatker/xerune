@@ -449,35 +449,11 @@ fn apply_resolved_declaration(prop: &str, val: &str, current_style: &mut Contain
             if let Some(p) = parse_padding(val) {
                 taffy_style.padding = p;
             }
-            let parts: Vec<&str> = val.split_whitespace().collect();
-            match parts.len() {
-                1 => {
-                    if let Some(w) = parse_px(parts[0]) {
-                        current_style.padding_left = w;
-                        current_style.padding_right = w;
-                        current_style.padding_top = w;
-                        current_style.padding_bottom = w;
-                    }
-                }
-                2 => {
-                    let v = parse_px(parts[0]);
-                    let h = parse_px(parts[1]);
-                    if let Some(w) = v {
-                        current_style.padding_top = w;
-                        current_style.padding_bottom = w;
-                    }
-                    if let Some(w) = h {
-                        current_style.padding_left = w;
-                        current_style.padding_right = w;
-                    }
-                }
-                4 => {
-                    if let Some(w) = parse_px(parts[0]) { current_style.padding_top = w; }
-                    if let Some(w) = parse_px(parts[1]) { current_style.padding_right = w; }
-                    if let Some(w) = parse_px(parts[2]) { current_style.padding_bottom = w; }
-                    if let Some(w) = parse_px(parts[3]) { current_style.padding_left = w; }
-                }
-                _ => {}
+            if let Some(p) = parser::parse_sides(val, parse_px) {
+                current_style.padding_top = p.top;
+                current_style.padding_right = p.right;
+                current_style.padding_bottom = p.bottom;
+                current_style.padding_left = p.left;
             }
         }
         "padding-left" => {
@@ -936,6 +912,18 @@ fn apply_resolved_declaration(prop: &str, val: &str, current_style: &mut Contain
 #[cfg(all(test, feature = "std"))]
 mod tests {
     use super::{resolve_font_relative_lengths, rewrite_for_simplecss};
+
+    #[test]
+    fn box_shorthands_take_one_to_four_values() {
+        let sides = |v| super::parser::parse_sides(v, super::parse_px).map(|r| [r.top, r.right, r.bottom, r.left]);
+        assert_eq!(sides("1px"), Some([1.0; 4]));
+        assert_eq!(sides("1px 2px"), Some([1.0, 2.0, 1.0, 2.0]));
+        assert_eq!(sides("1px 2px 3px"), Some([1.0, 2.0, 3.0, 2.0]));
+        assert_eq!(sides("1px 2px 3px 4px"), Some([1.0, 2.0, 3.0, 4.0]));
+        assert_eq!(sides("1px 2px 3px 4px 5px"), None);
+        assert_eq!(sides(""), None);
+        assert_eq!(sides("1px red"), None);
+    }
 
     #[test]
     fn em_and_rem_lengths_become_px() {
