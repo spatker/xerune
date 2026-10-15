@@ -16,6 +16,10 @@ rust-version = "1.85"
 # Examples, docs (videos), fonts and test fixtures stay in the repository.
 include = ["/src", "/README.md", "/LICENSE"]
 
+[package.metadata.docs.rs]
+# Document the embedded Linux backends too, not only winit.
+features = ["drm", "linuxfb", "evdev"]
+
 [lib]
 name = "xerune"
 path = "src/lib.rs"
