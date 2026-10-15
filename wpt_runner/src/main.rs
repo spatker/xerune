@@ -17,7 +17,7 @@ use markup5ever_rcdom::{Handle, NodeData, RcDom};
 use rayon::prelude::*;
 use tiny_skia::Pixmap;
 use xerune::{Context, ImageError, ImageLoader, Model, Runtime};
-use comparison::{Difference, compare, diff_image};
+use comparison::{Difference, compare, diff_image, differs_only_in_antialiasing};
 use document::{Document, Problem, Reference};
 use expectations::Expectations;
 
@@ -190,6 +190,8 @@ impl Screenshots {
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Status {
     Pass,
+    /// Passes once edge anti-aliasing differences are ignored.
+    PassAntialiasing,
     Fail(String),
     Skip(String),
 }
@@ -200,25 +202,47 @@ struct Test {
     references: Vec<Reference>,
 }
 
+/// How a render compares with its references.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Verdict {
+    /// Every reference requirement is met exactly (or within `fuzzy`).
+    Exact,
+    /// Met once anti-aliasing differences on edges are ignored.
+    Antialiasing,
+    Fail,
+}
+
 /// WPT's rule: every mismatch reference must differ, and if there are match
 /// references, at least one must match.
-fn references_pass(test: &Pixmap, references: &[(Reference, Pixmap)]) -> (bool, Option<Difference>) {
-    let mut any_match = false;
+fn references_pass(test: &Pixmap, references: &[(Reference, Pixmap)]) -> (Verdict, Option<Difference>) {
+    let mut best: Option<Verdict> = None;
     let mut closest: Option<Difference> = None;
     for (reference, image) in references {
         let difference = compare(test, image);
-        let matches = reference.fuzzy.matches(difference);
+        let verdict = if reference.fuzzy.matches(difference) {
+            Verdict::Exact
+        } else if differs_only_in_antialiasing(test, image) {
+            Verdict::Antialiasing
+        } else {
+            Verdict::Fail
+        };
         if reference.must_match {
-            any_match |= matches;
+            if best.is_none_or(|b| verdict_rank(verdict) > verdict_rank(b)) {
+                best = Some(verdict);
+            }
             if closest.is_none_or(|c| difference.total_pixels < c.total_pixels) {
                 closest = Some(difference);
             }
-        } else if matches {
-            return (false, None);
+        } else if verdict != Verdict::Fail {
+            // Equal up to anti-aliasing is the same image.
+            return (Verdict::Fail, None);
         }
     }
-    let has_match = references.iter().any(|(r, _)| r.must_match);
-    (!has_match || any_match, closest)
+    (best.unwrap_or(Verdict::Exact), closest)
+}
+
+fn verdict_rank(v: Verdict) -> u8 {
+    match v { Verdict::Fail => 0, Verdict::Antialiasing => 1, Verdict::Exact => 2 }
 }
 
 fn run(test: Test, root: &Path, fonts: &'static [fontdue::Font], screenshots: &Screenshots, images: Option<&Path>) -> Status {
@@ -228,25 +252,29 @@ fn run(test: Test, root: &Path, fonts: &'static [fontdue::Font], screenshots: &S
             .collect::<Result<Vec<_>, Problem>>()?;
         // A test Chromium fails says nothing about Xerune, usually that the
         // forced font changed it.
-        if !references_pass(&screenshots.load(&test.path)?, &references).0 {
+        if references_pass(&screenshots.load(&test.path)?, &references).0 == Verdict::Fail {
             return Ok(Status::Skip("fails in Chromium".into()));
         }
         // Parsed again here: the DOM is `Rc`-based and can't cross threads.
         let document = Document::load(&root.join(&test.path), root)?;
         let image = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| render(document, root, fonts)))
             .map_err(|_| Problem::Error("Xerune panicked".into()))??;
-        let (pass, closest) = references_pass(&image, &references);
-        if pass {
+        let (verdict, closest) = references_pass(&image, &references);
+        if verdict == Verdict::Exact {
             return Ok(Status::Pass);
         }
+        // Anti-aliasing passes are saved too, so the tolerance can be checked.
         if let Some(dir) = images {
-            let dir = dir.join(&test.path);
+            let dir = dir.join(if verdict == Verdict::Fail { "failures" } else { "antialiasing" }).join(&test.path);
             let _ = fs::create_dir_all(&dir);
             let _ = image.save_png(dir.join("xerune.png"));
             for (i, (_, reference)) in references.iter().enumerate() {
                 let _ = reference.save_png(dir.join(format!("chromium-{i}.png")));
                 let _ = diff_image(&image, reference).save_png(dir.join(format!("diff-{i}.png")));
             }
+        }
+        if verdict == Verdict::Antialiasing {
+            return Ok(Status::PassAntialiasing);
         }
         Ok(Status::Fail(match closest {
             Some(d) => format!("{} pixels differ, by up to {}", d.total_pixels, d.max_difference),
@@ -317,7 +345,8 @@ fn parse_args() -> Result<Options, String> {
                     Runs the suites in wpt_runner/suites.txt and compares the results with\n\
                     wpt_runner/expectations.txt. FILTER limits the run to paths containing it.\n\
                     --update   rewrite expectations.txt from this run (not with FILTER)\n\
-                    --images   save Xerune/Chromium/diff images of failures under target/wpt/failures\n\
+                    --images   save Xerune/Chromium/diff images of failures and anti-aliasing\n\
+                    \x20          passes under target/wpt/images\n\
                     -j N       rendering threads (default 4)");
                 std::process::exit(0);
             }
@@ -394,7 +423,7 @@ fn cli() -> Result<(), String> {
         &root,
     )?;
 
-    let failures_dir = options.images.then(|| target.join("failures"));
+    let failures_dir = options.images.then(|| target.join("images"));
     if let Some(dir) = &failures_dir {
         let _ = fs::remove_dir_all(dir);
     }
@@ -428,7 +457,7 @@ fn suite_of<'a>(path: &Path, suites: &'a [String]) -> &'a str {
 fn report(results: &BTreeMap<PathBuf, Status>, suites: &[String], not_reftests: usize, elapsed: Duration) {
     for (path, status) in results {
         match status {
-            Status::Pass => {}
+            Status::Pass | Status::PassAntialiasing => {}
             Status::Fail(reason) => println!("FAIL {}: {reason}", path.display()),
             Status::Skip(reason) => println!("SKIP {}: {reason}", path.display()),
         }
@@ -445,6 +474,6 @@ fn report(results: &BTreeMap<PathBuf, Status>, suites: &[String], not_reftests: 
     for (reason, n) in reasons.iter().take(12) {
         println!("  {n:6}  {reason}");
     }
-    println!("\n{}", expectations::summary_table(results, suites));
+    println!("\n{}", expectations::summary_table(results, suites, false));
     println!("{not_reftests} files without references (testharness tests, references) were not run. {:.1?}", elapsed);
 }

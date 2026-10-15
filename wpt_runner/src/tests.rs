@@ -96,7 +96,7 @@ fn invalid_fuzzy_metadata_is_an_error() {
 #[test]
 fn one_match_and_every_mismatch_must_succeed() {
     let (red, blue) = (filled(255, 0, 0), filled(0, 0, 255));
-    let pass = |refs: Vec<(Reference, Pixmap)>| references_pass(&red, &refs).0;
+    let pass = |refs: Vec<(Reference, Pixmap)>| references_pass(&red, &refs).0 != Verdict::Fail;
     assert!(pass(vec![(reference(true, ""), blue.clone()), (reference(true, ""), red.clone())]));
     assert!(!pass(vec![(reference(true, ""), blue.clone())]));
     assert!(pass(vec![(reference(false, ""), blue.clone())]));
@@ -109,9 +109,39 @@ fn one_match_and_every_mismatch_must_succeed() {
         }
     }
     let white = filled(255, 255, 255);
-    assert!(!references_pass(&white, &[(reference(true, ""), square.clone())]).0);
-    assert!(references_pass(&white, &[(reference(true, "255;10000"), square.clone())]).0);
-    assert!(!references_pass(&white, &[(reference(false, "255;10000"), square)]).0);
+    assert_eq!(references_pass(&white, &[(reference(true, ""), square.clone())]).0, Verdict::Fail);
+    assert_eq!(references_pass(&white, &[(reference(true, "255;10000"), square.clone())]).0, Verdict::Exact);
+    assert_eq!(references_pass(&white, &[(reference(false, "255;10000"), square)]).0, Verdict::Fail);
+}
+
+/// A green 100x100 square at (10, 10), with its top row at `top_coverage`.
+fn square_with_top_edge(top_coverage: f32) -> Pixmap {
+    let mut p = filled(255, 255, 255);
+    for y in 10..110 {
+        for x in 10..110 {
+            let c = if y == 10 { top_coverage } else { 1.0 };
+            let blend = |v: u8| (255.0 - (255.0 - v as f32) * c).round() as u8;
+            p.data_mut()[(y * WIDTH as usize + x) * 4..][..3].copy_from_slice(&[blend(0), blend(128), blend(0)]);
+        }
+    }
+    p
+}
+
+#[test]
+fn only_edge_antialiasing_is_forgiven() {
+    let expected = square_with_top_edge(1.0);
+    let refs = [(reference(true, ""), expected.clone())];
+    assert_eq!(references_pass(&expected, &refs).0, Verdict::Exact);
+    // Anti-aliased top edge: within tolerance, on an edge.
+    assert_eq!(references_pass(&square_with_top_edge(0.8), &refs).0, Verdict::Antialiasing);
+    // A missing edge row differs by far more.
+    assert_eq!(references_pass(&square_with_top_edge(0.0), &refs).0, Verdict::Fail);
+    // A slightly different color inside the square is not an edge.
+    let mut tinted = expected.clone();
+    tinted.data_mut()[(50 * WIDTH as usize + 50) * 4] = 20;
+    assert_eq!(references_pass(&tinted, &refs).0, Verdict::Fail);
+    // A mismatch reference that differs only in anti-aliasing is the same image.
+    assert_eq!(references_pass(&square_with_top_edge(0.8), &[(reference(false, ""), expected.clone())]).0, Verdict::Fail);
 }
 
 #[test]

@@ -35,7 +35,7 @@ impl Expectations {
         for (path, status) in results {
             match status {
                 Status::Fail(reason) if !self.failing.contains(path) => changes.regressions.push((path.clone(), reason.clone())),
-                Status::Pass if self.failing.contains(path) => changes.fixed.push(path.clone()),
+                Status::Pass | Status::PassAntialiasing if self.failing.contains(path) => changes.fixed.push(path.clone()),
                 _ => {}
             }
         }
@@ -49,7 +49,7 @@ impl Expectations {
         writeln!(out, "#   WPT_DIR=... cargo run --release -p wpt_runner -- --update").unwrap();
         writeln!(out, "# {header}").unwrap();
         writeln!(out, "#").unwrap();
-        for line in summary_table(results, suites).lines() {
+        for line in summary_table(results, suites, true).lines() {
             writeln!(out, "# {line}").unwrap();
         }
         for (path, status) in results {
@@ -82,22 +82,27 @@ impl Changes {
     }
 }
 
-/// Pass rate per suite. Skipped tests are not part of the rate.
-pub fn summary_table(results: &BTreeMap<PathBuf, Status>, suites: &[String]) -> String {
-    let mut counts: BTreeMap<&str, [usize; 3]> = suites.iter().map(|s| (s.as_str(), [0; 3])).collect();
+/// Pass rate per suite. Skipped tests are not part of the rate; `aa` counts
+/// the passes that needed anti-aliasing differences ignored. Suites without
+/// results are left out unless `all_suites`.
+pub fn summary_table(results: &BTreeMap<PathBuf, Status>, suites: &[String], all_suites: bool) -> String {
+    let mut counts: BTreeMap<&str, [usize; 4]> = suites.iter().map(|s| (s.as_str(), [0; 4])).collect();
     for (path, status) in results {
-        let index = match status { Status::Pass => 0, Status::Fail(_) => 1, Status::Skip(_) => 2 };
+        let index = match status { Status::Pass => 0, Status::PassAntialiasing => 1, Status::Fail(_) => 2, Status::Skip(_) => 3 };
         counts.entry(suite_of(path, suites)).or_default()[index] += 1;
     }
-    let mut total = [0; 3];
-    let mut out = format!("{:<34}{:>6}{:>6}{:>7}{:>7}\n", "suite", "pass", "fail", "pass%", "skip");
-    let mut row = |name: &str, [pass, fail, skip]: [usize; 3]| {
+    let mut total = [0; 4];
+    let mut out = format!("{:<34}{:>6}{:>6}{:>6}{:>7}{:>7}\n", "suite", "pass", "(aa)", "fail", "pass%", "skip");
+    let mut row = |name: &str, [exact, aa, fail, skip]: [usize; 4]| {
+        let pass = exact + aa;
         let rate = if pass + fail == 0 { "-".into() } else { format!("{:.0}%", 100.0 * pass as f64 / (pass + fail) as f64) };
-        writeln!(out, "{name:<34}{pass:>6}{fail:>6}{rate:>7}{skip:>7}").unwrap();
+        writeln!(out, "{name:<34}{pass:>6}{aa:>6}{fail:>6}{rate:>7}{skip:>7}").unwrap();
     };
     for (suite, c) in &counts {
-        row(suite, *c);
-        for i in 0..3 { total[i] += c[i]; }
+        if all_suites || c.iter().any(|&n| n > 0) {
+            row(suite, *c);
+        }
+        for i in 0..4 { total[i] += c[i]; }
     }
     row("total", total);
     out

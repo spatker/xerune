@@ -84,6 +84,37 @@ pub fn compare(a: &Pixmap, b: &Pixmap) -> Difference {
     result
 }
 
+/// Largest per-pixel difference that still counts as anti-aliasing.
+const EDGE_TOLERANCE: u8 = 64;
+
+/// Whether `test` differs from `reference` only in the coverage of edge
+/// pixels. Two rasterizers disagree there (Chromium hints Ahem's glyph boxes
+/// onto the pixel grid, fontdue doesn't), while anything missing, moved by a
+/// pixel or recolored differs by far more than [`EDGE_TOLERANCE`].
+pub fn differs_only_in_antialiasing(test: &Pixmap, reference: &Pixmap) -> bool {
+    let (w, h) = (reference.width() as usize, reference.height() as usize);
+    let (t, r) = (test.data(), reference.data());
+    let pixel = |d: &[u8], x: usize, y: usize| { let i = (y * w + x) * 4; [d[i], d[i + 1], d[i + 2]] };
+    for y in 0..h {
+        for x in 0..w {
+            let (a, b) = (pixel(t, x, y), pixel(r, x, y));
+            if a == b {
+                continue;
+            }
+            if (0..3).any(|i| a[i].abs_diff(b[i]) > EDGE_TOLERANCE) {
+                return false;
+            }
+            let on_edge = (y.saturating_sub(1)..=(y + 1).min(h - 1))
+                .flat_map(|ny| (x.saturating_sub(1)..=(x + 1).min(w - 1)).map(move |nx| (nx, ny)))
+                .any(|(nx, ny)| pixel(r, nx, ny) != b);
+            if !on_edge {
+                return false;
+            }
+        }
+    }
+    true
+}
+
 /// Differing pixels in red over a faded copy of `a`.
 pub fn diff_image(a: &Pixmap, b: &Pixmap) -> Pixmap {
     let mut result = a.clone();
