@@ -313,7 +313,7 @@ mod loader {
             Ok(bytes)
         }
 
-        #[cfg(feature = "http")]
+        #[cfg(all(feature = "http", not(target_arch = "wasm32")))]
         fn fetch_remote(&self, url: &str) -> Result<Vec<u8>, ImageError> {
             use std::io::Read;
             let agent = ureq::AgentBuilder::new().timeout(self.timeout).build();
@@ -326,7 +326,7 @@ mod loader {
             Ok(buf)
         }
 
-        #[cfg(not(feature = "http"))]
+        #[cfg(not(all(feature = "http", not(target_arch = "wasm32"))))]
         fn fetch_remote(&self, _url: &str) -> Result<Vec<u8>, ImageError> {
             Err(ImageError::HttpDisabled)
         }

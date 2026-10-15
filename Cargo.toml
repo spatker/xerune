@@ -72,9 +72,13 @@ bytemuck = { version = "1.14", default-features = false }
 png = { version = "0.17", optional = true }
 # UAX #14 line break opportunities (no_std).
 unicode-linebreak = "0.1.5"
-ureq = { version = "2", optional = true }
 # Owns the CSS text next to the `simplecss::StyleSheet` borrowing it.
 self_cell = { version = "1", optional = true }
+
+# Browsers load images with fetch; ureq's TLS stack does not build for wasm32,
+# so `http` has no effect there.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+ureq = { version = "2", optional = true }
 
 [dev-dependencies]
 # No "regex": env_logger falls back to substring matching for RUST_LOG filters.
