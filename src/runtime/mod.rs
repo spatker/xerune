@@ -66,6 +66,9 @@ pub struct Runtime<M, R> {
     last_fingerprint: Option<u64>,
     context: Context,
     last_commands: Vec<DrawCommand>,
+    /// The next frame must be drawn completely: nothing is drawn yet, the
+    /// viewport changed, or images arrived whose commands look unchanged.
+    full_repaint: bool,
     /// Focused input ID if any text inputs are currently active.
     pub focused_id: Option<String>,
     /// Expected frames per second target.
@@ -109,6 +112,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
              last_fingerprint: initial_fingerprint,
              context,
              last_commands: Vec::new(),
+             full_repaint: true,
              focused_id: None,
              target_fps: 60,
              timers: Vec::new(),
@@ -175,6 +179,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
     #[cfg(all(feature = "std", not(target_arch = "wasm32")))]
     pub fn wait_for_images(&mut self, timeout: core::time::Duration) -> bool {
         if self.images.wait(timeout) {
+            self.full_repaint = true;
             self.sync_view_inner(false)
         } else {
             false
@@ -455,7 +460,6 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
             }
             Runtime::<M, R>::sync_canvases(&self.ui, &mut self.context);
             self.restore_scroll();
-            self.last_commands.clear();
             self.last_fingerprint = fingerprint;
         }
 
@@ -490,58 +494,50 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
         dirty
     }
 
-    /// Renders the current layout tree state, optimizing redraws with the returned dirty rectangle.
+    /// Renders the current layout tree state, drawing only what changed since
+    /// the previous frame.
+    ///
+    /// Returns the repainted area: `None` when the whole screen was drawn, an
+    /// empty rect when nothing changed (and nothing was drawn).
     pub fn render(&mut self, renderer: &mut impl Renderer) -> Option<Rect> {
         profile!("render");
         let commands = self.ui.build_commands(&self.context.canvases, self.focused_id.as_deref());
-        
-        let mut dirty_region: Option<Rect> = None;
 
-        let max_len = commands.len().max(self.last_commands.len());
-        for i in 0..max_len {
-            let cmd1 = commands.get(i);
-            let cmd2 = self.last_commands.get(i);
-
-            if cmd1 != cmd2 {
-                if let Some(cmd) = cmd1 {
-                    if let Some(b) = cmd.bounds() {
-                        dirty_region = match dirty_region {
-                            Some(dr) => Some(dr.expand(b)),
-                            None => Some(b),
-                        };
-                    }
-                }
-                if let Some(cmd) = cmd2 {
-                    if let Some(b) = cmd.bounds() {
-                        dirty_region = match dirty_region {
-                            Some(dr) => Some(dr.expand(b)),
-                            None => Some(b),
-                        };
-                    }
-                }
-            }
-        }
-
+        let mut damage = (!self.full_repaint).then(|| self.changed_area(&commands));
         for cmd in &commands {
-            if let DrawCommand::DrawCanvas { id, rect, .. } = cmd {
-                if let Some(canvas) = self.context.canvases.get(id) {
-                    if canvas.dirty {
-                        dirty_region = match dirty_region {
-                            Some(dr) => Some(dr.expand(*rect)),
-                            None => Some(*rect),
-                        };
-                    }
+            if let (Some(area), DrawCommand::DrawCanvas { id, rect, .. }) = (damage.as_mut(), cmd) {
+                if self.context.canvases.get(id).is_some_and(|canvas| canvas.dirty) {
+                    *area = area.expand(*rect);
                 }
             }
         }
-
         for canvas in self.context.canvases.values_mut() {
             canvas.dirty = false;
         }
+        // Clipping at a fractional edge would blend the edge pixels over the
+        // previous frame instead of drawing them like a full repaint does.
+        let damage = damage.map(|area| if area.is_empty() { area } else { area.round_out() });
 
-        renderer.render(&commands, &RenderResources::new(&self.context.canvases, &self.images), dirty_region);
+        if !damage.is_some_and(|area| area.is_empty()) {
+            renderer.render(&commands, &RenderResources::new(&self.context.canvases, &self.images), damage);
+        }
+        self.full_repaint = false;
         self.last_commands = commands;
-        dirty_region
+        damage
+    }
+
+    /// The area covered by commands that differ from the previous frame's.
+    fn changed_area(&self, commands: &[DrawCommand]) -> Rect {
+        let mut area = Rect::new(0.0, 0.0, 0.0, 0.0);
+        for i in 0..commands.len().max(self.last_commands.len()) {
+            let (new, old) = (commands.get(i), self.last_commands.get(i));
+            if new != old {
+                for bounds in [new, old].into_iter().flatten().filter_map(DrawCommand::bounds) {
+                    area = area.expand(bounds);
+                }
+            }
+        }
+        area
     }
 
     /// Set the fixed dimensions of the layout viewport.
@@ -561,6 +557,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
             return false;
         }
         self.viewport_px = Some((width, height));
+        self.full_repaint = true;
         crate::screen::set_viewport(width, height);
         self.cached_size = size;
         self.model.on_resize(width, height, &mut self.context);
@@ -685,9 +682,11 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
     pub fn tick_with_time(&mut self, now: Instant) -> TickResult {
         let mut needs_redraw = false;
 
-        // Finished background image loads: rebuild so sizes/layout reflect the new images.
-        // The rebuild also clears the previous command list, forcing a full repaint.
+        // Finished background image loads: rebuild so sizes/layout reflect the new images,
+        // and repaint everything, since an image's command can stay the same while its
+        // placeholder turns into pixels.
         if self.images.poll() {
+            self.full_repaint = true;
             needs_redraw |= self.sync_view_inner(false);
         }
 

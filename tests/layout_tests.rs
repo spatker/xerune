@@ -1098,6 +1098,147 @@ mod text_layout {
     }
 }
 
+// Example models, for the `damage` tests.
+#[path = "../examples/calculator/calculator_impl.rs"]
+#[allow(dead_code)]
+mod calculator_impl;
+#[path = "../examples/music_player/music_player_impl.rs"]
+#[allow(dead_code)]
+mod music_player_impl;
+#[path = "../examples/showcase/showcase_impl.rs"]
+#[allow(dead_code)]
+mod showcase_impl;
+#[path = "../examples/todo/todo_impl.rs"]
+#[allow(dead_code)]
+mod todo_impl;
+
+/// Frames drawn only where the commands changed must look exactly like a
+/// full repaint, through real interaction sequences of the examples.
+mod damage {
+    use super::*;
+    use xerune::images::{DefaultImageLoader, ImageError, ImageLoader};
+    use xerune_render::FastRenderer;
+
+    use super::{calculator_impl, music_player_impl, showcase_impl, todo_impl};
+
+    const W: u32 = 800;
+    const H: u32 = 480;
+
+    fn fonts() -> &'static [fontdue::Font] {
+        use std::sync::OnceLock;
+        static FONTS: OnceLock<Vec<fontdue::Font>> = OnceLock::new();
+        FONTS.get_or_init(|| {
+            let font = |bytes: &[u8]| fontdue::Font::from_bytes(bytes, fontdue::FontSettings::default()).unwrap();
+            vec![
+                font(include_bytes!("../resources/fonts/Roboto-Regular.ttf")),
+                font(include_bytes!("../resources/fonts/Roboto-Bold.ttf")),
+            ]
+        })
+    }
+
+    /// Local images only: deterministic and offline.
+    struct LocalImages(DefaultImageLoader);
+
+    impl ImageLoader for LocalImages {
+        fn fetch(&self, src: &str) -> Result<Vec<u8>, ImageError> {
+            if xerune::images::is_remote(src) {
+                return Err(ImageError::HttpDisabled);
+            }
+            self.0.fetch(src)
+        }
+    }
+
+    struct Session<M: Model + ui::TemplateLayout> {
+        runtime: Runtime<M, xerune_render::FastMeasurer<'static>>,
+        buffer: Vec<u32>,
+        images: std::collections::HashMap<String, (u32, u32, Vec<u32>)>,
+        glyphs: std::collections::HashMap<(usize, u16, u32), xerune_render::CachedGlyph>,
+    }
+
+    impl<M: Model + ui::TemplateLayout + 'static> Session<M> {
+        fn new(model: M) -> Self {
+            let mut runtime = Runtime::new(model, xerune_render::FastMeasurer { fonts: fonts().into() });
+            runtime.set_image_loader(LocalImages(DefaultImageLoader::default()));
+            set_size(&mut runtime, W as f32, H as f32);
+            let mut session = Self {
+                runtime,
+                buffer: vec![0; (W * H) as usize],
+                images: Default::default(),
+                glyphs: Default::default(),
+            };
+            session.render_and_compare("first frame");
+            session
+        }
+
+        /// Renders the next frame as the event loop does and compares it
+        /// with a full repaint of the same commands.
+        fn render_and_compare(&mut self, step: &str) {
+            let mut renderer = FastRenderer::new(&mut self.buffer, W, H, fonts(), &mut self.images, &mut self.glyphs);
+            self.runtime.render(&mut renderer);
+
+            let commands = self.runtime.ui.build_commands(&self.runtime.context().canvases, None);
+            let mut full = vec![0; (W * H) as usize];
+            let (mut images, mut glyphs) = Default::default();
+            let mut renderer = FastRenderer::new(&mut full, W, H, fonts(), &mut images, &mut glyphs);
+            let resources = RenderResources::new(&self.runtime.context().canvases, self.runtime.images());
+            Renderer::render(&mut renderer, &commands, &resources, None);
+
+            let wrong = self.buffer.iter().zip(&full).position(|(a, b)| a != b);
+            if let Some(i) = wrong {
+                if std::env::var("DAMAGE_DEBUG").is_ok() {
+                    let (x, y) = ((i as u32 % W) as f32, (i as u32 / W) as f32);
+                    eprintln!("damaged {:08x} full {:08x}", self.buffer[i], full[i]);
+                    for (n, c) in commands.iter().enumerate() {
+                        if let Some(b) = c.bounds() {
+                            if b.x <= x && x < b.x + b.width && b.y <= y && y < b.y + b.height {
+                                eprintln!("#{n} {}", format!("{c:?}").chars().take(260).collect::<String>());
+                            }
+                        }
+                    }
+                }
+                panic!("after {step}: pixel ({}, {}) differs from a full repaint", i as u32 % W, i as u32 / W);
+            }
+        }
+
+        fn send(&mut self, messages: &[&str]) {
+            for msg in messages {
+                self.runtime.handle_messages([msg.to_string()]);
+                self.render_and_compare(msg);
+            }
+        }
+    }
+
+    #[test]
+    fn todo_frames_match_full_repaints() {
+        Session::new(todo_impl::TodoList::default())
+            .send(&["toggle:0", "toggle:1", "toggle:0", "remove:0", "todo_input:text:Buy milk", "add", "toggle:2"]);
+    }
+
+    #[test]
+    fn calculator_frames_match_full_repaints() {
+        Session::new(calculator_impl::CalculatorModel::default())
+            .send(&["digit:7", "digit:8", "op:*", "digit:9", "equals", "negate", "percent", "clear", "clear"]);
+    }
+
+    #[test]
+    fn showcase_frames_match_full_repaints() {
+        let mut session = Session::new(showcase_impl::ShowcaseModel::default());
+        session.send(&["toggle_wifi", "increment_progress", "increment_user_counter", "toggle_engine", "increment_speed"]);
+        for tab in 1..5 {
+            session.send(&[&format!("select_tab:{tab}"), "increment_progress", "toggle_maintenance"]);
+        }
+    }
+
+    #[test]
+    fn music_player_frames_match_full_repaints() {
+        let mut session = Session::new(music_player_impl::MusicPlayerModel::new(None));
+        // Covers arrive after the first frame; their commands stay the same.
+        session.runtime.wait_for_images(std::time::Duration::from_secs(10));
+        session.render_and_compare("images arrived");
+        session.send(&["hover_track:2", "hover_track:4", "unhover_track", "select_track:1", "play_pause", "next", "back"]);
+    }
+}
+
 mod known_gaps {
     //! Things the engine gets wrong today. Each test describes the correct
     //! (browser) behavior and is ignored with a FIXME until it is fixed:

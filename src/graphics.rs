@@ -125,8 +125,37 @@ impl Rect {
         Self { x, y, width, height }
     }
 
-    /// Expands this rectangle to encompass another rectangle.
+    /// True if the rectangle covers no area.
+    pub fn is_empty(&self) -> bool {
+        !(self.width > 0.0 && self.height > 0.0)
+    }
+
+    /// The smallest rectangle on whole pixels that contains this one.
+    pub fn round_out(&self) -> Rect {
+        // `f32::floor` needs std; screen coordinates fit an i32.
+        let floor = |v: f32| {
+            let t = v as i32 as f32;
+            if t > v { t - 1.0 } else { t }
+        };
+        let ceil = |v: f32| -floor(-v);
+        let (x, y) = (floor(self.x), floor(self.y));
+        Rect {
+            x,
+            y,
+            width: ceil(self.x + self.width) - x,
+            height: ceil(self.y + self.height) - y,
+        }
+    }
+
+    /// Expands this rectangle to encompass another rectangle. Empty rectangles
+    /// add nothing, wherever they are.
     pub fn expand(&self, other: Rect) -> Rect {
+        if other.is_empty() {
+            return *self;
+        }
+        if self.is_empty() {
+            return other;
+        }
         let min_x = self.x.min(other.x);
         let min_y = self.y.min(other.y);
         let max_x = (self.x + self.width).max(other.x + other.width);
@@ -475,4 +504,25 @@ impl<'a> RenderResources<'a> {
 pub trait Renderer: TextMeasurer {
     /// Renders a set of draw commands onto the canvas/display buffer, optimizing for a dirty rectangle region.
     fn render(&mut self, commands: &[DrawCommand], resources: &RenderResources<'_>, dirty_rect: Option<Rect>);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Rect;
+
+    #[test]
+    fn empty_rects_do_not_grow_a_union() {
+        let a = Rect::new(10.0, 10.0, 5.0, 5.0);
+        let empty = Rect::new(0.0, 0.0, 0.0, 0.0);
+        assert_eq!(a.expand(empty), a);
+        assert_eq!(empty.expand(a), a);
+        assert_eq!(a.expand(Rect::new(20.0, 0.0, 1.0, 1.0)), Rect::new(10.0, 0.0, 11.0, 15.0));
+    }
+
+    #[test]
+    fn round_out_covers_partial_pixels() {
+        assert_eq!(Rect::new(1.5, 2.25, 3.0, 1.0).round_out(), Rect::new(1.0, 2.0, 4.0, 2.0));
+        assert_eq!(Rect::new(-1.5, -0.5, 1.0, 1.0).round_out(), Rect::new(-2.0, -1.0, 2.0, 2.0));
+        assert_eq!(Rect::new(3.0, 4.0, 5.0, 6.0).round_out(), Rect::new(3.0, 4.0, 5.0, 6.0));
+    }
 }
