@@ -147,7 +147,9 @@ impl Backend for WinitBackend {
                             render_fn(&mut runtime, &mut app_buffer, width, height);
 
                             buffer.copy_from_slice(&app_buffer);
-                            buffer.present().unwrap();
+                            if let Err(e) = buffer.present() {
+                                eprintln!("Present error: {}", e);
+                            }
                         },
                         WindowEvent::CloseRequested => {
                             target.exit();
