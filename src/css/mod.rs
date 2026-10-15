@@ -3,7 +3,6 @@
 pub(crate) mod parser;
 pub(crate) mod animation;
 pub(crate) mod gradient;
-/// `@media` query parsing, matching, and stylesheet expansion.
 pub mod media;
 
 pub use gradient::{parse_gradient, interpolate_gradient};
