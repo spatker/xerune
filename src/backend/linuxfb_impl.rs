@@ -201,7 +201,7 @@ impl Backend for LinuxFbBackend {
     where
         M: Model + crate::ui::TemplateLayout + 'static,
         TM: TextMeasurer + 'static,
-        F: FnMut(&mut Runtime<M, TM>, &mut [u32], u32, u32) -> Option<crate::graphics::Rect> + 'static,
+        F: FnMut(&mut Runtime<M, TM>, &mut [u32], u32, u32) -> crate::graphics::Damage + 'static,
     {
         // `XERUNE_SNAPSHOT=out.png` renders headlessly instead (see `backend::snapshot`).
         if let Some(snapshot) = super::SnapshotBackend::from_env() {

@@ -113,7 +113,7 @@ impl Bench {
                 let damage = runtime.render(&mut renderer);
                 render.push(t.elapsed());
                 let screen = xerune::Rect::new(0.0, 0.0, width as f32, height as f32);
-                area += damage.and_then(|d| d.intersect(&screen)).map_or(0.0, |d| d.width * d.height);
+                area += damage.rects().iter().filter_map(|d| d.intersect(&screen)).map(|d| d.width * d.height).sum::<f32>();
             }
             let screen_share = area / self.iters.max(1) as f32 / (width * height) as f32 * 100.0;
             line += &format!(

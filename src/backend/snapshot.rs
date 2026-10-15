@@ -86,7 +86,7 @@ impl SnapshotBackend {
     where
         M: Model + crate::ui::TemplateLayout + 'static,
         TM: TextMeasurer + 'static,
-        F: FnMut(&mut Runtime<M, TM>, &mut [u32], u32, u32) -> Option<Rect>,
+        F: FnMut(&mut Runtime<M, TM>, &mut [u32], u32, u32) -> crate::graphics::Damage,
     {
         let (width, height) = self.size.unwrap_or((width, height));
         runtime.set_size(width as f32, height as f32);
@@ -155,7 +155,7 @@ impl Backend for SnapshotBackend {
     where
         M: Model + crate::ui::TemplateLayout + 'static,
         TM: TextMeasurer + 'static,
-        F: FnMut(&mut Runtime<M, TM>, &mut [u32], u32, u32) -> Option<Rect> + 'static,
+        F: FnMut(&mut Runtime<M, TM>, &mut [u32], u32, u32) -> crate::graphics::Damage + 'static,
     {
         let (pixels, w, h) = self.render(&mut runtime, &mut render_fn, width, height)?;
         write_png(&self.path, &pixels, w, h)?;

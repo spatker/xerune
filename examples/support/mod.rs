@@ -20,7 +20,7 @@ pub fn render_frame<M, TM>(
     fonts_ref: &'static [fontdue::Font],
     _font_bytes_ref: Option<&'static [&'static [u8]]>,
     caches: &mut RenderCaches,
-) -> Option<xerune::Rect>
+) -> xerune::Damage
 where
     M: xerune::Model + xerune::ui::TemplateLayout + 'static,
     TM: xerune::TextMeasurer + 'static,
@@ -55,7 +55,7 @@ where
     M: xerune::Model + xerune::ui::TemplateLayout + 'static,
     TM: xerune::TextMeasurer + 'static,
     R: FnOnce(
-        Box<dyn FnMut(&mut xerune::Runtime<M, TM>, &mut [u32], u32, u32) -> Option<xerune::Rect> + 'static>,
+        Box<dyn FnMut(&mut xerune::Runtime<M, TM>, &mut [u32], u32, u32) -> xerune::Damage + 'static>,
         &'static [fontdue::Font],
     ) -> anyhow::Result<()>,
 {

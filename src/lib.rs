@@ -66,7 +66,7 @@ mod diag;
 #[cfg(any(feature = "winit", feature = "linuxfb", feature = "drm", feature = "browser"))]
 pub mod backend;
 
-pub use graphics::{Color, Gradient, LinearGradient, RadialGradient, RadialShape, RadialExtent, ConicGradient, Rect, Canvas, Context, DrawCommand, TextMeasurer, Renderer, RenderResources};
+pub use graphics::{Color, Gradient, LinearGradient, RadialGradient, RadialShape, RadialExtent, ConicGradient, Rect, Damage, Canvas, Context, DrawCommand, TextMeasurer, Renderer, RenderResources};
 pub use images::{Image, ImageStatus, ImageStore};
 #[cfg(feature = "std")]
 pub use images::{DefaultImageLoader, ImageError, ImageLoader};

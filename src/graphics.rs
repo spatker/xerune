@@ -195,6 +195,84 @@ impl Rect {
     }
 }
 
+/// The areas of the screen a frame repainted: a few rectangles, merged where
+/// they overlap or merging them costs little.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Damage {
+    rects: Vec<Rect>,
+}
+
+impl Damage {
+    /// More rectangles are merged into the existing ones; each is drawn with
+    /// a pass over the command list.
+    pub const MAX_RECTS: usize = 8;
+
+    /// Nothing was repainted.
+    pub fn none() -> Self {
+        Self::default()
+    }
+
+    /// All of `screen` was repainted.
+    pub fn full(screen: Rect) -> Self {
+        let mut damage = Self::none();
+        damage.add(screen);
+        damage
+    }
+
+    /// True if nothing was repainted.
+    pub fn is_empty(&self) -> bool {
+        self.rects.is_empty()
+    }
+
+    /// The repainted rectangles. They may overlap.
+    pub fn rects(&self) -> &[Rect] {
+        &self.rects
+    }
+
+    /// One rectangle around all repainted areas, `None` if nothing was.
+    pub fn bounds(&self) -> Option<Rect> {
+        self.rects.iter().copied().reduce(|a, b| a.expand(b))
+    }
+
+    /// Adds `rect`, rounded out to whole pixels, merging it with rectangles
+    /// it overlaps or that it would barely enlarge.
+    pub fn add(&mut self, rect: Rect) {
+        if rect.is_empty() {
+            return;
+        }
+        let mut rect = rect.round_out();
+        // Merging may make the result cover others; repeat until it doesn't.
+        while let Some(i) = self.rects.iter().position(|r| Self::should_merge(r, &rect)) {
+            rect = rect.expand(self.rects.swap_remove(i));
+        }
+        if self.rects.len() == Self::MAX_RECTS {
+            // Merge into the rectangle whose union grows the least.
+            let growth = |r: &Rect| area(&r.expand(rect)) - area(r);
+            let (i, _) = self
+                .rects
+                .iter()
+                .enumerate()
+                .min_by(|(_, a), (_, b)| growth(a).total_cmp(&growth(b)))
+                .expect("MAX_RECTS > 0");
+            let merged = rect.expand(self.rects.swap_remove(i));
+            return self.add(merged);
+        }
+        self.rects.push(rect);
+    }
+
+    /// Overlapping rectangles are merged, and so are neighbours whose union
+    /// is hardly bigger than the two (an extra pass over the commands costs
+    /// more than a few extra pixels).
+    fn should_merge(a: &Rect, b: &Rect) -> bool {
+        const SLACK: f32 = 1024.0;
+        a.intersects(b) || area(&a.expand(*b)) <= area(a) + area(b) + SLACK
+    }
+}
+
+fn area(r: &Rect) -> f32 {
+    r.width * r.height
+}
+
 /// A pixel buffer representing a custom user-drawn canvas element.
 pub struct Canvas {
     /// Width of the canvas.

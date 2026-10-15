@@ -4,6 +4,7 @@ pub mod timer;
 pub mod animation;
 /// Platform-independent monotonic time wrappers.
 pub mod time;
+mod diff;
 
 pub use timer::{Timer, TickResult};
 pub use animation::ActiveAnimation;
@@ -21,7 +22,7 @@ macro_rules! profile {
     ($($tt:tt)*) => {};
 }
 
-use crate::graphics::{Context, DrawCommand, Rect, TextMeasurer, Renderer, RenderResources};
+use crate::graphics::{Context, Damage, DrawCommand, Rect, TextMeasurer, Renderer, RenderResources};
 use crate::images::ImageStore;
 use crate::style::{ContainerStyle, RenderData, AnimationIterationCount};
 use crate::model::{InputEvent, Model};
@@ -495,49 +496,41 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
     }
 
     /// Renders the current layout tree state, drawing only what changed since
-    /// the previous frame.
-    ///
-    /// Returns the repainted area: `None` when the whole screen was drawn, an
-    /// empty rect when nothing changed (and nothing was drawn).
-    pub fn render(&mut self, renderer: &mut impl Renderer) -> Option<Rect> {
+    /// the previous frame, and returns the repainted areas.
+    pub fn render(&mut self, renderer: &mut impl Renderer) -> Damage {
         profile!("render");
         let commands = self.ui.build_commands(&self.context.canvases, self.focused_id.as_deref());
 
-        let mut damage = (!self.full_repaint).then(|| self.changed_area(&commands));
-        for cmd in &commands {
-            if let (Some(area), DrawCommand::DrawCanvas { id, rect, .. }) = (damage.as_mut(), cmd) {
-                if self.context.canvases.get(id).is_some_and(|canvas| canvas.dirty) {
-                    *area = area.expand(*rect);
+        let damage = if self.full_repaint {
+            let screen = self.ui.taffy.layout(self.ui.root).map(|l| Rect::new(0.0, 0.0, l.size.width, l.size.height));
+            Damage::full(screen.unwrap_or(Rect::new(0.0, 0.0, f32::MAX, f32::MAX)))
+        } else {
+            let mut damage = Damage::none();
+            diff::damage_between(&self.last_commands, &commands, &mut damage);
+            for cmd in &commands {
+                if let DrawCommand::DrawCanvas { id, rect, .. } = cmd {
+                    if self.context.canvases.get(id).is_some_and(|canvas| canvas.dirty) {
+                        damage.add(*rect);
+                    }
                 }
             }
-        }
+            damage
+        };
         for canvas in self.context.canvases.values_mut() {
             canvas.dirty = false;
         }
-        // Clipping at a fractional edge would blend the edge pixels over the
-        // previous frame instead of drawing them like a full repaint does.
-        let damage = damage.map(|area| if area.is_empty() { area } else { area.round_out() });
 
-        if !damage.is_some_and(|area| area.is_empty()) {
-            renderer.render(&commands, &RenderResources::new(&self.context.canvases, &self.images), damage);
+        let resources = RenderResources::new(&self.context.canvases, &self.images);
+        if self.full_repaint {
+            renderer.render(&commands, &resources, None);
+        } else {
+            for area in damage.rects() {
+                renderer.render(&commands, &resources, Some(*area));
+            }
         }
         self.full_repaint = false;
         self.last_commands = commands;
         damage
-    }
-
-    /// The area covered by commands that differ from the previous frame's.
-    fn changed_area(&self, commands: &[DrawCommand]) -> Rect {
-        let mut area = Rect::new(0.0, 0.0, 0.0, 0.0);
-        for i in 0..commands.len().max(self.last_commands.len()) {
-            let (new, old) = (commands.get(i), self.last_commands.get(i));
-            if new != old {
-                for bounds in [new, old].into_iter().flatten().filter_map(DrawCommand::bounds) {
-                    area = area.expand(bounds);
-                }
-            }
-        }
-        area
     }
 
     /// Set the fixed dimensions of the layout viewport.

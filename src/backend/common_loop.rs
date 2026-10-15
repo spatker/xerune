@@ -27,7 +27,7 @@ pub fn run_embedded_event_loop<M, TM, F, I, P>(
 where
     M: Model + crate::ui::TemplateLayout + 'static,
     TM: TextMeasurer + 'static,
-    F: FnMut(&mut Runtime<M, TM>, &mut [u32], u32, u32) -> Option<Rect> + 'static,
+    F: FnMut(&mut Runtime<M, TM>, &mut [u32], u32, u32) -> crate::graphics::Damage + 'static,
     I: InputSource,
     P: FramePresenter,
 {
@@ -75,7 +75,13 @@ where
         // Render and present
         if dirty {
             let damage = render_fn(&mut runtime, &mut local_buffer, w, h);
-            let effective_damage = if is_forced { None } else { damage };
+            // Presenters copy one rectangle (`None`: everything); an empty one
+            // when nothing changed.
+            let effective_damage = if is_forced {
+                None
+            } else {
+                Some(damage.bounds().unwrap_or(Rect::new(0.0, 0.0, 0.0, 0.0)))
+            };
             presenter.present(&local_buffer, &surface, effective_damage)?;
         }
 
