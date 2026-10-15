@@ -3,7 +3,8 @@
 //! For every scene it measures
 //! - `raster`: a full repaint of the scene's draw commands (pure rasterizer cost),
 //! - `frame`: a message, the rebuild it triggers and the damage-limited render,
-//!   as one interaction in the event loop, with the area it repainted,
+//!   as one interaction in the event loop, with the area it repainted and
+//!   the heap allocations of the update and of the render,
 //!
 //! and prints a hash of the final pixels so renderer changes can prove they
 //! draw the same image.
@@ -31,11 +32,41 @@ mod showcase_impl;
 #[allow(dead_code)]
 mod todo_impl;
 
+use std::alloc::{GlobalAlloc, Layout, System};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use xerune::images::{DefaultImageLoader, ImageError, ImageLoader};
 use xerune::{Model, Pixels, RenderResources, Runtime, Surface, TemplateLayout};
 use xerune_render::{Fonts, SoftwareRenderer};
+
+/// Counts heap allocations, to report them per frame.
+struct CountingAlloc;
+
+static ALLOCATIONS: AtomicUsize = AtomicUsize::new(0);
+
+unsafe impl GlobalAlloc for CountingAlloc {
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        ALLOCATIONS.fetch_add(1, Ordering::Relaxed);
+        unsafe { System.alloc(layout) }
+    }
+
+    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        unsafe { System.dealloc(ptr, layout) }
+    }
+
+    unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
+        ALLOCATIONS.fetch_add(1, Ordering::Relaxed);
+        unsafe { System.realloc(ptr, layout, new_size) }
+    }
+}
+
+#[global_allocator]
+static GLOBAL: CountingAlloc = CountingAlloc;
+
+fn allocations() -> usize {
+    ALLOCATIONS.load(Ordering::Relaxed)
+}
 
 /// Loads local images only, so results do not depend on the network.
 struct LocalImages(DefaultImageLoader);
@@ -103,22 +134,29 @@ impl Bench {
         if wants("frame") {
             let (mut update, mut render) = (Vec::with_capacity(self.iters), Vec::with_capacity(self.iters));
             let mut area = 0.0;
+            let (mut update_allocs, mut render_allocs) = (0, 0);
             for i in 0..self.iters {
-                let t = Instant::now();
-                runtime.handle_messages([messages[i % 2].to_string()]);
+                let message = messages[i % 2].to_string();
+                let (t, a) = (Instant::now(), allocations());
+                runtime.handle_messages([message]);
                 update.push(t.elapsed());
+                update_allocs += allocations() - a;
 
-                let t = Instant::now();
+                let (t, a) = (Instant::now(), allocations());
                 let damage = runtime.render(&mut renderer, &mut Surface::new(Pixels::Xrgb8888(&mut buffer), width, height));
                 render.push(t.elapsed());
+                render_allocs += allocations() - a;
                 let screen = xerune::Rect::new(0.0, 0.0, width as f32, height as f32);
                 area += damage.rects().iter().filter_map(|d| d.intersect(&screen)).map(|d| d.width * d.height).sum::<f32>();
             }
             let screen_share = area / self.iters.max(1) as f32 / (width * height) as f32 * 100.0;
+            let iters = self.iters.max(1);
             line += &format!(
-                " | frame: update {:>8.1} us render {:>8.1} us, repaints {screen_share:>5.1}% of the screen",
+                " | frame: update {:>8.1} us render {:>8.1} us, repaints {screen_share:>5.1}% of the screen, allocations {}+{}",
                 median(&mut update),
-                median(&mut render)
+                median(&mut render),
+                update_allocs / iters,
+                render_allocs / iters
             );
         }
         println!("{line}");
