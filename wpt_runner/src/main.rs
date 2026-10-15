@@ -233,8 +233,9 @@ fn references_pass(test: &Pixmap, references: &[(Reference, Pixmap)]) -> (Verdic
             if closest.is_none_or(|c| difference.total_pixels < c.total_pixels) {
                 closest = Some(difference);
             }
-        } else if verdict != Verdict::Fail {
-            // Equal up to anti-aliasing is the same image.
+        } else if verdict == Verdict::Exact {
+            // Mismatch tests often hinge on small differences, so only an
+            // exact (or fuzzy) match counts as "the same image" here.
             return (Verdict::Fail, None);
         }
     }

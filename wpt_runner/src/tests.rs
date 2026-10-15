@@ -138,10 +138,15 @@ fn only_edge_antialiasing_is_forgiven() {
     assert_eq!(references_pass(&square_with_top_edge(0.0), &refs).0, Verdict::Fail);
     // A slightly different color inside the square is not an edge.
     let mut tinted = expected.clone();
-    tinted.data_mut()[(50 * WIDTH as usize + 50) * 4] = 20;
+    for y in 40..60 {
+        for x in 40..60 {
+            tinted.data_mut()[(y * WIDTH as usize + x) * 4] = 20;
+        }
+    }
     assert_eq!(references_pass(&tinted, &refs).0, Verdict::Fail);
-    // A mismatch reference that differs only in anti-aliasing is the same image.
-    assert_eq!(references_pass(&square_with_top_edge(0.8), &[(reference(false, ""), expected.clone())]).0, Verdict::Fail);
+    // The tolerance only helps matching: any difference satisfies a mismatch.
+    assert_eq!(references_pass(&square_with_top_edge(0.8), &[(reference(false, ""), expected.clone())]).0, Verdict::Exact);
+    assert_eq!(references_pass(&expected, &[(reference(false, ""), expected.clone())]).0, Verdict::Fail);
 }
 
 #[test]

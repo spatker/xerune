@@ -88,7 +88,7 @@ pub fn compare(a: &Pixmap, b: &Pixmap) -> Difference {
 const EDGE_TOLERANCE: u8 = 64;
 
 /// Whether `test` differs from `reference` only in the coverage of edge
-/// pixels. Two rasterizers disagree there (Chromium hints Ahem's glyph boxes
+/// pixels, which border another color in either image. Two rasterizers disagree there (Chromium hints Ahem's glyph boxes
 /// onto the pixel grid, fontdue doesn't), while anything missing, moved by a
 /// pixel or recolored differs by far more than [`EDGE_TOLERANCE`].
 pub fn differs_only_in_antialiasing(test: &Pixmap, reference: &Pixmap) -> bool {
@@ -104,9 +104,11 @@ pub fn differs_only_in_antialiasing(test: &Pixmap, reference: &Pixmap) -> bool {
             if (0..3).any(|i| a[i].abs_diff(b[i]) > EDGE_TOLERANCE) {
                 return false;
             }
+            // An edge in either image: where two lines of text touch, the
+            // reference is solid but the render shows both glyphs' edge rows.
             let on_edge = (y.saturating_sub(1)..=(y + 1).min(h - 1))
                 .flat_map(|ny| (x.saturating_sub(1)..=(x + 1).min(w - 1)).map(move |nx| (nx, ny)))
-                .any(|(nx, ny)| pixel(r, nx, ny) != b);
+                .any(|(nx, ny)| pixel(r, nx, ny) != b || pixel(t, nx, ny) != a);
             if !on_edge {
                 return false;
             }
