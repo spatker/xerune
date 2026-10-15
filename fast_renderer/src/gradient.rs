@@ -256,9 +256,30 @@ type LutRef = ColorLut;
 #[cfg(feature = "std")]
 const LUT_CACHE_ENTRIES: usize = 64;
 
+/// What a cached LUT was built from, compared on lookup so that two gradients
+/// whose hashes collide never share a table.
+#[cfg(feature = "std")]
+#[derive(PartialEq)]
+struct LutInputs {
+    stops: Vec<(xerune::Color, u32)>,
+    start: u32,
+    end: u32,
+    periodic: bool,
+    swap_rb: bool,
+}
+
+#[cfg(feature = "std")]
+impl LutInputs {
+    fn matches(&self, stops: &[(xerune::Color, f32)], start: f32, end: f32, periodic: bool, swap_rb: bool) -> bool {
+        self.stops.len() == stops.len()
+            && self.stops.iter().zip(stops).all(|(a, (c, p))| a.0 == *c && a.1 == p.to_bits())
+            && (self.start, self.end, self.periodic, self.swap_rb) == (start.to_bits(), end.to_bits(), periodic, swap_rb)
+    }
+}
+
 #[cfg(feature = "std")]
 thread_local! {
-    static LUT_CACHE: std::cell::RefCell<std::collections::HashMap<u64, std::rc::Rc<ColorLut>>> =
+    static LUT_CACHE: std::cell::RefCell<std::collections::HashMap<u64, (LutInputs, std::rc::Rc<ColorLut>)>> =
         std::cell::RefCell::new(std::collections::HashMap::new());
 }
 
@@ -274,14 +295,23 @@ impl ColorLut {
         let key = h.finish();
         LUT_CACHE.with(|cache| {
             let mut cache = cache.borrow_mut();
-            if let Some(lut) = cache.get(&key) {
-                return lut.clone();
+            if let Some((inputs, lut)) = cache.get(&key) {
+                if inputs.matches(stops, start, end, periodic, swap_rb) {
+                    return lut.clone();
+                }
             }
             if cache.len() >= LUT_CACHE_ENTRIES {
                 cache.clear();
             }
             let lut = std::rc::Rc::new(Self::new(stops, start, end, periodic, swap_rb));
-            cache.insert(key, lut.clone());
+            let inputs = LutInputs {
+                stops: stops.iter().map(|(c, p)| (*c, p.to_bits())).collect(),
+                start: start.to_bits(),
+                end: end.to_bits(),
+                periodic,
+                swap_rb,
+            };
+            cache.insert(key, (inputs, lut.clone()));
             lut
         })
     }
