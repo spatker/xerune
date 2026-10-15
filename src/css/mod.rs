@@ -238,6 +238,22 @@ fn resolve_font_relative_lengths(val: &str, em: f32, rem: f32) -> Option<String>
     (last > 0).then(|| out + &val[last..])
 }
 
+/// The side a `border-<side>[-<part>]` property names.
+fn border_side<'a>(border: &'a mut crate::style::Borders, prop: &str) -> Option<&'a mut crate::style::BorderSide> {
+    let rest = prop.strip_prefix("border-")?;
+    let (side, part) = rest.split_once('-').map_or((rest, None), |(s, p)| (s, Some(p)));
+    if !matches!(part, None | Some("width" | "style" | "color")) {
+        return None;
+    }
+    Some(match side {
+        "top" => &mut border.top,
+        "right" => &mut border.right,
+        "bottom" => &mut border.bottom,
+        "left" => &mut border.left,
+        _ => return None,
+    })
+}
+
 /// Applies a single CSS key-value declaration to the given styling structures.
 pub fn apply_declaration(prop: &str, val: &str, current_style: &mut ContainerStyle, taffy_style: &mut Style) {
     // `line-height: 1.5em` stays relative: it is resolved where it is used.
@@ -375,15 +391,6 @@ fn apply_resolved_declaration(prop: &str, val: &str, current_style: &mut Contain
                 current_style.box_shadow = None;
             }
         }
-        "border-style" => {
-            match val.trim() {
-                "solid" => current_style.border_style = crate::style::BorderStyle::Solid,
-                "dashed" => current_style.border_style = crate::style::BorderStyle::Dashed,
-                "dotted" => current_style.border_style = crate::style::BorderStyle::Dotted,
-                "none" => current_style.border_style = crate::style::BorderStyle::None,
-                _ => {}
-            }
-        }
         "border-radius" => {
             if let Some(r) = parse_px(val) {
                 current_style.border_radius = r;
@@ -393,57 +400,40 @@ fn apply_resolved_declaration(prop: &str, val: &str, current_style: &mut Contain
                  }
             }
         }
-        "border-width" | "border-top-width" | "border-bottom-width" | "border-left-width" | "border-right-width" => {
-            if let Some(w) = parse_px(val) {
-                current_style.border_width = w;
-                if prop == "border-bottom-width" {
-                    current_style.border_bottom_only = true;
-                }
+        "border" => {
+            if let Some(side) = parser::parse_border_side(val) {
+                current_style.border = crate::style::Borders::all(side);
             }
         }
-        "border-color" | "border-top-color" | "border-bottom-color" | "border-left-color" | "border-right-color" => {
-            if let Some(c) = parse_hex_color(val) {
-                current_style.border_color = Some(c);
+        "border-width" => {
+            if let Some(w) = parser::parse_sides(val, parser::parse_border_width) {
+                let b = &mut current_style.border;
+                (b.top.width, b.right.width, b.bottom.width, b.left.width) = (w.top, w.right, w.bottom, w.left);
             }
         }
-        "border" | "border-top" | "border-bottom" | "border-left" | "border-right" => {
-            if prop == "border-bottom" {
-                current_style.border_bottom_only = true;
+        "border-style" => {
+            if let Some(s) = parser::parse_sides(val, parser::parse_border_style) {
+                let b = &mut current_style.border;
+                (b.top.style, b.right.style, b.bottom.style, b.left.style) = (s.top, s.right, s.bottom, s.left);
             }
-            let val_clean = val.trim();
-            if let Some(rgba_start) = val_clean.find("rgba(").or_else(|| val_clean.find("rgb(")) {
-                if let Some(rgba_end) = val_clean[rgba_start..].find(')') {
-                    let color_sub = &val_clean[rgba_start..=rgba_start + rgba_end];
-                    if let Some(c) = parse_hex_color(color_sub) {
-                        current_style.border_color = Some(c);
-                    }
-                    let mut remaining = val_clean[..rgba_start].to_string();
-                    remaining.push_str(&val_clean[rgba_start + rgba_end + 1..]);
-                    for part in remaining.split_whitespace() {
-                        if part == "solid" { current_style.border_style = crate::style::BorderStyle::Solid; }
-                        else if part == "dashed" { current_style.border_style = crate::style::BorderStyle::Dashed; }
-                        else if part == "dotted" { current_style.border_style = crate::style::BorderStyle::Dotted; }
-                        else if part == "none" { current_style.border_style = crate::style::BorderStyle::None; }
-                        else if let Some(w) = parse_px(part) { current_style.border_width = w; }
-                    }
-                }
-            } else {
-                let parts: Vec<&str> = val.split_whitespace().collect();
-                for part in parts {
-                    if part == "solid" {
-                        current_style.border_style = crate::style::BorderStyle::Solid;
-                    } else if part == "dashed" {
-                        current_style.border_style = crate::style::BorderStyle::Dashed;
-                    } else if part == "dotted" {
-                        current_style.border_style = crate::style::BorderStyle::Dotted;
-                    } else if part == "none" {
-                        current_style.border_style = crate::style::BorderStyle::None;
-                    } else if let Some(w) = parse_px(part) {
-                        current_style.border_width = w;
-                    } else if let Some(c) = parse_hex_color(part) {
-                        current_style.border_color = Some(c);
-                    }
-                }
+        }
+        "border-color" => {
+            if let Some(c) = parser::parse_sides(val, parser::parse_border_color) {
+                let b = &mut current_style.border;
+                (b.top.color, b.right.color, b.bottom.color, b.left.color) = (c.top, c.right, c.bottom, c.left);
+            }
+        }
+        _ if prop.starts_with("border-") && border_side(&mut current_style.border, prop).is_some() => {
+            // `border-top`, `border-top-width`, ...
+            let rest = &prop["border-".len()..];
+            let part = rest.split_once('-').map(|(_, part)| part);
+            let side = border_side(&mut current_style.border, prop).unwrap();
+            match part {
+                None => if let Some(s) = parser::parse_border_side(val) { *side = s },
+                Some("width") => if let Some(w) = parser::parse_border_width(val) { side.width = w },
+                Some("style") => if let Some(s) = parser::parse_border_style(val) { side.style = s },
+                Some("color") => if let Some(c) = parser::parse_border_color(val) { side.color = c },
+                _ => {}
             }
         }
         "padding" => {

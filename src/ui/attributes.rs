@@ -351,9 +351,8 @@ pub(crate) fn dom_to_taffy(
     let mut current_style = parent_style.clone();
     current_style.background_color = None;
     current_style.background_gradient = None;
-    current_style.border_width = 0.0;
+    current_style.border = crate::style::Borders::NONE;
     current_style.border_radius = 0.0;
-    current_style.border_color = None;
     current_style.overflow = Overflow::Visible;
 
     match &handle.data {
@@ -430,8 +429,8 @@ pub(crate) fn dom_to_taffy(
                 layout_style.max_size.height = d;
             }
 
-            let add_h = current_style.padding_left + current_style.padding_right + current_style.border_width * 2.0;
-            let add_v = current_style.padding_top + current_style.padding_bottom + current_style.border_width * 2.0;
+            let add_h = current_style.padding_left + current_style.padding_right + current_style.border.horizontal_width();
+            let add_v = current_style.padding_top + current_style.padding_bottom + current_style.border.vertical_width();
 
             if current_style.box_sizing == BoxSizing::ContentBox {
                 layout_style.size.width = super::style_resolution::to_border_box(layout_style.size.width, add_h);
@@ -660,12 +659,7 @@ pub(crate) fn dom_to_taffy(
                 super::style_resolution::apply_block_display(taffy, tag, &current_style, &mut layout_style, &children, render_data);
             }
 
-            layout_style.border = taffy::geometry::Rect {
-                left: length(current_style.border_width),
-                right: length(current_style.border_width),
-                top: length(current_style.border_width),
-                bottom: length(current_style.border_width),
-            };
+            layout_style.border = current_style.border.widths().map(length);
 
             if current_style.direction == Direction::Rtl {
                 match layout_style.flex_direction {
@@ -699,25 +693,25 @@ pub(crate) fn dom_to_taffy(
             if !layout_style.max_size.height.is_auto() {
                 let val = layout_style.max_size.height.value();
                 if layout_style.max_size.height == Dimension::length(val) {
-                    layout_style.max_size.height = Dimension::length(val + current_style.border_width * 2.0 + current_style.padding_top + current_style.padding_bottom);
+                    layout_style.max_size.height = Dimension::length(val + current_style.border.vertical_width() + current_style.padding_top + current_style.padding_bottom);
                 }
             }
             if !layout_style.max_size.width.is_auto() {
                 let val = layout_style.max_size.width.value();
                 if layout_style.max_size.width == Dimension::length(val) {
-                    layout_style.max_size.width = Dimension::length(val + current_style.border_width * 2.0 + current_style.padding_left + current_style.padding_right);
+                    layout_style.max_size.width = Dimension::length(val + current_style.border.horizontal_width() + current_style.padding_left + current_style.padding_right);
                 }
             }
             if !layout_style.min_size.height.is_auto() {
                 let val = layout_style.min_size.height.value();
                 if layout_style.min_size.height == Dimension::length(val) {
-                    layout_style.min_size.height = Dimension::length(val + current_style.border_width * 2.0 + current_style.padding_top + current_style.padding_bottom);
+                    layout_style.min_size.height = Dimension::length(val + current_style.border.vertical_width() + current_style.padding_top + current_style.padding_bottom);
                 }
             }
             if !layout_style.min_size.width.is_auto() {
                 let val = layout_style.min_size.width.value();
                 if layout_style.min_size.width == Dimension::length(val) {
-                    layout_style.min_size.width = Dimension::length(val + current_style.border_width * 2.0 + current_style.padding_left + current_style.padding_right);
+                    layout_style.min_size.width = Dimension::length(val + current_style.border.horizontal_width() + current_style.padding_left + current_style.padding_right);
                 }
             }
 

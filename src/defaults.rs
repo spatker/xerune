@@ -69,9 +69,7 @@ pub fn get_default_style(tag: &str, parent_style: &ContainerStyle) -> StyleBundl
     bundle.container_style.background_gradient = None;
     bundle.container_style.box_shadow = None;
     bundle.container_style.border_radius = 0.0;
-    bundle.container_style.border_width = 0.0;
-    bundle.container_style.border_color = None;
-    bundle.container_style.border_bottom_only = false;
+    bundle.container_style.border = crate::style::Borders::NONE;
     bundle.container_style.overflow = crate::Overflow::Visible;
     bundle.container_style.z_index = None;
     bundle.container_style.text_overflow_ellipsis = false;
@@ -211,8 +209,7 @@ pub fn get_default_style(tag: &str, parent_style: &ContainerStyle) -> StyleBundl
             bundle.taffy_style.align_items = Some(AlignItems::Center);
             bundle.container_style.background_color = Some(crate::Color::from_rgba8(220, 220, 220, 255));
             bundle.container_style.border_radius = 4.0;
-            bundle.container_style.border_width = 1.0;
-            bundle.container_style.border_color = Some(crate::Color::from_rgba8(180, 180, 180, 255));
+            bundle.container_style.border = crate::style::Borders::all(crate::style::BorderSide::solid(1.0, crate::Color::from_rgba8(180, 180, 180, 255)));
         }
         "progress" => {
              bundle.element_type = ElementType::Progress;
@@ -232,8 +229,7 @@ pub fn get_default_style(tag: &str, parent_style: &ContainerStyle) -> StyleBundl
             bundle.taffy_style.align_items = Some(AlignItems::Center);
             bundle.container_style.background_color = Some(crate::Color::WHITE);
             bundle.container_style.border_radius = 4.0;
-            bundle.container_style.border_width = 1.0;
-            bundle.container_style.border_color = Some(crate::Color::from_rgba8(200, 200, 200, 255));
+            bundle.container_style.border = crate::style::Borders::all(crate::style::BorderSide::solid(1.0, crate::Color::from_rgba8(200, 200, 200, 255)));
         }
         "input_checkbox" => {
             bundle.element_type = ElementType::Checkbox;

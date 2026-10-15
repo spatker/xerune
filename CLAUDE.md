@@ -116,3 +116,6 @@ ARM target build (user's setup):
 - Same-named templates in different `examples/*/templates` resolve in
   `read_dir` order.
 - Images: PNG only.
+- Borders: per-side width/color/style, but every style is drawn solid (no
+  dashed/dotted/double/3D); `z-index` stacking is simplified (see
+  `paint_layer` in `src/ui/mod.rs`).

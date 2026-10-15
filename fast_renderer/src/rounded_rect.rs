@@ -659,3 +659,147 @@ pub fn draw_box_shadow(
     }
 }
 
+/// Draws a border whose sides differ in width or color. Each side is a solid
+/// band; in a corner, the line from the outer to the inner corner divides
+/// the two sides, as in CSS, and the outer edge follows `radius`. Corner
+/// coverage comes from distances; only pixels the diagonal crosses are
+/// sampled.
+pub fn draw_border_sides(
+    buffer: &mut [u32],
+    logical_w: u32,
+    logical_h: u32,
+    physical_w: u32,
+    rect_x: i32,
+    rect_y: i32,
+    rect_w: i32,
+    rect_h: i32,
+    radius: f32,
+    border: &xerune::style::Borders,
+    swap_rb: bool,
+    clip_rect: Option<xerune::Rect>,
+    rotation: u32,
+) {
+    if rect_w <= 0 || rect_h <= 0 {
+        return;
+    }
+    let width = |s: &xerune::style::BorderSide| (s.width.round().max(0.0) as i32).min(rect_w.max(rect_h));
+    let color = |s: &xerune::style::BorderSide| pack_color(s.color.unwrap_or(xerune::Color::from_rgba8(0, 0, 0, 0)), swap_rb);
+    let (bt, br, bb, bl) = (width(&border.top), width(&border.right), width(&border.bottom), width(&border.left));
+    let (ct, cr, cb, cl) = (color(&border.top), color(&border.right), color(&border.bottom), color(&border.left));
+    let r = radius.min(rect_w as f32 / 2.0).min(rect_h as f32 / 2.0).max(0.0);
+    let ri = r.ceil() as i32;
+
+    // Corner boxes (width, height): top-left, top-right, bottom-left, bottom-right.
+    let corner = [(bl.max(ri), bt.max(ri)), (br.max(ri), bt.max(ri)), (bl.max(ri), bb.max(ri)), (br.max(ri), bb.max(ri))];
+    let band = |buffer: &mut [u32], x: i32, y: i32, w: i32, h: i32, c: u32| {
+        if w > 0 && h > 0 {
+            blend_solid_rect(buffer, logical_w, logical_h, physical_w, x, y, w, h, c, clip_rect, rotation);
+        }
+    };
+    band(buffer, rect_x + corner[0].0, rect_y, rect_w - corner[0].0 - corner[1].0, bt, ct);
+    band(buffer, rect_x + corner[2].0, rect_y + rect_h - bb, rect_w - corner[2].0 - corner[3].0, bb, cb);
+    band(buffer, rect_x, rect_y + corner[0].1, bl, rect_h - corner[0].1 - corner[2].1, cl);
+    band(buffer, rect_x + rect_w - br, rect_y + corner[1].1, br, rect_h - corner[1].1 - corner[3].1, cr);
+
+    let (clip_x1, clip_y1, clip_x2, clip_y2) = match clip_rect {
+        Some(cr) => (
+            cr.x.max(0.0) as i32,
+            cr.y.max(0.0) as i32,
+            (cr.x + cr.width).min(logical_w as f32) as i32,
+            (cr.y + cr.height).min(logical_h as f32) as i32,
+        ),
+        None => (0, 0, logical_w as i32, logical_h as i32),
+    };
+    // Per corner: box, then the horizontal side (top/bottom) and the vertical
+    // side (left/right) as (width, color), and whether it is on the right/bottom.
+    let corners = [
+        (corner[0], (bt, ct), (bl, cl), false, false),
+        (corner[1], (bt, ct), (br, cr), true, false),
+        (corner[2], (bb, cb), (bl, cl), false, true),
+        (corner[3], (bb, cb), (br, cr), true, true),
+    ];
+    for ((cw, ch), (bh, colh), (bv, colv), right, bottom) in corners {
+        if bh == 0 && bv == 0 {
+            continue; // no border meets here
+        }
+        let (bh_f, bv_f) = (bh as f32, bv as f32);
+        let (rx, ry) = (r - bv_f, r - bh_f);
+        let rounded_inner = rx > 0.0 && ry > 0.0;
+        let (inv_rx, inv_ry) = if rounded_inner { (1.0 / rx, 1.0 / ry) } else { (0.0, 0.0) };
+        for j in 0..ch.min(rect_h) {
+            let py = if bottom { rect_y + rect_h - 1 - j } else { rect_y + j };
+            if py < clip_y1 || py >= clip_y2 {
+                continue;
+            }
+            for i in 0..cw.min(rect_w) {
+                let px = if right { rect_x + rect_w - 1 - i } else { rect_x + i };
+                if px < clip_x1 || px >= clip_x2 {
+                    continue;
+                }
+                // (u, v): distance of the pixel center from the outer corner,
+                // growing inwards.
+                let (u, v) = (i as f32 + 0.5, j as f32 + 0.5);
+                let in_arc = u < r && v < r;
+                // Coverage of the area inside the outer edge...
+                let outer = if in_arc {
+                    let (dx, dy) = (r - u, r - v);
+                    (r + 0.5 - (dx * dx + dy * dy).sqrt()).clamp(0.0, 1.0)
+                } else {
+                    1.0
+                };
+                if outer == 0.0 {
+                    continue;
+                }
+                // ...and outside the inner edge (the padding box).
+                let inner = if rounded_inner && in_arc && u > bv_f && v > bh_f {
+                    let (ex, ey) = ((r - u) * inv_rx, (r - v) * inv_ry);
+                    let e = (ex * ex + ey * ey).sqrt();
+                    ((e - 1.0) * 0.5 * (rx + ry) + 0.5).clamp(0.0, 1.0)
+                } else {
+                    1.0 - (u + 0.5 - bv_f).clamp(0.0, 1.0) * (v + 0.5 - bh_f).clamp(0.0, 1.0)
+                };
+                let coverage = outer * inner;
+                if coverage == 0.0 {
+                    continue;
+                }
+                // The diagonal from the outer to the inner corner divides the
+                // sides; sample only pixels it crosses.
+                let horizontal_share = if bv == 0 {
+                    1.0
+                } else if bh == 0 {
+                    0.0
+                } else {
+                    let below = |u: f32, v: f32| v * bv_f > u * bh_f;
+                    let (u0, v0) = (i as f32, j as f32);
+                    let corners_below = [(u0, v0), (u0 + 1.0, v0), (u0, v0 + 1.0), (u0 + 1.0, v0 + 1.0)]
+                        .iter().filter(|&&(cu, cv)| below(cu, cv)).count();
+                    match corners_below {
+                        0 => 1.0,
+                        4 => 0.0,
+                        _ => {
+                            let mut above = 0;
+                            for sy in 0..4 {
+                                for sx in 0..4 {
+                                    if !below(u0 + (sx as f32 + 0.5) / 4.0, v0 + (sy as f32 + 0.5) / 4.0) {
+                                        above += 1;
+                                    }
+                                }
+                            }
+                            above as f32 / 16.0
+                        }
+                    }
+                };
+                let idx = calc_pixel_index(px, py, rotation, physical_w, logical_w, logical_h);
+                if idx >= buffer.len() {
+                    continue;
+                }
+                for (share, packed) in [(horizontal_share, colh), (1.0 - horizontal_share, colv)] {
+                    let alpha = ((packed >> 24) & 0xff) as f32 * coverage * share;
+                    if alpha >= 0.5 {
+                        blend_pixel(&mut buffer[idx], (packed & 0x00ff_ffff) | ((alpha.round() as u32) << 24));
+                    }
+                }
+            }
+        }
+    }
+}

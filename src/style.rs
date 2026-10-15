@@ -195,6 +195,96 @@ pub enum BorderStyle {
     None,
 }
 
+/// One side of a border, as specified.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct BorderSide {
+    /// Specified width in pixels; see [`BorderSide::used_width`].
+    pub width: f32,
+    /// `None` is `currentColor`: the element's text color.
+    pub color: Option<Color>,
+    /// Line style.
+    pub style: BorderStyle,
+}
+
+impl BorderSide {
+    /// CSS initial values: `medium none currentColor`.
+    pub const INITIAL: Self = Self { width: 3.0, color: None, style: BorderStyle::None };
+
+    /// A solid border.
+    pub const fn solid(width: f32, color: Color) -> Self {
+        Self { width, color: Some(color), style: BorderStyle::Solid }
+    }
+
+    /// The width that takes up space and is painted: 0 when the style is `none`.
+    pub fn used_width(&self) -> f32 {
+        if self.style == BorderStyle::None { 0.0 } else { self.width }
+    }
+}
+
+/// The four sides of a border.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Borders {
+    /// Top side.
+    pub top: BorderSide,
+    /// Right side.
+    pub right: BorderSide,
+    /// Bottom side.
+    pub bottom: BorderSide,
+    /// Left side.
+    pub left: BorderSide,
+}
+
+impl Borders {
+    /// No border.
+    pub const NONE: Self = Self::all(BorderSide::INITIAL);
+
+    /// The same border on every side.
+    pub const fn all(side: BorderSide) -> Self {
+        Self { top: side, right: side, bottom: side, left: side }
+    }
+
+    /// Sides in CSS order: top, right, bottom, left.
+    pub fn sides_mut(&mut self) -> [&mut BorderSide; 4] {
+        [&mut self.top, &mut self.right, &mut self.bottom, &mut self.left]
+    }
+
+    /// Used widths of the four sides.
+    pub fn widths(&self) -> taffy::geometry::Rect<f32> {
+        taffy::geometry::Rect {
+            left: self.left.used_width(),
+            right: self.right.used_width(),
+            top: self.top.used_width(),
+            bottom: self.bottom.used_width(),
+        }
+    }
+
+    /// Used width of the left and right sides together.
+    pub fn horizontal_width(&self) -> f32 {
+        self.left.used_width() + self.right.used_width()
+    }
+
+    /// Used width of the top and bottom sides together.
+    pub fn vertical_width(&self) -> f32 {
+        self.top.used_width() + self.bottom.used_width()
+    }
+
+    /// Whether any side is painted.
+    pub fn is_visible(&self) -> bool {
+        [self.top, self.right, self.bottom, self.left].iter().any(|s| s.used_width() > 0.0)
+    }
+
+    /// For painting: `none` sides get width 0 and `currentColor` becomes
+    /// `text_color`.
+    pub fn resolved(&self, text_color: Color) -> Self {
+        let mut out = *self;
+        for side in out.sides_mut() {
+            side.width = side.used_width();
+            side.color = Some(side.color.unwrap_or(text_color));
+        }
+        out
+    }
+}
+
 /// Representation of a CSS box shadow.
 #[derive(Debug, Clone, PartialEq)]
 pub struct BoxShadow {
@@ -229,14 +319,8 @@ pub struct ContainerStyle {
     pub background_color: Option<Color>,
     /// Border corner radius.
     pub border_radius: f32,
-    /// Border stroke outline width.
-    pub border_width: f32,
-    /// Optional border stroke color.
-    pub border_color: Option<Color>,
-    /// Border line style.
-    pub border_style: BorderStyle,
-    /// Flag indicating whether only the bottom border should be rendered.
-    pub border_bottom_only: bool,
+    /// Border of each side.
+    pub border: Borders,
     /// Optional CSS box shadow.
     pub box_shadow: Option<BoxShadow>,
     /// Optional background gradient.
@@ -336,11 +420,7 @@ impl Default for ContainerStyle {
             weight: 0,
             background_color: None,
             border_radius: 0.0,
-            border_width: 0.0,
-
-            border_color: None,
-            border_style: BorderStyle::Solid,
-            border_bottom_only: false,
+            border: Borders::NONE,
             box_shadow: None,
             background_gradient: None,
             overflow: Overflow::Visible,

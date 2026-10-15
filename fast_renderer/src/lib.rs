@@ -14,7 +14,7 @@ use xerune::alloc_prelude::*;
 use xerune::text::{LineMetrics, ShapedGlyph, ShapedText};
 
 use blitter::{pack_color, blend_solid_rect, blend_pixel, blend_glyph_span, div_255, calc_pixel_index};
-use rounded_rect::{draw_rounded_rect, draw_rounded_border, draw_box_shadow};
+use rounded_rect::{draw_rounded_rect, draw_rounded_border, draw_border_sides, draw_box_shadow};
 
 #[cfg(feature = "profile")]
 macro_rules! profile {
@@ -890,10 +890,7 @@ impl<'a> Renderer for FastRenderer<'a> {
                     color,
                     gradient,
                     border_radius,
-                    border_width,
-                    border_color,
-                    border_style: _,
-                    border_bottom_only,
+                    border,
                 } => {
                     profile!("render_rect");
                     let local_rect = self.translate_rect(rect);
@@ -918,43 +915,44 @@ impl<'a> Renderer for FastRenderer<'a> {
                         );
                     }
 
-                    if *border_width > 0.0 {
-                        if let Some(bc) = border_color {
-                            if *border_bottom_only {
-                                let bw = border_width.round() as i32;
-                                let packed_border = pack_color(*bc, self.swap_rb);
-                                blend_solid_rect(
-                                    self.buffer,
-                                    self.width,
-                                    self.height,
-                                    self.physical_width,
-                                    local_rect.x as i32,
-                                    local_rect.y as i32 + local_rect.height as i32 - bw,
-                                    local_rect.width as i32,
-                                    bw,
-                                    packed_border,
-                                    clip,
-                                    self.rotation,
-                                );
-                            } else {
-                                draw_rounded_border(
-                                    self.buffer,
-                                    self.width,
-                                    self.height,
-                                    self.physical_width,
-                                    local_rect.x as i32,
-                                    local_rect.y as i32,
-                                    local_rect.width as i32,
-                                    local_rect.height as i32,
-                                    *border_radius,
-                                    *border_width,
-                                    *bc,
-                                    self.swap_rb,
-                                    clip,
-                                    self.rotation,
-                                );
-                            }
+                    // FIXME: dashed and dotted borders are drawn solid.
+                    let sides = [border.top, border.right, border.bottom, border.left];
+                    let uniform = sides.iter().all(|s| s.width == border.top.width && s.color == border.top.color);
+                    if uniform {
+                        if let (true, Some(bc)) = (border.top.width > 0.0, border.top.color) {
+                            draw_rounded_border(
+                                self.buffer,
+                                self.width,
+                                self.height,
+                                self.physical_width,
+                                local_rect.x as i32,
+                                local_rect.y as i32,
+                                local_rect.width as i32,
+                                local_rect.height as i32,
+                                *border_radius,
+                                border.top.width,
+                                bc,
+                                self.swap_rb,
+                                clip,
+                                self.rotation,
+                            );
                         }
+                    } else {
+                        draw_border_sides(
+                            self.buffer,
+                            self.width,
+                            self.height,
+                            self.physical_width,
+                            local_rect.x as i32,
+                            local_rect.y as i32,
+                            local_rect.width as i32,
+                            local_rect.height as i32,
+                            *border_radius,
+                            border,
+                            self.swap_rb,
+                            clip,
+                            self.rotation,
+                        );
                     }
                 }
                 DrawCommand::DrawText {
@@ -1717,10 +1715,7 @@ mod tests {
             color: Some(color),
             gradient: None,
             border_radius: 0.0,
-            border_width: 0.0,
-            border_color: None,
-            border_style: xerune::style::BorderStyle::Solid,
-            border_bottom_only: false,
+            border: xerune::style::Borders::NONE,
         };
         let commands = [
             DrawCommand::Clip { rect: Rect::new(100.0, 0.0, 10.0, 10.0) },
@@ -1734,6 +1729,35 @@ mod tests {
         assert_eq!(buffer[0], 0xff000000, "Clipped child must remain invisible");
         assert_eq!(buffer[10], 0xff00ff00, "Sibling must render after PopClip");
         assert_eq!(buffer[20], 0xff000000, "Dirty-region clip must remain active");
+    }
+
+    #[test]
+    fn border_sides_meet_on_the_corner_diagonal() {
+        use xerune::style::{BorderSide, Borders};
+        let mut buffer = vec![0xffffffff; 20 * 20];
+        let (mut images, mut glyphs) = (HashMap::new(), HashMap::new());
+        let fonts: &[xerune::BitmapFont] = &[];
+        let mut renderer = FastRenderer::new(&mut buffer, 20, 20, fonts, &mut images, &mut glyphs);
+        let (red, blue) = (xerune::Color::new(255, 0, 0, 255), xerune::Color::new(0, 0, 255, 255));
+        let none = BorderSide { width: 0.0, ..BorderSide::solid(0.0, red) };
+        let commands = [DrawCommand::DrawRect {
+            rect: Rect::new(0.0, 0.0, 20.0, 20.0),
+            color: None,
+            gradient: None,
+            border_radius: 0.0,
+            border: Borders { top: BorderSide::solid(4.0, red), left: BorderSide::solid(4.0, blue), right: none, bottom: none },
+        }];
+        renderer.render(&commands, &xerune::RenderResources::new(&HashMap::new(), &xerune::ImageStore::new()), None);
+        let at = |x: usize, y: usize| buffer[y * 20 + x];
+        assert_eq!(at(10, 1), 0xffff0000, "top band");
+        assert_eq!(at(1, 10), 0xff0000ff, "left band");
+        assert_eq!(at(3, 0), 0xffff0000, "corner, above the diagonal");
+        assert_eq!(at(0, 3), 0xff0000ff, "corner, below the diagonal");
+        let diagonal = at(2, 2);
+        assert!(diagonal & 0xff > 0 && (diagonal >> 16) & 0xff > 0, "the diagonal blends both: {diagonal:08x}");
+        assert_eq!(at(10, 10), 0xffffffff, "inside");
+        assert_eq!(at(19, 10), 0xffffffff, "no right border");
+        assert_eq!(at(10, 19), 0xffffffff, "no bottom border");
     }
 
     #[test]

@@ -500,10 +500,37 @@ fn test_box_shadow_and_border_parsing() {
     let mut taffy_style = Style::default();
     css::parse_inline_style("border: 2px dashed #00ff00; box-shadow: 0px 8px 16px rgba(0,0,0,0.4);", &mut style, &mut taffy_style);
     
-    assert_eq!(style.border_width, 2.0);
-    assert_eq!(style.border_style, BorderStyle::Dashed);
-    assert_eq!(style.border_color, Some(Color::from_rgba8(0, 255, 0, 255)));
+    let green = Color::from_rgba8(0, 255, 0, 255);
+    assert_eq!(style.border, xerune::style::Borders::all(xerune::style::BorderSide { width: 2.0, color: Some(green), style: BorderStyle::Dashed }));
     assert!(style.box_shadow.is_some());
+}
+
+#[test]
+fn borders_are_per_side() {
+    use xerune::style::{BorderSide, BorderStyle, Borders, ContainerStyle};
+    let border = |css: &str| {
+        let mut style = ContainerStyle::default();
+        css::parse_inline_style(css, &mut style, &mut taffy::style::Style::default());
+        style.border
+    };
+    let red = Color::from_rgba8(255, 0, 0, 255);
+    let b = border("border-left: 5px solid red");
+    assert_eq!(b.left, BorderSide::solid(5.0, red));
+    assert_eq!(b.top, BorderSide::INITIAL, "other sides stay unset");
+    assert_eq!(b.widths().top, 0.0);
+    // Later declarations win per side.
+    let b = border("border: 1px solid red; border-bottom-width: 3px; border-right-color: rgba(0, 0, 255, 0.5)");
+    assert_eq!((b.top.width, b.bottom.width), (1.0, 3.0));
+    assert_eq!(b.right.color, Some(Color::from_rgba8(0, 0, 255, 127)));
+    // Box shorthands: top, right/left, bottom.
+    let b = border("border-style: solid; border-width: 1px thick 2px");
+    assert_eq!([b.top.width, b.right.width, b.bottom.width, b.left.width], [1.0, 5.0, 2.0, 5.0]);
+    // Without a style there is no border; without a color it is the text color.
+    assert!(!border("border: 4px red").is_visible());
+    let b = border("border: solid").resolved(red);
+    assert_eq!(b.top, BorderSide { width: 3.0, color: Some(red), style: BorderStyle::Solid });
+    // A value that can't be parsed invalidates the whole declaration.
+    assert_eq!(border("border: 1px solid var(--line)"), Borders::NONE);
 }
 
 #[test]
@@ -543,20 +570,14 @@ fn test_dirty_rect_rasterization_culling() {
             color: Some(Color::new(255, 0, 0, 255)),
             gradient: None,
             border_radius: 0.0,
-            border_width: 0.0,
-            border_color: None,
-            border_style: xerune::style::BorderStyle::Solid,
-            border_bottom_only: false,
+            border: xerune::style::Borders::NONE,
         },
         DrawCommand::DrawRect {
             rect: Rect { x: 100.0, y: 100.0, width: 50.0, height: 50.0 },
             color: Some(Color::new(0, 255, 0, 255)),
             gradient: None,
             border_radius: 0.0,
-            border_width: 0.0,
-            border_color: None,
-            border_style: xerune::style::BorderStyle::Solid,
-            border_bottom_only: false,
+            border: xerune::style::Borders::NONE,
         },
     ];
 

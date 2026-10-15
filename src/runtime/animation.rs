@@ -164,7 +164,7 @@ pub(crate) fn interpolate_property(
             match prop {
                 "color" => style.color = interpolated,
                 "background-color" => style.background_color = Some(interpolated),
-                "border-color" => style.border_color = Some(interpolated),
+                "border-color" => style.border.sides_mut().into_iter().for_each(|side| side.color = Some(interpolated)),
                 _ => {}
             }
         }
@@ -174,7 +174,7 @@ pub(crate) fn interpolate_property(
             let interpolated = (1.0 - t) * v1 + t * v2;
             match prop {
                 "border-radius" => style.border_radius = interpolated,
-                "border-width" => style.border_width = interpolated,
+                "border-width" => style.border.sides_mut().into_iter().for_each(|side| side.width = interpolated),
                 "font-size" => style.font_size = interpolated,
                 _ => {}
             }
@@ -274,8 +274,8 @@ pub(crate) fn get_prop_val(
         "color" => Some(format!("rgba({},{},{},{})", base_container.color.r, base_container.color.g, base_container.color.b, base_container.color.a as f32 / 255.0)),
         "background-color" => base_container.background_color.map(|c| format!("rgba({},{},{},{})", c.r, c.g, c.b, c.a as f32 / 255.0)),
         "border-radius" => Some(format!("{}px", base_container.border_radius)),
-        "border-width" => Some(format!("{}px", base_container.border_width)),
-        "border-color" => base_container.border_color.map(|c| format!("rgba({},{},{},{})", c.r, c.g, c.b, c.a as f32 / 255.0)),
+        "border-width" => Some(format!("{}px", base_container.border.top.width)),
+        "border-color" => base_container.border.top.color.map(|c| format!("rgba({},{},{},{})", c.r, c.g, c.b, c.a as f32 / 255.0)),
         "font-size" => Some(format!("{}px", base_container.font_size)),
         "width" => format_compact_length(base_layout.size.width.into_raw()),
         "height" => format_compact_length(base_layout.size.height.into_raw()),

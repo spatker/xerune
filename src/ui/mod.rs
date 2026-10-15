@@ -532,10 +532,7 @@ impl Ui {
             color,
             gradient,
             border_radius: 0.0,
-            border_width: 0.0,
-            border_color: None,
-            border_style: crate::style::BorderStyle::None,
-            border_bottom_only: false,
+            border: crate::style::Borders::NONE,
         };
         let mut commands = Vec::with_capacity(content.len() + 2);
         let source_opaque = source.is_some_and(|(_, s)| is_opaque_fill(s.background_color, s.background_gradient.as_ref()));
@@ -887,16 +884,13 @@ fn traverse_layout(
             // A background propagated to the canvas is painted there instead.
             let on_canvas = canvas_source == Some(root);
             let (bg_color, bg_gradient) = if on_canvas { (None, None) } else { (style.background_color, style.background_gradient.clone()) };
-            if bg_color.is_some() || bg_gradient.is_some() || style.border_width > 0.0 {
+            if bg_color.is_some() || bg_gradient.is_some() || style.border.is_visible() {
                  commands.push(DrawCommand::DrawRect {
                     rect,
                     color: bg_color,
                     gradient: bg_gradient,
                     border_radius: style.border_radius,
-                    border_width: style.border_width,
-                    border_color: style.border_color,
-                    border_style: style.border_style,
-                    border_bottom_only: style.border_bottom_only,
+                    border: style.border.resolved(style.color),
                 });
             }
         }
@@ -937,12 +931,13 @@ fn traverse_layout(
                 });
             },
             RenderData::Canvas(id, style) => {
-                let canvas_rect = if style.border_width > 0.0 {
+                let b = style.border.widths();
+                let canvas_rect = if style.border.is_visible() {
                     Rect {
-                        x: rect.x + style.border_width,
-                        y: rect.y + style.border_width,
-                        width: (rect.width - 2.0 * style.border_width).max(1.0),
-                        height: (rect.height - 2.0 * style.border_width).max(1.0),
+                        x: rect.x + b.left,
+                        y: rect.y + b.top,
+                        width: (rect.width - style.border.horizontal_width()).max(1.0),
+                        height: (rect.height - style.border.vertical_width()).max(1.0),
                     }
                 } else {
                     rect
@@ -956,18 +951,13 @@ fn traverse_layout(
             RenderData::TextInput(id, text, style) => {
                 let is_focused = focused_id == Some(id.as_str()) && !id.is_empty();
                 
-                let focus_outline_width = if is_focused { 2.0 } else { 0.0 };
-                let focus_outline_color = if is_focused { Some(crate::Color::from_rgba8(0, 122, 255, 255)) } else { None };
-
+                let focus_ring = crate::style::BorderSide::solid(2.0, crate::Color::from_rgba8(0, 122, 255, 255));
                 commands.push(DrawCommand::DrawRect {
                     rect,
                     color: style.background_color,
                     gradient: style.background_gradient.clone(),
                     border_radius: style.border_radius,
-                    border_width: if is_focused { focus_outline_width } else { style.border_width },
-                    border_color: if is_focused { focus_outline_color } else { style.border_color },
-                    border_style: style.border_style,
-                    border_bottom_only: false,
+                    border: if is_focused { crate::style::Borders::all(focus_ring) } else { style.border.resolved(style.color) },
                 });
 
                 if let Some(t) = text {
@@ -1050,9 +1040,8 @@ pub(crate) fn text_style(parent_style: &ContainerStyle) -> ContainerStyle {
     style.background_color = None;
     style.background_gradient = None;
     style.box_shadow = None;
-    style.border_width = 0.0;
+    style.border = crate::style::Borders::NONE;
     style.border_radius = 0.0;
-    style.border_color = None;
     // An ellipsis needs the parent to clip what overflows.
     style.text_overflow_ellipsis = parent_style.text_overflow_ellipsis && parent_style.overflow != Overflow::Visible;
     style.overflow = Overflow::Visible;

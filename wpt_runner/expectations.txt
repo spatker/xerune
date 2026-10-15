@@ -6,41 +6,41 @@
 # suite                               pass  (aa)  fail  pass%   skip
 # css/CSS2/abspos                        0     0    23     0%      5
 # css/CSS2/backgrounds                  19    19   312     6%      8
-# css/CSS2/borders                      16    14   487     3%      3
+# css/CSS2/borders                      22    22   481     4%      3
 # css/CSS2/box                           0     0     9     0%      0
 # css/CSS2/box-display                  14    14    68    17%     38
-# css/CSS2/cascade                      14    14    14    50%      4
+# css/CSS2/cascade                      15    15    13    54%      4
 # css/CSS2/colors                        5     5    14    26%      0
 # css/CSS2/linebox                       1     1   181     1%      8
-# css/CSS2/margin-padding-clear          8     7   662     1%     12
-# css/CSS2/normal-flow                  24    22   647     4%     75
-# css/CSS2/positioning                  10    10   476     2%     34
+# css/CSS2/margin-padding-clear         31    30   639     5%     12
+# css/CSS2/normal-flow                  36    34   635     5%     75
+# css/CSS2/positioning                  14    14   472     3%     34
 # css/CSS2/selectors                    48    47   477     9%     20
-# css/CSS2/syntax                      105   105   152    41%     18
+# css/CSS2/syntax                      107   107   150    42%     18
 # css/CSS2/text                        145   142   234    38%     30
-# css/CSS2/values                        7     7    17    29%      1
+# css/CSS2/values                        8     8    16    33%      1
 # css/CSS2/visudet                       4     1    20    17%     14
 # css/CSS2/visuren                       2     2    24     8%      8
 # css/css-align                          0     0    57     0%      5
-# css/css-backgrounds                   46    10   465     9%    136
+# css/css-backgrounds                   53    17   458    10%    136
 # css/css-borders                        1     0    57     2%     16
 # css/css-box                            0     0     2     0%     65
 # css/css-cascade                        7     5    24    23%     19
-# css/css-color                         44    43   237    16%     25
+# css/css-color                         45    44   236    16%     25
 # css/css-conditional                   14     0   117    11%     34
 # css/css-display                        3     3    39     7%     38
-# css/css-flexbox                      249   210   534    32%    189
+# css/css-flexbox                      257   216   526    33%    189
 # css/css-images                        27     4   170    14%    199
-# css/css-overflow                      28    17   117    19%    278
+# css/css-overflow                      31    17   114    21%    278
 # css/css-position                       4     3    80     5%     66
 # css/css-sizing                        29    21   356     8%    146
-# css/css-text                         127    37   777    14%    213
+# css/css-text                         128    38   776    14%    213
 # css/css-ui                             8     0   118     6%     65
-# css/css-values                        16     9   136    11%     59
+# css/css-values                        19    11   133    12%     59
 # css/css-variables                     15    15   165     8%      2
 # css/mediaqueries                       0     0    47     0%     11
 # css/selectors                         12     8    78    13%    135
-# total                               1052   795  7393    12%   1979
+# total                               1124   863  7321    13%   1979
 FAIL css/CSS2/abspos/abspos-containing-block-initial-004a.xht
 FAIL css/CSS2/abspos/abspos-containing-block-initial-004b.xht
 FAIL css/CSS2/abspos/abspos-containing-block-initial-004c.xht
@@ -376,7 +376,6 @@ FAIL css/CSS2/backgrounds/background-root-019.xht
 FAIL css/CSS2/backgrounds/background-root-020.xht
 FAIL css/CSS2/backgrounds/background-root-023.xht
 FAIL css/CSS2/backgrounds/background-root-024.xht
-FAIL css/CSS2/borders/border-001.xht
 FAIL css/CSS2/borders/border-005.xht
 FAIL css/CSS2/borders/border-006.xht
 FAIL css/CSS2/borders/border-008.xht
@@ -422,7 +421,6 @@ FAIL css/CSS2/borders/border-bottom-color-applies-to-012.xht
 FAIL css/CSS2/borders/border-bottom-color-applies-to-013.xht
 FAIL css/CSS2/borders/border-bottom-color-applies-to-014.xht
 FAIL css/CSS2/borders/border-bottom-color-applies-to-015.xht
-FAIL css/CSS2/borders/border-bottom-style-005.xht
 FAIL css/CSS2/borders/border-bottom-width-001.xht
 FAIL css/CSS2/borders/border-bottom-width-002.xht
 FAIL css/CSS2/borders/border-bottom-width-003.xht
@@ -495,7 +493,6 @@ FAIL css/CSS2/borders/border-bottom-width-applies-to-015.xht
 FAIL css/CSS2/borders/border-color-001.xht
 FAIL css/CSS2/borders/border-color-005.xht
 FAIL css/CSS2/borders/border-color-006.xht
-FAIL css/CSS2/borders/border-color-010.xht
 FAIL css/CSS2/borders/border-color-011.xht
 FAIL css/CSS2/borders/border-color-012.xht
 FAIL css/CSS2/borders/border-color-applies-to-001.xht
@@ -722,8 +719,6 @@ FAIL css/CSS2/borders/border-right-width-applies-to-012.xht
 FAIL css/CSS2/borders/border-right-width-applies-to-013.xht
 FAIL css/CSS2/borders/border-right-width-applies-to-014.xht
 FAIL css/CSS2/borders/border-right-width-applies-to-015.xht
-FAIL css/CSS2/borders/border-shorthands-002.xht
-FAIL css/CSS2/borders/border-shorthands-003.xht
 FAIL css/CSS2/borders/border-style-applies-to-016.xht
 FAIL css/CSS2/borders/border-style-applies-to-017.xht
 FAIL css/CSS2/borders/border-style-applies-to-018.xht
@@ -769,8 +764,6 @@ FAIL css/CSS2/borders/border-top-color-applies-to-012.xht
 FAIL css/CSS2/borders/border-top-color-applies-to-013.xht
 FAIL css/CSS2/borders/border-top-color-applies-to-014.xht
 FAIL css/CSS2/borders/border-top-color-applies-to-015.xht
-FAIL css/CSS2/borders/border-top-style-005.xht
-FAIL css/CSS2/borders/border-top-width-001.xht
 FAIL css/CSS2/borders/border-top-width-002.xht
 FAIL css/CSS2/borders/border-top-width-003.xht
 FAIL css/CSS2/borders/border-top-width-004.xht
@@ -861,7 +854,8 @@ FAIL css/CSS2/borders/border-width-shorthand-001.xht
 FAIL css/CSS2/borders/border-width-shorthand-002.xht
 FAIL css/CSS2/borders/border-width-shorthand-003.xht
 FAIL css/CSS2/borders/border-width-shorthand-004.xht
-FAIL css/CSS2/borders/shand-border-000.xht
+FAIL css/CSS2/borders/groove-default.html
+FAIL css/CSS2/borders/ridge-default.html
 FAIL css/CSS2/borders/shand-border-001.xht
 FAIL css/CSS2/box/ltr-basic.xht
 FAIL css/CSS2/box/ltr-ib.xht
@@ -953,7 +947,6 @@ FAIL css/CSS2/cascade/specificity-005.xht
 FAIL css/CSS2/cascade/specificity-006.xht
 FAIL css/CSS2/cascade/specificity-008.xht
 FAIL css/CSS2/cascade/specificity-011.xht
-FAIL css/CSS2/cascade/specificity-013.xht
 FAIL css/CSS2/colors/color-129.xht
 FAIL css/CSS2/colors/color-174.xht
 FAIL css/CSS2/colors/color-175.xht
@@ -1232,7 +1225,6 @@ FAIL css/CSS2/margin-padding-clear/margin-bottom-applies-to-005.xht
 FAIL css/CSS2/margin-padding-clear/margin-bottom-applies-to-006.xht
 FAIL css/CSS2/margin-padding-clear/margin-bottom-applies-to-007.xht
 FAIL css/CSS2/margin-padding-clear/margin-bottom-applies-to-008.xht
-FAIL css/CSS2/margin-padding-clear/margin-bottom-applies-to-009.xht
 FAIL css/CSS2/margin-padding-clear/margin-collapse-001.xht
 FAIL css/CSS2/margin-padding-clear/margin-collapse-002.xht
 FAIL css/CSS2/margin-padding-clear/margin-collapse-004.xht
@@ -1338,11 +1330,6 @@ FAIL css/CSS2/margin-padding-clear/margin-left-applies-to-005.xht
 FAIL css/CSS2/margin-padding-clear/margin-left-applies-to-006.xht
 FAIL css/CSS2/margin-padding-clear/margin-left-applies-to-007.xht
 FAIL css/CSS2/margin-padding-clear/margin-left-applies-to-008.xht
-FAIL css/CSS2/margin-padding-clear/margin-left-applies-to-009.xht
-FAIL css/CSS2/margin-padding-clear/margin-left-applies-to-012.xht
-FAIL css/CSS2/margin-padding-clear/margin-left-applies-to-013.xht
-FAIL css/CSS2/margin-padding-clear/margin-left-applies-to-014.xht
-FAIL css/CSS2/margin-padding-clear/margin-left-applies-to-015.xht
 FAIL css/CSS2/margin-padding-clear/margin-right-004.xht
 FAIL css/CSS2/margin-padding-clear/margin-right-005.xht
 FAIL css/CSS2/margin-padding-clear/margin-right-006.xht
@@ -1468,11 +1455,6 @@ FAIL css/CSS2/margin-padding-clear/margin-top-applies-to-005.xht
 FAIL css/CSS2/margin-padding-clear/margin-top-applies-to-006.xht
 FAIL css/CSS2/margin-padding-clear/margin-top-applies-to-007.xht
 FAIL css/CSS2/margin-padding-clear/margin-top-applies-to-008.xht
-FAIL css/CSS2/margin-padding-clear/margin-top-applies-to-009.xht
-FAIL css/CSS2/margin-padding-clear/margin-top-applies-to-012.xht
-FAIL css/CSS2/margin-padding-clear/margin-top-applies-to-013.xht
-FAIL css/CSS2/margin-padding-clear/margin-top-applies-to-014.xht
-FAIL css/CSS2/margin-padding-clear/margin-top-applies-to-015.xht
 FAIL css/CSS2/margin-padding-clear/padding-001.xht
 FAIL css/CSS2/margin-padding-clear/padding-002.xht
 FAIL css/CSS2/margin-padding-clear/padding-003.xht
@@ -1566,11 +1548,7 @@ FAIL css/CSS2/margin-padding-clear/padding-bottom-applies-to-004.xht
 FAIL css/CSS2/margin-padding-clear/padding-bottom-applies-to-005.xht
 FAIL css/CSS2/margin-padding-clear/padding-bottom-applies-to-006.xht
 FAIL css/CSS2/margin-padding-clear/padding-bottom-applies-to-007.xht
-FAIL css/CSS2/margin-padding-clear/padding-bottom-applies-to-009.xht
 FAIL css/CSS2/margin-padding-clear/padding-bottom-applies-to-012.xht
-FAIL css/CSS2/margin-padding-clear/padding-bottom-applies-to-013.xht
-FAIL css/CSS2/margin-padding-clear/padding-bottom-applies-to-014.xht
-FAIL css/CSS2/margin-padding-clear/padding-bottom-applies-to-015.xht
 FAIL css/CSS2/margin-padding-clear/padding-left-001.xht
 FAIL css/CSS2/margin-padding-clear/padding-left-002.xht
 FAIL css/CSS2/margin-padding-clear/padding-left-003.xht
@@ -1643,14 +1621,9 @@ FAIL css/CSS2/margin-padding-clear/padding-left-applies-to-003.xht
 FAIL css/CSS2/margin-padding-clear/padding-left-applies-to-004.xht
 FAIL css/CSS2/margin-padding-clear/padding-left-applies-to-005.xht
 FAIL css/CSS2/margin-padding-clear/padding-left-applies-to-006.xht
-FAIL css/CSS2/margin-padding-clear/padding-left-applies-to-007.xht
 FAIL css/CSS2/margin-padding-clear/padding-left-applies-to-008.xht
-FAIL css/CSS2/margin-padding-clear/padding-left-applies-to-009.xht
 FAIL css/CSS2/margin-padding-clear/padding-left-applies-to-010.xht
 FAIL css/CSS2/margin-padding-clear/padding-left-applies-to-012.xht
-FAIL css/CSS2/margin-padding-clear/padding-left-applies-to-013.xht
-FAIL css/CSS2/margin-padding-clear/padding-left-applies-to-014.xht
-FAIL css/CSS2/margin-padding-clear/padding-left-applies-to-015.xht
 FAIL css/CSS2/margin-padding-clear/padding-percentage-inherit-001.xht
 FAIL css/CSS2/margin-padding-clear/padding-right-001.xht
 FAIL css/CSS2/margin-padding-clear/padding-right-002.xht
@@ -1806,10 +1779,7 @@ FAIL css/CSS2/margin-padding-clear/padding-top-applies-to-004.xht
 FAIL css/CSS2/margin-padding-clear/padding-top-applies-to-005.xht
 FAIL css/CSS2/margin-padding-clear/padding-top-applies-to-006.xht
 FAIL css/CSS2/margin-padding-clear/padding-top-applies-to-007.xht
-FAIL css/CSS2/margin-padding-clear/padding-top-applies-to-009.xht
 FAIL css/CSS2/margin-padding-clear/padding-top-applies-to-012.xht
-FAIL css/CSS2/margin-padding-clear/padding-top-applies-to-013.xht
-FAIL css/CSS2/margin-padding-clear/padding-top-applies-to-014.xht
 FAIL css/CSS2/margin-padding-clear/padding-top-applies-to-015.xht
 FAIL css/CSS2/normal-flow/block-formatting-context-height-001.xht
 FAIL css/CSS2/normal-flow/block-formatting-context-height-002.xht
@@ -1818,10 +1788,7 @@ FAIL css/CSS2/normal-flow/block-formatting-contexts-004.xht
 FAIL css/CSS2/normal-flow/block-formatting-contexts-005.xht
 FAIL css/CSS2/normal-flow/block-formatting-contexts-006.xht
 FAIL css/CSS2/normal-flow/block-formatting-contexts-007.xht
-FAIL css/CSS2/normal-flow/block-formatting-contexts-008.xht
 FAIL css/CSS2/normal-flow/block-formatting-contexts-009.xht
-FAIL css/CSS2/normal-flow/block-formatting-contexts-010.xht
-FAIL css/CSS2/normal-flow/block-formatting-contexts-012.xht
 FAIL css/CSS2/normal-flow/block-formatting-contexts-016.xht
 FAIL css/CSS2/normal-flow/block-in-inline-align-001.html
 FAIL css/CSS2/normal-flow/block-in-inline-align-justify-001.html
@@ -1854,15 +1821,12 @@ FAIL css/CSS2/normal-flow/block-non-replaced-width-003.xht
 FAIL css/CSS2/normal-flow/block-non-replaced-width-004.xht
 FAIL css/CSS2/normal-flow/block-non-replaced-width-005.xht
 FAIL css/CSS2/normal-flow/block-non-replaced-width-006.xht
-FAIL css/CSS2/normal-flow/block-non-replaced-width-007.xht
 FAIL css/CSS2/normal-flow/block-replaced-height-001.xht
 FAIL css/CSS2/normal-flow/block-replaced-height-002.xht
 FAIL css/CSS2/normal-flow/block-replaced-height-006.xht
 FAIL css/CSS2/normal-flow/block-replaced-width-002.xht
 FAIL css/CSS2/normal-flow/block-replaced-width-006.xht
-FAIL css/CSS2/normal-flow/blocks-011.xht
 FAIL css/CSS2/normal-flow/blocks-013.xht
-FAIL css/CSS2/normal-flow/blocks-014.xht
 FAIL css/CSS2/normal-flow/blocks-016.xht
 FAIL css/CSS2/normal-flow/blocks-017.xht
 FAIL css/CSS2/normal-flow/blocks-018.xht
@@ -1916,8 +1880,6 @@ FAIL css/CSS2/normal-flow/height-067.xht
 FAIL css/CSS2/normal-flow/height-068.xht
 FAIL css/CSS2/normal-flow/height-070.xht
 FAIL css/CSS2/normal-flow/height-071.xht
-FAIL css/CSS2/normal-flow/height-072.xht
-FAIL css/CSS2/normal-flow/height-073.xht
 FAIL css/CSS2/normal-flow/height-078.xht
 FAIL css/CSS2/normal-flow/height-079.xht
 FAIL css/CSS2/normal-flow/height-080.xht
@@ -2080,8 +2042,6 @@ FAIL css/CSS2/normal-flow/max-height-068.xht
 FAIL css/CSS2/normal-flow/max-height-069.xht
 FAIL css/CSS2/normal-flow/max-height-070.xht
 FAIL css/CSS2/normal-flow/max-height-071.xht
-FAIL css/CSS2/normal-flow/max-height-072.xht
-FAIL css/CSS2/normal-flow/max-height-073.xht
 FAIL css/CSS2/normal-flow/max-height-078.xht
 FAIL css/CSS2/normal-flow/max-height-079.xht
 FAIL css/CSS2/normal-flow/max-height-080.xht
@@ -2247,8 +2207,6 @@ FAIL css/CSS2/normal-flow/min-height-067.xht
 FAIL css/CSS2/normal-flow/min-height-068.xht
 FAIL css/CSS2/normal-flow/min-height-070.xht
 FAIL css/CSS2/normal-flow/min-height-071.xht
-FAIL css/CSS2/normal-flow/min-height-072.xht
-FAIL css/CSS2/normal-flow/min-height-073.xht
 FAIL css/CSS2/normal-flow/min-height-078.xht
 FAIL css/CSS2/normal-flow/min-height-079.xht
 FAIL css/CSS2/normal-flow/min-height-080.xht
@@ -2573,7 +2531,6 @@ FAIL css/CSS2/positioning/absolute-replaced-width-067.xht
 FAIL css/CSS2/positioning/absolute-replaced-width-069.xht
 FAIL css/CSS2/positioning/absolute-replaced-width-071.xht
 FAIL css/CSS2/positioning/absolute-replaced-width-076.xht
-FAIL css/CSS2/positioning/abspos-002.xht
 FAIL css/CSS2/positioning/abspos-007.xht
 FAIL css/CSS2/positioning/abspos-008.xht
 FAIL css/CSS2/positioning/abspos-009.xht
@@ -2618,7 +2575,6 @@ FAIL css/CSS2/positioning/abspos-width-001.xht
 FAIL css/CSS2/positioning/abspos-width-002.xht
 FAIL css/CSS2/positioning/abspos-width-003.xht
 FAIL css/CSS2/positioning/abspos-width-004.xht
-FAIL css/CSS2/positioning/abspos-width-005.xht
 FAIL css/CSS2/positioning/auto-position-rtl-child-viewport-scrollbar.html
 FAIL css/CSS2/positioning/bottom-004.xht
 FAIL css/CSS2/positioning/bottom-005.xht
@@ -2749,7 +2705,6 @@ FAIL css/CSS2/positioning/left-applies-to-013.xht
 FAIL css/CSS2/positioning/left-applies-to-014.xht
 FAIL css/CSS2/positioning/left-applies-to-015.xht
 FAIL css/CSS2/positioning/left-offset-003.xht
-FAIL css/CSS2/positioning/left-offset-percentage-001.xht
 FAIL css/CSS2/positioning/left-offset-percentage-002.xht
 FAIL css/CSS2/positioning/position-absolute-001.xht
 FAIL css/CSS2/positioning/position-absolute-002.xht
@@ -2866,7 +2821,6 @@ FAIL css/CSS2/positioning/right-applies-to-013.xht
 FAIL css/CSS2/positioning/right-applies-to-014.xht
 FAIL css/CSS2/positioning/right-applies-to-015.xht
 FAIL css/CSS2/positioning/right-offset-004.xht
-FAIL css/CSS2/positioning/right-offset-percentage-001.xht
 FAIL css/CSS2/positioning/top-004.xht
 FAIL css/CSS2/positioning/top-005.xht
 FAIL css/CSS2/positioning/top-006.xht
@@ -3537,7 +3491,6 @@ FAIL css/CSS2/syntax/ident-012.xht
 FAIL css/CSS2/syntax/ident-013.xht
 FAIL css/CSS2/syntax/import-000.xht
 FAIL css/CSS2/syntax/import-001.xht
-FAIL css/CSS2/syntax/keywords-001.xht
 FAIL css/CSS2/syntax/malformed-decl-002.xht
 FAIL css/CSS2/syntax/malformed-decl-004.xht
 FAIL css/CSS2/syntax/malformed-decl-006.xht
@@ -3557,7 +3510,6 @@ FAIL css/CSS2/syntax/signed-numbers-001.xht
 FAIL css/CSS2/syntax/strings-000.xht
 FAIL css/CSS2/syntax/uri-004.xht
 FAIL css/CSS2/syntax/uri-005.xht
-FAIL css/CSS2/syntax/uri-012.xht
 FAIL css/CSS2/syntax/uri-014.xht
 FAIL css/CSS2/syntax/uri-015.xht
 FAIL css/CSS2/syntax/uri-016.xht
@@ -3810,7 +3762,6 @@ FAIL css/CSS2/values/units-001.xht
 FAIL css/CSS2/values/units-002.xht
 FAIL css/CSS2/values/units-003.xht
 FAIL css/CSS2/values/units-004.xht
-FAIL css/CSS2/values/units-005.xht
 FAIL css/CSS2/values/units-006.xht
 FAIL css/CSS2/values/units-008.xht
 FAIL css/CSS2/values/units-009.xht
@@ -3969,7 +3920,6 @@ FAIL css/css-backgrounds/background-clip-008.html
 FAIL css/css-backgrounds/background-clip-010.html
 FAIL css/css-backgrounds/background-clip-color.html
 FAIL css/css-backgrounds/background-clip-content-box-001.html
-FAIL css/css-backgrounds/background-clip-content-box-002.html
 FAIL css/css-backgrounds/background-clip-content-box-with-border-radius-002.html
 FAIL css/css-backgrounds/background-clip-content-box-with-border-radius-003.html
 FAIL css/css-backgrounds/background-clip-padding-box-with-border-radius-002.html
@@ -4216,9 +4166,6 @@ FAIL css/css-backgrounds/border-bottom-right-radius-005.xht
 FAIL css/css-backgrounds/border-bottom-right-radius-010.xht
 FAIL css/css-backgrounds/border-bottom-right-radius-011.xht
 FAIL css/css-backgrounds/border-bottom-right-radius-014.xht
-FAIL css/css-backgrounds/border-bottom-width-medium.html
-FAIL css/css-backgrounds/border-bottom-width-thick.html
-FAIL css/css-backgrounds/border-bottom-width-thin.html
 FAIL css/css-backgrounds/border-image-002.html
 FAIL css/css-backgrounds/border-image-003.html
 FAIL css/css-backgrounds/border-image-004.html
@@ -4324,9 +4271,6 @@ FAIL css/css-backgrounds/border-top-right-radius-005.xht
 FAIL css/css-backgrounds/border-top-right-radius-010.xht
 FAIL css/css-backgrounds/border-top-right-radius-011.xht
 FAIL css/css-backgrounds/border-top-right-radius-014.xht
-FAIL css/css-backgrounds/border-top-width-medium.html
-FAIL css/css-backgrounds/border-top-width-thick.html
-FAIL css/css-backgrounds/border-top-width-thin.html
 FAIL css/css-backgrounds/border-width-pixel-snapping-001-a.html
 FAIL css/css-backgrounds/box-shadow/box-shadow-table-row-display.html
 FAIL css/css-backgrounds/box-shadow/slice-block-fragmentation-001.html
@@ -4680,7 +4624,6 @@ FAIL css/css-color/t425-hsla-parsing-f.xht
 FAIL css/css-color/t425-hsla-values-b.xht
 FAIL css/css-color/t43-svg-keywords-a.xht
 FAIL css/css-color/t44-currentcolor-background-b.xht
-FAIL css/css-color/t44-currentcolor-border-b.xht
 FAIL css/css-color/t44-currentcolor-inherited-c.xht
 FAIL css/css-color/tagged-images-001.html
 FAIL css/css-color/tagged-images-003.html
@@ -4924,7 +4867,6 @@ FAIL css/css-flexbox/auto-margins-002.html
 FAIL css/css-flexbox/balance/balance-001.html
 FAIL css/css-flexbox/balance/balance-002.html
 FAIL css/css-flexbox/balance/balance-003.html
-FAIL css/css-flexbox/balance/balance-004.html
 FAIL css/css-flexbox/balance/balance-005.html
 FAIL css/css-flexbox/balance/balance-available-size-001.html
 FAIL css/css-flexbox/balance/balance-available-size-002.html
@@ -4943,8 +4885,6 @@ FAIL css/css-flexbox/balance/balance-min-line-count-003.html
 FAIL css/css-flexbox/balance/balance-min-line-count-004.html
 FAIL css/css-flexbox/balance/balance-min-line-count-005.html
 FAIL css/css-flexbox/balance/balance-min-line-count-006.html
-FAIL css/css-flexbox/balance/balance-min-line-count-007.html
-FAIL css/css-flexbox/balance/balance-min-line-count-008.html
 FAIL css/css-flexbox/balance/balance-negative-margin-001.html
 FAIL css/css-flexbox/balance/balance-percentage-size-001.html
 FAIL css/css-flexbox/balance/balance-percentage-size-002.html
@@ -5161,11 +5101,9 @@ FAIL css/css-flexbox/flexbox-column-row-gap-004.html
 FAIL css/css-flexbox/flexbox-definite-cross-size-constrained-percentage.html
 FAIL css/css-flexbox/flexbox-flex-flow-001.html
 FAIL css/css-flexbox/flexbox-flex-flow-002.html
-FAIL css/css-flexbox/flexbox-flex-wrap-default.htm
 FAIL css/css-flexbox/flexbox-flex-wrap-flexing-003.html
 FAIL css/css-flexbox/flexbox-flex-wrap-horiz-001.html
 FAIL css/css-flexbox/flexbox-flex-wrap-horiz-002.html
-FAIL css/css-flexbox/flexbox-flex-wrap-nowrap.htm
 FAIL css/css-flexbox/flexbox-flex-wrap-vert-001.html
 FAIL css/css-flexbox/flexbox-flex-wrap-vert-002.html
 FAIL css/css-flexbox/flexbox-gap-position-absolute.html
@@ -5182,10 +5120,8 @@ FAIL css/css-flexbox/flexbox-min-width-auto-004.html
 FAIL css/css-flexbox/flexbox-min-width-auto-005.html
 FAIL css/css-flexbox/flexbox-min-width-auto-006.html
 FAIL css/css-flexbox/flexbox-order-only-flexitems.html
-FAIL css/css-flexbox/flexbox-overflow-horiz-002.html
 FAIL css/css-flexbox/flexbox-overflow-padding-001.html
 FAIL css/css-flexbox/flexbox-overflow-padding-002.html
-FAIL css/css-flexbox/flexbox-overflow-vert-002.html
 FAIL css/css-flexbox/flexbox-paint-ordering-003.html
 FAIL css/css-flexbox/flexbox-safe-overflow-position-001.html
 FAIL css/css-flexbox/flexbox-safe-overflow-position-002.html
@@ -5340,7 +5276,6 @@ FAIL css/css-flexbox/justify-content-sideways-001.html
 FAIL css/css-flexbox/justify-content_space-between-003.tentative.html
 FAIL css/css-flexbox/layout-algorithm_algo-cross-line-001.html
 FAIL css/css-flexbox/layout-algorithm_algo-cross-line-002.html
-FAIL css/css-flexbox/min-size-auto-overflow-clip.html
 FAIL css/css-flexbox/multiline-column-max-height.html
 FAIL css/css-flexbox/multiline-reverse-wrap-baseline.html
 FAIL css/css-flexbox/multiline-shrink-to-fit.html
@@ -5626,10 +5561,7 @@ FAIL css/css-overflow/orthogonal-writing-mode-with-scrollable-descendant.html
 FAIL css/css-overflow/overflow-auto-scrollbar-gutter-intrinsic-001.html
 FAIL css/css-overflow/overflow-auto-scrollbar-gutter-intrinsic-002.html
 FAIL css/css-overflow/overflow-auto-scrollbar-gutter-intrinsic-003.html
-FAIL css/css-overflow/overflow-body-propagation-007.html
-FAIL css/css-overflow/overflow-body-propagation-008.html
 FAIL css/css-overflow/overflow-body-propagation-009.html
-FAIL css/css-overflow/overflow-body-propagation-010.html
 FAIL css/css-overflow/overflow-body-propagation-012.html
 FAIL css/css-overflow/overflow-clip-content-visual-overflow.html
 FAIL css/css-overflow/overflow-clip-margin-001.html
@@ -6828,7 +6760,6 @@ FAIL css/css-text/word-break/auto-phrase/word-break-auto-phrase-005.html
 FAIL css/css-text/word-break/auto-phrase/word-break-auto-phrase-006.html
 FAIL css/css-text/word-break/auto-phrase/word-break-auto-phrase-007.html
 FAIL css/css-text/word-break/auto-phrase/word-break-auto-phrase-008.html
-FAIL css/css-text/word-break/auto-phrase/word-break-auto-phrase-009.html
 FAIL css/css-text/word-break/auto-phrase/word-break-auto-phrase-fallback-001.html
 FAIL css/css-text/word-break/auto-phrase/word-break-auto-phrase-fallback-002.html
 FAIL css/css-text/word-break/auto-phrase/word-break-auto-phrase-fallback-003.html
@@ -7059,7 +6990,6 @@ FAIL css/css-values/calc-positive-fraction-001.html
 FAIL css/css-values/calc-rem-lang.html
 FAIL css/css-values/calc-rounding-001.html
 FAIL css/css-values/calc-rounding-002.html
-FAIL css/css-values/calc-rounding-003.html
 FAIL css/css-values/calc-size/calc-size-aspect-ratio-001.html
 FAIL css/css-values/calc-size/calc-size-aspect-ratio-002.html
 FAIL css/css-values/calc-size/calc-size-aspect-ratio-003.html
@@ -7079,7 +7009,6 @@ FAIL css/css-values/calc-size/calc-size-min-max-sizes-001.html
 FAIL css/css-values/calc-size/calc-size-min-max-sizes-002.html
 FAIL css/css-values/calc-size/calc-size-min-max-sizes-004.html
 FAIL css/css-values/calc-size/calc-size-min-max-sizes-005.html
-FAIL css/css-values/calc-size/calc-size-no-body-height-quirk-001.html
 FAIL css/css-values/calc-text-indent-1.html
 FAIL css/css-values/calc-text-indent-intrinsic-1.html
 FAIL css/css-values/calc-transform-origin-1.html
@@ -7142,7 +7071,6 @@ FAIL css/css-values/vh-calc-support-pct.html
 FAIL css/css-values/vh-calc-support.html
 FAIL css/css-values/vh-inherit.html
 FAIL css/css-values/viewport-unit-011.html
-FAIL css/css-values/viewport-units-scrollbars-scroll-vhw-001.html
 FAIL css/css-values/viewport-units-writing-mode-font-size.html
 FAIL css/css-variables/css-vars-custom-property-case-sensitive-001.html
 FAIL css/css-variables/css-vars-custom-property-inheritance.html

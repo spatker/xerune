@@ -320,14 +320,9 @@ pub enum DrawCommand {
         gradient: Option<Gradient>,
         /// Border corner radius.
         border_radius: f32,
-        /// Border line width.
-        border_width: f32,
-        /// Border outline color.
-        border_color: Option<Color>,
-        /// Border line style.
-        border_style: crate::style::BorderStyle,
-        /// Flag indicating bottom-only border.
-        border_bottom_only: bool,
+        /// The border, resolved: `none` sides have width 0 and every color
+        /// is set.
+        border: crate::style::Borders,
     },
     /// Draw one line of text.
     DrawText { 

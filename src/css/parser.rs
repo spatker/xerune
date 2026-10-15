@@ -173,7 +173,7 @@ pub fn parse_length_percentage_auto(val: &str) -> Option<LengthPercentageAuto> {
 pub(crate) fn parse_sides<T: Copy>(val: &str, parse: impl Fn(&str) -> Option<T>) -> Option<taffy::geometry::Rect<T>> {
     let mut values = [None; 4];
     let mut count = 0;
-    for part in val.split_whitespace() {
+    for part in split_values(val) {
         if count == 4 {
             return None;
         }
@@ -185,6 +185,86 @@ pub(crate) fn parse_sides<T: Copy>(val: &str, parse: impl Fn(&str) -> Option<T>)
     let bottom = values[2].unwrap_or(top);
     let left = values[3].unwrap_or(right);
     Some(taffy::geometry::Rect { left, right, top, bottom })
+}
+
+/// Splits a value at whitespace outside parentheses: `1px rgba(0, 0, 0, .5)`
+/// is two values.
+pub(crate) fn split_values(val: &str) -> Vec<&str> {
+    let mut parts = Vec::new();
+    let mut depth = 0i32;
+    let mut start = None;
+    for (i, c) in val.char_indices() {
+        match c {
+            '(' => depth += 1,
+            ')' => depth -= 1,
+            c if c.is_whitespace() && depth == 0 => {
+                if let Some(s) = start.take() {
+                    parts.push(&val[s..i]);
+                }
+                continue;
+            }
+            _ => {}
+        }
+        start.get_or_insert(i);
+    }
+    if let Some(s) = start {
+        parts.push(&val[s..]);
+    }
+    parts
+}
+
+/// `thin`, `medium`, `thick` or a non-negative length.
+pub(crate) fn parse_border_width(val: &str) -> Option<f32> {
+    match val {
+        "thin" => Some(1.0),
+        "medium" => Some(3.0),
+        "thick" => Some(5.0),
+        _ => parse_px(val).filter(|w| *w >= 0.0),
+    }
+}
+
+pub(crate) fn parse_border_style(val: &str) -> Option<crate::style::BorderStyle> {
+    use crate::style::BorderStyle;
+    Some(match val {
+        "none" | "hidden" => BorderStyle::None,
+        "solid" => BorderStyle::Solid,
+        "dashed" => BorderStyle::Dashed,
+        "dotted" => BorderStyle::Dotted,
+        // FIXME: drawn as solid lines; fast_renderer has no double or 3D
+        // (groove, ridge, inset, outset) borders.
+        "double" | "groove" | "ridge" | "inset" | "outset" => BorderStyle::Solid,
+        _ => return None,
+    })
+}
+
+/// A border color; `Some(None)` is `currentColor`.
+pub(crate) fn parse_border_color(val: &str) -> Option<Option<Color>> {
+    if val.eq_ignore_ascii_case("currentcolor") {
+        Some(None)
+    } else {
+        parse_hex_color(val).map(Some)
+    }
+}
+
+/// The `border` shorthand and its per-side forms: width, style and color in
+/// any order, each at most once; what is left out is reset to its initial
+/// value. Anything else makes the whole value invalid.
+pub(crate) fn parse_border_side(val: &str) -> Option<crate::style::BorderSide> {
+    let (mut width, mut style, mut color) = (None, None, None);
+    for part in split_values(val) {
+        match (parse_border_width(part), parse_border_style(part), parse_border_color(part)) {
+            (Some(w), _, _) if width.is_none() => width = Some(w),
+            (_, Some(s), _) if style.is_none() => style = Some(s),
+            (_, _, Some(c)) if color.is_none() => color = Some(c),
+            _ => return None,
+        }
+    }
+    let initial = crate::style::BorderSide::INITIAL;
+    Some(crate::style::BorderSide {
+        width: width.unwrap_or(initial.width),
+        style: style.unwrap_or(initial.style),
+        color: color.unwrap_or(initial.color),
+    })
 }
 
 pub(crate) fn parse_padding(val: &str) -> Option<taffy::geometry::Rect<LengthPercentage>> {
