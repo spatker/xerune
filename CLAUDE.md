@@ -75,6 +75,14 @@ it in `chromium --headless` with Roboto from `resources/fonts` via
 `@font-face` (`file://` URLs) and `tests/text/chromium_lines.js`, or take
 screenshots. `cargo run --release --example text_bench` times rebuild,
 layout and render of a text-heavy view.
+`cargo run --release --example render_bench` renders the todo, calculator,
+showcase and music player UIs: full repaints (`raster`), message frames with
+the repainted share of the screen (`frame`), and a pixel hash to prove a
+renderer change draws the same image (compare hashes per architecture: SSE
+and NEON round differently). Per-iteration ARM instruction counts: build it
+for `armv7-unknown-linux-musleabihf` with the NEON flags below and run it
+under `qemu-arm -plugin` with an instruction counter, with
+`RENDER_BENCH_ITERS=0` and `=N`.
 WPT: `WPT_DIR=~/data/code/js/wpt cargo run --release -p wpt_runner [-- FILTER] [--images] [--update]`
 (user's checkout path). Commit the `--update`d `expectations.txt` with each engine fix.
 `animation` and `breakout` read `Instant::now()`, so their snapshots aren't
