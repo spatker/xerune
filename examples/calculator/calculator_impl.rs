@@ -1,7 +1,7 @@
 use xerune::{Model, XeruneMessage, XeruneTemplate};
 
 #[derive(XeruneTemplate, serde::Serialize, serde::Deserialize)]
-#[template(path = "calculator.html")]
+#[template(path = "examples/calculator/templates/calculator.html")]
 pub struct CalculatorModel {
     pub display: String,
     pub previous_value: Option<f64>,

@@ -19,7 +19,7 @@ pub struct Card {
 }
 
 #[derive(XeruneTemplate)]
-#[template(path = "text_bench.html")]
+#[template(path = "examples/text_bench/templates/text_bench.html")]
 pub struct TextBench {
     pub cards: Vec<Card>,
 }

@@ -104,6 +104,11 @@ The one exception is `<input type="checkbox" {% if done %}checked{% endif %}>`.
 
 **Class names must be literals.** CSS is matched against classes at compile time, so `class="{{ name }}"` is rejected; switch between literal classes with `{% if %}` instead.
 
+`#[template(path = "...")]` is looked up, in order: in the crate root, in
+its `templates/` directory, and in the workspace root (so crates of a
+workspace can share templates). `{% include "..." %}` looks next to the
+including template first. A missing template lists every place tried.
+
 For small components and tests, a template can be inline instead of a file: `#[template(source = r#"<p>{{ name }}</p>"#)]`.
 
 ### 3. Running the App

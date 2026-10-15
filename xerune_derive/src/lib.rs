@@ -1681,72 +1681,45 @@ fn extract_keyframes(css: &str) -> String {
 }
 
 // Helper to find a template file dynamically in parent dir, example templates dirs, root templates dir, or manifest dir
+/// Finds a template, trying in order: next to the including template (for
+/// `{% include %}`), the crate root, the crate's `templates/` directory, and
+/// the workspace root (so crates of a workspace can share templates).
+/// Returns its full path and a short name for messages.
 fn find_template_file(
     path_str: &str,
     cargo_manifest_dir: &std::path::Path,
     parent_dir: Option<&std::path::Path>,
 ) -> Result<(std::path::PathBuf, String), String> {
-    // 1. Check relative to parent_dir if provided
-    if let Some(parent) = parent_dir {
-        let candidate = parent.join(path_str);
-        if candidate.is_file() {
-            if let Ok(rel) = candidate.strip_prefix(cargo_manifest_dir) {
-                let rel_str = format!("/{}", rel.to_string_lossy().replace('\\', "/"));
-                return Ok((candidate, rel_str));
-            }
-        }
-    }
+    let workspace = workspace_root(cargo_manifest_dir);
+    let mut candidates: Vec<std::path::PathBuf> = Vec::new();
+    candidates.extend(parent_dir.map(|dir| dir.join(path_str)));
+    candidates.push(cargo_manifest_dir.join(path_str));
+    candidates.push(cargo_manifest_dir.join("templates").join(path_str));
+    candidates.extend(workspace.as_deref().filter(|ws| *ws != cargo_manifest_dir).map(|ws| ws.join(path_str)));
 
-    // 2. Check direct path relative to cargo_manifest_dir
-    let candidate = cargo_manifest_dir.join(path_str);
-    if candidate.is_file() {
-        let rel_str = format!("/{}", path_str.replace('\\', "/"));
-        return Ok((candidate, rel_str));
-    }
+    let Some(found) = candidates.iter().find(|c| c.is_file()) else {
+        let tried: Vec<String> = candidates.iter().map(|c| format!("  {}", c.display())).collect();
+        return Err(format!("template `{path_str}` not found; looked at:\n{}", tried.join("\n")));
+    };
+    let short = [Some(cargo_manifest_dir), workspace.as_deref()]
+        .into_iter()
+        .flatten()
+        .find_map(|root| found.strip_prefix(root).ok())
+        .unwrap_or(found)
+        .to_string_lossy()
+        .replace('\\', "/");
+    Ok((found.clone(), short))
+}
 
-    // 3. Check cargo_manifest_dir/templates/<path_str>
-    let candidate = cargo_manifest_dir.join("templates").join(path_str);
-    if candidate.is_file() {
-        let rel_str = format!("/templates/{}", path_str.replace('\\', "/"));
-        return Ok((candidate, rel_str));
-    }
-
-    // 4. Search inside examples/*/templates/<path_str> (in cargo_manifest_dir and its parent workspace root)
-    let search_roots = [cargo_manifest_dir, cargo_manifest_dir.parent().unwrap_or(cargo_manifest_dir)];
-    for root in search_roots {
-        let examples_dir = root.join("examples");
-        if examples_dir.is_dir() {
-            if let Ok(entries) = std::fs::read_dir(&examples_dir) {
-                for entry in entries.flatten() {
-                    let entry_path = entry.path();
-                    if entry_path.is_dir() {
-                        let cand1 = entry_path.join("templates").join(path_str);
-                        if cand1.is_file() {
-                            if let Ok(rel) = cand1.strip_prefix(cargo_manifest_dir) {
-                                let rel_str = format!("/{}", rel.to_string_lossy().replace('\\', "/"));
-                                return Ok((cand1, rel_str));
-                            } else if let Ok(rel) = cand1.strip_prefix(root) {
-                                let rel_str = format!("/../{}", rel.to_string_lossy().replace('\\', "/"));
-                                return Ok((cand1, rel_str));
-                            }
-                        }
-                        let cand2 = entry_path.join(path_str);
-                        if cand2.is_file() {
-                            if let Ok(rel) = cand2.strip_prefix(cargo_manifest_dir) {
-                                let rel_str = format!("/{}", rel.to_string_lossy().replace('\\', "/"));
-                                return Ok((cand2, rel_str));
-                            } else if let Ok(rel) = cand2.strip_prefix(root) {
-                                let rel_str = format!("/../{}", rel.to_string_lossy().replace('\\', "/"));
-                                return Ok((cand2, rel_str));
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    Err(format!("Template file '{}' not found near manifest {:?}", path_str, cargo_manifest_dir))
+/// The nearest directory at or above `dir` whose `Cargo.toml` declares a
+/// `[workspace]`.
+fn workspace_root(dir: &std::path::Path) -> Option<std::path::PathBuf> {
+    dir.ancestors()
+        .find(|d| {
+            std::fs::read_to_string(d.join("Cargo.toml"))
+                .is_ok_and(|toml| toml.lines().any(|line| line.trim() == "[workspace]"))
+        })
+        .map(std::path::Path::to_path_buf)
 }
 
 // Recursive include resolver to inline included templates at compile time at string level.
@@ -1755,7 +1728,7 @@ fn resolve_includes_text(
     file: usize,
     cargo_manifest_dir: &std::path::Path,
     parent_dir: &std::path::Path,
-    tracked_rel_paths: &mut Vec<String>,
+    tracked_paths: &mut Vec<String>,
     out: &mut String,
     map: &mut SourceMap,
 ) {
@@ -1774,15 +1747,15 @@ fn resolve_includes_text(
             fail(format_args!("expected `{{% include \"path\" %}}`\n  --> {}", map.describe_file_offset(file, start_idx)));
         }
 
-        let (full_path, rel_path) = find_template_file(path_str, cargo_manifest_dir, Some(parent_dir))
+        let (full_path, short_path) = find_template_file(path_str, cargo_manifest_dir, Some(parent_dir))
             .unwrap_or_else(|e| fail(format_args!("{e}\n  --> {}", map.describe_file_offset(file, start_idx))));
         let included_content = std::fs::read_to_string(&full_path)
             .unwrap_or_else(|e| fail(format_args!("failed to read included template {full_path:?}: {e}")));
-        let included = map.add_file(rel_path.trim_start_matches('/').to_string(), included_content);
-        tracked_rel_paths.push(rel_path);
+        let included = map.add_file(short_path, included_content);
+        tracked_paths.push(full_path.to_string_lossy().into_owned());
 
         let file_parent = full_path.parent().unwrap_or(parent_dir);
-        resolve_includes_text(included, cargo_manifest_dir, file_parent, tracked_rel_paths, out, map);
+        resolve_includes_text(included, cargo_manifest_dir, file_parent, tracked_paths, out, map);
         pos = start_idx + end_idx + 2;
     }
     map.segments.push(Segment { start: out.len(), file, file_offset: pos });
@@ -1870,15 +1843,15 @@ fn expand_template(input: &DeriveInput, template: &TemplateRef) -> proc_macro2::
 
     // Load the template; includes in an inline template resolve from the manifest dir
     let mut source_map = SourceMap::default();
-    let mut tracked_rel_paths = Vec::new();
+    let mut tracked_paths = Vec::new();
     let (root_file, parent_dir) = match template {
         TemplateRef::Path(template_path) => {
-            let (full_template_path, rel_template_path) = find_template_file(template_path, &cargo_manifest_path, None)
+            let (full_template_path, short_path) = find_template_file(template_path, &cargo_manifest_path, None)
                 .unwrap_or_else(|e| fail(e));
             let template_content = std::fs::read_to_string(&full_template_path)
                 .unwrap_or_else(|e| fail(format_args!("failed to read template file {full_template_path:?}: {e}")));
-            let root_file = source_map.add_file(rel_template_path.trim_start_matches('/').to_string(), template_content);
-            tracked_rel_paths.push(rel_template_path);
+            let root_file = source_map.add_file(short_path, template_content);
+            tracked_paths.push(full_template_path.to_string_lossy().into_owned());
             (root_file, full_template_path.parent().unwrap_or(&cargo_manifest_path).to_path_buf())
         }
         TemplateRef::Source(source) => {
@@ -1889,15 +1862,16 @@ fn expand_template(input: &DeriveInput, template: &TemplateRef) -> proc_macro2::
 
     // Resolve includes at string level, remembering where each chunk came from
     let mut resolved_content = String::new();
-    resolve_includes_text(root_file, &cargo_manifest_path, parent_dir, &mut tracked_rel_paths, &mut resolved_content, &mut source_map);
+    resolve_includes_text(root_file, &cargo_manifest_path, parent_dir, &mut tracked_paths, &mut resolved_content, &mut source_map);
     let template_content_ref: &'static str = Box::leak(resolved_content.into_boxed_str());
     CURRENT_TEMPLATE.with(|cur| *cur.borrow_mut() = Some((template_content_ref, source_map)));
 
-    tracked_rel_paths.sort();
-    tracked_rel_paths.dedup();
-    let dummy_includes = tracked_rel_paths.iter().map(|relative_path| {
+    // Rebuild when a template changes: cargo tracks files read by include_bytes.
+    tracked_paths.sort();
+    tracked_paths.dedup();
+    let dummy_includes = tracked_paths.iter().map(|path| {
         quote! {
-            const _: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), #relative_path));
+            const _: &[u8] = include_bytes!(#path);
         }
     });
 

@@ -41,7 +41,7 @@ impl Service {
 }
 
 #[derive(XeruneTemplate, Serialize, Deserialize)]
-#[template(path = "showcase.html")]
+#[template(path = "examples/showcase/templates/showcase.html")]
 pub struct ShowcaseModel {
     pub active_tab: usize, // 1 = System, 2 = Vehicle, 3 = Monitor, 4 = Controls
     /// Set from the viewport in `on_resize`; picks the monitor canvas size.

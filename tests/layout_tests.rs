@@ -280,7 +280,7 @@ enum TestTodoMsg {
 }
 
 #[derive(XeruneTemplate)]
-#[template(path = "todo_list.html")]
+#[template(path = "examples/todo/templates/todo_list.html")]
 struct TestTodoModel {
     items: Vec<TodoItem>,
     active_item: usize,

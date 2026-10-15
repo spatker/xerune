@@ -65,7 +65,7 @@ impl Track {
 }
 
 #[derive(XeruneTemplate, Serialize, Deserialize, Clone, PartialEq)]
-#[template(path = "music_player.html")]
+#[template(path = "examples/music_player/templates/music_player.html")]
 pub struct MusicPlayerModel {
     pub tracks: Vec<Track>,
     pub current_track_index: Option<usize>,

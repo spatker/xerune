@@ -72,7 +72,7 @@ pub struct Particle {
 }
 
 #[derive(XeruneTemplate, Serialize, Deserialize)]
-#[template(path = "breakout.html")]
+#[template(path = "examples/breakout/templates/breakout.html")]
 pub struct BreakoutModel {
     pub paddle_x: f32,
     pub ball_x: f32,

@@ -1,7 +1,7 @@
 use xerune::{Model, XeruneMessage, XeruneTemplate};
 
 #[derive(XeruneTemplate, serde::Serialize, serde::Deserialize)]
-#[template(path = "todo_list.html")]
+#[template(path = "examples/todo/templates/todo_list.html")]
 pub struct TodoList {
     items: Vec<TodoItem>,
     active_item: usize,

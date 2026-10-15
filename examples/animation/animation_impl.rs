@@ -44,7 +44,7 @@ pub struct Item {
 }
 
 #[derive(XeruneTemplate, Serialize, Deserialize)]
-#[template(path = "animation.html")]
+#[template(path = "examples/animation/templates/animation.html")]
 pub struct AnimationModel {
     pub items: Vec<Item>,
     #[serde(skip, default = "xerune::runtime::time::Instant::now")]

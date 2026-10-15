@@ -1,7 +1,7 @@
 use xerune::{Model, XeruneTemplate};
 
 #[derive(XeruneTemplate, serde::Serialize, serde::Deserialize)]
-#[template(path = "animation_css.html")]
+#[template(path = "examples/animation_css/templates/animation_css.html")]
 pub struct AnimationCssModel;
 
 impl Model for AnimationCssModel {
