@@ -23,7 +23,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use super::{Backend, BackendError, EventProxy, SendError};
-use crate::{graphics::Rect, Model, Runtime, TextMeasurer};
+use crate::{Model, Runtime, TextMeasurer};
 
 /// Frame step used when advancing the simulated clock.
 const FRAME: Duration = Duration::from_millis(16);

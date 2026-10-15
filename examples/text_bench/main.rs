@@ -8,7 +8,7 @@
 
 use std::time::{Duration, Instant};
 
-use xerune_render::{FastMeasurer, SoftwareRenderer};
+use xerune_render::SoftwareRenderer;
 use xerune::{Context, Model, Runtime, XeruneTemplate};
 
 #[derive(Clone)]
@@ -60,17 +60,11 @@ fn main() {
         })
         .unwrap_or((800, 480));
 
-    let regular = fontdue::Font::from_bytes(
-        include_bytes!("../../resources/fonts/Roboto-Regular.ttf") as &[u8],
-        fontdue::FontSettings::default(),
+    let fonts = xerune_render::Fonts::ttf(
+        include_bytes!("../../resources/fonts/Roboto-Regular.ttf"),
+        Some(include_bytes!("../../resources/fonts/Roboto-Bold.ttf")),
     )
     .unwrap();
-    let bold = fontdue::Font::from_bytes(
-        include_bytes!("../../resources/fonts/Roboto-Bold.ttf") as &[u8],
-        fontdue::FontSettings::default(),
-    )
-    .unwrap();
-    let fonts: &'static [fontdue::Font] = Box::leak(Box::new([regular, bold]));
 
     let model = TextBench {
         cards: (0..cards)
@@ -81,7 +75,7 @@ fn main() {
             })
             .collect(),
     };
-    let mut runtime = Runtime::new(model, FastMeasurer { fonts: fonts.into() });
+    let mut runtime = Runtime::new(model, fonts.clone());
     runtime.set_size(width as f32, height as f32);
 
     let mut buffer = vec![0u32; (width * height) as usize];

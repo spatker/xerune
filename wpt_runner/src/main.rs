@@ -12,7 +12,7 @@ use std::{
     collections::{BTreeMap, HashMap}, env, fs, io::Write, path::{Path, PathBuf},
     process::{Command, Stdio}, time::{Duration, Instant},
 };
-use xerune_render::{FastMeasurer, SoftwareRenderer};
+use xerune_render::{Fonts, SoftwareRenderer};
 use markup5ever_rcdom::{Handle, NodeData, RcDom};
 use rayon::prelude::*;
 use tiny_skia::Pixmap;
@@ -110,25 +110,24 @@ impl ImageLoader for WptImageLoader {
 
 /// Ahem is the only font: every glyph is a box, so text is reproducible.
 /// Chromium gets the same font (see `chromium_screenshots.mjs`).
-fn load_fonts(root: &Path) -> Result<&'static [fontdue::Font], String> {
+fn load_fonts(root: &Path) -> Result<Fonts, String> {
     let path = root.join("fonts/Ahem.ttf");
     let data = fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
-    let font = fontdue::Font::from_bytes(data, fontdue::FontSettings::default())?;
-    // Regular and bold.
-    Ok(Box::leak(vec![font.clone(), font].into_boxed_slice()))
+    // Bold text uses the same face.
+    Fonts::ttf(&data, None).map_err(|e| e.to_string())
 }
 
-fn render(document: Document, root: &Path, fonts: &'static [fontdue::Font]) -> Result<Pixmap, Problem> {
+fn render(document: Document, root: &Path, fonts: &Fonts) -> Result<Pixmap, Problem> {
     let css = document.stylesheet(root)?;
     let loader = WptImageLoader { document: document.path.clone(), root: root.to_owned() };
     let model = RawHtmlModel { dom: document.dom, css: Box::leak(css.into_boxed_str()) };
-    let mut runtime = Runtime::new(model, FastMeasurer { fonts: fonts.into() });
+    let mut runtime = Runtime::new(model, fonts.clone());
     runtime.set_image_loader(loader);
     runtime.set_size(WIDTH as f32, HEIGHT as f32);
     runtime.wait_for_images(Duration::from_secs(5));
     let mut buffer = vec![0xffff_ffffu32; (WIDTH * HEIGHT) as usize];
     let mut target = xerune::Surface::new(xerune::Pixels::Xrgb8888(&mut buffer), WIDTH, HEIGHT);
-    runtime.render(&mut SoftwareRenderer::new(fonts), &mut target);
+    runtime.render(&mut SoftwareRenderer::new(fonts.clone()), &mut target);
     let mut pixmap = Pixmap::new(WIDTH, HEIGHT).unwrap();
     // 0xAARRGGBB words to opaque RGBA bytes.
     for (pixel, bytes) in buffer.iter().zip(pixmap.data_mut().chunks_exact_mut(4)) {
@@ -245,7 +244,7 @@ fn verdict_rank(v: Verdict) -> u8 {
     match v { Verdict::Fail => 0, Verdict::Antialiasing => 1, Verdict::Exact => 2 }
 }
 
-fn run(test: Test, root: &Path, fonts: &'static [fontdue::Font], screenshots: &Screenshots, images: Option<&Path>) -> Status {
+fn run(test: Test, root: &Path, fonts: &Fonts, screenshots: &Screenshots, images: Option<&Path>) -> Status {
     let result = (|| -> Result<Status, Problem> {
         let references = test.references.iter()
             .map(|r| Ok((r.clone(), screenshots.load(&r.path)?)))
@@ -430,7 +429,7 @@ fn cli() -> Result<(), String> {
     let pool = rayon::ThreadPoolBuilder::new().num_threads(options.jobs).build().map_err(|e| e.to_string())?;
     let rendered: Vec<(PathBuf, Status)> = pool.install(|| tests.into_par_iter().map(|test| {
         let path = test.path.clone();
-        (path, run(test, &root, fonts, &screenshots, failures_dir.as_deref()))
+        (path, run(test, &root, &fonts, &screenshots, failures_dir.as_deref()))
     }).collect());
     results.extend(rendered);
 

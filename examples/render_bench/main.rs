@@ -35,7 +35,7 @@ use std::time::{Duration, Instant};
 
 use xerune::images::{DefaultImageLoader, ImageError, ImageLoader};
 use xerune::{Model, Pixels, RenderResources, Runtime, Surface, TemplateLayout};
-use xerune_render::{FastMeasurer, SoftwareRenderer};
+use xerune_render::{Fonts, SoftwareRenderer};
 
 /// Loads local images only, so results do not depend on the network.
 struct LocalImages(DefaultImageLoader);
@@ -63,14 +63,14 @@ struct Bench {
     height: u32,
     iters: usize,
     phase: Option<String>,
-    fonts: &'static [fontdue::Font],
+    fonts: Fonts,
 }
 
 impl Bench {
     /// Runs one scene; `messages` alternate, one per `frame` iteration.
     fn run<M: Model + TemplateLayout + 'static>(&self, name: &str, model: M, messages: [&str; 2]) {
         let (width, height) = (self.width, self.height);
-        let mut runtime = Runtime::new(model, FastMeasurer { fonts: self.fonts.into() });
+        let mut runtime = Runtime::new(model, self.fonts.clone());
         runtime.set_image_loader(LocalImages(DefaultImageLoader::default()));
         runtime.set_size(width as f32, height as f32);
         runtime.sync_view();
@@ -78,7 +78,7 @@ impl Bench {
         runtime.tick();
 
         let mut buffer = vec![0u32; (width * height) as usize];
-        let mut renderer = SoftwareRenderer::new(self.fonts);
+        let mut renderer = SoftwareRenderer::new(self.fonts.clone());
         // Warm the glyph and image caches as a running app has them.
         runtime.render(&mut renderer, &mut Surface::new(Pixels::Xrgb8888(&mut buffer), width, height));
 
@@ -133,22 +133,16 @@ fn main() {
             Some((w.parse::<u32>().ok()?, h.parse::<u32>().ok()?))
         })
         .unwrap_or((800, 480));
-    let regular = fontdue::Font::from_bytes(
-        include_bytes!("../../resources/fonts/Roboto-Regular.ttf") as &[u8],
-        fontdue::FontSettings::default(),
-    )
-    .unwrap();
-    let bold = fontdue::Font::from_bytes(
-        include_bytes!("../../resources/fonts/Roboto-Bold.ttf") as &[u8],
-        fontdue::FontSettings::default(),
-    )
-    .unwrap();
     let bench = Bench {
         width,
         height,
         iters: env_or("RENDER_BENCH_ITERS", 100),
         phase: std::env::var("RENDER_BENCH_PHASE").ok(),
-        fonts: Box::leak(Box::new([regular, bold])),
+        fonts: xerune_render::Fonts::ttf(
+            include_bytes!("../../resources/fonts/Roboto-Regular.ttf"),
+            Some(include_bytes!("../../resources/fonts/Roboto-Bold.ttf")),
+        )
+        .unwrap(),
     };
     let scenes = std::env::var("RENDER_BENCH_SCENES").unwrap_or_else(|_| "todo,calculator,showcase,music_player".into());
 

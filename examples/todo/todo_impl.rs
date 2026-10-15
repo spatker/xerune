@@ -1,12 +1,10 @@
-#[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm")))]
-use fontdue::Font;
 use xerune::{Runtime, Model, XeruneMessage, XeruneTemplate};
 
 #[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm")))]
-use xerune_render::FastMeasurer;
+use xerune_render::Fonts;
 
 #[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm")))]
-pub type Measurer = FastMeasurer<'static>;
+pub type Measurer = Fonts;
 
 
 #[derive(XeruneTemplate, serde::Serialize, serde::Deserialize)]
@@ -144,9 +142,9 @@ impl Model for TodoList {
 
 // Logic to run this natively
 #[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm")))]
-pub fn run_native(render_frame: impl FnMut(&mut Runtime<TodoList, Measurer>, &mut [u32], u32, u32) -> xerune::Damage + 'static, fonts_ref: &'static [Font]) -> anyhow::Result<()> {
+pub fn run_native(render_frame: impl FnMut(&mut Runtime<TodoList, Measurer>, &mut [u32], u32, u32) -> xerune::Damage + 'static, fonts: Fonts) -> anyhow::Result<()> {
     let todo_list = TodoList::default();
-    let measurer = FastMeasurer { fonts: fonts_ref.into() };
+    let measurer = fonts;
     
     let runtime = Runtime::new(todo_list, measurer);
 

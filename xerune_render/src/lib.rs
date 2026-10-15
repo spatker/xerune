@@ -26,41 +26,104 @@ macro_rules! profile {
     ($($tt:tt)*) => {};
 }
 
+/// The fonts of a [`Fonts`], borrowed for shaping or one render call.
 #[derive(Clone, Copy)]
-pub enum FontSource<'a> {
+enum FontSource<'a> {
     #[cfg(feature = "std")]
     Ttf(&'a [Font]),
     Bitmap(&'a [xerune::font::BitmapFont]),
 }
 
-#[cfg(feature = "std")]
-impl<'a> From<&'a [Font]> for FontSource<'a> {
-    fn from(fonts: &'a [Font]) -> Self {
-        FontSource::Ttf(fonts)
+/// The fonts text is shaped and drawn with: TrueType/OpenType faces (regular
+/// and bold, with `std`) or prerasterized bitmap fonts. Shared by the
+/// runtime, which measures text with it, and the [`SoftwareRenderer`], which
+/// draws it; clones are cheap.
+#[derive(Clone)]
+pub struct Fonts(Arc<FontSet>);
+
+#[derive(Clone)]
+struct FontSet {
+    /// Distinguishes font sets in the thread-wide shaping caches.
+    id: u32,
+    kind: FontKind,
+}
+
+#[derive(Clone)]
+enum FontKind {
+    #[cfg(feature = "std")]
+    Ttf { faces: Vec<Font>, color_emoji: Option<Cow<'static, [u8]>> },
+    Bitmap(&'static [xerune::font::BitmapFont]),
+}
+
+/// A font file that could not be parsed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FontError(pub &'static str);
+
+impl core::fmt::Display for FontError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "invalid font: {}", self.0)
     }
 }
 
 #[cfg(feature = "std")]
-impl<'a> From<&'a Vec<Font>> for FontSource<'a> {
-    fn from(fonts: &'a Vec<Font>) -> Self {
-        FontSource::Ttf(fonts.as_slice())
-    }
-}
+impl std::error::Error for FontError {}
 
-impl<'a> From<&'a [xerune::font::BitmapFont]> for FontSource<'a> {
-    fn from(fonts: &'a [xerune::font::BitmapFont]) -> Self {
-        FontSource::Bitmap(fonts)
+impl Fonts {
+    fn new(kind: FontKind) -> Self {
+        static NEXT_ID: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
+        let id = NEXT_ID.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+        Self(Arc::new(FontSet { id, kind }))
     }
-}
 
-impl<'a> From<&'a Vec<xerune::font::BitmapFont>> for FontSource<'a> {
-    fn from(fonts: &'a Vec<xerune::font::BitmapFont>) -> Self {
-        FontSource::Bitmap(fonts.as_slice())
+    /// TrueType/OpenType fonts: `regular` for normal text and `bold` for
+    /// bold text (`regular` if `None`).
+    #[cfg(feature = "std")]
+    pub fn ttf(regular: &[u8], bold: Option<&[u8]>) -> Result<Self, FontError> {
+        let face = |bytes: &[u8]| Font::from_bytes(bytes, fontdue::FontSettings::default()).map_err(FontError);
+        let mut faces = vec![face(regular)?];
+        if let Some(bold) = bold {
+            faces.push(face(bold)?);
+        }
+        Ok(Self::new(FontKind::Ttf { faces, color_emoji: None }))
     }
-}
 
-pub struct FastMeasurer<'a> {
-    pub fonts: FontSource<'a>,
+    /// Draws characters the fonts lack from this color emoji font (bitmap
+    /// glyphs, like NotoColorEmoji).
+    #[cfg(feature = "std")]
+    pub fn with_color_emoji(self, font: impl Into<Cow<'static, [u8]>>) -> Self {
+        let mut set = Arc::unwrap_or_clone(self.0);
+        if let FontKind::Ttf { color_emoji, .. } = &mut set.kind {
+            *color_emoji = Some(font.into());
+        }
+        Self(Arc::new(set))
+    }
+
+    /// Prerasterized bitmap fonts (no TrueType parsing or rasterizing), as
+    /// [`xerune::font::DEFAULT_ROBOTO`]. Text uses the font of its weight
+    /// (1 for bold) and size, or else the first of its weight.
+    pub fn bitmap(fonts: &'static [xerune::font::BitmapFont]) -> Self {
+        Self::new(FontKind::Bitmap(fonts))
+    }
+
+    fn id(&self) -> u32 {
+        self.0.id
+    }
+
+    fn source(&self) -> FontSource<'_> {
+        match &self.0.kind {
+            #[cfg(feature = "std")]
+            FontKind::Ttf { faces, .. } => FontSource::Ttf(faces),
+            FontKind::Bitmap(fonts) => FontSource::Bitmap(fonts),
+        }
+    }
+
+    fn color_emoji(&self) -> Option<&[u8]> {
+        match &self.0.kind {
+            #[cfg(feature = "std")]
+            FontKind::Ttf { color_emoji, .. } => color_emoji.as_deref(),
+            FontKind::Bitmap(_) => None,
+        }
+    }
 }
 
 pub fn find_best_bitmap_font<'a>(fonts: &'a [xerune::font::BitmapFont], target_size: f32, target_weight: u16) -> Option<&'a xerune::font::BitmapFont> {
@@ -120,7 +183,7 @@ pub const MAX_GLYPH_CACHE_ENTRIES: usize =
 
 #[cfg(feature = "std")]
 struct BoundedMeasureCache {
-    entries: HashMap<String, Vec<(u32, u16, f32, f32)>>,
+    entries: HashMap<String, Vec<(u32, u32, u16, f32, f32)>>,
     order: std::collections::VecDeque<String>,
     max_entries: usize,
 }
@@ -135,13 +198,13 @@ impl BoundedMeasureCache {
         }
     }
 
-    fn get(&self, text: &str, font_size_bits: u32, weight: u16) -> Option<(f32, f32)> {
+    fn get(&self, text: &str, font: u32, font_size_bits: u32, weight: u16) -> Option<(f32, f32)> {
         if self.max_entries == 0 {
             return None;
         }
         if let Some(entries) = self.entries.get(text) {
-            for &(sz, wt, w, h) in entries {
-                if sz == font_size_bits && wt == weight {
+            for &(f, sz, wt, w, h) in entries {
+                if f == font && sz == font_size_bits && wt == weight {
                     return Some((w, h));
                 }
             }
@@ -149,13 +212,13 @@ impl BoundedMeasureCache {
         None
     }
 
-    fn insert(&mut self, text: &str, font_size_bits: u32, weight: u16, dims: (f32, f32)) {
+    fn insert(&mut self, text: &str, font: u32, font_size_bits: u32, weight: u16, dims: (f32, f32)) {
         if self.max_entries == 0 {
             return;
         }
         if let Some(list) = self.entries.get_mut(text) {
-            if !list.iter().any(|&(sz, wt, _, _)| sz == font_size_bits && wt == weight) {
-                list.push((font_size_bits, weight, dims.0, dims.1));
+            if !list.iter().any(|&(f, sz, wt, _, _)| f == font && sz == font_size_bits && wt == weight) {
+                list.push((font, font_size_bits, weight, dims.0, dims.1));
             }
             return;
         }
@@ -167,7 +230,7 @@ impl BoundedMeasureCache {
         self.order.push_back(text.to_string());
         self.entries.insert(
             text.to_string(),
-            vec![(font_size_bits, weight, dims.0, dims.1)],
+            vec![(font, font_size_bits, weight, dims.0, dims.1)],
         );
     }
 }
@@ -180,7 +243,7 @@ thread_local! {
         std::cell::RefCell::new(ShapeCache::new(MAX_SHAPE_CACHE_ENTRIES));
 }
 
-/// How many shaped runs [`FastMeasurer::shape`] keeps, oldest evicted first.
+/// How many shaped runs [`Fonts`] keep (thread-wide), oldest evicted first.
 /// Every text run of a view is shaped on each rebuild, so this should exceed
 /// the number of distinct runs on screen.
 ///
@@ -198,7 +261,7 @@ pub const EMOJI_FONT: u16 = u16::MAX;
 struct ShapeCache {
     // Looked up for every text node on every rebuild: ahash rather than
     // the slower DoS-resistant default.
-    entries: hashbrown::HashMap<String, Vec<(u32, u16, Arc<ShapedText>)>>,
+    entries: hashbrown::HashMap<String, Vec<(u32, u32, u16, Arc<ShapedText>)>>,
     order: std::collections::VecDeque<String>,
     max_entries: usize,
 }
@@ -209,20 +272,20 @@ impl ShapeCache {
         Self { entries: hashbrown::HashMap::new(), order: std::collections::VecDeque::new(), max_entries }
     }
 
-    fn get(&self, text: &str, font_size_bits: u32, weight: u16) -> Option<Arc<ShapedText>> {
+    fn get(&self, text: &str, font: u32, font_size_bits: u32, weight: u16) -> Option<Arc<ShapedText>> {
         self.entries
             .get(text)?
             .iter()
-            .find(|(sz, wt, _)| *sz == font_size_bits && *wt == weight)
-            .map(|(_, _, shaped)| shaped.clone())
+            .find(|(f, sz, wt, _)| *f == font && *sz == font_size_bits && *wt == weight)
+            .map(|(_, _, _, shaped)| shaped.clone())
     }
 
-    fn insert(&mut self, text: &str, font_size_bits: u32, weight: u16, shaped: Arc<ShapedText>) {
+    fn insert(&mut self, text: &str, font: u32, font_size_bits: u32, weight: u16, shaped: Arc<ShapedText>) {
         if self.max_entries == 0 {
             return;
         }
         if let Some(list) = self.entries.get_mut(text) {
-            list.push((font_size_bits, weight, shaped));
+            list.push((font, font_size_bits, weight, shaped));
             return;
         }
         if self.entries.len() >= self.max_entries {
@@ -231,7 +294,7 @@ impl ShapeCache {
             }
         }
         self.order.push_back(text.to_string());
-        self.entries.insert(text.to_string(), vec![(font_size_bits, weight, shaped)]);
+        self.entries.insert(text.to_string(), vec![(font, font_size_bits, weight, shaped)]);
     }
 }
 
@@ -246,11 +309,11 @@ fn rounded_metrics(ascent: f32, descent: f32, line_gap: f32) -> LineMetrics {
     LineMetrics { ascent: ascent.round(), descent: descent.round(), line_gap: line_gap.round() }
 }
 
-impl<'a> FastMeasurer<'a> {
+impl Fonts {
     fn shape_uncached(&self, text: &str, font_size: f32, weight: u16) -> ShapedText {
         let mut glyphs = Vec::with_capacity(text.len());
         let mut metrics = LineMetrics::default();
-        match &self.fonts {
+        match &self.source() {
             #[cfg(feature = "std")]
             FontSource::Ttf(ttf_fonts) => {
                 let Some(font_index) = ttf_font_index(ttf_fonts, weight) else {
@@ -317,17 +380,17 @@ pub fn measure_cache_len() -> usize {
     MEASURE_CACHE.with(|cache| cache.borrow().entries.len())
 }
 
-impl<'a> TextMeasurer for FastMeasurer<'a> {
+impl TextMeasurer for Fonts {
     fn shape(&self, text: &str, font_size: f32, weight: u16) -> Arc<ShapedText> {
         profile!("text_shape");
         #[cfg(feature = "std")]
         {
             let size_bits = font_size.to_bits();
-            if let Some(shaped) = SHAPE_CACHE.with(|cache| cache.borrow().get(text, size_bits, weight)) {
+            if let Some(shaped) = SHAPE_CACHE.with(|cache| cache.borrow().get(text, self.id(), size_bits, weight)) {
                 return shaped;
             }
             let shaped = Arc::new(self.shape_uncached(text, font_size, weight));
-            SHAPE_CACHE.with(|cache| cache.borrow_mut().insert(text, size_bits, weight, shaped.clone()));
+            SHAPE_CACHE.with(|cache| cache.borrow_mut().insert(text, self.id(), size_bits, weight, shaped.clone()));
             shaped
         }
         #[cfg(not(feature = "std"))]
@@ -342,7 +405,7 @@ impl<'a> TextMeasurer for FastMeasurer<'a> {
 
         let font_size_bits = font_size.to_bits();
         #[cfg(feature = "std")]
-        let cached = MEASURE_CACHE.with(|cache| cache.borrow().get(text, font_size_bits, weight));
+        let cached = MEASURE_CACHE.with(|cache| cache.borrow().get(text, self.id(), font_size_bits, weight));
         #[cfg(not(feature = "std"))]
         let cached = None;
 
@@ -350,7 +413,7 @@ impl<'a> TextMeasurer for FastMeasurer<'a> {
             return dims;
         }
 
-        let result = match &self.fonts {
+        let result = match &self.source() {
             #[cfg(feature = "std")]
             FontSource::Ttf(ttf_fonts) => {
                 if ttf_fonts.is_empty() {
@@ -433,7 +496,7 @@ impl<'a> TextMeasurer for FastMeasurer<'a> {
 
         #[cfg(feature = "std")]
         MEASURE_CACHE.with(|cache| {
-            cache.borrow_mut().insert(text, font_size_bits, weight, result);
+            cache.borrow_mut().insert(text, self.id(), font_size_bits, weight, result);
         });
 
         result
@@ -454,7 +517,7 @@ pub struct CachedGlyph {
 
 #[cfg(feature = "std")]
 fn try_find_color_emoji_glyph(font_bytes_slice: &[&[u8]], c: char, target_size: f32) -> Option<CachedGlyph> {
-    for fb in font_bytes_slice {
+    for fb in font_bytes_slice.iter().copied() {
         let face = match ttf_parser::Face::parse(fb, 0) {
             Ok(f) => f,
             Err(_) => continue,
@@ -552,7 +615,7 @@ fn emoji_cache_key(c: char, sub_px: u32) -> (usize, u16, u32) {
 fn cached_glyph<'c>(
     cache: &'c mut HashMap<(usize, u16, u32), CachedGlyph>,
     fonts: &[Font],
-    font_bytes: Option<&[&[u8]]>,
+    color_emoji: Option<&[u8]>,
     key: (usize, u16, u32),
     font_index: usize,
     id: u16,
@@ -563,7 +626,7 @@ fn cached_glyph<'c>(
         if cache.len() >= MAX_GLYPH_CACHE_ENTRIES {
             cache.clear();
         }
-        let color = emoji.zip(font_bytes).and_then(|(c, fbs)| try_find_color_emoji_glyph(fbs, c, px));
+        let color = emoji.zip(color_emoji).and_then(|(c, font)| try_find_color_emoji_glyph(&[font], c, px));
         if let Some(cg) = color {
             cache.insert(key, cg);
         } else if let Some(font) = fonts.get(font_index) {
@@ -678,9 +741,8 @@ fn blit_glyph(buffer: &mut [u32], cached: &CachedGlyph, gx: i32, gy: i32, px: f3
 
 /// Draws [`DrawCommand`]s in software. Keeps the rasterized glyphs and
 /// converted images between frames.
-pub struct SoftwareRenderer<'f> {
-    fonts: FontSource<'f>,
-    font_bytes: Option<&'f [&'f [u8]]>,
+pub struct SoftwareRenderer {
+    fonts: Fonts,
     image_cache: HashMap<String, (u32, u32, Vec<u32>)>, // src -> (width, height, packed pixels)
     glyph_cache: HashMap<(usize, u16, u32), CachedGlyph>,
     clip_stack: Vec<Rect>,
@@ -688,11 +750,12 @@ pub struct SoftwareRenderer<'f> {
     layout: fontdue::layout::Layout,
 }
 
-impl<'f> SoftwareRenderer<'f> {
-    pub fn new<F: Into<FontSource<'f>>>(fonts: F) -> Self {
+impl SoftwareRenderer {
+    /// A renderer drawing text with `fonts`, normally the same the runtime
+    /// measures text with.
+    pub fn new(fonts: Fonts) -> Self {
         Self {
-            fonts: fonts.into(),
-            font_bytes: None,
+            fonts,
             image_cache: HashMap::new(),
             glyph_cache: HashMap::new(),
             clip_stack: Vec::new(),
@@ -700,15 +763,9 @@ impl<'f> SoftwareRenderer<'f> {
             layout: fontdue::layout::Layout::new(fontdue::layout::CoordinateSystem::PositiveYDown),
         }
     }
-
-    /// The font files behind the fonts, to find color emoji in.
-    pub fn with_font_bytes(mut self, font_bytes: &'f [&'f [u8]]) -> Self {
-        self.font_bytes = Some(font_bytes);
-        self
-    }
 }
 
-impl Renderer for SoftwareRenderer<'_> {
+impl Renderer for SoftwareRenderer {
     fn render(&mut self, target: &mut Surface<'_>, commands: &[DrawCommand], resources: &RenderResources<'_>, area: Rect) {
         // Follow the image store's evictions: the converted pixels of an image
         // that is no longer drawn would otherwise stay here forever.
@@ -731,8 +788,8 @@ impl Renderer for SoftwareRenderer<'_> {
             height,
             physical_width,
             physical_height,
-            fonts: self.fonts,
-            font_bytes: self.font_bytes,
+            fonts: self.fonts.source(),
+            color_emoji: self.fonts.color_emoji(),
             clip_stack: &mut self.clip_stack,
             swap_rb,
             rotate: rotation != Rotation::Deg0,
@@ -758,7 +815,7 @@ struct Frame<'a> {
     #[allow(dead_code)]
     physical_height: u32,
     fonts: FontSource<'a>,
-    font_bytes: Option<&'a [&'a [u8]]>,
+    color_emoji: Option<&'a [u8]>,
     clip_stack: &'a mut Vec<Rect>,
     swap_rb: bool,
     #[allow(dead_code)]
@@ -1014,7 +1071,7 @@ impl Frame<'_> {
                                     } else {
                                         ((glyph.font as usize, glyph.id, sub_px), glyph.font as usize, None)
                                     };
-                                    let Some(cached) = cached_glyph(self.glyph_cache, ttf_fonts, self.font_bytes, key, fallback_font, glyph.id, px, emoji) else {
+                                    let Some(cached) = cached_glyph(self.glyph_cache, ttf_fonts, self.color_emoji, key, fallback_font, glyph.id, px, emoji) else {
                                         continue;
                                     };
                                     let (gx, gy) = if cached.is_color {
@@ -1041,7 +1098,7 @@ impl Frame<'_> {
                                         Some(c) => emoji_cache_key(c, sub_px),
                                         None => (glyph.font_index, glyph.key.glyph_index, sub_px),
                                     };
-                                    let Some(cached) = cached_glyph(self.glyph_cache, ttf_fonts, self.font_bytes, key, glyph.font_index, glyph.key.glyph_index, glyph.key.px, emoji) else {
+                                    let Some(cached) = cached_glyph(self.glyph_cache, ttf_fonts, self.color_emoji, key, glyph.font_index, glyph.key.glyph_index, glyph.key.px, emoji) else {
                                         continue;
                                     };
                                     let gx = floor_i32(local_rect.x + glyph.x + extra_x);
@@ -1709,10 +1766,9 @@ mod tests {
     /// `background`, changing only `area`.
     fn draw(width: u32, height: u32, background: u32, commands: &[DrawCommand], area: Rect) -> Vec<u32> {
         let mut buffer = vec![background; (width * height) as usize];
-        let fonts: &[xerune::BitmapFont] = &[];
         let (canvases, images) = no_resources();
         let mut target = Surface::new(Pixels::Xrgb8888(&mut buffer), width, height);
-        SoftwareRenderer::new(fonts).render(&mut target, commands, &RenderResources::new(&canvases, &images), area);
+        SoftwareRenderer::new(Fonts::bitmap(&[])).render(&mut target, commands, &RenderResources::new(&canvases, &images), area);
         buffer
     }
 
@@ -1767,8 +1823,7 @@ mod tests {
         let full = draw(width, height, 0, &commands, Rect::new(0.0, 0.0, width as f32, height as f32));
 
         // As on a microcontroller: one 7-row band buffer, flushed after each band.
-        let fonts: &[xerune::BitmapFont] = &[];
-        let mut renderer = SoftwareRenderer::new(fonts);
+        let mut renderer = SoftwareRenderer::new(Fonts::bitmap(&[]));
         let (canvases, images) = no_resources();
         let mut screen = vec![0u32; (width * height) as usize];
         let mut band = vec![0u32; (width * 7) as usize];
@@ -1792,13 +1847,12 @@ mod tests {
         let commands = scene();
         let full = draw(width, height, 0, &commands, Rect::new(0.0, 0.0, width as f32, height as f32));
 
-        let fonts: &[xerune::BitmapFont] = &[];
         let (canvases, images) = no_resources();
         let pad = 0x12345678;
         let mut padded = vec![pad; stride * height as usize];
         let mut target = Surface::new(Pixels::Xrgb8888(&mut padded), width, height).with_stride(stride);
         let area = target.area();
-        SoftwareRenderer::new(fonts).render(&mut target, &commands, &RenderResources::new(&canvases, &images), area);
+        SoftwareRenderer::new(Fonts::bitmap(&[])).render(&mut target, &commands, &RenderResources::new(&canvases, &images), area);
         for y in 0..height as usize {
             assert_eq!(&padded[y * stride..y * stride + width as usize], &full[y * width as usize..(y + 1) * width as usize], "row {y}");
             assert!(padded[y * stride + width as usize..(y + 1) * stride].iter().all(|p| *p == pad), "padding of row {y} was written");
@@ -1807,8 +1861,7 @@ mod tests {
 
     #[test]
     fn image_cache_follows_image_store_evictions() {
-        let fonts: &[xerune::BitmapFont] = &[];
-        let mut renderer = SoftwareRenderer::new(fonts);
+        let mut renderer = SoftwareRenderer::new(Fonts::bitmap(&[]));
         renderer.image_cache.insert("gone.png".to_string(), (1, 1, vec![0xffffffff]));
         let mut buffer = vec![0; 4];
         let (canvases, images) = no_resources();
@@ -1884,8 +1937,7 @@ mod tests {
 
     #[test]
     fn test_measurement_cache_is_bounded_and_evicts_old_entries() {
-        let fonts: &[xerune::font::BitmapFont] = &[xerune::font::DEFAULT_ROBOTO_REGULAR];
-        let measurer = FastMeasurer { fonts: fonts.into() };
+        let measurer = Fonts::bitmap(&xerune::font::DEFAULT_ROBOTO);
 
         // Simulate a long-running dashboard with 2000 changing text strings
         for i in 0..2000 {
@@ -1905,19 +1957,17 @@ mod tests {
         assert_eq!(measure_cache_len(), MAX_MEASURE_CACHE_ENTRIES);
     }
 
-    fn roboto() -> Vec<Font> {
-        let regular = include_bytes!("../../resources/fonts/Roboto-Regular.ttf") as &[u8];
-        let bold = include_bytes!("../../resources/fonts/Roboto-Bold.ttf") as &[u8];
-        vec![
-            Font::from_bytes(regular, fontdue::FontSettings::default()).unwrap(),
-            Font::from_bytes(bold, fontdue::FontSettings::default()).unwrap(),
-        ]
+    fn roboto() -> Fonts {
+        Fonts::ttf(
+            include_bytes!("../../resources/fonts/Roboto-Regular.ttf"),
+            Some(include_bytes!("../../resources/fonts/Roboto-Bold.ttf")),
+        )
+        .unwrap()
     }
 
     #[test]
     fn shape_uses_fractional_advances() {
-        let fonts = roboto();
-        let measurer = FastMeasurer { fonts: (&fonts).into() };
+        let measurer = roboto();
         let text = "The quick brown fox jumps over the lazy dog";
         let shaped = measurer.shape(text, 14.0, 0);
         assert_eq!(shaped.glyphs.len(), text.chars().count());
@@ -1933,8 +1983,7 @@ mod tests {
 
     #[test]
     fn shape_is_cached() {
-        let fonts = roboto();
-        let measurer = FastMeasurer { fonts: (&fonts).into() };
+        let measurer = roboto();
         let a = measurer.shape("cached run", 15.0, 0);
         let b = measurer.shape("cached run", 15.0, 0);
         assert!(Arc::ptr_eq(&a, &b));
@@ -1942,9 +1991,21 @@ mod tests {
     }
 
     #[test]
+    fn font_sets_do_not_share_cached_shapes() {
+        static BITMAP: [xerune::font::BitmapFont; 1] = [xerune::font::DEFAULT_ROBOTO_REGULAR];
+        let (ttf, bitmap) = (roboto(), Fonts::bitmap(&BITMAP));
+        let a = ttf.shape("same text", 14.0, 0);
+        let b = bitmap.shape("same text", 14.0, 0);
+        assert!(!Arc::ptr_eq(&a, &b));
+        assert_ne!(a.width(), b.width());
+        assert_ne!(ttf.measure_text("same text", 14.0, 0), bitmap.measure_text("same text", 14.0, 0));
+    }
+
+    #[test]
     fn shape_bitmap_fonts() {
-        let fonts: &[xerune::font::BitmapFont] = &[xerune::font::DEFAULT_ROBOTO_REGULAR];
-        let measurer = FastMeasurer { fonts: fonts.into() };
+        static FONTS: [xerune::font::BitmapFont; 1] = [xerune::font::DEFAULT_ROBOTO_REGULAR];
+        let fonts = &FONTS;
+        let measurer = Fonts::bitmap(fonts);
         let shaped = measurer.shape("Hi you", 14.0, 0);
         let font = &fonts[0];
         let expected: f32 = "Hi you".chars().map(|c| font.lookup_glyph(c).unwrap().x_advance as f32).sum();

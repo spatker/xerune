@@ -51,3 +51,6 @@ include!("roboto_bold.rs");
 pub static DEFAULT_ROBOTO_REGULAR: BitmapFont = ROBOTO_REGULAR_REGULAR;
 /// The default precompiled bold Roboto font.
 pub static DEFAULT_ROBOTO_BOLD: BitmapFont = ROBOTO_BOLD_BOLD;
+/// The default precompiled Roboto fonts, regular and bold, as a font set
+/// (`xerune_render::Fonts::bitmap(&DEFAULT_ROBOTO)`).
+pub static DEFAULT_ROBOTO: [BitmapFont; 2] = [ROBOTO_REGULAR_REGULAR, ROBOTO_BOLD_BOLD];

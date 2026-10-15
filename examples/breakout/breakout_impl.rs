@@ -1,15 +1,13 @@
-#[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm")))]
-use fontdue::Font;
 use serde::{Serialize, Deserialize};
 use std::collections::HashSet;
 use std::f32::consts::PI;
 use xerune::{Runtime, Model, XeruneMessage, XeruneTemplate};
 
 #[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm")))]
-use xerune_render::FastMeasurer;
+use xerune_render::Fonts;
 
 #[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm")))]
-pub type Measurer = FastMeasurer<'static>;
+pub type Measurer = Fonts;
 
 
 const GAME_WIDTH: f32 = 800.0;
@@ -365,9 +363,9 @@ impl Model for BreakoutModel {
 }
 
 #[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm")))]
-pub fn run_native(render_frame: impl FnMut(&mut Runtime<BreakoutModel, Measurer>, &mut [u32], u32, u32) -> xerune::Damage + 'static, fonts_ref: &'static [Font]) -> anyhow::Result<()> {
+pub fn run_native(render_frame: impl FnMut(&mut Runtime<BreakoutModel, Measurer>, &mut [u32], u32, u32) -> xerune::Damage + 'static, fonts: Fonts) -> anyhow::Result<()> {
     let model = BreakoutModel::default();
-    let measurer = FastMeasurer { fonts: fonts_ref.into() };
+    let measurer = fonts;
     
     let mut runtime = Runtime::new(model, measurer);
     runtime.set_timeout("tick".to_string(), 16);

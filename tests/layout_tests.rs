@@ -10,6 +10,21 @@ fn set_size<M: Model + ui::TemplateLayout, R: TextMeasurer>(runtime: &mut Runtim
     runtime.set_size(width, height);
 }
 
+/// The bundled Roboto, regular and bold, as the examples use it.
+fn roboto() -> xerune_render::Fonts {
+    use std::sync::OnceLock;
+    static FONTS: OnceLock<xerune_render::Fonts> = OnceLock::new();
+    FONTS
+        .get_or_init(|| {
+            xerune_render::Fonts::ttf(
+                include_bytes!("../resources/fonts/Roboto-Regular.ttf"),
+                Some(include_bytes!("../resources/fonts/Roboto-Bold.ttf")),
+            )
+            .unwrap()
+        })
+        .clone()
+}
+
 struct MockModel;
 #[derive(Debug, PartialEq, XeruneMessage)]
 enum MockMsg {
@@ -333,13 +348,9 @@ fn test_todo_layout_comparison() {
 #[test]
 fn test_tiled_rendering_identity() {
     use std::collections::HashMap;
-    use fontdue::Font;
     use xerune_render::SoftwareRenderer;
 
-    // Load font
-    let font_data = std::fs::read("resources/fonts/Roboto-Regular.ttf").expect("Failed to read font file");
-    let font = Font::from_bytes(font_data, fontdue::FontSettings::default()).expect("Failed to parse font");
-    let fonts = vec![font];
+    let fonts = roboto();
 
     // Setup model and layout
     let model = TestTodoModel {
@@ -350,7 +361,7 @@ fn test_tiled_rendering_identity() {
         active_item: 0,
         new_item_title: "abc".to_string(),
     };
-    let measurer = xerune_render::FastMeasurer { fonts: (&fonts).into() };
+    let measurer = fonts.clone();
     let mut runtime = Runtime::new(model, measurer);
     crate::set_size(&mut runtime, 800.0, 600.0);
 
@@ -364,12 +375,12 @@ fn test_tiled_rendering_identity() {
     {
         let mut target = Surface::new(Pixels::Xrgb8888(&mut full_buffer), 800, 600);
         let area = target.area();
-        SoftwareRenderer::new(&fonts).render(&mut target, &commands, &resources, area);
+        SoftwareRenderer::new(fonts.clone()).render(&mut target, &commands, &resources, area);
     }
 
     // 2. Rendering in 50-row bands, each copied to the screen
     let mut tiled_buffer = vec![0u32; 800 * 600];
-    let mut renderer = SoftwareRenderer::new(&fonts);
+    let mut renderer = SoftwareRenderer::new(fonts.clone());
     let mut band = vec![0u32; 800 * 50];
     for y in (0..600).step_by(50) {
         band.fill(0);
@@ -387,9 +398,8 @@ fn test_tiled_rendering_identity() {
 fn test_bitmap_font_rendering() {
     use std::collections::HashMap;
     use xerune_render::SoftwareRenderer;
-    use xerune::font::{DEFAULT_ROBOTO_REGULAR, DEFAULT_ROBOTO_BOLD};
 
-    let fonts = vec![DEFAULT_ROBOTO_REGULAR, DEFAULT_ROBOTO_BOLD];
+    let fonts = xerune_render::Fonts::bitmap(&xerune::font::DEFAULT_ROBOTO);
 
     let commands = vec![
         DrawCommand::DrawText {
@@ -405,7 +415,7 @@ fn test_bitmap_font_rendering() {
     let mut buffer = vec![0u32; 200 * 50];
     let mut target = Surface::new(Pixels::Xrgb8888(&mut buffer), 200, 50);
     let area = target.area();
-    SoftwareRenderer::new(&fonts).render(&mut target, &commands, &xerune::RenderResources::new(&HashMap::new(), &xerune::ImageStore::new()), area);
+    SoftwareRenderer::new(fonts.clone()).render(&mut target, &commands, &xerune::RenderResources::new(&HashMap::new(), &xerune::ImageStore::new()), area);
 
     // Verify that some pixels are drawn (not all zeros)
     let non_zero_count = buffer.iter().filter(|&&pixel| pixel != 0).count();
@@ -554,9 +564,8 @@ fn test_timer_cancellation() {
 fn test_dirty_rect_rasterization_culling() {
     use std::collections::HashMap;
     use xerune_render::SoftwareRenderer;
-    use xerune::font::DEFAULT_ROBOTO_REGULAR;
 
-    let fonts = vec![DEFAULT_ROBOTO_REGULAR];
+    let fonts = xerune_render::Fonts::bitmap(&xerune::font::DEFAULT_ROBOTO);
 
     let commands = vec![
         DrawCommand::DrawRect {
@@ -579,7 +588,7 @@ fn test_dirty_rect_rasterization_culling() {
 
     // Render with the area restricted to the second rectangle only
     let mut target = Surface::new(Pixels::Xrgb8888(&mut buffer), 200, 200);
-    SoftwareRenderer::new(&fonts).render(&mut target, &commands, &xerune::RenderResources::new(&HashMap::new(), &xerune::ImageStore::new()), Rect::new(90.0, 90.0, 70.0, 70.0));
+    SoftwareRenderer::new(fonts.clone()).render(&mut target, &commands, &xerune::RenderResources::new(&HashMap::new(), &xerune::ImageStore::new()), Rect::new(90.0, 90.0, 70.0, 70.0));
 
     // Verify first rect (0,0..50,50) was culled and untouched (0)
     let first_rect_pixel = buffer[0];
@@ -843,16 +852,7 @@ fn todo_list_scrolls_in_portrait() {
 /// Lines of text drawn, in paint order, laid out with the bundled Roboto
 /// fonts (as in the examples) at `width`x`height`.
 fn roboto_lines<M: Model + ui::TemplateLayout + 'static>(model: M, width: f32, height: f32) -> Vec<String> {
-    use std::sync::OnceLock;
-    static FONTS: OnceLock<Vec<fontdue::Font>> = OnceLock::new();
-    let fonts = FONTS.get_or_init(|| {
-        let font = |bytes: &[u8]| fontdue::Font::from_bytes(bytes, fontdue::FontSettings::default()).unwrap();
-        vec![
-            font(include_bytes!("../resources/fonts/Roboto-Regular.ttf")),
-            font(include_bytes!("../resources/fonts/Roboto-Bold.ttf")),
-        ]
-    });
-    let mut runtime = Runtime::new(model, xerune_render::FastMeasurer { fonts: fonts.into() });
+    let mut runtime = Runtime::new(model, roboto());
     set_size(&mut runtime, width, height);
     runtime
         .ui
@@ -1114,17 +1114,7 @@ mod damage {
     const W: u32 = 800;
     const H: u32 = 480;
 
-    fn fonts() -> &'static [fontdue::Font] {
-        use std::sync::OnceLock;
-        static FONTS: OnceLock<Vec<fontdue::Font>> = OnceLock::new();
-        FONTS.get_or_init(|| {
-            let font = |bytes: &[u8]| fontdue::Font::from_bytes(bytes, fontdue::FontSettings::default()).unwrap();
-            vec![
-                font(include_bytes!("../resources/fonts/Roboto-Regular.ttf")),
-                font(include_bytes!("../resources/fonts/Roboto-Bold.ttf")),
-            ]
-        })
-    }
+    use super::roboto as fonts;
 
     /// Local images only: deterministic and offline.
     struct LocalImages(DefaultImageLoader);
@@ -1139,14 +1129,14 @@ mod damage {
     }
 
     struct Session<M: Model + ui::TemplateLayout> {
-        runtime: Runtime<M, xerune_render::FastMeasurer<'static>>,
+        runtime: Runtime<M, xerune_render::Fonts>,
         buffer: Vec<u32>,
-        renderer: SoftwareRenderer<'static>,
+        renderer: SoftwareRenderer,
     }
 
     impl<M: Model + ui::TemplateLayout + 'static> Session<M> {
         fn new(model: M) -> Self {
-            let mut runtime = Runtime::new(model, xerune_render::FastMeasurer { fonts: fonts().into() });
+            let mut runtime = Runtime::new(model, fonts());
             runtime.set_image_loader(LocalImages(DefaultImageLoader::default()));
             set_size(&mut runtime, W as f32, H as f32);
             let mut session = Self {
