@@ -1,0 +1,65 @@
+# WPT directories that count for Xerune: what a UI on an embedded screen
+# needs. `!prefix` excludes part of a directory. Out of scope for now: grid,
+# transforms, tables, floats, multi-column, paging, writing modes, ruby,
+# shapes, masking and filters, scroll snap, view transitions, anchors.
+
+css/css-flexbox
+!css/css-flexbox/table-as-item       # tables
+css/css-align
+css/css-box
+css/css-sizing
+!css/css-sizing/contain-intrinsic-size
+css/css-backgrounds
+!css/css-backgrounds/animations
+!css/css-backgrounds/background-attachment-local
+css/css-borders
+css/css-color
+css/css-images
+!css/css-images/image-orientation  # JPEG EXIF, PNG only
+!css/css-images/image-set
+css/css-values
+css/css-variables
+css/css-cascade
+css/css-conditional
+css/mediaqueries
+css/selectors
+css/css-position
+!css/css-position/multicol
+!css/css-position/sticky
+css/css-overflow
+!css/css-overflow/scroll-markers
+css/css-display
+!css/css-display/run-in
+css/css-ui
+!css/css-ui/compute-kind-widget-generated  # native form widget appearance
+
+# Text, without hyphenation, CJK/complex-script line breaking and
+# typographic features (see "Known weak spots" in CLAUDE.md).
+css/css-text
+!css/css-text/hanging-punctuation
+!css/css-text/hyphens
+!css/css-text/i18n
+!css/css-text/shaping
+!css/css-text/text-autospace
+!css/css-text/text-fit
+!css/css-text/text-spacing-trim
+!css/css-text/word-space-transform
+
+# CSS 2.1 block model, positioning, borders, backgrounds, selectors, syntax.
+css/CSS2/abspos
+css/CSS2/backgrounds
+css/CSS2/borders
+css/CSS2/box
+css/CSS2/box-display
+css/CSS2/cascade
+css/CSS2/colors
+css/CSS2/linebox
+css/CSS2/margin-padding-clear
+css/CSS2/normal-flow
+css/CSS2/positioning
+css/CSS2/selectors
+css/CSS2/syntax
+css/CSS2/text
+css/CSS2/values
+css/CSS2/visudet
+css/CSS2/visuren

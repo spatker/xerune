@@ -368,3 +368,26 @@ python3 -m http.server 8000
 ### 3. Open in Browser
 - **Studio with live state inspector**: `http://localhost:8000/studio/index.html`
 - **Standalone full-screen web runner**: `http://localhost:8000/examples/standalone.html?app=music_player`
+
+---
+
+## 10. WPT Reftests
+
+`wpt_runner` checks Xerune against the [web-platform-tests](https://github.com/web-platform-tests/wpt) reftests of the CSS features it implements. Each test is rendered by Xerune and compared pixel for pixel with Chromium's screenshot of the test's reference.
+
+```bash
+WPT_DIR=~/path/to/wpt cargo run --release -p wpt_runner             # all suites
+WPT_DIR=~/path/to/wpt cargo run --release -p wpt_runner -- flexbox  # paths containing "flexbox"
+WPT_DIR=~/path/to/wpt cargo run --release -p wpt_runner -- flexbox --images
+WPT_DIR=~/path/to/wpt cargo run --release -p wpt_runner -- --update # record new results
+```
+
+Needs Node 22+ and `chromium` (or `$CHROMIUM`). How it works:
+
+- **Scope**: `wpt_runner/suites.txt` lists the WPT directories that count. Grid, transforms, tables, floats, multi-column, writing modes and similar are left out.
+- **Comparison**: images must be identical, unless the test's `<meta name=fuzzy>` allows a difference. At least one `match` reference must match and every `mismatch` reference must differ, as in WPT.
+- **References**: rendered by Chromium, not Xerune, so a test can't pass by being wrong the same way as its reference. `wpt_runner/chromium_screenshots.mjs` serves `WPT_DIR` over HTTP and screenshots each file at 800x600. Screenshots are cached under `target/wpt/chromium/<wpt commit>-<chromium version>/` and taken again when either changes.
+- **Font**: Ahem only, in both Xerune and Chromium (a private fontconfig maps every family to it). Every Ahem glyph is a box, so text compares exactly. Tests that then no longer match their own reference in Chromium are skipped ("fails in Chromium").
+- **Skipped**: tests that need JavaScript, `reftest-wait`, iframes, SVG, canvas, video, animations or paging. They are reported but not part of the pass rate.
+- **Expectations**: `wpt_runner/expectations.txt` lists the tests that fail; every other test that runs is expected to pass, and its header has the pass rate per suite. A run exits with an error when a test fails that isn't listed, and lists tests that newly pass. After an engine fix, run with `--update` and commit the file along with the fix.
+- **Failures**: `--images` writes Xerune's render, Chromium's reference and a diff for each failure to `target/wpt/failures/<test>/`.

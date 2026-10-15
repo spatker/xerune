@@ -16,7 +16,7 @@ the working notes.
 | `xerune_derive/` | `XeruneTemplate` / `XeruneMessage` macros. One big `lib.rs`: template parser, CSS splitting, codegen of `build_ui` |
 | `fast_renderer/` | Software rasterizer (blits, rounded rects, gradients, glyphs). Has a `no_std` mode |
 | `studio/` | WASM inspector (`wasm-pack build --target web`, `features = ["browser"]`) |
-| `wpt_runner/` | Runs WPT-style reftests through the `dynamic-parser` path |
+| `wpt_runner/` | WPT reftests vs Chromium screenshots; scope in `suites.txt`, known failures in `expectations.txt` (`docs/guide.md` §10) |
 | `examples/<name>/` | `main.rs` + `<name>_impl.rs` + `templates/*.html`; shared render loop in `examples/support/` |
 | `tests/` | Integration tests; HTML fixtures in `tests/*.html`, `tests/canvas/`, `tests/gaps/`; trybuild cases in `tests/template_errors/` |
 | `build_arm.sh`, `qemu-arm/` | Local ARM cross-build/deploy helpers (untracked / user's own) |
@@ -75,6 +75,8 @@ it in `chromium --headless` with Roboto from `resources/fonts` via
 `@font-face` (`file://` URLs) and `tests/text/chromium_lines.js`, or take
 screenshots. `cargo run --release --example text_bench` times rebuild,
 layout and render of a text-heavy view.
+WPT: `WPT_DIR=~/data/code/js/wpt cargo run --release -p wpt_runner [-- FILTER] [--images] [--update]`
+(user's checkout path). Commit the `--update`d `expectations.txt` with each engine fix.
 `animation` and `breakout` read `Instant::now()`, so their snapshots aren't
 deterministic.
 
