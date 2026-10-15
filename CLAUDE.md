@@ -85,7 +85,8 @@ the armv7 zigbuild below (with `drm,linuxfb,evdev`), and the studio for wasm32.
 
 ARM target build (user's setup; use it for every ARM check, locally and in CI,
 not gcc-arm or `cargo check`: it links against the boards' glibc 2.39):
-`cargo zigbuild --target armv7-unknown-linux-gnueabihf.2.39 --features "drm,evdev" --release --example X`
+`RUSTFLAGS="-C target-feature=+neon,+vfp4,+d32" cargo zigbuild --target armv7-unknown-linux-gnueabihf.2.39 --features "drm,evdev" --release --example X`
+(the default armv7 target has no NEON; without the flags `blitter.rs` falls back to scalar loops)
 
 ## Constraints
 
