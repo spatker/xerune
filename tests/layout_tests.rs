@@ -914,9 +914,8 @@ mod text_layout {
     }
 
     /// Line breaks of a reference page must match Chromium's with the same
-    /// fonts. To regenerate the expected lines, load the page in Chromium
-    /// with Roboto from `resources/fonts` (via `@font-face`) and
-    /// `tests/text/chromium_lines.js`, at 800x480.
+    /// fonts. To regenerate the expected lines:
+    /// `tools/chromium-lines.sh tests/text/reference.html`.
     #[test]
     fn line_breaks_match_chromium() {
         let expected = [
