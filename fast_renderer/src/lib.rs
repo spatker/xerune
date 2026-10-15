@@ -108,6 +108,16 @@ const fn parse_usize_opt(opt: Option<&'static str>, default: usize) -> usize {
 pub const MAX_MEASURE_CACHE_ENTRIES: usize =
     parse_usize_opt(option_env!("FAST_RENDERER_MAX_MEASURE_CACHE"), 64);
 
+/// How many rasterized glyphs (font, glyph, size) the glyph cache keeps
+/// before it is emptied. Every distinct font size adds entries, so without a
+/// limit an animated `font-size` grows the cache forever.
+///
+/// Configurable at compile time via `FAST_RENDERER_MAX_GLYPH_CACHE`
+/// (default: 2048, about 0.5 MB of 16 px glyphs).
+#[cfg(feature = "std")]
+pub const MAX_GLYPH_CACHE_ENTRIES: usize =
+    parse_usize_opt(option_env!("FAST_RENDERER_MAX_GLYPH_CACHE"), 2048);
+
 #[cfg(feature = "std")]
 struct BoundedMeasureCache {
     entries: HashMap<String, Vec<(u32, u16, f32, f32)>>,
@@ -550,6 +560,9 @@ fn cached_glyph<'c>(
     emoji: Option<char>,
 ) -> Option<&'c CachedGlyph> {
     if !cache.contains_key(&key) {
+        if cache.len() >= MAX_GLYPH_CACHE_ENTRIES {
+            cache.clear();
+        }
         let color = emoji.zip(font_bytes).and_then(|(c, fbs)| try_find_color_emoji_glyph(fbs, c, px));
         if let Some(cg) = color {
             cache.insert(key, cg);
@@ -789,7 +802,10 @@ impl<'a> TextMeasurer for FastRenderer<'a> {
 impl<'a> Renderer for FastRenderer<'a> {
     fn render(&mut self, commands: &[DrawCommand], resources: &RenderResources<'_>, dirty_rect: Option<Rect>) {
         profile!("render_full");
-        
+        // Follow the image store's evictions: the converted pixels of an image
+        // that is no longer drawn would otherwise stay here forever.
+        self.image_cache.retain(|src, _| resources.images.get(src).is_some());
+
         let tile_rect = Rect {
             x: self.x_offset as f32,
             y: self.y_offset as f32,
@@ -1153,23 +1169,18 @@ impl<'a> Renderer for FastRenderer<'a> {
 
                     // Images are loaded and decoded by the runtime; here we only convert them to
                     // the framebuffer pixel format once and draw a placeholder while missing.
-                    match resources.images.get(src) {
-                        Some(img) => {
-                            let up_to_date = matches!(
-                                self.image_cache.get(src),
-                                Some((w, h, _)) if *w == img.width && *h == img.height
-                            );
-                            if !up_to_date {
-                                let pixels: Vec<u32> = img
-                                    .data
-                                    .chunks_exact(4)
-                                    .map(|c| pack_color(xerune::Color::new(c[0], c[1], c[2], c[3]), self.swap_rb))
-                                    .collect();
-                                self.image_cache.insert(src.clone(), (img.width, img.height, pixels));
-                            }
-                        }
-                        None => {
-                            self.image_cache.remove(src);
+                    if let Some(img) = resources.images.get(src) {
+                        let up_to_date = matches!(
+                            self.image_cache.get(src),
+                            Some((w, h, _)) if *w == img.width && *h == img.height
+                        );
+                        if !up_to_date {
+                            let pixels: Vec<u32> = img
+                                .data
+                                .chunks_exact(4)
+                                .map(|c| pack_color(xerune::Color::new(c[0], c[1], c[2], c[3]), self.swap_rb))
+                                .collect();
+                            self.image_cache.insert(src.clone(), (img.width, img.height, pixels));
                         }
                     }
 
@@ -1729,6 +1740,36 @@ mod tests {
         assert_eq!(buffer[0], 0xff000000, "Clipped child must remain invisible");
         assert_eq!(buffer[10], 0xff00ff00, "Sibling must render after PopClip");
         assert_eq!(buffer[20], 0xff000000, "Dirty-region clip must remain active");
+    }
+
+    #[test]
+    fn image_cache_follows_image_store_evictions() {
+        let mut buffer = vec![0; 4];
+        let mut images = HashMap::new();
+        images.insert("gone.png".to_string(), (1, 1, vec![0xffffffff]));
+        let mut glyphs = HashMap::new();
+        let fonts: &[xerune::BitmapFont] = &[];
+        let mut renderer = FastRenderer::new(&mut buffer, 2, 2, fonts, &mut images, &mut glyphs);
+        renderer.render(&[], &xerune::RenderResources::new(&HashMap::new(), &xerune::ImageStore::new()), None);
+        assert!(images.is_empty(), "pixels of an evicted image must be dropped");
+    }
+
+    #[test]
+    fn glyph_cache_stays_within_its_limit() {
+        let font = Font::from_bytes(
+            include_bytes!("../../resources/fonts/Roboto-Regular.ttf") as &[u8],
+            fontdue::FontSettings::default(),
+        )
+        .unwrap();
+        let fonts = [font];
+        let id = fonts[0].lookup_glyph_index('a');
+        let mut cache = HashMap::new();
+        // Every font size is a new entry, like an animated `font-size`.
+        for size in 0..MAX_GLYPH_CACHE_ENTRIES as u32 + 10 {
+            let px = 8.0 + size as f32 / 16.0;
+            assert!(cached_glyph(&mut cache, &fonts, None, (0, id, px.to_bits()), 0, id, px, None).is_some());
+            assert!(cache.len() <= MAX_GLYPH_CACHE_ENTRIES);
+        }
     }
 
     #[test]
