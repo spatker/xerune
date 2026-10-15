@@ -10,8 +10,22 @@ pub enum Display {
     InlineBlock,
     /// Render as a Flexbox layout container.
     Flex,
+    /// A Flexbox container placed like an inline-block.
+    InlineFlex,
     /// Hide element and discard from layout generation.
     None,
+}
+
+impl Display {
+    /// Lays out its children as a flex container (`flex`, `inline-flex`).
+    pub fn is_flex(self) -> bool {
+        matches!(self, Display::Flex | Display::InlineFlex)
+    }
+
+    /// Placed in its parent's line like a word (`inline-block`, `inline-flex`).
+    pub fn is_inline_level(self) -> bool {
+        matches!(self, Display::InlineBlock | Display::InlineFlex)
+    }
 }
 
 /// Horizontal alignment of text.

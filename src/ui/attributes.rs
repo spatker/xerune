@@ -648,7 +648,7 @@ pub(crate) fn dom_to_taffy(
                 }
             }
 
-            if current_style.display == Display::Flex {
+            if current_style.display.is_flex() {
                 children.sort_by_key(|child_id| {
                     render_data.get(child_id).map(|data| data.style().order).unwrap_or(0)
                 });
@@ -656,7 +656,7 @@ pub(crate) fn dom_to_taffy(
 
             if current_style.display == Display::None {
                 layout_style.display = taffy::style::Display::None;
-            } else if current_style.display != Display::Flex {
+            } else if !current_style.display.is_flex() {
                 super::style_resolution::apply_block_display(taffy, tag, &current_style, &mut layout_style, &children, render_data);
             }
 
@@ -721,7 +721,7 @@ pub(crate) fn dom_to_taffy(
                 }
             }
 
-            let is_parent_flex = parent_style.display == Display::Flex;
+            let is_parent_flex = parent_style.display.is_flex();
             if is_parent_flex {
                 let resolved_align = match layout_style.align_self {
                     None => parent_style.align_items.unwrap_or(AlignItems::Stretch),

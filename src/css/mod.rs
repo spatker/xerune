@@ -258,6 +258,7 @@ fn apply_resolved_declaration(prop: &str, val: &str, current_style: &mut Contain
                 "block" => current_style.display = Display::Block,
                 "inline-block" | "inline" => current_style.display = Display::InlineBlock,
                 "flex" => current_style.display = Display::Flex,
+                "inline-flex" => current_style.display = Display::InlineFlex,
                 "none" => current_style.display = Display::None,
                 _ => {}
             }

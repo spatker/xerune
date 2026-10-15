@@ -993,7 +993,7 @@ pub(crate) fn text_style(parent_style: &ContainerStyle) -> ContainerStyle {
 /// container is an anonymous flex item and keeps the automatic minimum.
 pub(crate) fn text_leaf_style(parent_style: &ContainerStyle) -> Style {
     let mut style = Style::default();
-    if parent_style.display != crate::style::Display::Flex {
+    if !parent_style.display.is_flex() {
         style.min_size.width = Dimension::length(0.0);
     }
     style

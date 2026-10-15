@@ -205,7 +205,7 @@ pub(crate) fn apply_block_display(
     render_data: &NodeMap<RenderData>,
 ) {
     let is_inline = |child: &NodeId| match render_data.get(child) {
-        Some(RenderData::Container(s)) => s.display == Display::InlineBlock || s.is_floated,
+        Some(RenderData::Container(s)) => s.display.is_inline_level() || s.is_floated,
         Some(_) => true,
         None => false,
     };
@@ -663,7 +663,7 @@ pub(crate) fn resolve_styles(
         );
     }
 
-    if current_style.display == Display::Flex {
+    if current_style.display.is_flex() {
         let mut chs = meta.children.clone();
         let original = chs.clone();
         chs.sort_by_key(|child_id| {
@@ -676,7 +676,7 @@ pub(crate) fn resolve_styles(
 
     if current_style.display == Display::None {
         layout_style.display = taffy::style::Display::None;
-    } else if current_style.display != Display::Flex {
+    } else if !current_style.display.is_flex() {
         apply_block_display(taffy, tag, &current_style, &mut layout_style, &meta.children, render_data);
     }
 
@@ -741,7 +741,7 @@ pub(crate) fn resolve_styles(
         }
     }
 
-    let is_parent_flex = parent_style.display == Display::Flex;
+    let is_parent_flex = parent_style.display.is_flex();
     if is_parent_flex {
         let resolved_align = match layout_style.align_self {
             None => parent_style.align_items.unwrap_or(AlignItems::Stretch),
@@ -1023,7 +1023,7 @@ pub fn finalize_node_style(
 
     if current_style.display == Display::None {
         layout_style.display = taffy::style::Display::None;
-    } else if current_style.display != Display::Flex {
+    } else if !current_style.display.is_flex() {
         let children = taffy.children(node).unwrap_or_default();
         apply_block_display(taffy, tag, current_style, layout_style, &children, render_data);
     }
@@ -1089,7 +1089,7 @@ pub fn finalize_node_style(
         }
     }
 
-    let is_parent_flex = parent_style.display == Display::Flex;
+    let is_parent_flex = parent_style.display.is_flex();
     if is_parent_flex {
         let resolved_align = match layout_style.align_self {
             None => parent_style.align_items.unwrap_or(AlignItems::Stretch),

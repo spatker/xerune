@@ -669,6 +669,31 @@ fn em_is_relative_to_the_font_size_and_rem_to_the_root() {
     assert_eq!(size(c).width, 60.0);
 }
 
+#[derive(XeruneTemplate)]
+#[template(source = r#"<div><span>text</span><div style="display: inline-flex"><div style="width: 20px; height: 5px"></div><div style="width: 30px; height: 5px"></div></div></div>"#)]
+struct InlineFlexModel;
+
+impl Model for InlineFlexModel {
+    type Message = MockMsg;
+    fn update(&mut self, _msg: Self::Message, _context: &mut Context) {}
+}
+
+#[test]
+fn inline_flex_sits_in_the_line_and_lays_out_a_row() {
+    let mut runtime = Runtime::new(InlineFlexModel, MockMeasurer);
+    crate::set_size(&mut runtime, 800.0, 600.0);
+    let ui = &runtime.ui;
+    let first = |n| ui.taffy.children(n).unwrap()[0];
+    let block = first(first(first(ui.root))); // html > body > div
+    let [span, flex] = ui.taffy.children(block).unwrap()[..] else { panic!() };
+    let (span, flex_box) = (ui.taffy.layout(span).unwrap(), ui.taffy.layout(flex).unwrap());
+    assert_eq!(flex_box.location.y, span.location.y, "same line as the text");
+    assert!(flex_box.location.x >= span.location.x + span.size.width);
+    assert_eq!(flex_box.size.width, 50.0, "shrink-wraps its row of items");
+    let second = ui.taffy.children(flex).unwrap()[1];
+    assert_eq!(ui.taffy.layout(second).unwrap().location.x, 20.0);
+}
+
 mod canvas {
     //! The canvas background: browsers paint `<html>`'s background (else
     //! `<body>`'s, else white) behind every frame.
