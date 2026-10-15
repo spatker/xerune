@@ -51,7 +51,7 @@ coarse-prof = { version = "0.2.6", optional = true }
 html5ever = { version = "0.36.1", optional = true }
 markup5ever = { version = "0.36.1", optional = true }
 markup5ever_rcdom = { version = "0.36.0", optional = true }
-taffy = { version = "0.9.2", default-features = false, features = ["alloc", "flexbox", "grid", "taffy_tree"] }
+taffy = { version = "0.9.2", default-features = false, features = ["alloc", "block_layout", "flexbox", "grid", "taffy_tree"] }
 csscolorparser = { version = "0.6.2", optional = true }
 log = "0.4"
 # No "regex": env_logger falls back to substring matching for RUST_LOG filters.

@@ -12,7 +12,7 @@
 # css/CSS2/cascade                       0    28     0%      4
 # css/CSS2/colors                        0    19     0%      0
 # css/CSS2/linebox                       0   182     0%      8
-# css/CSS2/margin-padding-clear          0   669     0%     13
+# css/CSS2/margin-padding-clear          1   668     0%     13
 # css/CSS2/normal-flow                   2   669     0%     75
 # css/CSS2/positioning                   0   486     0%     34
 # css/CSS2/selectors                     1   524     0%     20
@@ -29,18 +29,18 @@
 # css/css-color                          1   280     0%     25
 # css/css-conditional                   14   117    11%     34
 # css/css-display                        0    42     0%     38
-# css/css-flexbox                       30   753     4%    189
+# css/css-flexbox                       32   751     4%    189
 # css/css-images                        23   172    12%    201
-# css/css-overflow                      12   133     8%    278
+# css/css-overflow                      11   134     8%    278
 # css/css-position                       1    83     1%     66
-# css/css-sizing                         7   378     2%    146
+# css/css-sizing                         8   377     2%    146
 # css/css-text                          90   814    10%    213
 # css/css-ui                             8   118     6%     65
 # css/css-values                         6   146     4%     59
 # css/css-variables                      0   180     0%      2
 # css/mediaqueries                       0    47     0%     11
 # css/selectors                          4    86     4%    135
-# total                                245  8187     3%   1992
+# total                                248  8184     3%   1992
 FAIL css/CSS2/abspos/abspos-containing-block-initial-004a.xht
 FAIL css/CSS2/abspos/abspos-containing-block-initial-004b.xht
 FAIL css/CSS2/abspos/abspos-containing-block-initial-004c.xht
@@ -1236,7 +1236,6 @@ FAIL css/CSS2/margin-padding-clear/margin-applies-to-012.xht
 FAIL css/CSS2/margin-padding-clear/margin-applies-to-013.xht
 FAIL css/CSS2/margin-padding-clear/margin-applies-to-014.xht
 FAIL css/CSS2/margin-padding-clear/margin-applies-to-015.xht
-FAIL css/CSS2/margin-padding-clear/margin-auto-on-block-box.html
 FAIL css/CSS2/margin-padding-clear/margin-backgrounds-002.xht
 FAIL css/CSS2/margin-padding-clear/margin-backgrounds-003.xht
 FAIL css/CSS2/margin-padding-clear/margin-border-padding-001.xht
@@ -5336,6 +5335,7 @@ FAIL css/css-flexbox/abspos/flex-abspos-staticpos-margin-001.html
 FAIL css/css-flexbox/abspos/flex-abspos-staticpos-margin-002.html
 FAIL css/css-flexbox/abspos/flex-abspos-staticpos-margin-003.html
 FAIL css/css-flexbox/abspos/flexbox_absolute-atomic.html
+FAIL css/css-flexbox/abspos/flexbox_inline-abspos.html
 FAIL css/css-flexbox/abspos/position-absolute-006.html
 FAIL css/css-flexbox/abspos/position-absolute-007.html
 FAIL css/css-flexbox/abspos/position-absolute-008.html
@@ -5367,7 +5367,6 @@ FAIL css/css-flexbox/align-items-005.htm
 FAIL css/css-flexbox/align-items-006.html
 FAIL css/css-flexbox/align-items-007.html
 FAIL css/css-flexbox/align-items-009.html
-FAIL css/css-flexbox/align-items-baseline-overflow-non-visible.html
 FAIL css/css-flexbox/align-self-001.html
 FAIL css/css-flexbox/align-self-002.html
 FAIL css/css-flexbox/align-self-003.html
@@ -5511,7 +5510,6 @@ FAIL css/css-flexbox/flex-basis-012.html
 FAIL css/css-flexbox/flex-basis-item-margins-001.html
 FAIL css/css-flexbox/flex-box-wrap.html
 FAIL css/css-flexbox/flex-child-percent-basis-resize-1.html
-FAIL css/css-flexbox/flex-container-margin.html
 FAIL css/css-flexbox/flex-cross-size-border-box-001.html
 FAIL css/css-flexbox/flex-direction-column-reverse.html
 FAIL css/css-flexbox/flex-direction-column.html
@@ -5726,8 +5724,6 @@ FAIL css/css-flexbox/flexbox-safe-overflow-position-003.html
 FAIL css/css-flexbox/flexbox-safe-overflow-position-004.html
 FAIL css/css-flexbox/flexbox-safe-overflow-position-005.html
 FAIL css/css-flexbox/flexbox-safe-overflow-position-006.html
-FAIL css/css-flexbox/flexbox-single-line-clamp-1.html
-FAIL css/css-flexbox/flexbox-single-line-clamp-3.html
 FAIL css/css-flexbox/flexbox-sizing-horiz-002.xhtml
 FAIL css/css-flexbox/flexbox-sizing-vert-002.xhtml
 FAIL css/css-flexbox/flexbox-table-fixup-001.xhtml
@@ -5781,6 +5777,7 @@ FAIL css/css-flexbox/flexbox_align-self-center.html
 FAIL css/css-flexbox/flexbox_align-self-flexend.html
 FAIL css/css-flexbox/flexbox_align-self-flexstart.html
 FAIL css/css-flexbox/flexbox_align-self-stretch.html
+FAIL css/css-flexbox/flexbox_block.html
 FAIL css/css-flexbox/flexbox_box-clear.html
 FAIL css/css-flexbox/flexbox_columns-flexitems-2.html
 FAIL css/css-flexbox/flexbox_columns-flexitems.html
@@ -5879,6 +5876,7 @@ FAIL css/css-flexbox/flexbox_item-bottom-float.html
 FAIL css/css-flexbox/flexbox_item-clear.html
 FAIL css/css-flexbox/flexbox_item-float.html
 FAIL css/css-flexbox/flexbox_item-top-float.html
+FAIL css/css-flexbox/flexbox_item-vertical-align.html
 FAIL css/css-flexbox/flexbox_justifycontent-center.html
 FAIL css/css-flexbox/flexbox_justifycontent-end-rtl.html
 FAIL css/css-flexbox/flexbox_justifycontent-end.html
@@ -5913,7 +5911,6 @@ FAIL css/css-flexbox/flexbox_rtl-direction.html
 FAIL css/css-flexbox/flexbox_rtl-flow-reverse.html
 FAIL css/css-flexbox/flexbox_rtl-flow.html
 FAIL css/css-flexbox/flexbox_rtl-order.html
-FAIL css/css-flexbox/flexbox_stf-abspos.html
 FAIL css/css-flexbox/flexbox_stf-fixpos.html
 FAIL css/css-flexbox/flexbox_stf-table-caption.html
 FAIL css/css-flexbox/flexbox_stf-table-cell.html
@@ -6243,8 +6240,8 @@ FAIL css/css-images/tiled-gradients.html
 FAIL css/css-images/tiled-radial-gradients.html
 FAIL css/css-images/tools/template-object-fit-test.html
 FAIL css/css-images/tools/template-object-position-test.html
-FAIL css/css-overflow/abspos-shrink-to-fit-with-scrollable-descendant.html
 FAIL css/css-overflow/button-with-scrollable-descendant.html
+FAIL css/css-overflow/clip-001.html
 FAIL css/css-overflow/clip-002.html
 FAIL css/css-overflow/clip-003.html
 FAIL css/css-overflow/clip-004.html
@@ -6323,6 +6320,7 @@ FAIL css/css-overflow/overflow-body-propagation-008.html
 FAIL css/css-overflow/overflow-body-propagation-009.html
 FAIL css/css-overflow/overflow-body-propagation-010.html
 FAIL css/css-overflow/overflow-body-propagation-011.html
+FAIL css/css-overflow/overflow-body-propagation-012.html
 FAIL css/css-overflow/overflow-clip-content-visual-overflow.html
 FAIL css/css-overflow/overflow-clip-margin-001.html
 FAIL css/css-overflow/overflow-clip-margin-002.html
@@ -6790,7 +6788,6 @@ FAIL css/css-sizing/intrinsic-percent-non-replaced-004.html
 FAIL css/css-sizing/intrinsic-percent-non-replaced-005.html
 FAIL css/css-sizing/intrinsic-percent-non-replaced-007.html
 FAIL css/css-sizing/intrinsic-percent-non-replaced-008.html
-FAIL css/css-sizing/intrinsic-percent-replaced-009.html
 FAIL css/css-sizing/intrinsic-percent-replaced-015.html
 FAIL css/css-sizing/intrinsic-percent-replaced-016.html
 FAIL css/css-sizing/intrinsic-percent-replaced-017.html

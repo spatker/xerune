@@ -8,7 +8,7 @@ use super::node_map::NodeMap;
 use crate::alloc_prelude::*;
 
 #[cfg(feature = "dynamic-parser")]
-use crate::style::{Overflow, BoxSizing, Display, CssJustifyContent, TextAlign, Direction};
+use crate::style::{Overflow, BoxSizing, Display, CssJustifyContent, Direction};
 #[cfg(feature = "dynamic-parser")]
 use super::Interaction;
 #[cfg(feature = "dynamic-parser")]
@@ -364,9 +364,11 @@ pub(crate) fn dom_to_taffy(
                      children.push(id);
                  }
              }
-             let id = taffy.new_with_children(Style::default(), &children).ok()?;
+             // The initial containing block.
+             let style = Style { display: taffy::style::Display::Block, ..Style::default() };
+             let id = taffy.new_with_children(style.clone(), &children).ok()?;
              render_data.insert(id, RenderData::Container(current_style.clone()));
-             base_styles.insert(id, (Style::default(), current_style));
+             base_styles.insert(id, (style, current_style));
              node_to_handle.insert(id, handle.clone());
              Some(id)
         },
@@ -652,43 +654,7 @@ pub(crate) fn dom_to_taffy(
             if current_style.display == Display::None {
                 layout_style.display = taffy::style::Display::None;
             } else if current_style.display != Display::Flex {
-                let mut has_inline_child = false;
-                for child_id in &children {
-                    if let Some(child_data) = render_data.get(child_id) {
-                        match child_data {
-                            RenderData::Container(child_style) => {
-                                if child_style.display == Display::InlineBlock || child_style.is_floated {
-                                    has_inline_child = true;
-                                    break;
-                                }
-                            }
-                            _ => {
-                                has_inline_child = true;
-                                break;
-                            }
-                        }
-                    }
-                }
-
-                if has_inline_child || tag == "tr" {
-                    layout_style.flex_direction = FlexDirection::Row;
-                    layout_style.flex_wrap = FlexWrap::Wrap;
-                    if let Some(align) = current_style.text_align {
-                        match align {
-                            TextAlign::Right => layout_style.justify_content = Some(JustifyContent::FlexEnd),
-                            TextAlign::Center => layout_style.justify_content = Some(JustifyContent::Center),
-                            TextAlign::Left => layout_style.justify_content = Some(JustifyContent::FlexStart),
-                        }
-                    }
-                } else {
-                    layout_style.flex_direction = FlexDirection::Column;
-                }
-            }
-
-            if parent_style.display != Display::Flex && current_style.display == Display::Block {
-                if layout_style.size.width.is_auto() {
-                    layout_style.size.width = Dimension::percent(1.0);
-                }
+                super::style_resolution::apply_block_display(taffy, tag, &current_style, &mut layout_style, &children, render_data);
             }
 
             layout_style.border = taffy::geometry::Rect {

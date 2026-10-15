@@ -191,6 +191,50 @@ pub(crate) fn to_content_box(dim: taffy::style::Dimension, sub: f32) -> taffy::s
 }
 
 #[cfg(feature = "std")]
+/// Lays out a `block` or `inline-block` element. Taffy has block layout but no
+/// inline formatting context, so an element with inline-level children becomes
+/// a wrapping flex row that places each child like an atomic inline box; its
+/// block-level children take the full width so they start a line of their own.
+/// Everything else is a CSS block box (margin collapsing, auto widths).
+pub(crate) fn apply_block_display(
+    taffy: &mut TaffyTree,
+    tag: &str,
+    style: &ContainerStyle,
+    layout_style: &mut Style,
+    children: &[NodeId],
+    render_data: &NodeMap<RenderData>,
+) {
+    let is_inline = |child: &NodeId| match render_data.get(child) {
+        Some(RenderData::Container(s)) => s.display == Display::InlineBlock || s.is_floated,
+        Some(_) => true,
+        None => false,
+    };
+    if !children.iter().any(is_inline) && tag != "tr" {
+        layout_style.display = taffy::style::Display::Block;
+        return;
+    }
+    layout_style.display = taffy::style::Display::Flex;
+    layout_style.flex_direction = FlexDirection::Row;
+    layout_style.flex_wrap = FlexWrap::Wrap;
+    if let Some(align) = style.text_align {
+        layout_style.justify_content = Some(match align {
+            TextAlign::Right => JustifyContent::FlexEnd,
+            TextAlign::Center => JustifyContent::Center,
+            TextAlign::Left => JustifyContent::FlexStart,
+        });
+    }
+    for child in children {
+        if matches!(render_data.get(child), Some(RenderData::Container(s)) if s.display == Display::Block) {
+            if let Ok(mut child_style) = taffy.style(*child).cloned() {
+                if child_style.size.width.is_auto() {
+                    child_style.size.width = Dimension::percent(1.0);
+                    let _ = taffy.set_style(*child, child_style);
+                }
+            }
+        }
+    }
+}
+
 pub(crate) fn resolve_styles(
     taffy: &mut TaffyTree,
     node: NodeId,
@@ -629,44 +673,7 @@ pub(crate) fn resolve_styles(
     if current_style.display == Display::None {
         layout_style.display = taffy::style::Display::None;
     } else if current_style.display != Display::Flex {
-        let mut has_inline_child = false;
-        let chs = &meta.children;
-        for child_id in chs {
-            if let Some(child_data) = render_data.get(child_id) {
-                match child_data {
-                    RenderData::Container(child_style) => {
-                        if child_style.display == Display::InlineBlock || child_style.is_floated {
-                            has_inline_child = true;
-                            break;
-                        }
-                    }
-                    _ => {
-                        has_inline_child = true;
-                        break;
-                    }
-                }
-            }
-        }
-
-        if has_inline_child || tag == "tr" {
-            layout_style.flex_direction = FlexDirection::Row;
-            layout_style.flex_wrap = FlexWrap::Wrap;
-            if let Some(align) = current_style.text_align {
-                match align {
-                    TextAlign::Right => layout_style.justify_content = Some(JustifyContent::FlexEnd),
-                    TextAlign::Center => layout_style.justify_content = Some(JustifyContent::Center),
-                    TextAlign::Left => layout_style.justify_content = Some(JustifyContent::FlexStart),
-                }
-            }
-        } else {
-            layout_style.flex_direction = FlexDirection::Column;
-        }
-    }
-
-    if parent_style.display != Display::Flex && current_style.display == Display::Block {
-        if layout_style.size.width.is_auto() {
-            layout_style.size.width = Dimension::percent(1.0);
-        }
+        apply_block_display(taffy, tag, &current_style, &mut layout_style, &meta.children, render_data);
     }
 
     layout_style.border = taffy::geometry::Rect {
@@ -1013,45 +1020,8 @@ pub fn finalize_node_style(
     if current_style.display == Display::None {
         layout_style.display = taffy::style::Display::None;
     } else if current_style.display != Display::Flex {
-        let mut has_inline_child = false;
-        if let Ok(children) = taffy.children(node) {
-            for child_id in children {
-                if let Some(child_data) = render_data.get(&child_id) {
-                    match child_data {
-                        RenderData::Container(child_style) => {
-                            if child_style.display == Display::InlineBlock || child_style.is_floated {
-                                has_inline_child = true;
-                                break;
-                            }
-                        }
-                        _ => {
-                            has_inline_child = true;
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-
-        if has_inline_child || tag == "tr" {
-            layout_style.flex_direction = FlexDirection::Row;
-            layout_style.flex_wrap = FlexWrap::Wrap;
-            if let Some(align) = current_style.text_align {
-                match align {
-                    TextAlign::Right => layout_style.justify_content = Some(JustifyContent::FlexEnd),
-                    TextAlign::Center => layout_style.justify_content = Some(JustifyContent::Center),
-                    TextAlign::Left => layout_style.justify_content = Some(JustifyContent::FlexStart),
-                }
-            }
-        } else {
-            layout_style.flex_direction = FlexDirection::Column;
-        }
-    }
-
-    if parent_style.display != Display::Flex && current_style.display == Display::Block {
-        if layout_style.size.width.is_auto() {
-            layout_style.size.width = Dimension::percent(1.0);
-        }
+        let children = taffy.children(node).unwrap_or_default();
+        apply_block_display(taffy, tag, current_style, layout_style, &children, render_data);
     }
 
     layout_style.border = taffy::geometry::Rect {

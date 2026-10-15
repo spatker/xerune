@@ -627,13 +627,14 @@ impl Model for HtmlRootModel {
 #[test]
 fn test_html_root_fills_viewport_width() {
     // <html> is block-level: it, and the blocks inside it, take the full
-    // viewport width instead of shrink-wrapping their content.
+    // viewport width instead of shrink-wrapping their content (less body's
+    // 8px margins, as in a browser).
     let mut runtime = Runtime::new(HtmlRootModel, MockMeasurer);
     crate::set_size(&mut runtime, 800.0, 600.0);
     let html = runtime.ui.taffy.children(runtime.ui.root).unwrap()[0];
     let body = runtime.ui.taffy.children(html).unwrap()[0];
     assert_eq!(runtime.ui.taffy.layout(html).unwrap().size.width, 800.0);
-    assert_eq!(runtime.ui.taffy.layout(body).unwrap().size.width, 800.0);
+    assert_eq!(runtime.ui.taffy.layout(body).unwrap().size.width, 784.0);
 }
 
 mod canvas {

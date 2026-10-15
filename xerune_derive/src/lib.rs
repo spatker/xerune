@@ -2095,7 +2095,9 @@ fn expand_template(input: &DeriveInput, template: &TemplateRef) -> proc_macro2::
                 };
 
                 #keyframes_init
+                // The initial containing block: a block box the size of the viewport.
                 let parent_layout = ::xerune::taffy::style::Style {
+                    display: ::xerune::taffy::style::Display::Block,
                     size: ::xerune::taffy::geometry::Size {
                         width: ::xerune::taffy::style::Dimension::percent(1.0),
                         height: ::xerune::taffy::style::Dimension::percent(1.0),
