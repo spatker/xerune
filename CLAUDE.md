@@ -109,7 +109,7 @@ ARM target build (user's setup):
 
 ## Known weak spots
 
-- Text: inline elements (`<b>`, `<span>`) are separate flex items, not one inline formatting context (`known_gaps::text_flows_around_inline_elements`). No OpenType shaping: fontdue ignores GPOS kerning (`known_gaps::gpos_kerning_narrows_lines`), no complex scripts or bidi; `harfrust` is the planned shaper behind `TextMeasurer::shape`. Thai/Lao/Khmer/Myanmar break only at spaces.
+- Text: inline elements (`<b>`, `<span>`) are separate flex items, not one inline formatting context (`known_gaps::text_flows_around_inline_elements`). No OpenType shaping: fontdue ignores GPOS kerning (`known_gaps::gpos_kerning_narrows_lines`) and font features (`proportional-nums`; the calculator's right-aligned tabular digits shift as in Chromium), no complex scripts or bidi; `harfrust` is the planned shaper behind `TextMeasurer::shape`. Thai/Lao/Khmer/Myanmar break only at spaces.
 - `:first-child` / `+` selectors don't see through `{% for %}` / `{% if %}`.
 - Same-named templates in different `examples/*/templates` resolve in
   `read_dir` order.
