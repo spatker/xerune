@@ -46,6 +46,8 @@
     .key.page { width: 14%; flex-grow: 0; }
     .key.space { flex-grow: 1; font-size: 15px; color: #c3c8d4; }
     .key.arrow { font-size: 32px; }
+    /* The D-pad's key. */
+    .key.focus, .action.focus { box-shadow: inset 0px 0px 0px 3px #fbbf24; }
     .key:hover, .action:hover { background-color: #3a3f4b; }
     .key:active, .action:active { background-color: #4b5262; }
     .action.ok:hover { background-color: #3b82f6; }
@@ -74,42 +76,42 @@
         </div>
         <div class="actions">
             {% if password %}
-            <div class="action" data-on-click="kb:reveal">{% if revealed %}Hide{% else %}Show{% endif %}</div>
+            <div class="action {% if self.action_focused(0) %}focus{% endif %}" data-on-click="kb:reveal">{% if revealed %}Hide{% else %}Show{% endif %}</div>
             {% endif %}
-            <div class="action" data-on-click="kb:cancel">Cancel</div>
-            <div class="action ok {% if self.too_short() %}disabled{% endif %}" data-on-click="kb:ok">OK</div>
+            <div class="action {% if self.action_focused(1) %}focus{% endif %}" data-on-click="kb:cancel">Cancel</div>
+            <div class="action ok {% if self.too_short() %}disabled{% endif %} {% if self.action_focused(2) %}focus{% endif %}" data-on-click="kb:ok">OK</div>
         </div>
     </div>
 
     <div class="keys">
         <div class="row">
             {% for k in self.row(0) %}
-            <div class="key" data-on-click="kb:type:{{ k }}">{{ k }}</div>
+            <div class="key {% if self.focus_is(1, loop.index0) %}focus{% endif %}" data-on-click="kb:type:{{ k }}">{{ k }}</div>
             {% endfor %}
         </div>
         <div class="row">
             {% for k in self.row(1) %}
-            <div class="key" data-on-click="kb:type:{{ k }}">{{ k }}</div>
+            <div class="key {% if self.focus_is(2, loop.index0) %}focus{% endif %}" data-on-click="kb:type:{{ k }}">{{ k }}</div>
             {% endfor %}
         </div>
         <div class="row">
             {% if self.letters() %}
-            <div class="key fn {% if self.shift_on() %}on{% endif %} {% if self.shift_locked() %}locked{% endif %}" data-on-click="kb:shift">{% if self.shift_locked() %}Caps{% else %}Shift{% endif %}</div>
+            <div class="key fn {% if self.shift_on() %}on{% endif %} {% if self.shift_locked() %}locked{% endif %} {% if self.focus_is(3, 0) %}focus{% endif %}" data-on-click="kb:shift">{% if self.shift_locked() %}Caps{% else %}Shift{% endif %}</div>
             {% elif self.symbols() %}
-            <div class="key fn" data-on-click="kb:more_symbols">#+=</div>
+            <div class="key fn {% if self.focus_is(3, 0) %}focus{% endif %}" data-on-click="kb:more_symbols">#+=</div>
             {% else %}
-            <div class="key fn" data-on-click="kb:more_symbols">123</div>
+            <div class="key fn {% if self.focus_is(3, 0) %}focus{% endif %}" data-on-click="kb:more_symbols">123</div>
             {% endif %}
             {% for k in self.row(2) %}
-            <div class="key" data-on-click="kb:type:{{ k }}">{{ k }}</div>
+            <div class="key {% if self.focus_is(3, loop.index) %}focus{% endif %}" data-on-click="kb:type:{{ k }}">{{ k }}</div>
             {% endfor %}
-            <div class="key fn" data-on-click="kb:backspace">Del</div>
+            <div class="key fn {% if self.focus_is(3, self.row(2).len() + 1) %}focus{% endif %}" data-on-click="kb:backspace">Del</div>
         </div>
         <div class="row">
-            <div class="key fn page" data-on-click="kb:symbols">{% if self.letters() %}?123{% else %}ABC{% endif %}</div>
-            <div class="key arrow" data-on-click="kb:left">&lsaquo;</div>
-            <div class="key space" data-on-click="kb:space">space</div>
-            <div class="key arrow" data-on-click="kb:right">&rsaquo;</div>
+            <div class="key fn page {% if self.focus_is(4, 0) %}focus{% endif %}" data-on-click="kb:symbols">{% if self.letters() %}?123{% else %}ABC{% endif %}</div>
+            <div class="key arrow {% if self.focus_is(4, 1) %}focus{% endif %}" data-on-click="kb:left">&lsaquo;</div>
+            <div class="key space {% if self.focus_is(4, 2) %}focus{% endif %}" data-on-click="kb:space">space</div>
+            <div class="key arrow {% if self.focus_is(4, 3) %}focus{% endif %}" data-on-click="kb:right">&rsaquo;</div>
         </div>
     </div>
 </div>

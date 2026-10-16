@@ -542,8 +542,11 @@ together type all printable ASCII, a single line with a caret moved by the
 
 While it is open, input goes to the keyboard and not the model: taps press its
 keys, text from a hardware keyboard types into it, and other keys act by the
-runtime's `KeyMap`. By default Enter is OK, Escape Cancel, Backspace deletes
-and Left/Right move the caret, by the names of winit and the evdev backend. A
+runtime's `KeyMap`. The direction keys move a focus over the keys (up and down
+keep the column), Next/Prev (Tab, a remote's or the media keys' next and
+previous) go through them in reading order, and Activate (Enter) presses the
+focused key, or OK while nothing is focused yet. Escape cancels and Backspace
+deletes. The default map knows the names of winit and the evdev backend; a
 device with other buttons binds its own:
 
 ```rust

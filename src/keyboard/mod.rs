@@ -115,6 +115,11 @@ pub(crate) enum KeyboardMsg {
     Cancel,
 }
 
+/// The index of the key in `row` whose middle is nearest `x`.
+fn nearest(row: &[(KeyboardMsg, f32)], x: f32) -> usize {
+    (0..row.len()).min_by(|&a, &b| (row[a].1 - x).abs().total_cmp(&(row[b].1 - x).abs())).unwrap_or(0)
+}
+
 /// Whether `message` is one of the keyboard's (`kb:...`), which
 /// [`crate::Runtime::handle_messages`] sends to it while it is open.
 #[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm", feature = "browser")))]
@@ -135,6 +140,12 @@ pub(crate) struct Keyboard {
     max_len: Option<usize>,
     page: Page,
     shift: Shift,
+    /// The key the D-pad is on, as (row, index) in [`Self::focus_rows`];
+    /// none until a key moves it, and then Activate presses it.
+    focus: Option<(usize, usize)>,
+    /// Where across the keyboard moving up and down aims, so going through
+    /// a shorter row comes back to the same column.
+    column: Option<f32>,
 }
 
 impl Keyboard {
@@ -152,6 +163,8 @@ impl Keyboard {
             max_len: request.max_len,
             page: Page::Letters,
             shift: Shift::Off,
+            focus: None,
+            column: None,
         }
     }
 
@@ -204,17 +217,121 @@ impl Keyboard {
     }
 
     /// Handles a key of a hardware keyboard or the device's buttons, by
-    /// what the key map says it does.
+    /// what the key map says it does. The direction keys move the focus;
+    /// Activate presses the focused key, or OK before anything is focused
+    /// (Enter after typing on a hardware keyboard).
     pub(crate) fn key(&mut self, action: KeyAction) -> Option<Option<String>> {
-        let msg = match action {
-            KeyAction::Activate => KeyboardMsg::Ok,
-            KeyAction::Cancel => KeyboardMsg::Cancel,
-            KeyAction::Backspace => KeyboardMsg::Backspace,
-            KeyAction::Left => KeyboardMsg::Left,
-            KeyAction::Right => KeyboardMsg::Right,
-            KeyAction::Up | KeyAction::Down | KeyAction::Next | KeyAction::Prev => return None,
+        match action {
+            KeyAction::Activate => match self.focus() {
+                Some((row, index)) => {
+                    let (msg, x) = self.focus_rows().swap_remove(row).swap_remove(index);
+                    let result = self.press(msg);
+                    // The page or Show may have changed the row: stay over the same place.
+                    let rows = self.focus_rows();
+                    self.focus = Some((row, nearest(&rows[row], x)));
+                    result
+                }
+                None => self.press(KeyboardMsg::Ok),
+            },
+            KeyAction::Cancel => self.press(KeyboardMsg::Cancel),
+            KeyAction::Backspace => self.press(KeyboardMsg::Backspace),
+            KeyAction::Up | KeyAction::Down | KeyAction::Left | KeyAction::Right | KeyAction::Next | KeyAction::Prev => {
+                self.move_focus(action);
+                None
+            }
+        }
+    }
+
+    /// The focused key, kept within its row (a click may have changed
+    /// the page under it).
+    fn focus(&self) -> Option<(usize, usize)> {
+        let (row, index) = self.focus?;
+        let rows = self.focus_rows();
+        let row = row.min(rows.len() - 1);
+        Some((row, index.min(rows[row].len() - 1)))
+    }
+
+    /// Moves the focus: left and right around the row, up and down to the
+    /// key nearest the column, next and previous in reading order. The
+    /// first move only shows the focus, on Q.
+    fn move_focus(&mut self, action: KeyAction) {
+        let Some((mut row, mut index)) = self.focus() else {
+            self.focus = Some((1, 0));
+            return;
         };
-        self.press(msg)
+        let rows = self.focus_rows();
+        let len = rows[row].len();
+        match action {
+            KeyAction::Left => index = (index + len - 1) % len,
+            KeyAction::Right => index = (index + 1) % len,
+            KeyAction::Up | KeyAction::Down => {
+                let x = *self.column.get_or_insert(rows[row][index].1);
+                row = match action {
+                    KeyAction::Up => row.saturating_sub(1),
+                    _ => (row + 1).min(rows.len() - 1),
+                };
+                self.focus = Some((row, nearest(&rows[row], x)));
+                return;
+            }
+            KeyAction::Next if index + 1 < len => index += 1,
+            KeyAction::Next => (row, index) = ((row + 1) % rows.len(), 0),
+            KeyAction::Prev if index > 0 => index -= 1,
+            KeyAction::Prev => {
+                row = (row + rows.len() - 1) % rows.len();
+                index = rows[row].len() - 1;
+            }
+            _ => return,
+        }
+        self.column = None;
+        self.focus = Some((row, index));
+    }
+
+    /// The keys the focus moves over, by row as laid out (the buttons by
+    /// the text first), with their messages and where their middles are
+    /// across the keyboard, in key widths: the top letter row is 10 wide.
+    fn focus_rows(&self) -> Vec<Vec<(KeyboardMsg, f32)>> {
+        let mut actions = Vec::new();
+        if self.password {
+            actions.push(KeyboardMsg::Reveal);
+        }
+        actions.extend([KeyboardMsg::Cancel, KeyboardMsg::Ok]);
+        // To the right of the text in landscape, across under it in portrait.
+        let (width, height) = crate::screen::size();
+        let n = actions.len();
+        let actions = actions.into_iter().enumerate().map(|(i, msg)| {
+            let x = if height > width { 10.0 * (i as f32 + 0.5) / n as f32 } else { 10.0 - 1.4 * (n - i) as f32 + 0.7 };
+            (msg, x)
+        });
+        let centered = |keys: Vec<String>| {
+            let start = (10.0 - keys.len() as f32) / 2.0;
+            keys.into_iter().enumerate().map(move |(i, k)| (KeyboardMsg::Type(k), start + i as f32 + 0.5))
+        };
+        let third = self.row(2);
+        // The switch key and Del share what the keys leave.
+        let side = (10.0 - third.len() as f32) / 2.0;
+        let switch = if self.letters() { KeyboardMsg::Shift } else { KeyboardMsg::MoreSymbols };
+        let third = core::iter::once((switch, side / 2.0)).chain(centered(third)).chain([(KeyboardMsg::Backspace, 10.0 - side / 2.0)]);
+        vec![
+            actions.collect(),
+            centered(self.row(0)).collect(),
+            centered(self.row(1)).collect(),
+            third.collect(),
+            vec![(KeyboardMsg::Symbols, 0.75), (KeyboardMsg::Left, 2.0), (KeyboardMsg::Space, 5.75), (KeyboardMsg::Right, 9.5)],
+        ]
+    }
+
+    /// Whether the focus is on key `index` of `row` (of [`Self::focus_rows`]).
+    fn focus_is(&self, row: usize, index: usize) -> bool {
+        self.focus() == Some((row, index))
+    }
+
+    /// Whether the focus is on Show (0), Cancel (1) or OK (2).
+    fn action_focused(&self, action: usize) -> bool {
+        match (self.password, action) {
+            (false, 0) => false,
+            (false, action) => self.focus_is(0, action - 1),
+            (true, action) => self.focus_is(0, action),
+        }
     }
 
     /// Types text from a hardware keyboard.
@@ -328,6 +445,64 @@ mod tests {
         for c in ' '..='~' {
             assert!(typable.contains(&c), "{c:?} has no key");
         }
+    }
+
+    #[test]
+    fn d_pad_moves_over_the_keys_and_presses_them() {
+        use KeyAction::*;
+        crate::screen::set_viewport(800.0, 480.0);
+        let mut kb = keyboard(TextRequest::new("Name"));
+        // Before any move, Activate is OK.
+        kb.move_focus(Right);
+        assert_eq!(kb.focus(), Some((1, 0)), "the first move shows the focus on Q");
+        kb.key(Left);
+        assert_eq!(kb.focus(), Some((1, 9)), "around to P");
+        kb.key(Activate);
+        assert_eq!(kb.edit.text(), "p");
+        // Down from P: L (the row is shorter), then Del, then the right caret key.
+        kb.key(Down);
+        assert_eq!(kb.focus(), Some((2, 8)));
+        kb.key(Down);
+        assert_eq!(kb.focus(), Some((3, 8)));
+        kb.key(Activate);
+        assert_eq!(kb.edit.text(), "");
+        kb.key(Down);
+        assert_eq!(kb.focus(), Some((4, 3)));
+        // Back up keeps the column: Del, L, P, then OK.
+        kb.key(Up);
+        kb.key(Up);
+        kb.key(Up);
+        assert_eq!(kb.focus(), Some((1, 9)));
+        kb.key(Up);
+        assert!(kb.action_focused(2));
+        // Next and Prev go in reading order, around the end.
+        kb.key(Next);
+        assert_eq!(kb.focus(), Some((1, 0)));
+        kb.key(Prev);
+        kb.key(Prev);
+        assert!(kb.action_focused(1));
+        assert_eq!(kb.key(Activate), Some(None));
+    }
+
+    #[test]
+    fn focus_stays_in_place_when_the_page_changes() {
+        use KeyAction::*;
+        crate::screen::set_viewport(800.0, 480.0);
+        let mut kb = keyboard(TextRequest::new("Name"));
+        kb.key(Down);
+        kb.key(Down);
+        kb.key(Down);
+        kb.key(Down);
+        assert_eq!(kb.focus(), Some((4, 0)), "?123");
+        kb.key(Activate);
+        kb.key(Up);
+        kb.key(Activate);
+        assert_eq!(kb.focus(), Some((3, 0)));
+        assert_eq!(kb.page, Page::MoreSymbols);
+        // Del moves with the row's length.
+        kb.key(Left);
+        let (row, index) = kb.focus().unwrap();
+        assert!(matches!(kb.focus_rows()[row][index].0, KeyboardMsg::Backspace));
     }
 
     #[test]
