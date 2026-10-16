@@ -1059,300 +1059,58 @@ struct MediaRuleSet {
 }
 
 /// Splits stylesheet text into `(query, css)` regions; `query == None` marks
-/// top-level rules. Mirrors `xerune::css::media::split_segments` semantics
-/// (kept as a standalone copy because proc-macro crates cannot depend on
-/// the crate they generate code for). Nested `@media` blocks are flattened
-/// by AND-ing their queries.
+/// top-level rules. Nested `@media` blocks are flattened by AND-ing their
+/// queries.
 fn split_media_css(css: &str) -> Vec<(Option<String>, String)> {
-    fn find_matching_brace(s: &str, open: usize) -> Option<usize> {
-        let bytes = s.as_bytes();
-        let mut depth = 0usize;
-        let mut i = open;
-        while i < bytes.len() {
-            match bytes[i] {
-                b'{' => depth += 1,
-                b'}' => {
-                    depth -= 1;
-                    if depth == 0 {
-                        return Some(i);
+    use xerune_css::media::Segment;
+    let mut out = Vec::new();
+    for segment in xerune_css::media::split_segments(css) {
+        match segment {
+            Segment::Base(text) => out.push((None, text.to_string())),
+            Segment::Media { query, inner } => {
+                for (sub_query, sub_css) in split_media_css(inner) {
+                    match sub_query {
+                        None => out.push((Some(query.to_string()), sub_css)),
+                        Some(sq) => out.push((Some(format!("{} and {}", query, sq)), sub_css)),
                     }
                 }
-                _ => {}
             }
-            i += 1;
         }
-        None
-    }
-
-    fn is_media_at(s: &str, i: usize) -> bool {
-        let bytes = s.as_bytes();
-        const NAME: &[u8] = b"media";
-        if i + 1 + NAME.len() > bytes.len() {
-            return false;
-        }
-        if !bytes[i + 1..i + 1 + NAME.len()].eq_ignore_ascii_case(NAME) {
-            return false;
-        }
-        match bytes.get(i + 1 + NAME.len()) {
-            None => true,
-            Some(&c) => matches!(c, b' ' | b'\t' | b'\n' | b'\r' | b'{' | b'('),
-        }
-    }
-
-    let mut out = Vec::new();
-    let bytes = css.as_bytes();
-    let mut base_start = 0usize;
-    let mut i = 0usize;
-    while i < bytes.len() {
-        if bytes[i] == b'/' && i + 1 < bytes.len() && bytes[i + 1] == b'*' {
-            let end = css[i + 2..].find("*/").map(|e| i + 2 + e + 2).unwrap_or(bytes.len());
-            i = end;
-            continue;
-        }
-        if bytes[i] == b'@' && is_media_at(css, i) {
-            if i > base_start && !css[base_start..i].trim().is_empty() {
-                out.push((None, css[base_start..i].to_string()));
-            }
-            let open = match css[i..].find('{') {
-                Some(o) => i + o,
-                None => break,
-            };
-            let query = css[i + 6..open].trim().to_string();
-            let close = match find_matching_brace(css, open) {
-                Some(c) => c,
-                None => break,
-            };
-            for (sub_query, sub_css) in split_media_css(&css[open + 1..close]) {
-                match sub_query {
-                    None => out.push((Some(query.clone()), sub_css)),
-                    Some(sq) => out.push((Some(format!("{} and {}", query, sq)), sub_css)),
-                }
-            }
-            i = close + 1;
-            base_start = i;
-            continue;
-        }
-        i += 1;
-    }
-    if base_start < css.len() && !css[base_start..].trim().is_empty() {
-        out.push((None, css[base_start..].to_string()));
     }
     out
-}
-
-/// Compile-time representation mirroring `xerune::css::media::Feature`.
-enum MediaFeature {
-    MinWidth(f32),
-    MaxWidth(f32),
-    MinHeight(f32),
-    MaxHeight(f32),
-    Landscape,
-    Portrait,
-}
-
-impl MediaFeature {
-    fn tokens(&self) -> proc_macro2::TokenStream {
-        match self {
-            MediaFeature::MinWidth(v) => quote! { ::xerune::__private::Feature::MinWidth(#v) },
-            MediaFeature::MaxWidth(v) => quote! { ::xerune::__private::Feature::MaxWidth(#v) },
-            MediaFeature::MinHeight(v) => quote! { ::xerune::__private::Feature::MinHeight(#v) },
-            MediaFeature::MaxHeight(v) => quote! { ::xerune::__private::Feature::MaxHeight(#v) },
-            MediaFeature::Landscape => quote! { ::xerune::__private::Feature::Landscape },
-            MediaFeature::Portrait => quote! { ::xerune::__private::Feature::Portrait },
-        }
-    }
-}
-
-fn parse_media_value(val: &str) -> Option<f32> {
-    if let Some(stripped) = val.strip_suffix("px") {
-        stripped.trim().parse::<f32>().ok()
-    } else if val.ends_with('%') || val.ends_with("em") || val.ends_with("rem") {
-        None
-    } else {
-        val.parse::<f32>().ok()
-    }
-}
-
-fn parse_media_feature(inner: &str) -> Option<MediaFeature> {
-    let (name, value) = inner.split_once(':')?;
-    let name = name.trim().to_ascii_lowercase();
-    let value = value.trim();
-    match name.as_str() {
-        "orientation" => match value.to_ascii_lowercase().as_str() {
-            "landscape" => Some(MediaFeature::Landscape),
-            "portrait" => Some(MediaFeature::Portrait),
-            _ => None,
-        },
-        "min-width" | "device-min-width" => Some(MediaFeature::MinWidth(parse_media_value(value)?)),
-        "max-width" | "device-max-width" => Some(MediaFeature::MaxWidth(parse_media_value(value)?)),
-        "min-height" | "device-min-height" => Some(MediaFeature::MinHeight(parse_media_value(value)?)),
-        "max-height" | "device-max-height" => Some(MediaFeature::MaxHeight(parse_media_value(value)?)),
-        _ => None,
-    }
 }
 
 /// Result of compiling an `@media` query text to a runtime guard.
 enum MediaGuard {
     /// Query always matches (`all`, `screen`, or empty) — no guard emitted.
     Always,
-    /// Query can never match (malformed, unsupported feature, `print`).
-    Never,
-    /// Positive query compiled to a `matches_query` call.
+    /// Query can match: a `matches_query` call.
     Guard(proc_macro2::TokenStream),
 }
 
-/// Compiles an `@media` query text into a runtime guard expression that
-/// evaluates against `xerune::screen`'s global viewport at build time.
-/// Grammar mirrors `xerune::css::media::parse_query`.
-fn compile_media_guard(query: &str) -> MediaGuard {
-    let text = query.trim();
-    if text.is_empty() {
-        return MediaGuard::Always;
+/// Compiles an `@media` query into a guard evaluated against
+/// `xerune::screen`'s viewport when the view is built, and whether part of
+/// it can never match (an unknown feature or bad syntax).
+fn compile_media_guard(text: &str) -> (MediaGuard, bool) {
+    use xerune_css::media::Feature;
+    let query = xerune_css::media::parse_query(text);
+    // A part with only a media type matches every viewport.
+    if query.groups.iter().any(|g| !g.negated && g.features.is_empty()) {
+        return (MediaGuard::Always, query.unsupported);
     }
-
-    let mut group_tokens = Vec::new();
-    let mut any_effective = false;
-
-    for part in split_comma_top_level(text) {
-        let part = part.trim().to_string();
-        if part.is_empty() {
-            continue;
-        }
-
-        // `not` prefix.
-        let (negated, body) = match part.strip_prefix("not") {
-            Some(rest) if rest.starts_with(' ') || rest.starts_with('(') || rest.starts_with('\t') => (true, rest.trim_start()),
-            _ => (false, part.as_str()),
-        };
-
-        let mut features: Vec<MediaFeature> = Vec::new();
-        let mut unsatisfiable = false;
-
-        for cond in split_and_top_level(body) {
-            let cond = cond.trim().to_string();
-            if cond.is_empty() {
-                unsatisfiable = true;
-                break;
-            }
-            if cond.starts_with('(') && cond.ends_with(')') {
-                match parse_media_feature(&cond[1..cond.len() - 1]) {
-                    Some(f) => features.push(f),
-                    None => {
-                        // Unknown feature per spec: never matches.
-                        unsatisfiable = true;
-                        break;
-                    }
-                }
-            } else {
-                let lower = cond.to_ascii_lowercase();
-                match lower.as_str() {
-                    "all" | "screen" => {}
-                    "print" => {
-                        unsatisfiable = true;
-                        break;
-                    }
-                    _ => {
-                        unsatisfiable = true;
-                        break;
-                    }
-                }
-            }
-        }
-
-        if unsatisfiable {
-            // Emit an impossible group; other comma-groups may still match.
-            group_tokens.push(quote! {
-                ::xerune::__private::FeatureGroup { negated: false, features: &[::xerune::__private::Feature::MinWidth(f32::INFINITY)] }
-            });
-            any_effective = true;
-            continue;
-        }
-
-        if negated {
-            // Negation of a positive feature set: express via matches_query on
-            // the complement is not directly representable with OR-of-ANDs.
-            // Only support the single common form `not (feature)` by emitting
-            // a negated group token.
-            let feats = features.iter().map(|f| f.tokens());
-            group_tokens.push(quote! {
-                ::xerune::__private::FeatureGroup { negated: true, features: &[#(#feats),*] }
-            });
-            any_effective = true;
-            continue;
-        }
-
-        if features.is_empty() {
-            // Media-type-only group: always matches, so the whole query is
-            // unguarded regardless of the other groups.
-            return MediaGuard::Always;
-        }
-
-        let feats = features.iter().map(|f| f.tokens());
-        group_tokens.push(quote! {
-            ::xerune::__private::FeatureGroup { negated: false, features: &[#(#feats),*] }
+    let groups = query.groups.iter().map(|group| {
+        let negated = group.negated;
+        let features = group.features.iter().map(|f| match *f {
+            Feature::MinWidth(v) => quote! { ::xerune::__private::Feature::MinWidth(#v) },
+            Feature::MaxWidth(v) => quote! { ::xerune::__private::Feature::MaxWidth(#v) },
+            Feature::MinHeight(v) => quote! { ::xerune::__private::Feature::MinHeight(#v) },
+            Feature::MaxHeight(v) => quote! { ::xerune::__private::Feature::MaxHeight(#v) },
+            Feature::Landscape => quote! { ::xerune::__private::Feature::Landscape },
+            Feature::Portrait => quote! { ::xerune::__private::Feature::Portrait },
         });
-        any_effective = true;
-    }
-
-    if !any_effective {
-        return MediaGuard::Never;
-    }
-
-    MediaGuard::Guard(quote! {
-        ::xerune::__private::matches_query(&[#(#group_tokens),*])
-    })
-}
-
-/// Splits on commas outside parentheses.
-fn split_comma_top_level(s: &str) -> Vec<&str> {
-    let mut out = Vec::new();
-    let mut depth = 0usize;
-    let mut start = 0;
-    for (i, c) in s.char_indices() {
-        match c {
-            '(' => depth += 1,
-            ')' => depth = depth.saturating_sub(1),
-            ',' if depth == 0 => {
-                out.push(&s[start..i]);
-                start = i + 1;
-            }
-            _ => {}
-        }
-    }
-    out.push(&s[start..]);
-    out
-}
-
-/// Splits on top-level ` and ` (case-insensitive, whitespace-delimited).
-fn split_and_top_level(s: &str) -> Vec<&str> {
-    let bytes = s.as_bytes();
-    let mut parts = Vec::new();
-    let mut depth = 0usize;
-    let mut start = 0;
-    let mut i = 0;
-    while i < bytes.len() {
-        match bytes[i] {
-            b'(' => depth += 1,
-            b')' => depth = depth.saturating_sub(1),
-            b'a' | b'A' if depth == 0 => {
-                if i + 4 <= bytes.len()
-                    && bytes[i..i + 4].eq_ignore_ascii_case(b"and ")
-                    && (i == 0 || matches!(bytes[i - 1], b' ' | b'\t' | b'\n' | b'\r'))
-                {
-                    parts.push(&s[start..i]);
-                    i += 4;
-                    start = i;
-                    continue;
-                }
-                i += 1;
-                continue;
-            }
-            _ => {}
-        }
-        i += 1;
-    }
-    parts.push(&s[start..]);
-    parts
+        quote! { ::xerune::__private::FeatureGroup { negated: #negated, features: &[#(#features),*] } }
+    });
+    (MediaGuard::Guard(quote! { ::xerune::__private::matches_query(&[#(#groups),*]) }), query.unsupported)
 }
 
 fn compile_dom_node<'a>(
@@ -2030,14 +1788,16 @@ fn expand_template(input: &DeriveInput, template: &TemplateRef) -> proc_macro2::
         let sheet = simplecss::StyleSheet::parse(sheet_text);
         let guard = match query {
             None => None,
-            Some(q) => match compile_media_guard(q) {
-                MediaGuard::Always => None,
-                MediaGuard::Never => {
-                    eprintln!("xerune: @media query '{}' uses unsupported/unknown features; its rules will never apply", q);
-                    Some(quote! { false })
+            Some(q) => {
+                let (guard, unsupported) = compile_media_guard(q);
+                if unsupported {
+                    eprintln!("xerune: @media query '{}' uses unsupported/unknown features; those parts never apply", q);
                 }
-                MediaGuard::Guard(t) => Some(t),
-            },
+                match guard {
+                    MediaGuard::Always => None,
+                    MediaGuard::Guard(t) => Some(t),
+                }
+            }
         };
         rulesets.push(MediaRuleSet { sheet, guard });
     }

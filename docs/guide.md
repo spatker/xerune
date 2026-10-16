@@ -274,7 +274,7 @@ A single template adapts to any screen size using standard CSS building blocks, 
 
 ### Media Queries
 
-`@media` blocks are resolved against the current viewport every time the UI tree is built. Supported features: `min-width`, `max-width`, `min-height`, `max-height` (and `device-*` aliases), `orientation: portrait|landscape`. Media types `all`/`screen` pass, `print` never matches, `not (feature)` is supported. Unknown features never match (CSS spec behavior).
+`@media` blocks are resolved against the current viewport every time the UI tree is built. Supported features: `min-width`, `max-width`, `min-height`, `max-height` (and `device-*` aliases), `orientation: portrait|landscape`. Media types `all`/`screen` pass, other types (`print`) never match, `not` negates. As in CSS, a comma-separated part with an unknown feature or bad syntax never matches while the other parts still apply, and an empty query matches. Templates and runtime stylesheets read queries the same way.
 
 ```css
 .card { width: 46%; }

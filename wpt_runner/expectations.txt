@@ -27,7 +27,7 @@
 # css/css-box                            0     0     2     0%     65
 # css/css-cascade                        7     5    24    23%     19
 # css/css-color                         45    44   236    16%     25
-# css/css-conditional                   15     1   116    11%     34
+# css/css-conditional                   16     2   115    12%     34
 # css/css-display                        3     3    39     7%     38
 # css/css-flexbox                      263   222   520    34%    189
 # css/css-images                        27     4   170    14%    199
@@ -40,7 +40,7 @@
 # css/css-variables                     15    15   165     8%      2
 # css/mediaqueries                       0     0    47     0%     11
 # css/selectors                         12     8    78    13%    135
-# total                               1139   875  7306    13%   1979
+# total                               1140   876  7305    13%   1979
 FAIL css/CSS2/abspos/abspos-containing-block-initial-004a.xht
 FAIL css/CSS2/abspos/abspos-containing-block-initial-004b.xht
 FAIL css/CSS2/abspos/abspos-containing-block-initial-004c.xht
@@ -4644,7 +4644,6 @@ FAIL css/css-conditional/at-media-003.html
 FAIL css/css-conditional/at-media-content-001.html
 FAIL css/css-conditional/at-media-content-002.html
 FAIL css/css-conditional/at-media-content-004.html
-FAIL css/css-conditional/at-media-whitespace-optional-001.html
 FAIL css/css-conditional/at-supports-001.html
 FAIL css/css-conditional/at-supports-002.html
 FAIL css/css-conditional/at-supports-003.html
