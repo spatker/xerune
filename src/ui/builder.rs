@@ -289,7 +289,6 @@ impl UiBuilder {
     /// Resolves `el`'s final style after its children have been appended.
     #[inline(never)]
     pub fn finish_element(&mut self, mut el: ElementStyle, node: NodeId, parent_style: &crate::style::ContainerStyle) {
-        super::pseudo::generate(node, el.parsed.element_type, &el.style, &mut self.taffy, &mut self.render_data, &mut self.interactions, &mut self.base_styles);
         super::style_resolution::finalize_node_style(
             node,
             el.tag,

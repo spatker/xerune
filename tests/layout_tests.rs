@@ -745,6 +745,33 @@ fn z_index_orders_painting_and_hit_testing() {
     assert_eq!(message, Some(&MockMsg::Tick), "the topmost box gets the click: {interaction:?}");
 }
 
+#[derive(XeruneTemplate)]
+#[template(source = r#"<div style="display: flex">
+  <div style="order: 2; width: 10px; height: 10px; background: #ff0000"></div>
+  <div style="order: 3; width: 10px; height: 10px; background: #00ff00"></div>
+  <div style="order: 1; width: 10px; height: 10px; background: #0000ff"></div>
+</div>"#)]
+struct FlexOrderModel;
+
+impl Model for FlexOrderModel {
+    type Message = MockMsg;
+    fn update(&mut self, _msg: Self::Message, _context: &mut Context) {}
+}
+
+/// Compiled templates place flex items in `order` too.
+#[test]
+fn templates_place_flex_items_in_order() {
+    let mut runtime = Runtime::new(FlexOrderModel, MockMeasurer);
+    crate::set_size(&mut runtime, 800.0, 600.0);
+    let mut boxes: Vec<_> = runtime.ui.build_commands(&std::collections::HashMap::new(), None).iter().filter_map(|c| match c {
+        DrawCommand::DrawRect { color: Some(c), rect, .. } if rect.width == 10.0 => Some((rect.x, (c.r, c.g, c.b))),
+        _ => None,
+    }).collect();
+    boxes.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let colors: Vec<_> = boxes.iter().map(|b| b.1).collect();
+    assert_eq!(colors, [(0, 0, 255), (255, 0, 0), (0, 255, 0)]);
+}
+
 mod canvas {
     //! The canvas background: browsers paint `<html>`'s background (else
     //! `<body>`'s, else white) behind every frame.
