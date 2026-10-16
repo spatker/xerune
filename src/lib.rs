@@ -65,6 +65,7 @@ pub mod text;
 pub mod screen;
 pub mod keys;
 pub mod keyboard;
+pub mod i18n;
 /// Default styles for standard HTML element tags. Internal.
 #[doc(hidden)]
 pub mod defaults;
