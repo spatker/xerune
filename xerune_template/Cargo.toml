@@ -10,8 +10,13 @@ keywords = ["html", "template", "embedded", "xerune"]
 categories = ["embedded", "template-engine"]
 rust-version = "1.85"
 
+[features]
+# Run templates without compiling them (`render_html`), for the studio.
+interpret = ["dep:serde"]
+
 [dependencies]
 askama_parser = "0.14.0"
 html5ever = "0.36.1"
 markup5ever = "0.36.1"
 markup5ever_rcdom = "0.36.0"
+serde = { version = "1.0", optional = true }

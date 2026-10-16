@@ -1408,6 +1408,7 @@ fn expand_template(input: &DeriveInput, template: &TemplateRef) -> proc_macro2::
     let (uses_hover, uses_active) = (uses(xerune_css::selector::State::Hover), uses(xerune_css::selector::State::Active));
     let body_compilation = compile_node(&tpl, Template::ROOT, &rules, &mut local_vars);
 
+    let method_table = method_table(name, &tpl);
     let expanded = quote! {
         #(#dummy_includes)*
 
@@ -1473,9 +1474,116 @@ fn expand_template(input: &DeriveInput, template: &TemplateRef) -> proc_macro2::
                 parent
             }
         }
+
+        #method_table
     };
 
     expanded
+}
+
+/// The model's methods the template calls, by `Expr::method_key`, with
+/// their number of arguments.
+fn template_methods(tpl: &Template) -> Vec<(String, usize)> {
+    fn expr(e: &Expr, locals: &[String], out: &mut Vec<(String, usize)>) {
+        let mut sub = |e: &Expr| expr(e, locals, out);
+        match e {
+            Expr::Call(callee, args) => {
+                if let Some(key) = Expr::method_key(callee, &|name| locals.iter().any(|l| l == name)) {
+                    if !out.iter().any(|(k, _)| *k == key) {
+                        out.push((key, args.len()));
+                    }
+                }
+                expr(callee, locals, out);
+                args.iter().for_each(|a| expr(a, locals, out));
+            }
+            Expr::Array(items) | Expr::Tuple(items) | Expr::Format(items) => items.iter().for_each(sub),
+            Expr::Attr(obj, _) | Expr::Unary(_, obj) | Expr::Group(obj) => sub(obj),
+            Expr::Index(a, b) | Expr::Binary(_, a, b) => {
+                sub(a);
+                sub(b);
+            }
+            Expr::Range(_, a, b) => a.iter().chain(b).for_each(|e| sub(e)),
+            Expr::Bool(_) | Expr::Num(_) | Expr::Str(_) | Expr::Char(_) | Expr::Var(_) | Expr::Path(_) => {}
+        }
+    }
+    fn bound(cond: &Option<Cond>, locals: &[String]) -> Vec<String> {
+        let mut locals = locals.to_vec();
+        if let Some(pattern) = cond.as_ref().and_then(|c| c.pattern.as_ref()) {
+            pattern.names(&mut locals);
+        }
+        locals
+    }
+    fn attr_values(parts: &[AttrPart], locals: &[String], out: &mut Vec<(String, usize)>) {
+        for part in parts {
+            match part {
+                AttrPart::Lit(_) => {}
+                AttrPart::Expr(e) => expr(e, locals, out),
+                AttrPart::If(branches) => {
+                    for branch in branches {
+                        if let Some(cond) = &branch.cond {
+                            expr(&cond.expr, locals, out);
+                        }
+                        attr_values(&branch.parts, &bound(&branch.cond, locals), out);
+                    }
+                }
+            }
+        }
+    }
+    fn node(tpl: &Template, id: NodeId, locals: &[String], out: &mut Vec<(String, usize)>) {
+        let mut locals = locals.to_vec();
+        match &tpl.node(id).kind {
+            Kind::Expr(e) => expr(e, &locals, out),
+            Kind::For(pattern, iter) => {
+                expr(iter, &locals, out);
+                pattern.names(&mut locals);
+                locals.push("loop".to_string());
+            }
+            Kind::Branch(cond) => {
+                if let Some(cond) = cond {
+                    expr(&cond.expr, &locals, out);
+                }
+                locals = bound(cond, &locals);
+            }
+            Kind::Element { attrs, .. } => {
+                for attr in attrs {
+                    attr_values(&attr_parts(attr), &locals, out);
+                }
+            }
+            _ => {}
+        }
+        for &child in tpl.children(id) {
+            node(tpl, child, &locals, out);
+        }
+    }
+    let mut out = Vec::new();
+    node(tpl, Template::ROOT, &[], &mut out);
+    out
+}
+
+/// The studio's table of the model's methods the template calls
+/// (`xerune_template::Methods`), when xerune's `interpret` feature is on.
+fn method_table(name: &syn::Ident, tpl: &Template) -> proc_macro2::TokenStream {
+    let arms = template_methods(tpl).into_iter().map(|(key, arity)| {
+        let call: proc_macro2::TokenStream = format!("self.{key}").parse().unwrap();
+        let args = (0..arity).map(|i| quote! { ::xerune::__private::FromValue::from_value(arg(#i)?)? });
+        quote! {
+            #key => Some((|| ::xerune::__private::to_value(&#call(#(#args),*)))()),
+        }
+    });
+    quote! {
+        ::xerune::__private::if_interpret! {
+            impl ::xerune::__private::TemplateMethods for #name {
+                #[allow(unused_variables)]
+                fn call(&self, key: &str, args: &[::xerune::__private::Value]) -> Option<Result<::xerune::__private::Value, String>> {
+                    let arg = |i: usize| args.get(i).ok_or_else(|| format!("`{key}` needs more arguments"));
+                    match key {
+                        #(#arms)*
+                        _ => None,
+                    }
+                }
+            }
+        }
+    }
 }
 
 /// The hidden constructor `#[derive(XeruneMessage)]` generates for a message

@@ -21,6 +21,8 @@ jobs:
       - run: cargo test --workspace --exclude xerune_studio
       # The embedded event loop's tests only build with these backends.
       - run: cargo test --lib --features drm,linuxfb,evdev
+      # The studio's template interpreter against the compiled templates.
+      - run: cargo test --features interpret --test interpret_tests
       - run: cargo build --examples
 
   arm:

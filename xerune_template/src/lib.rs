@@ -9,13 +9,23 @@
 //! recompiling, so the two can't disagree about the language.
 
 mod expr;
+#[cfg(feature = "interpret")]
+mod format;
+#[cfg(feature = "interpret")]
+mod interpret;
 mod lower;
 mod source;
 mod tree;
+#[cfg(feature = "interpret")]
+mod value;
 
 pub use expr::{BinOp, Cond, Expr, Pattern, RangeOp, UnaryOp};
 pub use source::{Error, File, Loader};
 pub use tree::{Attr, AttrBranch, AttrPart, Kind, Node, NodeId, Template, is_dynamic};
+#[cfg(feature = "interpret")]
+pub use interpret::{Methods, render_html};
+#[cfg(feature = "interpret")]
+pub use value::{FloatType, FromValue, IntType, Value, to_value};
 
 use source::Ctx;
 

@@ -256,3 +256,28 @@ impl fmt::Display for Cond {
         }
     }
 }
+
+impl Expr {
+    /// For a call of the model's method, `self.a.b.m(..)` (or `a.b.m(..)`,
+    /// `m(..)`): `"a.b.m"`, the name the derive gives it in the studio's
+    /// method table (see `Methods` with the `interpret` feature).
+    /// `None` for other callees, like a method of a loop variable.
+    pub fn method_key(callee: &Expr, is_local: &dyn Fn(&str) -> bool) -> Option<String> {
+        fn path(expr: &Expr, is_local: &dyn Fn(&str) -> bool, out: &mut Vec<String>) -> bool {
+            match expr {
+                Expr::Var(name) if name == "self" => true,
+                Expr::Var(name) if !is_local(name) => {
+                    out.push(name.clone());
+                    true
+                }
+                Expr::Attr(obj, name) if path(obj, is_local, out) => {
+                    out.push(name.clone());
+                    true
+                }
+                _ => false,
+            }
+        }
+        let mut parts = Vec::new();
+        (path(callee, is_local, &mut parts) && !parts.is_empty()).then(|| parts.join("."))
+    }
+}

@@ -164,6 +164,7 @@ impl BreakoutModel {
     }
 }
 
+#[derive(Serialize)]
 pub struct Life {
     pub left: bool,
 }

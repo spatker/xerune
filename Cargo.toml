@@ -43,7 +43,9 @@ drm = ["dep:drm", "dep:drm-fourcc", "dep:libc", "std"]
 linuxfb = ["dep:linuxfb", "dep:libc", "std"]
 evdev = ["dep:evdev", "dep:libc", "std"]
 winit = ["dep:winit", "dep:softbuffer", "std"]
-browser = ["dep:wasm-bindgen", "dep:serde", "dep:serde_json", "std"]
+browser = ["dep:wasm-bindgen", "dep:serde", "dep:serde_json", "std", "interpret"]
+# Run templates without compiling them, for the studio's live preview.
+interpret = ["std", "dep:serde", "dep:xerune_template"]
 # Embed the ~10 MB NotoColorEmoji font in the examples for color emoji.
 emoji = []
 
@@ -51,6 +53,7 @@ emoji = []
 # Exact: generated code uses `xerune::__private`, which changes with the macro.
 xerune_derive = { version = "=0.1.0", path = "xerune_derive" }
 xerune_css = { version = "=0.1.0", path = "xerune_css" }
+xerune_template = { version = "=0.1.0", path = "xerune_template", features = ["interpret"], optional = true }
 wasm-bindgen = { version = "0.2", optional = true }
 serde = { version = "1.0", features = ["derive"], optional = true }
 serde_json = { version = "1.0", optional = true }
@@ -94,6 +97,7 @@ xerune_render = { path = "xerune_render", features = ["profile"] }
 
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+xerune_template = { path = "xerune_template", features = ["interpret"] }
 # For the embedded backend in examples
 linuxfb = "0.2"
 drm = "0.12"
@@ -115,3 +119,7 @@ strip = true
 # full debug info for this workspace's own crates; backtraces still work.
 [profile.dev.package."*"]
 debug = false
+
+[[test]]
+name = "interpret_tests"
+required-features = ["interpret"]
