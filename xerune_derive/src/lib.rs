@@ -970,9 +970,9 @@ fn compile_node(
                     dynamic_vars.push(quote! {
                         let #var_name: String = #val_tokens;
                     });
-                    dynamic_attrs.push(quote! { (std::borrow::Cow::Borrowed(#key), std::borrow::Cow::Owned(#var_name)) });
+                    dynamic_attrs.push(quote! { (::xerune::__private::Cow::Borrowed(#key), ::xerune::__private::Cow::Owned(#var_name)) });
                 } else {
-                    static_attrs.push(quote! { (std::borrow::Cow::Borrowed(#key), std::borrow::Cow::Borrowed(#val)) });
+                    static_attrs.push(quote! { (::xerune::__private::Cow::Borrowed(#key), ::xerune::__private::Cow::Borrowed(#val)) });
                 }
             }
 
@@ -1016,7 +1016,7 @@ fn compile_node(
                 let __pointer = builder.pointer_level(__key, __parent_pointer);
                 let (el, node) = {
                     #(#dynamic_vars)*
-                    let attrs_slice: &[(std::borrow::Cow<'static, str>, std::borrow::Cow<'_, str>)] = &[
+                    let attrs_slice: &[(::xerune::__private::Cow<'static, str>, ::xerune::__private::Cow<'_, str>)] = &[
                         #(#static_attrs,)*
                         #(#dynamic_attrs),*
                     ];

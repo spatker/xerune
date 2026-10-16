@@ -118,6 +118,7 @@ macro_rules! __if_interpret {
 /// the exact version of `xerune`.
 #[doc(hidden)]
 pub mod __private {
+    pub use crate::alloc_prelude::Cow;
     pub use crate::css::media::{matches_query, Feature, FeatureGroup};
     pub use crate::css::parse_keyframes;
     pub use crate::style::{ContainerStyle, ControlPart};
