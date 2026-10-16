@@ -106,8 +106,62 @@ Templates are parsed with [Askama](https://askama.readthedocs.io/)'s parser, so 
 | Comments | `{# … #}` | |
 
 Operators are Rust's: `&&`, `||`, `!`, `==`, `!=`, `<`, … (**not** `and` / `or` / `not`).
+Constructs outside this table are listed below, with what to write instead.
 
-Not supported: other filters (`upper`, `safe`, …), `{% match %}`, `{% let %}` / `{% set %}`, `{% macro %}`, `{% block %}` / `{% extends %}`, `{% for … if cond %}`, and `{% else %}` inside `{% for %}`.
+#### How it differs from Jinja, and why
+
+The tags look like Jinja's, but a template is not interpreted at run time:
+`#[derive(XeruneTemplate)]` turns it into Rust code (`build_ui`) that is
+compiled with your model. That is the reason for every difference below.
+On the device there is no template parser, no expression evaluator and no
+reflection over the model, so they cost no code size, no startup time and no
+per-frame work; and a typo in a field name, a comparison between a number
+and a string, or a message argument of the wrong type is a compile error
+instead of a blank label on a board in the field.
+
+Most differences are inherited from [Askama](https://askama.readthedocs.io/)
+(Rust expressions in Jinja tags), whose parser xerune uses:
+
+| Jinja | xerune | Why |
+|---|---|---|
+| `{% if a and not b %}` | `{% if a && !b %}` | Expressions are Rust expressions, compiled as written. |
+| `{% if items %}` (truthiness) | `{% if !items.is_empty() %}` | A condition must be a `bool` (or `&bool`). Rust has no truthiness, and an implicit one would hide bugs like testing a count instead of a flag. |
+| `{% if cover %}…{{ cover }}` (`None` is falsy) | `{% if let Some(c) = cover %}…{{ c }}` | Absent values are `Option`s; the pattern binds the value only where it exists. |
+| undefined variable → empty string, `is defined` | compile error | Every name is a model field, a loop variable or an `if let` binding, checked by rustc. |
+| `{{ items\|length }}`, `{{ name\|upper }}` | `{{ items.len() }}`, `{{ self.title_upper() }}` | Values are Rust values with Rust methods. Formatting logic lives in model methods, which are ordinary, unit-testable Rust. |
+| `{{ "%.1f"\|format(v) }}` | `{{ "{:.1}"\|format(v) }}` | `format` is Rust's `format!`, checked at compile time. |
+| `'text'` | `"text"` | `'x'` is a `char`, as in Rust. |
+| `x['key']`, dicts | fields, `xs[i]`, `(k, v)` tuples | Model data is typed structs, not dictionaries. |
+| `a ~ b` | `"{}{}"\|format(a, b)`, or `{{ a }}{{ b }}` | |
+
+Askama features that xerune leaves out:
+
+| Askama | Status | Instead |
+|---|---|---|
+| HTML escaping, `\|safe`, `\|escape` | Not needed | `{{ }}` output becomes a text node or an attribute value directly; it is never parsed as HTML, so there is nothing to escape or inject. |
+| Filters other than `format`, filter blocks | Left out | A method on the model. |
+| `{% extends %}` / `{% block %}` / `{% macro %}` / `{% call %}` / `{% import %}` | Left out | `{% include %}` composes templates; the included file's `<style>` belongs to the page like any other. |
+| `{% let %}` / `{% set %}`, `{% match %}` | Not yet | A model method; `{% if let %}` / `{% elif %}` chains. |
+| `{% for … if cond %}`, `{% for %}…{% else %}` | Not yet | `{% if %}` in the body; a separate `{% if xs.is_empty() %}`. |
+| `loop.first`, `loop.last`, `loop.cycle` | Not yet | `loop.index0 == 0`, `loop.index == xs.len()`. |
+| `?`, turbofish, Rust macros in expressions | Left out | A model method. |
+| Whitespace control `{%- -%}`, `{%~ ~%}` | Ignored | Text whitespace collapses as CSS `white-space` says, as in a browser. |
+
+"Left out" means not planned; "not yet" means it would fit and could be
+added. The language is kept small on purpose: the studio previews templates
+in the browser without recompiling, by running the same template grammar
+there, and every construct must behave identically in both.
+
+xerune adds a few rules of its own, because the template is HTML that is
+laid out and styled at compile time:
+
+- Class names must be literals, switched with `{% if %}` (CSS is matched
+  against them when the derive runs).
+- Template code inside a start tag must sit inside a quoted attribute value;
+  the only tag-level conditional is `{% if c %}checked{% endif %}`.
+- `data-on-click="toggle:{{ loop.index0 }}"` and the other `data-on-*`
+  attributes build typed messages (see above), and `data-key` gives loop
+  items an identity.
 
 **Inside tags**, template code may only appear *inside a quoted attribute value*:
 
