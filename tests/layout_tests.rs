@@ -164,11 +164,11 @@ fn test_style_selector_matching() {
     runtime.compute_layout(taffy::geometry::Size::MAX_CONTENT);
     
     for (node_id, data) in &runtime.ui.render_data {
-        match data {
-            RenderData::Container(style) => {
+        match (&data.kind, &data.style) {
+            (RenderKind::Container, style) => {
                 println!("Node {:?}: Container style: bg_color={:?}, color={:?}", node_id, style.background_color, style.color);
             }
-            RenderData::Text(text, style) => {
+            (RenderKind::Text(text), style) => {
                 println!("Node {:?}: Text '{}' style: bg_color={:?}, color={:?}, size={}", node_id, text, style.background_color, style.color, style.font_size);
             }
             _ => {}
@@ -180,8 +180,8 @@ fn test_style_selector_matching() {
     let mut found_green_container = false;
     
     for data in runtime.ui.render_data.values() {
-        match data {
-            RenderData::Text(text, style) => {
+        match (&data.kind, &data.style) {
+            (RenderKind::Text(text), style) => {
                 if text == "Styled Element" {
                     found_styled_element = true;
                     assert_eq!(style.color, Color::from_rgba8(0, 0, 255, 255));
@@ -191,7 +191,7 @@ fn test_style_selector_matching() {
                     assert_eq!(style.color, Color::from_rgba8(255, 255, 255, 255));
                 }
             }
-            RenderData::Container(style) => {
+            (RenderKind::Container, style) => {
                 if style.background_color == Some(Color::from_rgba8(0, 255, 0, 255)) {
                     found_green_container = true;
                 }
@@ -233,8 +233,8 @@ fn test_macro_layout_generation() {
     let mut found_b = false;
     
     for data in runtime.ui.render_data.values() {
-        match data {
-            RenderData::Text(text, style) => {
+        match (&data.kind, &data.style) {
+            (RenderKind::Text(text), style) => {
                 if text == "Hello Macro" {
                     found_hello_macro = true;
                     assert_eq!(style.color, Color::from_rgba8(0, 0, 255, 255));
@@ -864,8 +864,8 @@ fn todo_list_scrolls_in_portrait() {
     let scroller = ui
         .render_data
         .iter()
-        .find_map(|(node, data)| match data {
-            xerune::style::RenderData::Container(s) if s.overflow == Overflow::Scroll => Some(node),
+        .find_map(|(node, data)| match (&data.kind, &data.style) {
+            (RenderKind::Container, s) if s.overflow == Overflow::Scroll => Some(node),
             _ => None,
         })
         .expect("todo list is a scroll container");

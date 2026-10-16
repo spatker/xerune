@@ -53,7 +53,7 @@ impl UiBuilder {
             ..Style::default()
         };
         let root = self.taffy.new_leaf(layout.clone()).unwrap();
-        self.render_data.insert(root, RenderData::Container(default_style.clone()));
+        self.render_data.insert(root, RenderData::new(crate::style::RenderKind::Container, default_style.clone()));
         self.base_styles.insert(root, (layout, default_style.clone()));
         root
     }
@@ -328,7 +328,7 @@ impl UiBuilder {
         // Sized by the layout's measure function (see `Ui::compute_layout`).
         let text_layout_style = super::text_leaf_style(&current_style);
         let node = self.taffy.new_leaf(text_layout_style.clone()).unwrap();
-        self.render_data.insert(node, RenderData::Text(normalized.into_owned(), current_style.clone()));
+        self.render_data.insert(node, RenderData::new(crate::style::RenderKind::Text(normalized.into_owned()), current_style.clone()));
         self.base_styles.insert(node, (text_layout_style, current_style));
         self.append_child(parent, node);
     }

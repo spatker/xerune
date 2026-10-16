@@ -43,7 +43,7 @@ macro_rules! profile {
 }
 
 use crate::graphics::{Canvas, DrawCommand, Rect, TextMeasurer};
-use crate::style::{ContainerStyle, Overflow, RenderData};
+use crate::style::{ContainerStyle, Overflow, RenderData, RenderKind};
 use crate::css;
 
 /// What clicking an element sends to the model.
@@ -333,7 +333,7 @@ impl Ui {
 
     /// Scroll a specific node directly by delta_x and delta_y. Returns true if scroll offset changed.
     pub fn scroll_node(&mut self, node: NodeId, delta_x: f32, delta_y: f32) -> bool {
-        if let Some(RenderData::Container(style)) = self.render_data.get(&node) {
+        if let Some(style) = self.render_data.get(&node).and_then(RenderData::container_style) {
             if style.overflow == Overflow::Scroll {
                  let (old_sx, old_sy) = self.scroll_offsets.get(&node).copied().unwrap_or((0.0, 0.0));
                  let mut sx = old_sx - delta_x;
@@ -375,7 +375,7 @@ impl Ui {
     pub fn find_scroll_container(&self, x: f32, y: f32) -> Option<NodeId> {
         let mut curr = hit_test_recursive(&self.taffy, self.root, &self.scroll_offsets, &self.render_data, x, y, 0.0, 0.0)?;
         loop {
-            if let Some(RenderData::Container(style)) = self.render_data.get(&curr) {
+            if let Some(style) = self.render_data.get(&curr).and_then(RenderData::container_style) {
                 if style.overflow == Overflow::Scroll {
                     return Some(curr);
                 }
@@ -406,7 +406,7 @@ impl Ui {
         if let Some(node) = node_opt {
              let mut current = node;
              while let Some(parent) = self.taffy.parent(current) {
-                 if let Some(RenderData::Container(style)) = self.render_data.get(&parent) {
+                 if let Some(style) = self.render_data.get(&parent).and_then(RenderData::container_style) {
                      if style.overflow == Overflow::Scroll {
                           if let Ok(parent_layout) = self.taffy.layout(parent) {
                               if let Ok(node_layout) = self.taffy.layout(node) {
@@ -454,7 +454,7 @@ impl Ui {
         let Ui { taffy, render_data, paragraphs, text_lines, ellipses, root, .. } = self;
         taffy.compute_layout_with_measure(*root, available_space, |known, available, node, _, _| {
             match (paragraphs.get(node), render_data.get(node)) {
-                (Some(paragraph), Some(RenderData::Text(_, style))) => measure_paragraph(paragraph, style, known, available),
+                (Some(paragraph), Some(data)) => measure_paragraph(paragraph, &data.style, known, available),
                 _ => Size::ZERO,
             }
         })?;
@@ -463,7 +463,7 @@ impl Ui {
         for (node, paragraph) in paragraphs.iter() {
             let layout = taffy.unrounded_layout(node);
             let width = layout.content_box_width();
-            let Some(RenderData::Text(_, style)) = render_data.get(node) else { continue };
+            let Some(style) = render_data.get(node).map(|d| &d.style) else { continue };
             let mut lines = paragraph.lines(wrap_width(style, width), style.word_break());
             if let Some(ellipsis) = ellipses.get(node) {
                 // Lines must fit the clipping parent, which a text leaf can
@@ -491,9 +491,9 @@ impl Ui {
     /// and when an opaque box already covers the viewport no canvas fill is
     /// emitted at all.
     pub fn build_commands(&self, _canvases: &HashMap<String, Canvas>, focused_id: Option<&str>) -> Vec<DrawCommand> {
-        let source = [self.html, self.body].into_iter().flatten().find_map(|node| match self.render_data.get(&node) {
+        let source = [self.html, self.body].into_iter().flatten().find_map(|node| match self.render_data.get(&node).and_then(RenderData::container_style) {
             // Only a rendered element's background moves to the canvas.
-            Some(RenderData::Container(style))
+            Some(style)
                 if style.display != crate::style::Display::None
                     && (style.background_color.is_some() || style.background_gradient.is_some()) =>
             {
@@ -538,7 +538,7 @@ impl Ui {
         if !source_opaque {
             // The browser default canvas, under a translucent page background
             // or on its own.
-            let dark = self.html.and_then(|n| self.render_data.get(&n)).is_some_and(|d| d.style().color_scheme_dark);
+            let dark = self.html.and_then(|n| self.render_data.get(&n)).is_some_and(|d| d.style.color_scheme_dark);
             let default = if dark { crate::Color::from_rgba8(0x12, 0x12, 0x12, 255) } else { crate::Color::WHITE };
             commands.push(canvas_rect(Some(default), None));
         }
@@ -777,7 +777,7 @@ struct Deferred {
 /// `Some(z)` for a positioned element or a flex item with a `z-index`
 /// (`auto` counts as 0), `None` for in-flow content.
 fn paint_layer_of(node: NodeId, parent_is_flex: bool, render_data: &NodeMap<RenderData>) -> Option<i32> {
-    let Some(RenderData::Container(style)) = render_data.get(&node) else { return None };
+    let style = render_data.get(&node)?.container_style()?;
     let positioned = style.position != crate::style::Position::Static;
     match style.z_index {
         Some(z) if positioned || parent_is_flex => Some(z),
@@ -842,15 +842,15 @@ fn traverse_layout(
     let rect = Rect { x, y, width, height };
 
     if let Some(data) = render_data.get(&root) {
-        if data.style().display == crate::style::Display::None {
+        let style = &data.style;
+        if style.display == crate::style::Display::None {
             return commands.len();
         }
         // Boxes painted from their CSS. A checkbox's native look ignores
         // its background and border, as in Chromium.
-        let maybe_style = match data {
-            RenderData::Container(style) | RenderData::Text(_, style) => Some(style),
-            RenderData::Slider(_, style, _) | RenderData::Progress(_, _, style, _) => Some(style),
-            RenderData::Checkbox(_, style) if style.appearance_none => Some(style),
+        let maybe_style = match data.kind {
+            RenderKind::Container | RenderKind::Text(_) | RenderKind::Slider(..) | RenderKind::Progress(..) => Some(style),
+            RenderKind::Checkbox(_) if style.appearance_none => Some(style),
             _ => None,
         };
 
@@ -884,28 +884,28 @@ fn traverse_layout(
             }
         }
 
-        match data {
-            RenderData::Text(text, style) => {
+        match &data.kind {
+            RenderKind::Text(text) => {
                 if let (Some(paragraph), Some(lines)) = (paragraphs.get(root), text_lines.get(root)) {
                     push_text_lines(commands, text, style, paragraph, lines, ellipses.get(root), rect);
                 }
             },
-            RenderData::Image(src, style) => {
+            RenderKind::Image(src) => {
                  commands.push(DrawCommand::DrawImage {
                     src: src.clone(),
                     rect,
                     border_radius: style.border_radius,
                 });
             },
-            RenderData::Checkbox(checked, style) => controls::checkbox(commands, rect, *checked, style),
-            RenderData::Slider(fraction, style, parts) => {
+            RenderKind::Checkbox(checked) => controls::checkbox(commands, rect, *checked, style),
+            RenderKind::Slider(fraction, parts) => {
                 controls::slider(commands, controls::content_box(rect, style), *fraction, style, parts.as_deref());
             }
-            RenderData::Progress(value, max, style, parts) => {
+            RenderKind::Progress(value, max, parts) => {
                 let fraction = if *max > 0.0 { value / max } else { 0.0 };
                 controls::progress(commands, controls::content_box(rect, style), fraction, style, parts.as_deref());
             }
-            RenderData::Canvas(id, style) => {
+            RenderKind::Canvas(id) => {
                 let b = style.border.widths();
                 let canvas_rect = if style.border.is_visible() {
                     Rect {
@@ -923,7 +923,7 @@ fn traverse_layout(
                     border_radius: style.border_radius,
                 });
             },
-            RenderData::TextInput(id, text, style, placeholder) => {
+            RenderKind::TextInput(id, text, placeholder) => {
                 let is_focused = focused_id == Some(id.as_str()) && !id.is_empty();
                 
                 let focus_ring = crate::style::BorderSide::solid(2.0, crate::Color::from_rgba8(0, 122, 255, 255));
@@ -981,7 +981,7 @@ fn traverse_layout(
         }
     }
 
-    let is_flex = matches!(render_data.get(&root), Some(RenderData::Container(s)) if s.display.is_flex());
+    let is_flex = render_data.get(&root).and_then(RenderData::container_style).is_some_and(|s| s.display.is_flex());
     for child in taffy.children(root).unwrap_or_default() {
         match paint_layer_of(child, is_flex, render_data) {
             Some(z) => deferred.push(Deferred { node: child, offset_x: child_offset_x, offset_y: child_offset_y, clips: clips.clone(), z }),
@@ -1000,7 +1000,7 @@ fn traverse_layout(
 /// negative `z-index`, in-flow, `auto`/0, positive. Only siblings are
 /// ordered here.
 fn paint_order(mut children: Vec<NodeId>, parent: NodeId, render_data: &NodeMap<RenderData>) -> Vec<NodeId> {
-    let parent_is_flex = matches!(render_data.get(&parent), Some(RenderData::Container(s)) if s.display.is_flex());
+    let parent_is_flex = render_data.get(&parent).and_then(RenderData::container_style).is_some_and(|s| s.display.is_flex());
     let layer = |child: &NodeId| match paint_layer_of(*child, parent_is_flex, render_data) {
         None => (1, 0),
         Some(z) if z < 0 => (0, z),
@@ -1061,7 +1061,8 @@ fn shape_texts(render_data: &NodeMap<RenderData>, measurer: &impl TextMeasurer) 
     let mut paragraphs = NodeMap::new();
     let mut ellipses = NodeMap::new();
     for (node, data) in render_data.iter() {
-        if let RenderData::Text(text, style) = data {
+        if let RenderKind::Text(text) = &data.kind {
+            let style = &data.style;
             paragraphs.insert(node, measurer.shape(text, style.font_size, style.weight));
             if style.text_overflow_ellipsis {
                 ellipses.insert(node, measurer.shape("\u{2026}", style.font_size, style.weight));
@@ -1208,22 +1209,13 @@ pub fn hit_test_recursive(
         let mut child_abs_y = top;
 
         if let Some(data) = render_data.get(&root) {
-            let maybe_style = match data {
-                RenderData::Container(style) => Some(style),
-                RenderData::TextInput(_, _, style, _) => Some(style),
-                RenderData::Text(_, style) => Some(style),
-                _ => None,
-            };
-
-            if let Some(s) = maybe_style {
-                if s.display == crate::style::Display::None {
-                    return None;
-                }
+            // Like painting: no box, no hit.
+            if data.style.display == crate::style::Display::None {
+                return None;
             }
 
-            let overflow = match data {
-                RenderData::Container(style) => style.overflow,
-                RenderData::TextInput(_, _, style, _) => style.overflow,
+            let overflow = match data.kind {
+                RenderKind::Container | RenderKind::TextInput(..) => data.style.overflow,
                 _ => Overflow::Visible,
             };
 

@@ -81,7 +81,7 @@ pub use images::{Image, ImageStatus, ImageStore};
 #[cfg(feature = "std")]
 pub use images::{DefaultImageLoader, ImageError, ImageLoader};
 #[doc(hidden)]
-pub use style::{Overflow, ContainerStyle, RenderData, Display, TextAlign, LineHeight, WhiteSpace, Direction, WritingMode, FlexDirection, FlexWrap, AlignContent, AlignItems, CssJustifyContent, Position, BoxSizing};
+pub use style::{Overflow, ContainerStyle, RenderData, RenderKind, Display, TextAlign, LineHeight, WhiteSpace, Direction, WritingMode, FlexDirection, FlexWrap, AlignContent, AlignItems, CssJustifyContent, Position, BoxSizing};
 pub use model::{Model, InputEvent, XeruneMessage, NoMessage};
 pub use ui::TemplateLayout;
 #[doc(hidden)]

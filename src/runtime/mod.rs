@@ -24,7 +24,7 @@ macro_rules! profile {
 
 use crate::graphics::{Context, Damage, DrawCommand, Rect, TextMeasurer, Renderer, RenderResources, Surface};
 use crate::images::ImageStore;
-use crate::style::{ContainerStyle, RenderData, AnimationIterationCount};
+use crate::style::{ContainerStyle, RenderKind, AnimationIterationCount};
 use crate::model::{InputEvent, Model};
 use crate::ui::{Interaction, Ui, NodeMap};
 
@@ -195,8 +195,8 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
         let nodes: Vec<(NodeId, Option<(u32, u32)>)> = ui
             .render_data
             .iter()
-            .filter_map(|(node, data)| match data {
-                RenderData::Image(src, _) => Some((node, images.get(src).map(|i| (i.width, i.height)))),
+            .filter_map(|(node, data)| match &data.kind {
+                RenderKind::Image(src) => Some((node, images.get(src).map(|i| (i.width, i.height)))),
                 _ => None,
             })
             .collect();
@@ -235,7 +235,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
 
     fn sync_canvases(ui: &Ui, context: &mut Context) {
         for (node_id, data) in &ui.render_data {
-            if let RenderData::Canvas(id, _style) = data {
+            if let RenderKind::Canvas(id) = &data.kind {
                 if !context.canvases.contains_key(id) {
                      let mut width = 200;
                      let mut height = 200;
@@ -274,7 +274,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
         match event {
             InputEvent::Click { x, y } => {
                 if let Some((interaction, clicked_node)) = self.ui.hit_test(x, y) {
-                    if let Some(RenderData::TextInput(id, _, _, _)) = self.ui.render_data.get(&clicked_node) {
+                    if let Some(RenderKind::TextInput(id, _, _)) = self.ui.render_data.get(&clicked_node).map(|d| &d.kind) {
                         if !id.is_empty() {
                             self.focused_id = Some(id.clone());
                         } else {
@@ -463,8 +463,8 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
                 let validator = |s: &str| M::Message::from_str(s).is_ok();
                 Ui::new_compiled(&self.model, &self.measurer, self.default_style.clone(), &validator).unwrap()
             };
-            self.images.sync(self.ui.render_data.values().filter_map(|d| match d {
-                RenderData::Image(src, _) => Some(src.as_str()),
+            self.images.sync(self.ui.render_data.values().filter_map(|d| match &d.kind {
+                RenderKind::Image(src) => Some(src.as_str()),
                 _ => None,
             }));
             Runtime::<M, R>::apply_image_sizes(&mut self.ui, &self.images);
@@ -722,7 +722,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
         if !self.ui.keyframes.is_empty() || !self.active_animations.is_empty() {
             let mut declared_animations = HashMap::new();
             for (node_id, render_data) in &self.ui.render_data {
-                let style = render_data.style();
+                let style = &render_data.style;
                 if let Some(ref name) = style.animation_name {
                     declared_animations.insert(node_id, (name.clone(), style.clone()));
                 }
@@ -784,16 +784,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
                 if let Some((base_layout, base_container)) = self.ui.base_styles.get(&node_id) {
                     let _ = self.ui.taffy.set_style(node_id, base_layout.clone());
                     if let Some(render_data) = self.ui.render_data.get_mut(&node_id) {
-                        match render_data {
-                            RenderData::Container(style) => *style = base_container.clone(),
-                            RenderData::Text(_, style) => *style = base_container.clone(),
-                            RenderData::Image(_, style) => *style = base_container.clone(),
-                            RenderData::Checkbox(_, style) => *style = base_container.clone(),
-                            RenderData::Slider(_, style, _) => *style = base_container.clone(),
-                            RenderData::Progress(_, _, style, _) => *style = base_container.clone(),
-                            RenderData::Canvas(_, style) => *style = base_container.clone(),
-                            RenderData::TextInput(_, _, style, _) => *style = base_container.clone(),
-                        }
+                        render_data.style = base_container.clone();
                     }
                 }
             }
@@ -917,16 +908,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
 
                     let _ = self.ui.taffy.set_style(*node_id, current_layout);
                     if let Some(render_data) = self.ui.render_data.get_mut(node_id) {
-                        match render_data {
-                            RenderData::Container(style) => *style = current_container,
-                            RenderData::Text(_, style) => *style = current_container,
-                            RenderData::Image(_, style) => *style = current_container,
-                            RenderData::Checkbox(_, style) => *style = current_container,
-                            RenderData::Slider(_, style, _) => *style = current_container,
-                            RenderData::Progress(_, _, style, _) => *style = current_container,
-                            RenderData::Canvas(_, style) => *style = current_container,
-                            RenderData::TextInput(_, _, style, _) => *style = current_container,
-                        }
+                        render_data.style = current_container;
                     }
                     needs_redraw = true;
                 }

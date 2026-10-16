@@ -60,8 +60,8 @@ fn rendered_text(runtime: &Runtime<FpModel, MockMeasurer>) -> Vec<String> {
         .ui
         .render_data
         .values()
-        .filter_map(|d| match d {
-            RenderData::Text(t, _) => Some(t.clone()),
+        .filter_map(|d| match (&d.kind, &d.style) {
+            (RenderKind::Text(t), _) => Some(t.clone()),
             _ => None,
         })
         .collect()

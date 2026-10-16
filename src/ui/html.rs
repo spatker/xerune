@@ -73,7 +73,7 @@ pub fn extract_styles(handle: &Handle, css: &mut String) {
 
 #[cfg(test)]
 mod tests {
-    use crate::style::{ContainerStyle, RenderData};
+    use crate::style::{ContainerStyle, RenderKind};
 
     struct NoText;
     impl crate::TextMeasurer for NoText {
@@ -87,8 +87,8 @@ mod tests {
     fn documents_are_styled_by_their_style_elements() {
         let html = "<style>p { color: #ff0000 } p::before { content: 'x' }</style><p>hi</p>";
         let ui = super::super::Ui::new(html, &NoText, ContainerStyle::default(), &|_| true).unwrap();
-        let mut texts: Vec<_> = ui.render_data.values().filter_map(|d| match d {
-            RenderData::Text(text, style) => Some((text.as_str(), style.color.r)),
+        let mut texts: Vec<_> = ui.render_data.values().filter_map(|d| match (&d.kind, &d.style) {
+            (RenderKind::Text(text), style) => Some((text.as_str(), style.color.r)),
             _ => None,
         }).collect();
         texts.sort();

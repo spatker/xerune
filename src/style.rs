@@ -573,39 +573,43 @@ impl Default for ContainerStyle {
     }
 }
 
-/// Node representation containing resolved styling and DOM element metadata.
-pub enum RenderData {
-    /// Normal styled element container.
-    Container(ContainerStyle),
-    /// Styled text element.
-    Text(String, ContainerStyle),
-    /// Styled image element.
-    Image(String, ContainerStyle),
-    /// Styled checkbox control.
-    Checkbox(bool, ContainerStyle),
-    /// Range input (position of the value from 0 to 1, style, styled parts).
-    Slider(f32, ContainerStyle, Option<Box<ControlParts>>),
-    /// Progress bar (value, max, style, styled parts).
-    Progress(f32, f32, ContainerStyle, Option<Box<ControlParts>>),
-    /// Styled canvas viewport buffer mapping.
-    Canvas(String, ContainerStyle),
-    /// Styled text input field (id, text value, style, placeholder text
-    /// and its `::placeholder` style).
-    TextInput(String, Option<String>, ContainerStyle, Option<Box<(String, ContainerStyle)>>),
+/// A node's resolved style and what it draws.
+pub struct RenderData {
+    /// The node's computed style.
+    pub style: ContainerStyle,
+    /// What the node is: a box, text or a replaced element or control.
+    pub kind: RenderKind,
+}
+
+/// What a node draws besides its CSS box.
+pub enum RenderKind {
+    /// Normal element container.
+    Container,
+    /// A run of text.
+    Text(String),
+    /// An image, by source.
+    Image(String),
+    /// Checkbox control (checked).
+    Checkbox(bool),
+    /// Range input (position of the value from 0 to 1, styled parts).
+    Slider(f32, Option<Box<ControlParts>>),
+    /// Progress bar (value, max, styled parts).
+    Progress(f32, f32, Option<Box<ControlParts>>),
+    /// Canvas, by id.
+    Canvas(String),
+    /// Text input field (id, text value, placeholder text and its
+    /// `::placeholder` style).
+    TextInput(String, Option<String>, Option<Box<(String, ContainerStyle)>>),
 }
 
 impl RenderData {
-    /// Get a reference to the inner element style.
-    pub fn style(&self) -> &ContainerStyle {
-        match self {
-            RenderData::Container(style) => style,
-            RenderData::Text(_, style) => style,
-            RenderData::Image(_, style) => style,
-            RenderData::Checkbox(_, style) => style,
-            RenderData::Slider(_, style, _) => style,
-            RenderData::Progress(_, _, style, _) => style,
-            RenderData::Canvas(_, style) => style,
-            RenderData::TextInput(_, _, style, _) => style,
-        }
+    /// A `kind` node styled `style`.
+    pub fn new(kind: RenderKind, style: ContainerStyle) -> Self {
+        Self { style, kind }
+    }
+
+    /// The node's style if it is a plain container.
+    pub fn container_style(&self) -> Option<&ContainerStyle> {
+        matches!(self.kind, RenderKind::Container).then_some(&self.style)
     }
 }

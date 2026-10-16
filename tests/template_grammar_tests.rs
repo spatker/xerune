@@ -42,8 +42,8 @@ fn texts(model: GrammarModel) -> Vec<(String, Color)> {
         .ui
         .render_data
         .values()
-        .filter_map(|d| match d {
-            RenderData::Text(t, style) => Some((t.to_string(), style.color)),
+        .filter_map(|d| match (&d.kind, &d.style) {
+            (RenderKind::Text(t), style) => Some((t.to_string(), style.color)),
             _ => None,
         })
         .collect();

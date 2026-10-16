@@ -57,8 +57,8 @@ fn find_node(ui: &Ui, probe: &str) -> taffy::NodeId {
 }
 
 fn bg_color(ui: &Ui, node: taffy::NodeId) -> Option<Color> {
-    match ui.render_data.get(&node) {
-        Some(RenderData::Container(style)) => style.background_color,
+    match ui.render_data.get(&node).and_then(RenderData::container_style) {
+        Some(style) => style.background_color,
         other => panic!("expected container render data, got {:?}", other.map(|_| ())),
     }
 }

@@ -1,7 +1,7 @@
 #![allow(missing_docs)]
 
 use taffy::prelude::*;
-use crate::style::{ContainerStyle, ControlPart, RenderData};
+use crate::style::{ContainerStyle, ControlPart, RenderData, RenderKind};
 use crate::css;
 use crate::defaults;
 use super::node_map::NodeMap;
@@ -181,33 +181,26 @@ pub(crate) fn process_element_type(
     current_style: ContainerStyle,
     render_data: &mut NodeMap<RenderData>,
 ) {
-    match parsed.element_type {
-        defaults::ElementType::Image => {
-            render_data.insert(id, RenderData::Image(parsed.image_src.clone(), current_style));
-        },
-        defaults::ElementType::Checkbox => {
-            render_data.insert(id, RenderData::Checkbox(parsed.checkbox_checked, current_style));
-        },
+    let kind = match parsed.element_type {
+        defaults::ElementType::Image => RenderKind::Image(parsed.image_src.clone()),
+        defaults::ElementType::Checkbox => RenderKind::Checkbox(parsed.checkbox_checked),
         defaults::ElementType::Slider => {
             let parts = super::controls::resolve_parts(&current_style, &[ControlPart::SliderTrack, ControlPart::SliderThumb, ControlPart::SliderFill]);
-            render_data.insert(id, RenderData::Slider(range_fraction(parsed), current_style, parts));
-        },
+            RenderKind::Slider(range_fraction(parsed), parts)
+        }
         defaults::ElementType::Progress => {
             let parts = super::controls::resolve_parts(&current_style, &[ControlPart::ProgressBar, ControlPart::ProgressValue]);
-            render_data.insert(id, RenderData::Progress(parsed.progress_value, parsed.progress_max, current_style, parts));
-        },
-        defaults::ElementType::Canvas => {
-            render_data.insert(id, RenderData::Canvas(parsed.canvas_id.clone(), current_style));
-        },
+            RenderKind::Progress(parsed.progress_value, parsed.progress_max, parts)
+        }
+        defaults::ElementType::Canvas => RenderKind::Canvas(parsed.canvas_id.clone()),
         defaults::ElementType::TextInput => {
             let placeholder = parsed.placeholder.as_ref()
                 .filter(|text| !text.is_empty())
                 .map(|text| Box::new((text.clone(), super::controls::placeholder_style(&current_style))));
-            render_data.insert(id, RenderData::TextInput(parsed.element_id.clone().unwrap_or_default(), parsed.text_input_text.clone(), current_style, placeholder));
-        },
-        _ => {
-            render_data.insert(id, RenderData::Container(current_style));
+            RenderKind::TextInput(parsed.element_id.clone().unwrap_or_default(), parsed.text_input_text.clone(), placeholder)
         }
-    }
+        defaults::ElementType::Container => RenderKind::Container,
+    };
+    render_data.insert(id, RenderData::new(kind, current_style));
 }
 

@@ -73,7 +73,7 @@ fn style_cache_respects_structural_selectors_across_rebuilds() {
             let mut actual = Vec::new();
             for parent in ui.taffy.children(ui.root).unwrap() {
                 for item in ui.taffy.children(parent).unwrap() {
-                    actual.push(ui.render_data.get(&item).unwrap().style().background_color);
+                    actual.push(ui.render_data.get(&item).unwrap().style.background_color);
                 }
             }
             let mut expected = expected;

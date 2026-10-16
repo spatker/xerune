@@ -215,8 +215,7 @@ pub(crate) fn apply_block_display(
     render_data: &NodeMap<RenderData>,
 ) {
     let is_inline = |child: &NodeId| match render_data.get(child) {
-        Some(RenderData::Container(s)) => s.display.is_inline_level() || s.is_floated,
-        Some(_) => true,
+        Some(data) => data.container_style().is_none_or(|s| s.display.is_inline_level() || s.is_floated),
         None => false,
     };
     if !children.iter().any(is_inline) && tag != "tr" {
@@ -234,7 +233,7 @@ pub(crate) fn apply_block_display(
         });
     }
     for child in children {
-        if matches!(render_data.get(child), Some(RenderData::Container(s)) if s.display == Display::Block) {
+        if render_data.get(child).and_then(RenderData::container_style).is_some_and(|s| s.display == Display::Block) {
             if let Ok(mut child_style) = taffy.style(*child).cloned() {
                 if child_style.size.width.is_auto() {
                     child_style.size.width = Dimension::percent(1.0);
@@ -273,7 +272,7 @@ pub(crate) fn resolve_styles(
                 // Sized by the layout's measure function (see `Ui::compute_layout`).
                 let text_layout_style = super::text_leaf_style(&current_style);
                 let _ = taffy.set_style(node, text_layout_style.clone());
-                render_data.insert(node, RenderData::Text(normalized.into_owned(), current_style.clone()));
+                render_data.insert(node, RenderData::new(crate::style::RenderKind::Text(normalized.into_owned()), current_style.clone()));
                 base_styles.insert(node, (text_layout_style, current_style));
             }
         }
@@ -728,7 +727,7 @@ pub(crate) fn finish_node(
     let mut children = taffy.children(node).unwrap_or_default();
     if current_style.display.is_flex() {
         let original = children.clone();
-        children.sort_by_key(|child| render_data.get(child).map(|data| data.style().order).unwrap_or(0));
+        children.sort_by_key(|child| render_data.get(child).map(|data| data.style.order).unwrap_or(0));
         if children != original {
             let _ = taffy.set_children(node, &children);
         }
