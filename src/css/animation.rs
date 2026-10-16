@@ -75,7 +75,6 @@ pub fn parse_animation_shorthand(val: &str, current_style: &mut ContainerStyle) 
     }
 }
 
-#[cfg(feature = "std")]
 pub fn strip_css_comments(css: &str) -> String {
     let mut result = String::new();
     let mut chars = css.chars().peekable();
@@ -95,7 +94,6 @@ pub fn strip_css_comments(css: &str) -> String {
     result
 }
 
-#[cfg(feature = "std")]
 pub fn parse_keyframes(css: &str) -> HashMap<String, KeyframesAnimation> {
     let css = strip_css_comments(css);
     let mut animations = HashMap::new();
@@ -140,7 +138,6 @@ pub fn parse_keyframes(css: &str) -> HashMap<String, KeyframesAnimation> {
     animations
 }
 
-#[cfg(feature = "std")]
 fn parse_keyframe_blocks(content: &str) -> Vec<Keyframe> {
     let mut keyframes = Vec::new();
     let mut pos = 0;
@@ -181,7 +178,6 @@ fn parse_keyframe_blocks(content: &str) -> Vec<Keyframe> {
     keyframes
 }
 
-#[cfg(feature = "std")]
 fn parse_declarations(content: &str) -> Vec<(String, String)> {
     let mut decls = Vec::new();
     let tokenizer = simplecss::DeclarationTokenizer::from(content);

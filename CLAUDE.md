@@ -85,7 +85,9 @@ WPT: `WPT_DIR=~/data/code/js/wpt cargo run --release -p wpt_runner [-- FILTER] [
 deterministic.
 
 CI (`.github/workflows/ci.yml`, rustc 1.85.1): workspace tests + examples,
-the armv7 zigbuild below (with `drm,linuxfb,evdev`), and the studio for wasm32.
+the armv7 zigbuild below (with `drm,linuxfb,evdev`), the studio for wasm32,
+and a no_std check of `xerune` + `xerune_render` for `thumbv7em-none-eabihf`
+(`--no-default-features`; runtime CSS, image loading and TrueType are std-only).
 
 ARM target build (user's setup; use it for every ARM check, locally and in CI,
 not gcc-arm or `cargo check`: it links against the boards' glibc 2.39):

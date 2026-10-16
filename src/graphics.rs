@@ -133,11 +133,6 @@ impl Rect {
 
     /// The smallest rectangle on whole pixels that contains this one.
     pub fn round_out(&self) -> Rect {
-        // `f32::floor` needs std; screen coordinates fit an i32.
-        let floor = |v: f32| {
-            let t = v as i32 as f32;
-            if t > v { t - 1.0 } else { t }
-        };
         let ceil = |v: f32| -floor(-v);
         let (x, y) = (floor(self.x), floor(self.y));
         Rect {
@@ -194,6 +189,13 @@ impl Rect {
             None
         }
     }
+}
+
+/// `f32::floor`, which needs std, for values that fit an i32 (screen
+/// coordinates and font metrics).
+pub(crate) fn floor(v: f32) -> f32 {
+    let t = v as i32 as f32;
+    if t > v { t - 1.0 } else { t }
 }
 
 /// The areas of the screen a frame repainted: a few rectangles, merged where

@@ -50,6 +50,17 @@ pub fn blend_pixel(dst: &mut u32, src: u32) {
     }
 }
 
+// The per-channel values are prepared for the SIMD loops; without SIMD only
+// the scalar loop runs.
+#[cfg_attr(
+    not(any(
+        target_arch = "x86_64",
+        all(target_arch = "x86", target_feature = "sse2"),
+        target_arch = "aarch64",
+        all(target_arch = "arm", target_feature = "neon")
+    )),
+    allow(unused_variables, unused_mut)
+)]
 pub fn blend_solid_span(dst: &mut [u32], color: u32) {
     let a = (color >> 24) & 0xff;
     if a == 255 {
@@ -270,6 +281,17 @@ pub fn blend_solid_rect(
     }
 }
 
+// The per-channel values are prepared for the SIMD loops; without SIMD only
+// the scalar loop runs.
+#[cfg_attr(
+    not(any(
+        target_arch = "x86_64",
+        all(target_arch = "x86", target_feature = "sse2"),
+        target_arch = "aarch64",
+        all(target_arch = "arm", target_feature = "neon")
+    )),
+    allow(unused_variables, unused_mut)
+)]
 pub fn blend_glyph_span(dst: &mut [u32], coverage: &[u8], color: u32) {
     let color_a = (color >> 24) & 0xff;
     if color_a == 0 {

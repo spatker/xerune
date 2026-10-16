@@ -49,6 +49,8 @@ pub enum ImageStatus {
 enum Entry {
     Loading,
     Ready { image: Image, pinned: bool },
+    // Without std nothing is loaded in the background, so nothing fails.
+    #[cfg_attr(not(feature = "std"), allow(dead_code))]
     Failed,
 }
 

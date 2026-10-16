@@ -55,3 +55,16 @@ jobs:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
       - run: cargo check -p xerune_studio --target wasm32-unknown-unknown
+
+  no_std:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          targets: thumbv7em-none-eabihf
+      - uses: Swatinem/rust-cache@v2
+      # Bare-metal Cortex-M4F/M7: the core and the renderer must build
+      # without std (microcontrollers).
+      - run: cargo check -p xerune -p xerune_render --no-default-features --target thumbv7em-none-eabihf

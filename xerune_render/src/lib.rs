@@ -43,7 +43,8 @@ pub struct Fonts(Arc<FontSet>);
 
 #[derive(Clone)]
 struct FontSet {
-    /// Distinguishes font sets in the thread-wide shaping caches.
+    /// Distinguishes font sets in the thread-wide shaping caches (std only).
+    #[cfg_attr(not(feature = "std"), allow(dead_code))]
     id: u32,
     kind: FontKind,
 }
@@ -105,6 +106,7 @@ impl Fonts {
         Self::new(FontKind::Bitmap(fonts))
     }
 
+    #[cfg_attr(not(feature = "std"), allow(dead_code))]
     fn id(&self) -> u32 {
         self.0.id
     }
@@ -142,6 +144,7 @@ pub fn find_best_bitmap_font<'a>(fonts: &'a [xerune::font::BitmapFont], target_s
     Some(&fonts[0])
 }
 
+#[cfg(feature = "std")]
 const fn parse_usize_opt(opt: Option<&'static str>, default: usize) -> usize {
     match opt {
         Some(s) => {
@@ -305,11 +308,14 @@ pub fn shape_cache_len() -> usize {
 
 /// Font metrics rounded to whole pixels, as browsers do, so lines start on
 /// pixel boundaries.
+#[cfg(feature = "std")]
 fn rounded_metrics(ascent: f32, descent: f32, line_gap: f32) -> LineMetrics {
     LineMetrics { ascent: ascent.round(), descent: descent.round(), line_gap: line_gap.round() }
 }
 
 impl Fonts {
+    // Bitmap fonts set the metrics themselves; only TrueType reads the default.
+    #[cfg_attr(not(feature = "std"), allow(unused_assignments))]
     fn shape_uncached(&self, text: &str, font_size: f32, weight: u16) -> ShapedText {
         let mut glyphs = Vec::with_capacity(text.len());
         let mut metrics = LineMetrics::default();
@@ -403,6 +409,7 @@ impl TextMeasurer for Fonts {
             return (0.0, 0.0);
         }
 
+        #[cfg(feature = "std")]
         let font_size_bits = font_size.to_bits();
         #[cfg(feature = "std")]
         let cached = MEASURE_CACHE.with(|cache| cache.borrow().get(text, self.id(), font_size_bits, weight));
@@ -815,6 +822,8 @@ struct Frame<'a> {
     #[allow(dead_code)]
     physical_height: u32,
     fonts: FontSource<'a>,
+    // Color emoji and rasterized glyphs come from TrueType fonts (std).
+    #[cfg_attr(not(feature = "std"), allow(dead_code))]
     color_emoji: Option<&'a [u8]>,
     clip_stack: &'a mut Vec<Rect>,
     swap_rb: bool,
@@ -824,6 +833,7 @@ struct Frame<'a> {
     x_offset: i32,
     y_offset: i32,
     image_cache: &'a mut HashMap<String, (u32, u32, Vec<u32>)>,
+    #[cfg_attr(not(feature = "std"), allow(dead_code))]
     glyph_cache: &'a mut HashMap<(usize, u16, u32), CachedGlyph>,
     #[cfg(feature = "std")]
     layout: &'a mut fontdue::layout::Layout,
@@ -1019,6 +1029,9 @@ impl Frame<'_> {
                     run,
                 } => {
                     profile!("render_text");
+                    // Bitmap fonts lay the text out themselves.
+                    #[cfg(not(feature = "std"))]
+                    let _ = run;
                     let local_rect = self.translate_rect(rect);
                     let packed_color = pack_color(*color, self.swap_rb);
                     let clip = self.get_clip_rect();
@@ -1692,12 +1705,14 @@ fn floor_i32(v: f32) -> i32 {
 /// Nearest integer, halves rounding up. Unlike `f32::round` (halves away from
 /// zero) it commutes with integer offsets, so a band or tile places things
 /// where the full frame does.
+#[cfg(feature = "std")]
 fn round_i32(v: f32) -> i32 {
     floor_i32(v + 0.5)
 }
 
 pub trait F32Ext {
     fn round(self) -> f32;
+    fn floor(self) -> f32;
     fn ceil(self) -> f32;
     fn sqrt(self) -> f32;
 }
@@ -1715,6 +1730,23 @@ impl F32Ext for f32 {
                 (self + 0.5) as i32 as f32
             } else {
                 (self - 0.5) as i32 as f32
+            }
+        }
+    }
+
+    #[inline(always)]
+    fn floor(self) -> f32 {
+        #[cfg(feature = "std")]
+        {
+            self.floor()
+        }
+        #[cfg(not(feature = "std"))]
+        {
+            let i = self as i32;
+            if self < i as f32 {
+                (i - 1) as f32
+            } else {
+                i as f32
             }
         }
     }

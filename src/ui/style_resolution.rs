@@ -199,7 +199,6 @@ pub(crate) fn to_content_box(dim: taffy::style::Dimension, sub: f32) -> taffy::s
     }
 }
 
-#[cfg(feature = "std")]
 /// Lays out a `block` or `inline-block` element. Taffy has block layout but no
 /// inline formatting context, so an element with inline-level children becomes
 /// a wrapping flex row that places each child like an atomic inline box; its
@@ -244,6 +243,7 @@ pub(crate) fn apply_block_display(
     }
 }
 
+#[cfg(feature = "std")]
 pub(crate) fn resolve_styles(
     taffy: &mut TaffyTree,
     node: NodeId,

@@ -1179,7 +1179,7 @@ fn push_text_lines(
     let m = paragraph.metrics;
     // Half the leading goes above the text (CSS 2 10.8.1), floored like
     // Chromium so odd leading puts the extra pixel below.
-    let baseline = ((line_h - (m.ascent + m.descent)) / 2.0).floor() + m.ascent;
+    let baseline = crate::graphics::floor((line_h - (m.ascent + m.descent)) / 2.0) + m.ascent;
     for (i, line) in lines.iter().enumerate() {
         let ellipsis = ellipsis.filter(|_| line.ellipsis);
         let ellipsis_width = ellipsis.map_or(0.0, |e| e.width());
