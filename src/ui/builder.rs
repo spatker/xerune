@@ -434,6 +434,21 @@ pub struct ElementStyle {
 }
 
 impl ElementStyle {
+    /// Clicking the element sends `message` (a compiled `data-on-click`).
+    pub fn on_click<M: 'static>(&mut self, message: M) {
+        self.parsed.interaction_id = Some(Interaction::Message(Rc::new(message)));
+    }
+
+    /// Clicking the element sends `message` parsed as `M` (a `data-on-click`
+    /// the template can't build directly, like `digit:7`). Parsed now, so a
+    /// mistake is reported when the view is built, not silently on click.
+    pub fn on_click_text<M: core::str::FromStr + 'static>(&mut self, message: &str) {
+        match message.parse::<M>() {
+            Ok(message) => self.on_click(message),
+            Err(_) => crate::diag::warn_once("data-on-click is not a message of the model", message),
+        }
+    }
+
     /// Starts from the default style of `tag`, inheriting from `parent_style`.
     #[inline(never)]
     pub fn new(tag: &'static str, parent_style: &crate::style::ContainerStyle) -> Self {

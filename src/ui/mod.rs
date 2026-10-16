@@ -42,8 +42,25 @@ use crate::graphics::{Canvas, DrawCommand, Rect, TextMeasurer};
 use crate::style::{ContainerStyle, Overflow, RenderData};
 use crate::css;
 
-/// Mapped interaction message identifier.
-pub type Interaction = String;
+/// What clicking an element sends to the model.
+#[derive(Clone)]
+pub enum Interaction {
+    /// A message value built by a compiled template; the runtime downcasts
+    /// it to the model's message type.
+    Message(Rc<dyn core::any::Any>),
+    /// A message string, parsed with `FromStr` when clicked (hand-written
+    /// and runtime-parsed templates).
+    Text(String),
+}
+
+impl core::fmt::Debug for Interaction {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Interaction::Message(_) => f.write_str("Message(..)"),
+            Interaction::Text(text) => f.debug_tuple("Text").field(text).finish(),
+        }
+    }
+}
 
 /// A view compiled from an HTML template, implemented by
 /// `#[derive(XeruneTemplate)]`. Its methods are internal and change with the
@@ -573,17 +590,17 @@ impl Ui {
 
     /// Performs a hit test check for coordinates (x, y) and returns the corresponding interaction
     /// message identifier and the matching NodeId if found.
-    pub fn hit_test(&self, x: f32, y: f32) -> Option<(Interaction, NodeId)> {
+    pub fn hit_test(&self, x: f32, y: f32) -> Option<(Option<Interaction>, NodeId)> {
          profile!("hit_test");
          if let Some(clicked_node) = hit_test_recursive(&self.taffy, self.root, &self.scroll_offsets, &self.render_data, x, y, 0.0, 0.0) {
              let mut current = Some(clicked_node);
              while let Some(node) = current {
                  if let Some(act) = self.interactions.get(&node) {
-                     return Some((act.clone(), clicked_node));
+                     return Some((Some(act.clone()), clicked_node));
                  }
                  current = self.taffy.parent(node);
              }
-             return Some((String::new(), clicked_node));
+             return Some((None, clicked_node));
          }
          None
     }

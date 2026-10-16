@@ -68,6 +68,23 @@ Templates are precompiled at compile time via `#[derive(XeruneTemplate)]` and bi
 {% endfor %}
 ```
 
+A message is named after its variant in snake_case: `add` for `Add`,
+`toggle:` followed by the argument for `Toggle(usize)` (`#[xerune(rename =
+"...")]` and `#[xerune(prefix = "...")]` change that). The template builds
+the message itself, so `toggle:{{ loop.index0 }}` is type-checked: passing a
+`String` where `Toggle` takes a `usize` is a compile error, and the argument
+must have the field's exact type or be a reference to it (`&str` works for a
+`String` field). Static arguments (`digit:7`) are parsed when the view is
+built and an invalid one is logged then. Messages must be `Clone`: an
+element keeps its message and sends a copy on each click. The runtime's own
+messages (`keydown:Enter`, `<input id>:text:...`) and those from
+`Messenger::send`, `XERUNE_SNAPSHOT_MESSAGES` or JavaScript are strings,
+parsed with the derived `FromStr`.
+
+To scroll an element into view, give it an `id` and call
+`context.scroll_into_view("item-3")` from `update`:
+`<div id="item-{{ loop.index0 }}" ...>`.
+
 See [`examples/todo/templates/todo_list.html`](../examples/todo/templates/todo_list.html) for the full layout and CSS.
 
 #### Template syntax

@@ -8,7 +8,7 @@
 
 use xerune::*;
 
-#[derive(Debug, PartialEq, XeruneMessage)]
+#[derive(Debug, PartialEq, Clone, XeruneMessage)]
 enum RespMsg {
     Noop,
     ProbeVw,
@@ -50,12 +50,10 @@ impl TextMeasurer for MockMeasurer {
 }
 
 fn find_node(ui: &Ui, probe: &str) -> taffy::NodeId {
-    for (id, msg) in ui.interactions.iter() {
-        if msg == probe {
-            return id;
-        }
+    match ui.element_ids.iter().find(|(id, _)| id == probe) {
+        Some((_, node)) => *node,
+        None => panic!("no element with id '{probe}'"),
     }
-    panic!("probe '{}' not found in interactions", probe);
 }
 
 fn bg_color(ui: &Ui, node: taffy::NodeId) -> Option<Color> {
@@ -100,8 +98,8 @@ impl TemplateLayout for DynResponsiveModel {
         _message_validator: &impl Fn(&str) -> bool,
     ) -> taffy::NodeId {
         let root = builder.create_element("div", &[("style", "width: 100%; height: 100%")]);
-        let a = builder.create_element("div", &[("class", "dyn"), ("data-on-click", "dyn_media")]);
-        let b = builder.create_element("div", &[("class", "vw-dyn"), ("data-on-click", "dyn_vw")]);
+        let a = builder.create_element("div", &[("class", "dyn"), ("id", "dyn_media")]);
+        let b = builder.create_element("div", &[("class", "vw-dyn"), ("id", "dyn_vw")]);
         builder.append_child(root, a);
         builder.append_child(root, b);
         root

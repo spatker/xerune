@@ -26,7 +26,7 @@ fn roboto() -> xerune_render::Fonts {
 }
 
 struct MockModel;
-#[derive(Debug, PartialEq, XeruneMessage)]
+#[derive(Debug, PartialEq, Clone, XeruneMessage)]
 enum MockMsg {
     Tick,
 }
@@ -108,7 +108,7 @@ fn test_scroll_persistence() {
 
     let hit = runtime.ui.hit_test(10.0, 10.0);
     assert!(hit.is_some(), "Should hit child content after scrolling");
-    assert_eq!(hit.unwrap().0, "test_interaction".to_string());
+    assert!(matches!(hit.unwrap().0, Some(ui::Interaction::Text(text)) if text == "test_interaction"));
 }
 
 struct SelectorMockModel;
@@ -268,7 +268,7 @@ impl TodoItem {
     }
 }
 
-#[derive(Debug, PartialEq, XeruneMessage)]
+#[derive(Debug, PartialEq, Clone, XeruneMessage)]
 enum TestTodoMsg {
     Toggle(usize),
     Remove(usize),
@@ -425,7 +425,7 @@ fn test_bitmap_font_rendering() {
 #[test]
 fn test_touch_scrolling_and_clicking() {
     struct TouchMockModel;
-    #[derive(Debug, PartialEq, XeruneMessage)]
+    #[derive(Debug, PartialEq, Clone, XeruneMessage)]
     enum TouchMockMsg {
         #[xerune(rename = "click_action")]
         ClickMsg,
@@ -738,7 +738,11 @@ fn z_index_orders_painting_and_hit_testing() {
     }).collect();
     assert_eq!(colors, [(0, 0, 255), (0, 255, 0), (255, 0, 0)], "z-index -1, auto, 2");
     let (interaction, _) = runtime.ui.hit_test(20.0, 20.0).expect("hit");
-    assert!(format!("{interaction:?}").contains("tick"), "the topmost box gets the click: {interaction:?}");
+    let message = match &interaction {
+        Some(ui::Interaction::Message(message)) => message.downcast_ref::<MockMsg>(),
+        _ => None,
+    };
+    assert_eq!(message, Some(&MockMsg::Tick), "the topmost box gets the click: {interaction:?}");
 }
 
 mod canvas {
@@ -1101,6 +1105,51 @@ mod showcase_impl;
 #[path = "../examples/todo/todo_impl.rs"]
 #[allow(dead_code)]
 mod todo_impl;
+
+#[derive(Debug, Clone, PartialEq, XeruneMessage)]
+enum ClickMsg {
+    Pick(usize),
+    Name(String),
+    Digit(char),
+    Reset,
+}
+
+#[derive(XeruneTemplate)]
+#[template(source = r#"<body style="margin: 0px">
+    {% for item in items %}<div style="height: 20px" data-on-click="pick:{{ loop.index0 }}">{{ item }}</div>{% endfor %}
+    <div style="height: 20px" data-on-click="name:{{ title }}">name</div>
+    <div style="height: 20px" data-on-click="digit:7">7</div>
+    <div style="height: 20px" data-on-click="reset">reset</div>
+</body>"#)]
+struct ClickModel {
+    items: Vec<String>,
+    title: String,
+    received: Vec<ClickMsg>,
+}
+
+impl Model for ClickModel {
+    type Message = ClickMsg;
+    fn update(&mut self, msg: ClickMsg, _context: &mut Context) {
+        self.received.push(msg);
+    }
+}
+
+/// Clicks deliver the messages the template built, typed: an argument
+/// from an expression (by value or through a reference), a static
+/// argument, and a plain name.
+#[test]
+fn clicks_send_typed_messages() {
+    let model = ClickModel { items: vec!["a".into(), "b".into()], title: "Ada".into(), received: Vec::new() };
+    let mut runtime = Runtime::new(model, MockMeasurer);
+    crate::set_size(&mut runtime, 200.0, 200.0);
+    for y in [30.0, 50.0, 70.0, 90.0] {
+        runtime.handle_event(InputEvent::Click { x: 10.0, y });
+    }
+    assert_eq!(
+        runtime.model().received,
+        [ClickMsg::Pick(1), ClickMsg::Name("Ada".into()), ClickMsg::Digit('7'), ClickMsg::Reset]
+    );
+}
 
 /// Moving the todo selection past the visible rows scrolls the list to the
 /// selected row, found by its `id="item-N"`.

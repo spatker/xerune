@@ -1,0 +1,15 @@
+error[E0277]: a `data-on-click` message takes a `usize`, but the template passes a `&String`
+  --> tests/template_errors/wrong_message_arg.rs:10:10
+   |
+10 | #[derive(XeruneTemplate)]
+   |          ^^^^^^^^^^^^^^ in this template
+   |
+   = help: the trait `MessageArg<usize>` is not implemented for `&String`
+   = note: the `{{ ... }}` argument must have the message variant's field type (or be a reference to it)
+   = help: the trait `MessageArg<String>` is implemented for `&str`
+note: required by a bound in `message_arg`
+  --> src/lib.rs
+   |
+   |     pub fn message_arg<T, A: MessageArg<T> + ?Sized>(value: &A) -> T {
+   |                              ^^^^^^^^^^^^^ required by this bound in `message_arg`
+   = note: this error originates in the derive macro `XeruneTemplate` (in Nightly builds, run with -Z macro-backtrace for more info)

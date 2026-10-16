@@ -9,7 +9,6 @@ use crate::alloc_prelude::*;
 
 #[cfg(feature = "dynamic-parser")]
 use crate::style::{Overflow, BoxSizing, Display, CssJustifyContent, Direction};
-#[cfg(feature = "dynamic-parser")]
 use super::Interaction;
 #[cfg(feature = "dynamic-parser")]
 use markup5ever_rcdom::{Handle as DomHandle, NodeData};
@@ -164,7 +163,7 @@ pub struct ParsedAttributes {
     pub progress_value: f32,
     pub progress_max: f32,
     pub checkbox_checked: bool,
-    pub interaction_id: Option<String>,
+    pub interaction_id: Option<Interaction>,
     pub image_src: String,
     pub canvas_id: String,
     pub element_id: Option<String>,
@@ -255,7 +254,7 @@ pub fn parse_attributes_generic<'a>(
                  if !message_validator(value) {
                      log::warn!("Invalid message in data-on-click: {}", value);
                  }
-                 parsed.interaction_id = Some(value.to_string());
+                 parsed.interaction_id = Some(Interaction::Text(value.to_string()));
              }
              _ => {
                  log::debug!("Ignoring attribute: {} on tag: {}", name, tag);

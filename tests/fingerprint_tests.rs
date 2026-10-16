@@ -2,7 +2,7 @@
 
 use xerune::*;
 
-#[derive(Debug, PartialEq, XeruneMessage)]
+#[derive(Debug, PartialEq, Clone, XeruneMessage)]
 enum FpMsg {
     IncVisible,
     IncHidden,

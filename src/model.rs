@@ -12,7 +12,10 @@ pub trait XeruneMessage: core::str::FromStr {
 /// Trait defining an application Model in the Model-View-Update (Elm) architecture.
 pub trait Model {
     /// The message type processed by this model. Must implement `XeruneMessage` to allow compile-time verified HTML interaction mappings.
-    type Message: XeruneMessage + Send + Sync + 'static;
+    ///
+    /// Messages are `Clone`: an element keeps its `data-on-click` message
+    /// and sends a copy on every click.
+    type Message: XeruneMessage + Clone + Send + Sync + 'static;
 
     /// Produces the declarative HTML view structure of the model.
     fn view(&self) -> String {

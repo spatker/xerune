@@ -6,7 +6,7 @@
 use taffy::prelude::TaffyMaxContent;
 use xerune::*;
 
-#[derive(Debug, PartialEq, XeruneMessage)]
+#[derive(Debug, PartialEq, Clone, XeruneMessage)]
 enum Msg {
     Nop,
 }

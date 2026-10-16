@@ -16,7 +16,7 @@ pub mod alloc_prelude {
         vec::Vec,
         boxed::Box,
         sync::Arc,
-        borrow::Cow,
+        borrow::{Cow, ToOwned},
         rc::Rc,
         format,
         vec,
@@ -30,7 +30,7 @@ pub mod alloc_prelude {
         vec::Vec,
         boxed::Box,
         sync::Arc,
-        borrow::Cow,
+        borrow::{Cow, ToOwned},
         rc::Rc,
         collections::{HashMap, HashSet},
         format,
@@ -102,5 +102,42 @@ pub mod __private {
     pub use crate::style::ContainerStyle;
     pub use crate::ui::{ElementStyle, TemplateLayout, ToDisplayString, UiBuilder};
     pub use taffy::NodeId;
+
+    /// A `data-on-click` argument as the message field's type `T`: the
+    /// value itself, a reference to it (`&String` for a `String` field), or
+    /// `&str` for a `String` field. Other types are a compile error, also
+    /// for numbers of another width: the field's exact type is required.
+    #[diagnostic::on_unimplemented(
+        message = "a `data-on-click` message takes a `{T}`, but the template passes a `{Self}`",
+        label = "in this template",
+        note = "the `{{{{ ... }}}}` argument must have the message variant's field type (or be a reference to it)"
+    )]
+    pub trait MessageArg<T> {
+        /// The argument as the field's type.
+        fn to_message_arg(&self) -> T;
+    }
+
+    impl<T: Clone> MessageArg<T> for T {
+        fn to_message_arg(&self) -> T {
+            self.clone()
+        }
+    }
+
+    impl<T: Clone> MessageArg<T> for &T {
+        fn to_message_arg(&self) -> T {
+            (*self).clone()
+        }
+    }
+
+    impl MessageArg<crate::alloc_prelude::String> for &str {
+        fn to_message_arg(&self) -> crate::alloc_prelude::String {
+            crate::alloc_prelude::ToString::to_string(*self)
+        }
+    }
+
+    /// Calls [`MessageArg::to_message_arg`]; generated code passes `&(expr)`.
+    pub fn message_arg<T, A: MessageArg<T> + ?Sized>(value: &A) -> T {
+        value.to_message_arg()
+    }
 }
 

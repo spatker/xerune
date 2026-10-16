@@ -26,7 +26,7 @@ use crate::graphics::{Context, Damage, DrawCommand, Rect, TextMeasurer, Renderer
 use crate::images::ImageStore;
 use crate::style::{ContainerStyle, RenderData, AnimationIterationCount};
 use crate::model::{InputEvent, Model};
-use crate::ui::{Ui, NodeMap};
+use crate::ui::{Interaction, Ui, NodeMap};
 
 /// Message a backend's event proxy can send purely to wake the event loop (e.g. when a
 /// background image load completes). It is not forwarded to the model.
@@ -273,7 +273,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
     pub fn handle_event(&mut self, event: InputEvent) -> bool {
         match event {
             InputEvent::Click { x, y } => {
-                if let Some((msg_str, clicked_node)) = self.ui.hit_test(x, y) {
+                if let Some((interaction, clicked_node)) = self.ui.hit_test(x, y) {
                     if let Some(RenderData::TextInput(id, _, _)) = self.ui.render_data.get(&clicked_node) {
                         if !id.is_empty() {
                             self.focused_id = Some(id.clone());
@@ -284,10 +284,18 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
                         self.focused_id = None;
                     }
                     
-                    if !msg_str.is_empty() {
-                        return self.process_message_str(&msg_str) || self.focused_id.is_some();
-                    }
-                    return self.focused_id.is_some();
+                    let updated = match interaction {
+                        Some(Interaction::Message(message)) => match message.downcast_ref::<M::Message>() {
+                            Some(message) => self.process_message(message.clone()),
+                            None => {
+                                log::error!("a data-on-click message is not of the model's message type");
+                                false
+                            }
+                        },
+                        Some(Interaction::Text(text)) => self.process_message_str(&text),
+                        None => false,
+                    };
+                    return updated || self.focused_id.is_some();
                 }
                 
                 let old_focus = self.focused_id.take();
@@ -410,11 +418,15 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
         }
     }
 
+    fn process_message(&mut self, msg: M::Message) -> bool {
+        profile!("update");
+        self.model.update(msg, &mut self.context);
+        self.sync_view_inner(true)
+    }
+
     fn process_message_str(&mut self, msg_str: &str) -> bool {
         if let Ok(msg) = M::Message::from_str(msg_str) {
-            profile!("update");
-            self.model.update(msg, &mut self.context);
-            self.sync_view_inner(true)
+            self.process_message(msg)
         } else {
             log::debug!("Unhandled or failed to parse message: {}", msg_str);
             false
