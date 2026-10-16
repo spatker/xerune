@@ -274,7 +274,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
         match event {
             InputEvent::Click { x, y } => {
                 if let Some((interaction, clicked_node)) = self.ui.hit_test(x, y) {
-                    if let Some(RenderData::TextInput(id, _, _)) = self.ui.render_data.get(&clicked_node) {
+                    if let Some(RenderData::TextInput(id, _, _, _)) = self.ui.render_data.get(&clicked_node) {
                         if !id.is_empty() {
                             self.focused_id = Some(id.clone());
                         } else {
@@ -792,7 +792,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
                             RenderData::Slider(_, style, _) => *style = base_container.clone(),
                             RenderData::Progress(_, _, style, _) => *style = base_container.clone(),
                             RenderData::Canvas(_, style) => *style = base_container.clone(),
-                            RenderData::TextInput(_, _, style) => *style = base_container.clone(),
+                            RenderData::TextInput(_, _, style, _) => *style = base_container.clone(),
                         }
                     }
                 }
@@ -925,7 +925,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
                             RenderData::Slider(_, style, _) => *style = current_container,
                             RenderData::Progress(_, _, style, _) => *style = current_container,
                             RenderData::Canvas(_, style) => *style = current_container,
-                            RenderData::TextInput(_, _, style) => *style = current_container,
+                            RenderData::TextInput(_, _, style, _) => *style = current_container,
                         }
                     }
                     needs_redraw = true;

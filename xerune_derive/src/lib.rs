@@ -1061,12 +1061,13 @@ struct MediaRuleSet {
 /// The declaration prefix of a form control part's pseudo-element (without
 /// `::`). Mirrors `xerune::style::ControlPart`.
 fn part_prefix(pseudo_element: &str) -> Option<&'static str> {
-    const PARTS: [(&str, &[&str]); 5] = [
+    const PARTS: [(&str, &[&str]); 6] = [
         ("-xerune-bar-", &["-webkit-progress-bar"]),
         ("-xerune-value-", &["-webkit-progress-value", "-moz-progress-bar"]),
         ("-xerune-track-", &["-webkit-slider-runnable-track", "-moz-range-track"]),
         ("-xerune-thumb-", &["-webkit-slider-thumb", "-moz-range-thumb"]),
         ("-xerune-fill-", &["-moz-range-progress"]),
+        ("-xerune-placeholder-", &["placeholder", "-webkit-input-placeholder", "-moz-placeholder"]),
     ];
     PARTS.iter().find(|(_, names)| names.iter().any(|n| n.eq_ignore_ascii_case(pseudo_element))).map(|(prefix, _)| *prefix)
 }

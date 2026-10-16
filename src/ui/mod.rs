@@ -976,7 +976,7 @@ fn traverse_layout(
                     border_radius: style.border_radius,
                 });
             },
-            RenderData::TextInput(id, text, style) => {
+            RenderData::TextInput(id, text, style, placeholder) => {
                 let is_focused = focused_id == Some(id.as_str()) && !id.is_empty();
                 
                 let focus_ring = crate::style::BorderSide::solid(2.0, crate::Color::from_rgba8(0, 122, 255, 255));
@@ -988,26 +988,30 @@ fn traverse_layout(
                     border: if is_focused { crate::style::Borders::all(focus_ring) } else { style.border.resolved(style.color) },
                 });
 
-                if let Some(t) = text {
-                    if !t.is_empty() {
-                        // Inset by the left padding and center one line vertically.
-                        let pad_x = if style.padding_left > 0.0 { style.padding_left } else { 8.0 };
-                        let line_h = style.font_size * 1.2;
-                        let text_rect = Rect {
-                            x: rect.x + pad_x,
-                            y: rect.y + ((rect.height - line_h) * 0.5).max(0.0),
-                            width: (rect.width - 2.0 * pad_x).max(0.0),
-                            height: line_h.min(rect.height),
-                        };
-                        commands.push(DrawCommand::DrawText {
-                            text: t.clone(),
-                            rect: text_rect,
-                            color: style.color,
-                            font_size: style.font_size,
-                            weight: style.weight,
-                            run: None,
-                        });
-                    }
+                // The value, or the placeholder while the value is empty.
+                let shown = match (text.as_deref(), placeholder.as_deref()) {
+                    (Some(t), _) if !t.is_empty() => Some((t, style)),
+                    (_, Some((p, p_style))) => Some((p.as_str(), p_style)),
+                    _ => None,
+                };
+                if let Some((t, text_style)) = shown {
+                    // Inset by the left padding and center one line vertically.
+                    let pad_x = if style.padding_left > 0.0 { style.padding_left } else { 8.0 };
+                    let line_h = text_style.font_size * 1.2;
+                    let text_rect = Rect {
+                        x: rect.x + pad_x,
+                        y: rect.y + ((rect.height - line_h) * 0.5).max(0.0),
+                        width: (rect.width - 2.0 * pad_x).max(0.0),
+                        height: line_h.min(rect.height),
+                    };
+                    commands.push(DrawCommand::DrawText {
+                        text: t.to_string(),
+                        rect: text_rect,
+                        color: text_style.color,
+                        font_size: text_style.font_size,
+                        weight: text_style.weight,
+                        run: None,
+                    });
                 }
             },
             _ => {} 
@@ -1259,7 +1263,7 @@ pub fn hit_test_recursive(
         if let Some(data) = render_data.get(&root) {
             let maybe_style = match data {
                 RenderData::Container(style) => Some(style),
-                RenderData::TextInput(_, _, style) => Some(style),
+                RenderData::TextInput(_, _, style, _) => Some(style),
                 RenderData::Text(_, style) => Some(style),
                 _ => None,
             };
@@ -1272,7 +1276,7 @@ pub fn hit_test_recursive(
 
             let overflow = match data {
                 RenderData::Container(style) => style.overflow,
-                RenderData::TextInput(_, _, style) => style.overflow,
+                RenderData::TextInput(_, _, style, _) => style.overflow,
                 _ => Overflow::Visible,
             };
 

@@ -249,7 +249,7 @@ progress::-webkit-progress-bar { background: #e2e8f0; border-radius: 5px; }
 progress::-webkit-progress-value { background: linear-gradient(90deg, #22d3ee, #a78bfa); border-radius: 5px; }
 ```
 
-Part selectors with pseudo-classes (`::-webkit-slider-thumb:hover`) and other pseudo-elements (`::before`) are ignored.
+A text input shows its `placeholder` while its value is empty, in Chromium's #757575 unless `::placeholder` (or `::-webkit-input-placeholder`) sets `color`, `font-size` or `font-weight`. Part selectors with pseudo-classes (`::-webkit-slider-thumb:hover`) and other pseudo-elements (`::before`) are ignored.
 
 Unsupported **tags** fall back to a generic inline-block box (with a one-time warning). Elements with dedicated behaviour: `div`, `p`, `pre`, `span`, `h1`–`h6`, `ul`/`li`, `table`/`tr`/`td`/`th` (+ `thead`/`tbody`/`tfoot`), `strong`/`b`, `img`, `button`, `input` (`type="checkbox"`, `"range"`, text), `progress`, `canvas`, `br`.
 

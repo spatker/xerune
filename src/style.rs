@@ -317,15 +317,18 @@ pub enum ControlPart {
     SliderThumb,
     /// A range's `::-moz-range-progress`: the track up to the thumb.
     SliderFill,
+    /// A text input's `::placeholder`.
+    Placeholder,
 }
 
 impl ControlPart {
-    const PARTS: [(ControlPart, &'static str, &'static [&'static str]); 5] = [
+    const PARTS: [(ControlPart, &'static str, &'static [&'static str]); 6] = [
         (ControlPart::ProgressBar, "-xerune-bar-", &["-webkit-progress-bar"]),
         (ControlPart::ProgressValue, "-xerune-value-", &["-webkit-progress-value", "-moz-progress-bar"]),
         (ControlPart::SliderTrack, "-xerune-track-", &["-webkit-slider-runnable-track", "-moz-range-track"]),
         (ControlPart::SliderThumb, "-xerune-thumb-", &["-webkit-slider-thumb", "-moz-range-thumb"]),
         (ControlPart::SliderFill, "-xerune-fill-", &["-moz-range-progress"]),
+        (ControlPart::Placeholder, "-xerune-placeholder-", &["placeholder", "-webkit-input-placeholder", "-moz-placeholder"]),
     ];
 
     /// The part a pseudo-element name (without `::`) selects.
@@ -574,8 +577,9 @@ pub enum RenderData {
     Progress(f32, f32, ContainerStyle, Option<Box<ControlParts>>),
     /// Styled canvas viewport buffer mapping.
     Canvas(String, ContainerStyle),
-    /// Styled text input field (id, text value, style).
-    TextInput(String, Option<String>, ContainerStyle),
+    /// Styled text input field (id, text value, style, placeholder text
+    /// and its `::placeholder` style).
+    TextInput(String, Option<String>, ContainerStyle, Option<Box<(String, ContainerStyle)>>),
 }
 
 impl RenderData {
@@ -589,7 +593,7 @@ impl RenderData {
             RenderData::Slider(_, style, _) => style,
             RenderData::Progress(_, _, style, _) => style,
             RenderData::Canvas(_, style) => style,
-            RenderData::TextInput(_, _, style) => style,
+            RenderData::TextInput(_, _, style, _) => style,
         }
     }
 }

@@ -177,6 +177,7 @@ pub struct ParsedAttributes {
     pub canvas_id: String,
     pub element_id: Option<String>,
     pub text_input_text: Option<String>,
+    pub placeholder: Option<String>,
 }
 
 impl ParsedAttributes {
@@ -195,6 +196,7 @@ impl ParsedAttributes {
             canvas_id: String::new(),
             element_id: None,
             text_input_text: None,
+            placeholder: None,
         }
     }
 }
@@ -245,6 +247,7 @@ pub fn parse_attributes_generic<'a>(
                     parsed.slider_max = v;
                 }
             },
+            "placeholder" => parsed.placeholder = Some(value.to_string()),
             "min" => {
                 if let Ok(v) = value.parse::<f32>() {
                     parsed.slider_min = v;
@@ -368,7 +371,10 @@ pub(crate) fn process_element_type(
             render_data.insert(id, RenderData::Canvas(parsed.canvas_id.clone(), current_style));
         },
         defaults::ElementType::TextInput => {
-            render_data.insert(id, RenderData::TextInput(parsed.element_id.clone().unwrap_or_default(), parsed.text_input_text.clone(), current_style));
+            let placeholder = parsed.placeholder.as_ref()
+                .filter(|text| !text.is_empty())
+                .map(|text| Box::new((text.clone(), super::controls::placeholder_style(&current_style))));
+            render_data.insert(id, RenderData::TextInput(parsed.element_id.clone().unwrap_or_default(), parsed.text_input_text.clone(), current_style, placeholder));
         },
         _ => {
             render_data.insert(id, RenderData::Container(current_style));

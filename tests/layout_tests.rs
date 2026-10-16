@@ -1622,6 +1622,42 @@ mod controls {
         check_parts(&commands(RuntimeParts));
     }
 
+    #[derive(XeruneTemplate)]
+    #[template(source = r#"<style>
+        body { margin: 0px; }
+        .styled::placeholder { color: #ff0000; font-size: 20px; }
+    </style>
+    <body>
+        <input type="text" value="{{ text }}" placeholder="Type here">
+        <input type="text" class="styled" placeholder="Search">
+    </body>"#)]
+    struct Placeholders {
+        text: String,
+    }
+    impl Model for Placeholders {
+        type Message = String;
+        fn update(&mut self, _msg: String, _context: &mut Context) {}
+    }
+
+    fn text(commands: &[DrawCommand], wanted: &str) -> Option<(Color, f32)> {
+        commands.iter().find_map(|c| match c {
+            DrawCommand::DrawText { text, color, font_size, .. } if text == wanted => Some((*color, *font_size)),
+            _ => None,
+        })
+    }
+
+    /// An empty input shows its placeholder in Chromium's #757575, styled
+    /// by `::placeholder`; typed text replaces it.
+    #[test]
+    fn empty_input_shows_placeholder() {
+        let empty = commands(Placeholders { text: String::new() });
+        assert_eq!(text(&empty, "Type here"), Some((rgb(0x757575), 16.0)));
+        assert_eq!(text(&empty, "Search"), Some((rgb(0xff0000), 20.0)));
+        let typed = commands(Placeholders { text: "hello".into() });
+        assert_eq!(text(&typed, "Type here"), None);
+        assert_eq!(text(&typed, "hello"), Some((rgb(0x000000), 16.0)));
+    }
+
     /// Runtime stylesheets (no compiled template) must not reset an
     /// `<input>`'s size to its type's defaults after CSS set it.
     #[test]
@@ -1715,7 +1751,6 @@ mod known_gaps {
         };
     }
     gap_model!(TextWrap, "tests/gaps/text_wrap.html");
-    gap_model!(Placeholder, "tests/gaps/placeholder.html");
     gap_model!(ImgShadow, "tests/gaps/img_shadow.html");
     gap_model!(CanvasResize, "tests/gaps/canvas_resize.html");
     gap_model!(Order, "tests/gaps/order.html");
@@ -1775,14 +1810,6 @@ mod known_gaps {
             crate::roboto_lines(GposKerning, 800.0, 480.0),
             ["A body paragraph in a flex column with min-", "width zero, which wraps."]
         );
-    }
-
-    #[test]
-    #[ignore = "FIXME: <input placeholder> is not supported"]
-    fn empty_input_shows_placeholder() {
-        let rt = runtime(Placeholder, 400.0, 300.0);
-        let commands = rt.ui.build_commands(&HashMap::new(), None);
-        text_rect(&commands, "Type here");
     }
 
     #[test]

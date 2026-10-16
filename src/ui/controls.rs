@@ -120,6 +120,18 @@ pub(crate) fn resolve_parts(host: &ContainerStyle, parts: &[ControlPart]) -> Opt
     Some(Box::new(ControlParts(resolved)))
 }
 
+/// The style of a text input's placeholder: its own text style in
+/// Chromium's #757575, then its `::placeholder` CSS.
+pub(crate) fn placeholder_style(host: &ContainerStyle) -> ContainerStyle {
+    let mut style = super::text_style(host);
+    style.color = Color { r: 0x75, g: 0x75, b: 0x75, a: 255 };
+    let mut layout = taffy::Style::default();
+    for d in host.part_declarations.iter().filter(|d| d.part == ControlPart::Placeholder) {
+        crate::css::apply_declaration(&d.name, &d.value, &mut style, &mut layout);
+    }
+    style
+}
+
 /// A length or percentage of `base`; `None` for `auto`.
 fn length(raw: CompactLength, base: f32) -> Option<f32> {
     match raw.tag() {
