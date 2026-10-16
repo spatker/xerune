@@ -3,6 +3,8 @@ pub(crate) mod metadata;
 pub(crate) mod builder;
 mod controls;
 mod pseudo;
+#[cfg(feature = "dynamic-parser")]
+pub mod html;
 pub mod attributes;
 /// Module containing stylesheet layout mapping resolver methods.
 pub mod style_resolution;
@@ -119,85 +121,24 @@ impl Ui {
     /// Available only when the `dynamic-parser` feature is enabled.
     #[cfg(feature = "dynamic-parser")]
     pub fn new(
-        html: &str, 
+        html: &str,
         measurer: &impl TextMeasurer,
         default_style: ContainerStyle,
         message_validator: &impl Fn(&str) -> bool,
     ) -> Result<Self, TaffyError> {
         profile!("ui_new_internal");
-        let mut taffy = TaffyTree::new();
-        let mut render_data = NodeMap::new();
-        let mut interactions = NodeMap::new();
-        let mut node_to_handle = NodeMap::new();
-        let mut base_styles = NodeMap::new();
-
         let dom = parse_document(RcDom::default(), Default::default())
             .from_utf8()
             .read_from(&mut html.as_bytes())
             .unwrap();
-
-        attributes::preprocess_dom(&dom.document);
-
-        let mut css_str = String::new();
-        attributes::extract_styles(&dom.document, &mut css_str);
-
-        // Inline `@media` blocks that match the current viewport before the
-        // simplecss parse (which drops all at-rules).
-        let css_str = css::media::expand_for_viewport(&css_str);
-
-        let keyframes = css::parse_keyframes(&css_str);
-        
-        let css_str = css::rewrite_for_simplecss(&css_str);
-        
-        let stylesheet = simplecss::StyleSheet::parse(&css_str);
-
-        let root = attributes::dom_to_taffy(
-            &mut taffy, 
-            &dom.document, 
-            measurer, 
-            &mut render_data, 
-            &mut interactions, 
-            default_style,
-            message_validator,
-            &stylesheet,
-            &mut node_to_handle,
-            &mut base_styles,
-        ).ok_or(TaffyError::ChildIndexOutOfBounds { parent: NodeId::new(0), child_index: 0, child_count: 0 })?;  
-
-        let (html, body) = find_html_body(&taffy, root, |node| match node_to_handle.get(&node).map(|h| &h.data) {
-            Some(markup5ever_rcdom::NodeData::Element { name, .. }) => matches!(name.local.as_ref(), "html" | "body")
-                .then(|| if name.local.as_ref() == "html" { "html" } else { "body" }),
-            _ => None,
-        });
-
-        let (paragraphs, ellipses) = shape_texts(&render_data, measurer);
-        let element_ids = node_to_handle
-            .iter()
-            .filter_map(|(node, handle)| match &handle.data {
-                markup5ever_rcdom::NodeData::Element { attrs, .. } => attrs
-                    .borrow()
-                    .iter()
-                    .find(|a| a.name.local.as_ref() == "id")
-                    .map(|a| (Cow::Owned(a.value.to_string()), node)),
-                _ => None,
-            })
-            .collect();
-        Ok(Self {
-            element_ids,
-            taffy,
-            render_data,
-            interactions,
-            scroll_offsets: NodeMap::new(),
-            root,
-            node_to_handle,
-            base_styles,
-            keyframes,
-            html,
-            body,
-            paragraphs,
-            text_lines: NodeMap::new(),
-            ellipses,
-        })
+        let mut css = String::new();
+        html::extract_styles(&dom.document, &mut css);
+        let mut builder = UiBuilder::new();
+        let root = match html::build_document(&dom.document, &mut builder) {
+            Some(root) => root,
+            None => builder.create_element("html", &[]),
+        };
+        Self::from_builder(builder, root, &css, measurer, default_style, message_validator)
     }
 
     #[cfg(feature = "std")]
@@ -284,9 +225,23 @@ impl Ui {
             profile!("build_ui");
             model.build_ui(&mut builder, measurer, &default_style, message_validator)
         };
+        Self::from_builder(builder, root, model.stylesheet(), measurer, default_style, message_validator)
+    }
 
+    /// Styles the tree built with `builder` (template styles plus
+    /// `stylesheet`, for elements built at runtime) and shapes its text.
+    fn from_builder(
+        #[cfg_attr(not(feature = "std"), allow(unused_mut))] mut builder: UiBuilder,
+        root: NodeId,
+        stylesheet: &str,
+        measurer: &impl TextMeasurer,
+        default_style: ContainerStyle,
+        message_validator: &impl Fn(&str) -> bool,
+    ) -> Result<Self, TaffyError> {
+        #[cfg(not(feature = "std"))]
+        let _ = (stylesheet, default_style, message_validator);
         #[cfg(feature = "std")]
-        let stylesheet_str = model.stylesheet();
+        let stylesheet_str = stylesheet;
         #[cfg(feature = "std")]
         let mut base_styles = builder.base_styles;
         #[cfg(not(feature = "std"))]
@@ -750,19 +705,6 @@ impl ToDisplayString for bool {
     fn to_display_string(&self) -> Cow<'_, str> {
         Cow::Borrowed(if *self { "true" } else { "false" })
     }
-}
-
-/// Finds `<html>` and its `<body>` near the top of the tree.
-#[cfg(feature = "dynamic-parser")]
-fn find_html_body<'a>(taffy: &TaffyTree, root: NodeId, tag: impl Fn(NodeId) -> Option<&'a str>) -> (Option<NodeId>, Option<NodeId>) {
-    let children = |n: NodeId| taffy.children(n).unwrap_or_default();
-    let html = if tag(root) == Some("html") {
-        Some(root)
-    } else {
-        children(root).into_iter().find(|&c| tag(c) == Some("html"))
-    };
-    let body = html.and_then(|h| children(h).into_iter().find(|&c| tag(c) == Some("body")));
-    (html, body)
 }
 
 /// Whether a fill paints every pixel of its rect fully opaque.

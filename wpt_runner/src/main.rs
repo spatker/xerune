@@ -13,7 +13,7 @@ use std::{
     process::{Command, Stdio}, time::{Duration, Instant},
 };
 use xerune_render::{Fonts, SoftwareRenderer};
-use markup5ever_rcdom::{Handle, NodeData, RcDom};
+use markup5ever_rcdom::RcDom;
 use rayon::prelude::*;
 use tiny_skia::Pixmap;
 use xerune::{Context, ImageError, ImageLoader, Model, Runtime};
@@ -45,52 +45,7 @@ impl xerune::TemplateLayout for RawHtmlModel {
         _default_style: &xerune::style::ContainerStyle,
         _message_validator: &impl Fn(&str) -> bool,
     ) -> taffy::NodeId {
-        build(&self.dom.document, builder).unwrap_or_else(|| builder.create_element("html", &[]))
-    }
-}
-
-fn build(handle: &Handle, builder: &mut xerune::ui::UiBuilder) -> Option<taffy::NodeId> {
-    match &handle.data {
-        NodeData::Document => handle.children.borrow().iter().find_map(|child| build(child, builder)),
-        NodeData::Element { name, attrs, .. } => {
-            let tag = name.local.as_ref();
-            if matches!(tag, "style" | "script" | "head" | "link" | "meta" | "title") {
-                return None;
-            }
-            let owned: Vec<(String, String)> = attrs.borrow().iter()
-                .map(|a| (a.name.local.to_string(), a.value.to_string())).collect();
-            let attrs: Vec<_> = owned.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
-            let get = |key: &str| attrs.iter().find(|(k, _)| *k == key).map(|(_, v)| *v);
-            let number = |key: &str| get(key).and_then(|v| v.parse::<f32>().ok());
-            let node = match (tag, get("type")) {
-                ("input", Some("checkbox")) => builder.create_checkbox(get("checked").is_some(), &attrs),
-                ("input", Some("range")) => builder.create_slider(number("value").unwrap_or(0.0), &attrs),
-                ("input", Some("text") | None) => builder.create_input_text(get("value").unwrap_or(""), &attrs),
-                ("progress", _) => builder.create_progress(number("value").unwrap_or(0.0), number("max").unwrap_or(1.0), &attrs),
-                ("img", _) => builder.create_image(get("src").unwrap_or(""), &attrs),
-                _ => builder.create_element(tag, &attrs),
-            };
-            builder.node_to_handle.insert(node, handle.clone());
-            if let Some(meta) = builder.node_metadata.get_mut(&node) {
-                meta.attrs = owned;
-            }
-            for child in handle.children.borrow().iter() {
-                if let Some(child) = build(child, builder) {
-                    builder.append_child(node, child);
-                }
-            }
-            Some(node)
-        }
-        NodeData::Text { contents } => {
-            let text = contents.borrow();
-            if text.trim().is_empty() {
-                return None;
-            }
-            let node = builder.create_text(&text, &[]);
-            builder.node_to_handle.insert(node, handle.clone());
-            Some(node)
-        }
-        _ => None,
+        xerune::ui::html::build_document(&self.dom.document, builder).unwrap_or_else(|| builder.create_element("html", &[]))
     }
 }
 
