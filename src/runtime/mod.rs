@@ -766,8 +766,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
             height: length(height),
         };
         if self.viewport_px == Some((width, height)) {
-            self.cached_size = size;
-            let _ = self.ui.compute_layout(size);
+            // Laid out at this size already; winit calls this on every redraw.
             return false;
         }
         self.viewport_px = Some((width, height));
