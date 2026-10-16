@@ -62,6 +62,9 @@ pub enum TodoMsg {
     Add,
     #[xerune(prefix = "todo_input:text:")]
     TodoInput(String),
+    /// The input's text from the on-screen keyboard, on touch-only devices.
+    #[xerune(prefix = "todo_input:value:")]
+    TodoValue(String),
     #[xerune(prefix = "keydown:")]
     KeyDown(String),
 }
@@ -102,6 +105,7 @@ impl Model for TodoList {
                     }
                 }
             }
+            TodoMsg::TodoValue(text) => self.new_item_title = text,
             TodoMsg::KeyDown(key) => {
                 match key.as_str() {
                     "Backspace" => {
