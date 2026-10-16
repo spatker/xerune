@@ -140,6 +140,13 @@ where
         self
     }
 
+    /// Tapping a text input opens the on-screen keyboard, for devices
+    /// without a keyboard (see [`Runtime::set_input_keyboard`]).
+    pub fn input_keyboard(mut self, on: bool) -> Self {
+        self.runtime.set_input_keyboard(on);
+        self
+    }
+
     /// Runs `f` once the app is running, with a [`Messenger`] to send it
     /// messages from other threads. Not called for snapshots, which must be
     /// deterministic: reach a state with `XERUNE_SNAPSHOT_MESSAGES` instead.

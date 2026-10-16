@@ -377,7 +377,7 @@ impl<M> Context<M> {
     ///
     /// Asking again while the keyboard is open replaces the request.
     pub fn edit_text(&mut self, request: crate::keyboard::TextRequest, on_done: impl FnOnce(Option<String>) -> M + Send + 'static) {
-        self.text_request = Some((request, Box::new(on_done)));
+        self.text_request = Some((request, Box::new(move |text| Some(on_done(text)))));
     }
 
     /// Stops a timer started with [`Self::after`] that hasn't fired yet.

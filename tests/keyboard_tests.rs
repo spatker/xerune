@@ -147,3 +147,64 @@ fn scroll_position_survives_the_keyboard() {
     send(&mut runtime, "kb:cancel");
     assert_eq!(runtime.ui.scroll_offsets.values().copied().collect::<Vec<_>>(), scrolled);
 }
+
+#[derive(Debug, Clone, XeruneMessage)]
+enum FormMsg {
+    #[xerune(prefix = "name:value:")]
+    Name(String),
+    #[xerune(prefix = "name:text:")]
+    Typed(String),
+}
+
+#[derive(XeruneTemplate)]
+#[template(source = r#"<div>
+    <input type="text" id="name" value="{{ name }}" placeholder="Your name">
+    <input type="text" id="other" placeholder="Not handled">
+</div>"#)]
+struct Form {
+    name: String,
+}
+
+impl Model for Form {
+    type Message = FormMsg;
+    fn update(&mut self, msg: FormMsg, _context: &mut Context<FormMsg>) {
+        match msg {
+            FormMsg::Name(name) => self.name = name,
+            FormMsg::Typed(typed) => self.name.push_str(&typed),
+        }
+    }
+}
+
+fn form_texts(runtime: &Runtime<Form, MockMeasurer>) -> Vec<String> {
+    runtime.ui.render_data.values().filter_map(|d| match &d.kind {
+        RenderKind::Text(t) => Some(t.clone()),
+        _ => None,
+    }).collect()
+}
+
+#[test]
+fn tapping_an_input_opens_the_keyboard_when_asked_to() {
+    let mut runtime = Runtime::new(Form { name: "Ada".into() }, MockMeasurer);
+    runtime.set_size(800.0, 480.0);
+    // Off: a tap focuses the input, which takes typed text.
+    runtime.handle_event(InputEvent::Click { x: 20.0, y: 15.0 });
+    assert!(!form_texts(&runtime).iter().any(|t| t == "OK"));
+    runtime.handle_event(InputEvent::TextInput { id: String::new(), text: "!".into() });
+    assert_eq!(runtime.model().name, "Ada!");
+
+    runtime.set_input_keyboard(true);
+    runtime.handle_event(InputEvent::Click { x: 20.0, y: 15.0 });
+    let texts = form_texts(&runtime);
+    assert!(texts.iter().any(|t| t == "Your name") && texts.iter().any(|t| t == "Ada!"), "{texts:?}");
+    runtime.handle_messages(["kb:backspace".to_string(), "kb:type:?".to_string(), "kb:ok".to_string()]);
+    assert_eq!(runtime.model().name, "Ada?");
+
+    // Cancel sends nothing; neither does OK for an input the model takes no value for.
+    runtime.handle_event(InputEvent::Click { x: 20.0, y: 15.0 });
+    runtime.handle_messages(["kb:type:x".to_string(), "kb:cancel".to_string()]);
+    runtime.handle_event(InputEvent::Click { x: 190.0, y: 15.0 });
+    assert!(form_texts(&runtime).iter().any(|t| t == "Not handled"), "the other input's keyboard");
+    runtime.handle_messages(["kb:type:x".to_string(), "kb:ok".to_string()]);
+    assert_eq!(runtime.model().name, "Ada?");
+    assert!(!form_texts(&runtime).iter().any(|t| t == "OK"), "closed");
+}

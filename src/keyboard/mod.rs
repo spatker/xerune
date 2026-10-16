@@ -15,8 +15,8 @@ use crate::alloc_prelude::*;
 use crate::keys::KeyAction;
 use crate::{XeruneMessage, XeruneTemplate};
 
-/// Makes the model's message from the keyboard's result.
-pub(crate) type OnText<M> = Box<dyn FnOnce(Option<String>) -> M + Send>;
+/// Makes the model's message, if any, from the keyboard's result.
+pub(crate) type OnText<M> = Box<dyn FnOnce(Option<String>) -> Option<M> + Send>;
 
 /// What a model asks the keyboard for: a title saying what to type, the
 /// text to start from, and limits.

@@ -121,6 +121,10 @@ pub struct Runtime<M: Model, R> {
     key_map: crate::keys::KeyMap,
     /// The on-screen keyboard, shown instead of the model's view.
     keyboard: Option<KeyboardSession<M::Message>>,
+    /// Tapping a text input opens the keyboard for it, as set by
+    /// [`Self::set_input_keyboard`] or `XERUNE_INPUT_KEYBOARD=1`.
+    input_keyboard: bool,
+    input_keyboard_override: bool,
     /// The next view replaces another tree (the keyboard's or the
     /// model's): none of its elements were there before.
     new_tree: bool,
@@ -145,6 +149,10 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
          let target_fps_override = std::env::var("XERUNE_TARGET_FPS").ok().and_then(|v| v.trim().parse().ok()).filter(|&fps: &u32| fps > 0);
          #[cfg(not(all(feature = "std", not(target_arch = "wasm32"))))]
          let target_fps_override = None;
+         #[cfg(all(feature = "std", not(target_arch = "wasm32")))]
+         let input_keyboard_override = std::env::var("XERUNE_INPUT_KEYBOARD").is_ok_and(|v| v.trim() == "1");
+         #[cfg(not(all(feature = "std", not(target_arch = "wasm32"))))]
+         let input_keyboard_override = false;
 
          let mut runtime = Self {
              model,
@@ -177,6 +185,8 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
              builds: 0,
              key_map: crate::keys::KeyMap::default(),
              keyboard: None,
+             input_keyboard: false,
+             input_keyboard_override,
              new_tree: true,
          };
          runtime.update_subscriptions();
@@ -222,6 +232,15 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
     /// backends' names; a device with other buttons binds its own.
     pub fn set_key_map(&mut self, key_map: crate::keys::KeyMap) {
         self.key_map = key_map;
+    }
+
+    /// Makes tapping a text input (`<input type="text" id="..">`) open the
+    /// on-screen keyboard with its value, for devices without a keyboard.
+    /// On OK the model gets `<id>:value:<text>`, the input's new value;
+    /// Cancel sends nothing. Off by default, where inputs take typed text
+    /// (`<id>:text:<typed>`); `XERUNE_INPUT_KEYBOARD=1` turns it on.
+    pub fn set_input_keyboard(&mut self, on: bool) {
+        self.input_keyboard = on;
     }
 
     /// The frame rate in effect (see [`Self::set_target_fps`]).
@@ -379,7 +398,21 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
                 self.pointer = Some((x, y));
                 let restyled = self.update_pointer_state();
                 if let Some((interaction, clicked_node)) = self.ui.hit_test(x, y) {
-                    if let Some(RenderKind::TextInput(id, _, _)) = self.ui.render_data.get(&clicked_node).map(|d| &d.kind) {
+                    if let Some(RenderKind::TextInput(id, value, placeholder)) = self.ui.render_data.get(&clicked_node).map(|d| &d.kind) {
+                        if (self.input_keyboard || self.input_keyboard_override) && !id.is_empty() {
+                            let title = placeholder.as_ref().map_or("", |p| p.0.as_str());
+                            let request = TextRequest::new(title).text(value.as_deref().unwrap_or(""));
+                            let id = id.clone();
+                            self.open_keyboard(request, Box::new(move |text: Option<String>| {
+                                let message = format!("{id}:value:{}", text?);
+                                let parsed = M::Message::from_str(&message).ok();
+                                if parsed.is_none() {
+                                    log::debug!("the model takes no {id}:value: message for the keyboard's text");
+                                }
+                                parsed
+                            }));
+                            return self.sync_view_inner(false);
+                        }
                         if !id.is_empty() {
                             self.focused_id = Some(id.clone());
                         } else {
@@ -837,9 +870,10 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
         let session = self.keyboard.take().expect("the keyboard is open");
         self.scroll_offsets = session.scroll_offsets;
         self.switch_tree();
-        let msg = (session.on_done)(result);
-        profile!("update");
-        self.model.update(msg, &mut self.context);
+        if let Some(msg) = (session.on_done)(result) {
+            profile!("update");
+            self.model.update(msg, &mut self.context);
+        }
         self.sync_view_inner(false)
     }
 

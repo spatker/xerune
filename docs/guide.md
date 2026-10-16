@@ -553,6 +553,21 @@ device with other buttons binds its own:
 runtime.set_key_map(KeyMap::default().bind("KEY_F1", KeyAction::Cancel));
 ```
 
+**Text inputs.** On a device without a keyboard, `<input type="text">` can't be
+typed into: it takes typed text (`<id>:text:<typed>`, appended by the model).
+`Runtime::set_input_keyboard(true)` (or `App::input_keyboard(true)`, or
+`XERUNE_INPUT_KEYBOARD=1` to try it on a desktop) makes tapping an input with an
+`id` open the keyboard with its value, titled by its `placeholder`. OK sends the
+model the input's new value as `<id>:value:<text>`, and Cancel sends nothing, so
+a model handles both messages to work either way:
+
+```rust
+#[xerune(prefix = "todo_input:text:")]
+TodoInput(String),  // typed on a keyboard: append
+#[xerune(prefix = "todo_input:value:")]
+TodoValue(String),  // from the on-screen keyboard: replace
+```
+
 The model keeps running underneath (timers, subscriptions, background
 messages), and its view, with its scroll positions, comes back when the
 keyboard closes. Snapshots reach the keyboard's states with its messages,
