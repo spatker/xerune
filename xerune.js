@@ -283,19 +283,18 @@ export function initXeruneApp({ app, containerId, templateText, templateBaseDir,
     document.addEventListener("keydown", globalKeydownHandler);
     document.addEventListener("keyup", globalKeyupHandler);
 
-    // 4. Timer tick loop
+    // 4. Timers, subscriptions and frames: poll the runtime every frame
     let animationFrameId;
-    function tick(now) {
-        const changed = app.tick(now);
-        if (changed) {
+    function frame() {
+        if (app.poll()) {
             render();
         }
-        animationFrameId = requestAnimationFrame(tick);
+        animationFrameId = requestAnimationFrame(frame);
     }
 
     // Initial render
     render();
-    animationFrameId = requestAnimationFrame(tick);
+    animationFrameId = requestAnimationFrame(frame);
 
     // Return cleanup function to destroy the app when switching
     return () => {
