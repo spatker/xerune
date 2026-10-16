@@ -276,7 +276,7 @@ impl Ui {
                     &cached.sheet,
                     &media,
                     &builder.node_metadata,
-                    &builder.keys,
+                    &mut builder.keys,
                     &builder.pointer,
                     &mut builder.hover_handlers,
                     &mut base_styles,

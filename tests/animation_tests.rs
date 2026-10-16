@@ -147,3 +147,30 @@ fn animations_follow_their_element() {
     assert!((63..=64).contains(&colors[0]), "the new item is 250 ms in: {colors:?}");
     assert!((191..=192).contains(&colors[1]), "the old item is 750 ms in: {colors:?}");
 }
+
+#[derive(XeruneTemplate)]
+#[template(source = r#"<style>
+  body { margin: 0; }
+  @keyframes fade { from { background-color: #000000; } to { background-color: #ff0000; } }
+  main { display: flex; }
+  .knob::before { content: ""; display: block; width: 10px; height: 10px; background-color: #0000ff; animation: fade 1s linear; }
+</style>
+<main><div class="knob"></div></main>"#)]
+struct Knob;
+
+impl Model for Knob {
+    type Message = Msg;
+    fn update(&mut self, _msg: Msg, _context: &mut Context) {}
+}
+
+/// `::before` boxes have keys of their own (from their element's), so
+/// their animations go on through rebuilds too.
+#[test]
+fn generated_boxes_keep_their_animations() {
+    let mut runtime = start(Knob);
+    runtime.tick_at_ms(500);
+    runtime.handle_event(InputEvent::Message("touch".into()));
+    runtime.tick_at_ms(750);
+    let (_, (r, _, b)) = boxes(&runtime)[0];
+    assert!((191..=192).contains(&r) && b == 0, "750 ms in: {r} {b}");
+}

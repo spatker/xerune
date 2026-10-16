@@ -235,7 +235,7 @@ pub(crate) fn resolve_styles(
     stylesheet: &xerune_css::sheet::StyleSheet,
     media: &[bool],
     node_metadata: &NodeMap<NodeMetadata>,
-    keys: &NodeMap<u64>,
+    keys: &mut NodeMap<u64>,
     pointer: &super::builder::PointerState,
     hover_handlers: &mut NodeMap<super::HoverHandlers>,
     base_styles: &mut NodeMap<(Style, ContainerStyle)>,
@@ -300,7 +300,7 @@ pub(crate) fn resolve_styles(
         taffy,
         metadata: node_metadata,
         meta,
-        keys,
+        keys: &*keys,
         pointer,
     };
     let matched_rules = stylesheet.rules.iter().enumerate()
@@ -462,7 +462,10 @@ pub(crate) fn resolve_styles(
     if !parsed.hover.is_empty() {
         hover_handlers.insert(node, parsed.hover.clone());
     }
-    finish_node(node, tag, &parent_style, &mut layout_style, &mut current_style, &parsed, taffy, render_data, interactions, base_styles);
+    let generated = finish_node(node, tag, &parent_style, &mut layout_style, &mut current_style, &parsed, taffy, render_data, interactions, base_styles);
+    if let Some(&key) = keys.get(node) {
+        super::builder::key_generated_boxes(keys, key, generated);
+    }
 }
 
 /// Finalizes a node's styles after processing all attributes and stylesheet overrides.
@@ -478,9 +481,9 @@ pub fn finalize_node_style(
     render_data: &mut NodeMap<RenderData>,
     interactions: &mut NodeMap<Interaction>,
     base_styles: &mut NodeMap<(Style, ContainerStyle)>,
-) {
+) -> GeneratedBoxes {
     resolve_box(parent_style, layout_style, current_style);
-    finish_node(node, tag, parent_style, layout_style, current_style, parsed, taffy, render_data, interactions, base_styles);
+    finish_node(node, tag, parent_style, layout_style, current_style, parsed, taffy, render_data, interactions, base_styles)
 }
 
 /// Sizes, `box-sizing` and the static position of an absolutely positioned
@@ -734,9 +737,9 @@ pub(crate) fn finish_node(
     render_data: &mut NodeMap<RenderData>,
     interactions: &mut NodeMap<Interaction>,
     base_styles: &mut NodeMap<(Style, ContainerStyle)>,
-) {
+) -> GeneratedBoxes {
     // Generated boxes, then flex items in `order` (Taffy has no `order`).
-    super::pseudo::generate(node, parsed.element_type, current_style, taffy, render_data, interactions, base_styles);
+    let generated = super::pseudo::generate(node, parsed.element_type, current_style, taffy, render_data, interactions, base_styles);
     let mut children = taffy.children(node).unwrap_or_default();
     if current_style.display.is_flex() {
         let original = children.clone();
@@ -838,4 +841,9 @@ pub(crate) fn finish_node(
     }
 
     base_styles.insert(node, (layout_style.clone(), current_style.clone()));
+    generated
 }
+
+/// The `::before` and `::after` boxes [`finish_node`] generated for an
+/// element, which get keys from the element's.
+pub type GeneratedBoxes = (Option<NodeId>, Option<NodeId>);

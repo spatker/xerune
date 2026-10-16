@@ -27,6 +27,16 @@ pub struct UiBuilder {
     pub hover_handlers: NodeMap<super::HoverHandlers>,
 }
 
+/// Gives an element's `::before` / `::after` boxes keys from its own `key`.
+pub(crate) fn key_generated_boxes(keys: &mut NodeMap<u64>, key: u64, (before, after): super::style_resolution::GeneratedBoxes) {
+    // Sites far from any template's.
+    for (node, site) in [(before, u64::MAX - 1), (after, u64::MAX - 2)] {
+        if let Some(node) = node {
+            keys.insert(node, element_key(key, site));
+        }
+    }
+}
+
 /// The keys of the elements the pointer is over and presses: the element
 /// under it and all its ancestors (`:hover` and `:active` apply to both).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -359,7 +369,7 @@ impl UiBuilder {
         if !el.parsed.hover.is_empty() {
             self.hover_handlers.insert(node, core::mem::take(&mut el.parsed.hover));
         }
-        super::style_resolution::finalize_node_style(
+        let generated = super::style_resolution::finalize_node_style(
             node,
             el.tag,
             parent_style,
@@ -371,6 +381,9 @@ impl UiBuilder {
             &mut self.interactions,
             &mut self.base_styles,
         );
+        if let Some(&key) = self.keys.get(node) {
+            key_generated_boxes(&mut self.keys, key, generated);
+        }
     }
 
     /// Creates a text leaf for a run of text styled from `parent_style` and

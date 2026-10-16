@@ -93,7 +93,7 @@ pub(crate) fn build(
         }
     }
     let parsed = super::attributes::ParsedAttributes::new(defaults.element_type);
-    super::style_resolution::finalize_node_style(node, "span", host, &mut layout, &mut style, &parsed, taffy, render_data, interactions, base_styles);
+    let _ = super::style_resolution::finalize_node_style(node, "span", host, &mut layout, &mut style, &parsed, taffy, render_data, interactions, base_styles);
     Some(node)
 }
 
