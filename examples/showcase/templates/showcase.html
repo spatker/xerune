@@ -48,17 +48,17 @@
     .btn.violet { background: linear-gradient(180deg, #8b5cf6 0%, #6d28d9 100%); border: 1px solid rgba(196,181,253,0.4);
                   box-shadow: 0px 4px 14px rgba(139,92,246,0.30); }
 
-    /* Toggle switch built from two divs.
-       FIXME: as an <input type="checkbox"> (appearance: none, :checked) the
-       switch would need its knob from ::before, which isn't supported. */
+    /* Toggle switch: a checkbox whose knob is its ::before. */
     .switch-row { display: flex; flex-direction: row; align-items: center; justify-content: space-between; padding: 7px 0; }
     .switch-label { display: flex; flex-direction: column; }
     .switch-name { font-size: 13px; color: #e6ebf5; }
     .switch-hint { font-size: 11px; color: #5d6b85; margin-top: 2px; }
-    .switch { display: flex; flex-direction: row; width: 40px; height: 22px; border-radius: 11px; padding: 3px;
-              background-color: #1e293b; justify-content: flex-start; }
-    .switch.on { background: linear-gradient(90deg, #0ea5e9 0%, #22d3ee 100%); justify-content: flex-end; }
-    .knob { width: 16px; height: 16px; border-radius: 8px; background-color: #e2e8f0; box-shadow: 0px 1px 3px rgba(0,0,0,0.5); }
+    .switch { appearance: none; position: relative; width: 40px; height: 22px; margin: 0; border-radius: 11px;
+              background-color: #1e293b; }
+    .switch:checked { background: linear-gradient(90deg, #0ea5e9 0%, #22d3ee 100%); }
+    .switch::before { content: ""; position: absolute; left: 3px; top: 3px; width: 16px; height: 16px; border-radius: 8px;
+                      background-color: #e2e8f0; box-shadow: 0px 1px 3px rgba(0,0,0,0.5); }
+    .switch:checked::before { left: 21px; }
 
     /* ---------- system ---------- */
     .tiles { display: flex; flex-direction: row; gap: 10px; margin-bottom: 10px; }
@@ -297,11 +297,11 @@
                 <span class="panel-title">CONFIGURATION</span>
                 <div class="switch-row" data-on-click="toggle_auto_scale">
                     <div class="switch-label"><span class="switch-name">Auto-scaling</span><span class="switch-hint">spin up workers on load</span></div>
-                    <div class="switch {% if auto_scale %}on{% endif %}"><div class="knob"></div></div>
+                    <input type="checkbox" class="switch" {% if auto_scale %}checked{% endif %}>
                 </div>
                 <div class="switch-row" data-on-click="toggle_maintenance">
                     <div class="switch-label"><span class="switch-name">Maintenance</span><span class="switch-hint">pause incoming jobs</span></div>
-                    <div class="switch {% if maintenance_mode %}on{% endif %}"><div class="knob"></div></div>
+                    <input type="checkbox" class="switch" {% if maintenance_mode %}checked{% endif %}>
                 </div>
                 <div class="side-actions">
                     <div class="btn violet" data-on-click="increment_progress">Load spike</div>
@@ -437,19 +437,19 @@
                 <span class="panel-title">TOGGLES</span>
                 <div class="switch-row" data-on-click="toggle_wifi">
                     <div class="switch-label"><span class="switch-name">Wi-Fi</span><span class="switch-hint">{% if wifi %}connected{% else %}off{% endif %}</span></div>
-                    <div class="switch {% if wifi %}on{% endif %}"><div class="knob"></div></div>
+                    <input type="checkbox" class="switch" {% if wifi %}checked{% endif %}>
                 </div>
                 <div class="switch-row" data-on-click="toggle_bluetooth">
                     <div class="switch-label"><span class="switch-name">Bluetooth</span><span class="switch-hint">{% if bluetooth %}2 devices{% else %}off{% endif %}</span></div>
-                    <div class="switch {% if bluetooth %}on{% endif %}"><div class="knob"></div></div>
+                    <input type="checkbox" class="switch" {% if bluetooth %}checked{% endif %}>
                 </div>
                 <div class="switch-row" data-on-click="toggle_auto_scale">
                     <div class="switch-label"><span class="switch-name">Auto-scaling</span><span class="switch-hint">system tab</span></div>
-                    <div class="switch {% if auto_scale %}on{% endif %}"><div class="knob"></div></div>
+                    <input type="checkbox" class="switch" {% if auto_scale %}checked{% endif %}>
                 </div>
                 <div class="switch-row" data-on-click="toggle_maintenance">
                     <div class="switch-label"><span class="switch-name">Maintenance</span><span class="switch-hint">system tab</span></div>
-                    <div class="switch {% if maintenance_mode %}on{% endif %}"><div class="knob"></div></div>
+                    <input type="checkbox" class="switch" {% if maintenance_mode %}checked{% endif %}>
                 </div>
             </div>
 
