@@ -1,21 +1,17 @@
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::{parse_macro_input, DeriveInput};
-use askama_parser::{Ast, Syntax, Node, Expr, Target, node::CondTest};
-use html5ever::parse_document;
-use html5ever::tendril::TendrilSink;
-use markup5ever_rcdom::{Handle, NodeData, RcDom};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::cell::RefCell;
-use askama_parser::Span;
+use xerune_template::{Attr, AttrPart, Cond, Expr, Kind, NodeId, Pattern, Template};
 use xerune_css::selector::PseudoElement;
 
 // ---------------------------------------------------------------------------
 // Diagnostics
 //
 // The template compiler is deeply recursive and reports problems by panicking
-// with a `TemplateError` payload (see `bail`). `derive_xerune_template` catches
+// with a `TemplateError` payload (see `fail`). `derive_xerune_template` catches
 // the unwind and turns it into a regular `compile_error!`, so users see a
 // `file:line:col` message instead of "proc-macro derive panicked".
 // ---------------------------------------------------------------------------
@@ -23,56 +19,7 @@ use xerune_css::selector::PseudoElement;
 /// Panic payload for user-facing template errors.
 struct TemplateError(String);
 
-/// A contiguous chunk of the include-expanded template that came from one file.
-struct Segment {
-    start: usize,
-    file: usize,
-    file_offset: usize,
-}
-
-/// Maps offsets in the include-expanded template back to the original files.
-#[derive(Default)]
-struct SourceMap {
-    /// (display path, file contents)
-    files: Vec<(String, String)>,
-    segments: Vec<Segment>,
-}
-
-impl SourceMap {
-    fn add_file(&mut self, display_path: String, content: String) -> usize {
-        self.files.push((display_path, content));
-        self.files.len() - 1
-    }
-
-    fn describe_file_offset(&self, file: usize, offset: usize) -> String {
-        let (path, content) = &self.files[file];
-        let offset = offset.min(content.len());
-        let before = &content[..offset];
-        let line_no = before.matches('\n').count() + 1;
-        let line_start = before.rfind('\n').map_or(0, |i| i + 1);
-        let line_end = content[offset..].find('\n').map_or(content.len(), |i| offset + i);
-        let line = &content[line_start..line_end];
-        let col = content[line_start..offset].chars().count() + 1;
-        let gutter = " ".repeat(line_no.to_string().len());
-        format!(
-            "{path}:{line_no}:{col}\n{gutter} |\n{line_no} | {line}\n{gutter} | {caret:>width$}",
-            caret = "^",
-            width = col,
-        )
-    }
-
-    /// Describe an offset into the include-expanded template.
-    fn describe(&self, offset: usize) -> String {
-        match self.segments.iter().rev().find(|s| s.start <= offset) {
-            Some(seg) => self.describe_file_offset(seg.file, seg.file_offset + (offset - seg.start)),
-            None => format!("<template>@{offset}"),
-        }
-    }
-}
-
 thread_local! {
-    /// The include-expanded template being compiled, and its source map.
-    static CURRENT_TEMPLATE: RefCell<Option<(&'static str, SourceMap)>> = const { RefCell::new(None) };
     /// The next element or loop's place in the template, for element keys.
     static NEXT_SITE: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
 }
@@ -91,163 +38,13 @@ fn fail(msg: impl std::fmt::Display) -> ! {
     std::panic::panic_any(TemplateError(msg.to_string()))
 }
 
-/// Abort template compilation with `msg`, pointing at `span` in the template.
-fn bail(span: Span<'_>, msg: impl std::fmt::Display) -> ! {
-    let location = CURRENT_TEMPLATE.with(|cur| {
-        let cur = cur.borrow();
-        let (src, map) = cur.as_ref()?;
-        let offset = span.offset_from(src)?;
-        Some(map.describe(offset))
-    });
-    match location {
-        Some(loc) => fail(format_args!("{msg}\n  --> {loc}")),
-        None => fail(msg),
-    }
-}
-
-fn node_span<'a>(node: &Node<'a>) -> Span<'a> {
-    match node {
-        Node::Lit(n) => n.span(),
-        Node::Comment(n) => n.span(),
-        Node::Expr(_, n) => n.span(),
-        Node::Call(n) => n.span(),
-        Node::Let(n) => n.span(),
-        Node::If(n) => n.span(),
-        Node::Match(n) => n.span(),
-        Node::Loop(n) => n.span(),
-        Node::Extends(n) => n.span(),
-        Node::BlockDef(n) => n.span(),
-        Node::Include(n) => n.span(),
-        Node::Import(n) => n.span(),
-        Node::Macro(n) => n.span(),
-        Node::Raw(n) => n.span(),
-        Node::Break(n) => n.span(),
-        Node::Continue(n) => n.span(),
-        Node::FilterBlock(n) => n.span(),
-    }
-}
-
-/// Reject everything the code generator cannot handle, while spans are still
-/// available. After this pass the generator may assume a supported subset.
-fn validate_nodes(nodes: &[Node<'_>]) {
-    for node in nodes {
-        match node {
-            Node::Lit(_) | Node::Comment(_) | Node::Break(_) | Node::Continue(_) => {}
-            Node::Expr(_, expr) => validate_expr(expr),
-            Node::If(if_node) => {
-                for branch in &if_node.branches {
-                    if let Some(cond) = &branch.cond {
-                        if let Some(target) = &cond.target {
-                            validate_target(target, branch.span());
-                        }
-                        validate_expr(&cond.expr);
-                    }
-                    validate_nodes(&branch.nodes);
-                }
-            }
-            Node::Loop(l) => {
-                validate_target(&l.var, l.span());
-                validate_expr(&l.iter);
-                if let Some(cond) = &l.cond {
-                    bail(cond.span(), "loop filters (`{% for x in xs if cond %}`) are not supported; wrap the body in `{% if %}` instead");
-                }
-                if !l.else_nodes.is_empty() {
-                    bail(l.span(), "`{% else %}` inside `{% for %}` is not supported; check for emptiness with a separate `{% if %}`");
-                }
-                validate_nodes(&l.body);
-            }
-            other => {
-                let what = match other {
-                    Node::Call(_) => "`{% call %}`",
-                    Node::Let(_) => "`{% let %}` / `{% set %}`",
-                    Node::Match(_) => "`{% match %}`",
-                    Node::Extends(_) => "`{% extends %}`",
-                    Node::BlockDef(_) => "`{% block %}`",
-                    Node::Include(_) => "`{% include %}` (could not be resolved)",
-                    Node::Import(_) => "`{% import %}`",
-                    Node::Macro(_) => "`{% macro %}`",
-                    Node::Raw(_) => "`{% raw %}`",
-                    Node::FilterBlock(_) => "`{% filter %}`",
-                    _ => "this tag",
-                };
-                bail(node_span(other), format_args!(
-                    "{what} is not supported by xerune templates (supported: `{{{{ expr }}}}`, `{{% if %}}`/`{{% elif %}}`/`{{% else %}}`, `{{% for %}}`, `{{% break %}}`, `{{% continue %}}`, `{{% include %}}`)"
-                ));
-            }
-        }
-    }
-}
-
-fn validate_target(target: &Target<'_>, span: Span<'_>) {
+// Stringify patterns.
+fn format_target(target: &Pattern) -> String {
     match target {
-        Target::Name(_) | Target::Placeholder(_) | Target::Rest(_) | Target::Path(_) => {}
-        Target::Tuple(_, targets) => targets.iter().for_each(|t| validate_target(t, span)),
-        other => bail(span, format_args!("unsupported pattern `{other:?}`; only names, `_`, paths and tuple patterns like `Some(x)` / `(a, b)` are supported")),
-    }
-}
-
-fn validate_expr(expr: &askama_parser::WithSpan<'_, Expr<'_>>) {
-    match &**expr {
-        Expr::BoolLit(_) | Expr::NumLit(..) | Expr::StrLit(_) | Expr::CharLit(_) | Expr::Var(_) | Expr::Path(_) => {}
-        Expr::Array(elems) | Expr::Tuple(elems) => elems.iter().for_each(validate_expr),
-        Expr::Attr(obj, attr) => {
-            if matches!(&***obj, Expr::Var("loop")) && !matches!(attr.name, "index" | "index0") {
-                bail(expr.span(), format_args!("`loop.{}` is not supported; use `loop.index` or `loop.index0`", attr.name));
-            }
-            validate_expr(obj);
-        }
-        Expr::Index(a, b) | Expr::BinOp(_, a, b) => {
-            validate_expr(a);
-            validate_expr(b);
-        }
-        Expr::Unary(_, inner) | Expr::Group(inner) => validate_expr(inner),
-        Expr::Range(_, a, b) => {
-            a.iter().for_each(|e| validate_expr(e));
-            b.iter().for_each(|e| validate_expr(e));
-        }
-        Expr::Call { path, args, generics } => {
-            if !generics.is_empty() {
-                bail(expr.span(), "generic arguments on calls (turbofish) are not supported in templates");
-            }
-            validate_expr(path);
-            args.iter().for_each(validate_expr);
-        }
-        Expr::Filter(f) => {
-            if f.name != "format" {
-                bail(expr.span(), format_args!(
-                    "filter `|{}` is not supported; the only supported filter is `format`, e.g. `{{{{ \"{{:.1}}\"|format(value) }}}}`. Format the value in Rust (a method on your model works: `{{{{ self.my_value() }}}}`)",
-                    f.name
-                ));
-            }
-            if f.arguments.len() < 2 {
-                bail(expr.span(), "`format` needs a format string and at least one argument: `{{ \"{}\"|format(value) }}`");
-            }
-            f.arguments.iter().for_each(validate_expr);
-        }
-        Expr::Concat(_) => bail(expr.span(), "the `~` concatenation operator is not supported; use `\"{}{}\"|format(a, b)`"),
-        Expr::Try(_) => bail(expr.span(), "the `?` operator is not supported in templates"),
-        _ => bail(expr.span(), "this expression is not supported in xerune templates"),
-    }
-}
-
-/// Escape a re-serialized template tag so it survives inside an HTML attribute
-/// value quoted with `quote`. html5ever decodes the entities again, so the
-/// attribute-level template parser sees the original text.
-fn escape_for_attr(s: &str, quote: char) -> String {
-    let s = s.replace('&', "&amp;");
-    match quote {
-        '"' => s.replace('"', "&quot;"),
-        _ => s.replace('\'', "&#39;"),
-    }
-}
-
-// Stringify Askama targets (patterns). `validate_target` restricts the variants.
-fn format_target(target: &Target<'_>) -> String {
-    match target {
-        Target::Name(name) => name.to_string(),
-        Target::Placeholder(_) => "_".to_string(),
-        Target::Path(path) => path.join("::"),
-        Target::Tuple(path, targets) => {
+        Pattern::Name(name) => name.to_string(),
+        Pattern::Placeholder => "_".to_string(),
+        Pattern::Path(path) => path.join("::"),
+        Pattern::Tuple(path, targets) => {
             let inner: Vec<String> = targets.iter().map(format_target).collect();
             match (path.is_empty(), inner.len()) {
                 // A one-element tuple pattern needs the trailing comma.
@@ -256,26 +53,16 @@ fn format_target(target: &Target<'_>) -> String {
                 (false, _) => format!("{}({})", path.join("::"), inner.join(", ")),
             }
         }
-        Target::Rest(_) => "..".to_string(),
-        other => panic!("Unsupported target variant: {:?}", other),
+        Pattern::Rest(_) => "..".to_string(),
     }
 }
 
 /// Collect the variable names a pattern binds, so the body treats them as
 /// locals rather than model fields (`self.name`).
-fn target_names(target: &Target<'_>, names: &mut HashSet<String>) {
-    match target {
-        Target::Name(name) => {
-            names.insert(name.to_string());
-        }
-        Target::Tuple(_, targets) => targets.iter().for_each(|t| target_names(t, names)),
-        Target::Rest(rest) => {
-            if let Some(name) = **rest {
-                names.insert(name.to_string());
-            }
-        }
-        _ => {}
-    }
+fn target_names(target: &Pattern, names: &mut HashSet<String>) {
+    let mut bound = Vec::new();
+    target.names(&mut bound);
+    names.extend(bound);
 }
 
 /// A piece of an inline text run: literal text or a `{{ }}` value.
@@ -284,14 +71,11 @@ enum TextPiece {
     Expr(proc_macro2::TokenStream),
 }
 
-/// `handle` as part of a text run, if it is text or a `{{ }}` placeholder.
-fn text_piece(handle: &Handle, local_vars: &HashSet<String>, dynamic_exprs: &HashMap<usize, &Expr<'_>>) -> Option<TextPiece> {
-    match &handle.data {
-        NodeData::Text { contents } => Some(TextPiece::Literal(contents.borrow().to_string())),
-        NodeData::Element { name, attrs, .. } if name.local.as_ref() == "template" => {
-            let attrs = attrs.borrow();
-            let id = attrs.iter().find(|a| a.name.local.as_ref() == "expr-id")?;
-            let expr = dynamic_exprs.get(&id.value.to_string().parse::<usize>().ok()?)?;
+/// Node `id` as part of a text run, if it is text or a `{{ }}` value.
+fn text_piece(tpl: &Template, id: NodeId, local_vars: &HashSet<String>) -> Option<TextPiece> {
+    match &tpl.node(id).kind {
+        Kind::Text(text) => Some(TextPiece::Literal(text.clone())),
+        Kind::Expr(expr) => {
             let tokens: proc_macro2::TokenStream = format_expr(expr, local_vars).parse().unwrap();
             Some(TextPiece::Expr(tokens))
         }
@@ -302,13 +86,11 @@ fn text_piece(handle: &Handle, local_vars: &HashSet<String>, dynamic_exprs: &Has
 /// Compiles sibling nodes. Consecutive text and `{{ }}` values form one
 /// text node, like one run of text in a browser, so it wraps as a whole
 /// and keeps the spaces between its pieces.
-fn compile_children<'a>(
-    children: &[Handle],
+fn compile_children(
+    tpl: &Template,
+    children: &[NodeId],
     rules: &[GuardedRule],
     local_vars: &mut HashSet<String>,
-    dynamic_exprs: &HashMap<usize, &'a Expr<'a>>,
-    dynamic_loops: &HashMap<usize, &'a Node<'a>>,
-    dynamic_ifs: &HashMap<usize, &'a Node<'a>>,
 ) -> Vec<proc_macro2::TokenStream> {
     let mut code = Vec::new();
     let mut run: Vec<TextPiece> = Vec::new();
@@ -338,166 +120,29 @@ fn compile_children<'a>(
             }
         });
     };
-    for child in children {
-        if let Some(piece) = text_piece(child, local_vars, dynamic_exprs) {
+    for &child in children {
+        if let Some(piece) = text_piece(tpl, child, local_vars) {
             run.push(piece);
             continue;
         }
         flush(&mut run, &mut code);
-        code.push(compile_dom_node(child, rules, local_vars, dynamic_exprs, dynamic_loops, dynamic_ifs));
+        code.push(compile_node(tpl, child, rules, local_vars));
     }
     flush(&mut run, &mut code);
     code
 }
 
-fn get_node_children(handle: &Handle) -> Vec<Handle> {
-    if let NodeData::Element { name, template_contents, .. } = &handle.data {
-        if name.local.as_ref() == "template" {
-            if let Some(contents) = template_contents.borrow().as_ref() {
-                return contents.children.borrow().clone();
-            }
-        }
-    }
-    handle.children.borrow().clone()
-}
-
-fn reconstruct_expr(expr: &Expr<'_>) -> String {
+// Stringify expressions as Rust.
+fn format_expr(expr: &Expr, local_vars: &HashSet<String>) -> String {
     match expr {
-        Expr::BoolLit(b) => format!("{}", b),
-        Expr::NumLit(s, _) => s.to_string(),
-        Expr::StrLit(s) => format!("\"{}\"", s.content),
-        Expr::CharLit(c) => format!("'{}'", c.content),
-        Expr::Var(name) => name.to_string(),
-        Expr::Path(parts) => parts.join("::"),
-        Expr::Array(elems) => {
-            let inner: Vec<String> = elems.iter().map(|e| reconstruct_expr(&**e)).collect();
-            format!("[{}]", inner.join(", "))
-        }
-        Expr::Attr(obj, attr) => {
-            format!("{}.{}", reconstruct_expr(&**obj), attr.name)
-        }
-        Expr::Index(obj, key) => {
-            format!("{}[{}]", reconstruct_expr(&**obj), reconstruct_expr(&**key))
-        }
-        Expr::Unary(op, inner) => {
-            format!("{}{}", op, reconstruct_expr(&**inner))
-        }
-        Expr::BinOp(op, left, right) => {
-            format!("{} {} {}", reconstruct_expr(&**left), op, reconstruct_expr(&**right))
-        }
-        Expr::Range(op, left, right) => {
-            let left = left.as_ref().map(|e| reconstruct_expr(&**e)).unwrap_or_default();
-            let right = right.as_ref().map(|e| reconstruct_expr(&**e)).unwrap_or_default();
-            format!("{}{}{}", left, op, right)
-        }
-        Expr::Group(inner) => {
-            format!("({})", reconstruct_expr(&**inner))
-        }
-        Expr::Tuple(elems) => {
-            let inner: Vec<String> = elems.iter().map(|e| reconstruct_expr(&**e)).collect();
-            format!("({})", inner.join(", "))
-        }
-        Expr::Call { path, args, .. } => {
-            let inner: Vec<String> = args.iter().map(|e| reconstruct_expr(&**e)).collect();
-            format!("{}({})", reconstruct_expr(&**path), inner.join(", "))
-        }
-        Expr::Filter(f) => {
-            let input = reconstruct_expr(&f.arguments[0]);
-            if f.arguments.len() > 1 {
-                let args: Vec<String> = f.arguments[1..].iter().map(|e| reconstruct_expr(e)).collect();
-                format!("{}|{}({})", input, f.name, args.join(", "))
-            } else {
-                format!("{}|{}", input, f.name)
-            }
-        }
-        _ => "".to_string(),
-    }
-}
-
-fn reconstruct_target(target: &Target<'_>) -> String {
-    match target {
-        Target::Name(name) => name.to_string(),
-        Target::Placeholder(_) => "_".to_string(),
-        Target::Path(path) => path.join("::"),
-        Target::Tuple(path, targets) => {
-            let inner: Vec<String> = targets.iter().map(reconstruct_target).collect();
-            format!("{}({})", path.join("::"), inner.join(", "))
-        }
-        Target::Rest(_) => "..".to_string(),
-        _ => "_".to_string(),
-    }
-}
-
-fn reconstruct_cond_test(cond: &CondTest<'_>) -> String {
-    let expr_str = reconstruct_expr(&*cond.expr);
-    if let Some(ref target) = cond.target {
-        format!("let {} = {}", reconstruct_target(target), expr_str)
-    } else {
-        expr_str
-    }
-}
-
-fn reconstruct_node(node: &Node<'_>) -> String {
-    match node {
-        Node::Lit(lit) => format!("{}{}{}", lit.lws, lit.val, lit.rws),
-        Node::Comment(c) => format!("{{#{}#}}", c.content),
-        Node::Expr(_, expr) => {
-            format!("{{{{ {} }}}}", reconstruct_expr(expr))
-        }
-        Node::Loop(loop_box) => {
-            let body: Vec<String> = loop_box.body.iter().map(reconstruct_node).collect();
-            format!("{{% for {} in {} %}}{}{{% endfor %}}",
-                reconstruct_target(&loop_box.var),
-                reconstruct_expr(&loop_box.iter),
-                body.join("")
-            )
-        }
-        Node::If(if_node) => {
-            let mut s = String::new();
-            for (i, branch_with_span) in if_node.branches.iter().enumerate() {
-                let branch = &**branch_with_span;
-                let body: Vec<String> = branch.nodes.iter().map(reconstruct_node).collect();
-                if i == 0 {
-                    if let Some(ref cond) = branch.cond {
-                        s.push_str(&format!("{{% if {} %}}", reconstruct_cond_test(cond)));
-                    }
-                } else if let Some(ref cond) = branch.cond {
-                    s.push_str(&format!("{{% else if {} %}}", reconstruct_cond_test(cond)));
-                } else {
-                    s.push_str("{% else %}");
-                }
-                s.push_str(&body.join(""));
-            }
-            s.push_str("{% endif %}");
-            s
-        }
-        Node::Break(_) => "{% break %}".to_string(),
-        Node::Continue(_) => "{% continue %}".to_string(),
-        _ => "".to_string(),
-    }
-}
-
-/// Askama spells the bitwise operators as keywords.
-fn rust_binop(op: &str) -> &str {
-    match op {
-        "bitand" => "&",
-        "bitor" => "|",
-        "xor" => "^",
-        other => other,
-    }
-}
-
-// Stringify Askama expressions
-fn format_expr(expr: &Expr<'_>, local_vars: &HashSet<String>) -> String {
-    match expr {
-        Expr::BoolLit(b) => format!("{}", b),
-        Expr::NumLit(s, _) => s.to_string(),
-        Expr::StrLit(s) => format!("\"{}\"", s.content),
-        Expr::CharLit(c) => format!("'{}'", c.content),
+        Expr::Bool(b) => format!("{}", b),
+        Expr::Num(s) => s.to_string(),
+        Expr::Str(s) => format!("\"{}\"", s),
+        Expr::Char(c) => format!("'{}'", c),
         Expr::Var(name) => {
-            if name == &"self" {
+            if name == "self" {
                 "self".to_string()
-            } else if local_vars.contains(*name) {
+            } else if local_vars.contains(name) {
                 name.to_string()
             } else {
                 format!("self.{}", name)
@@ -505,66 +150,57 @@ fn format_expr(expr: &Expr<'_>, local_vars: &HashSet<String>) -> String {
         }
         Expr::Path(parts) => parts.join("::"),
         Expr::Array(elems) => {
-            let inner: Vec<String> = elems.iter().map(|e| format_expr(&**e, local_vars)).collect();
+            let inner: Vec<String> = elems.iter().map(|e| format_expr(e, local_vars)).collect();
             format!("[{}]", inner.join(", "))
         }
         Expr::Attr(obj, attr) => {
-            let obj_str = format_expr(&**obj, local_vars);
+            let obj_str = format_expr(obj, local_vars);
             if obj_str == "loop" {
-                match attr.name {
+                match attr.as_str() {
                     "index" => "(_loop_item_index + 1)".to_string(),
                     "index0" => "_loop_item_index".to_string(),
-                    _ => panic!("Unsupported loop attribute: {}", attr.name),
+                    _ => panic!("Unsupported loop attribute: {}", attr),
                 }
             } else {
-                format!("{}.{}", obj_str, attr.name)
+                format!("{}.{}", obj_str, attr)
             }
         }
         Expr::Index(obj, key) => {
-            format!("{}[{}]", format_expr(&**obj, local_vars), format_expr(&**key, local_vars))
+            format!("{}[{}]", format_expr(obj, local_vars), format_expr(key, local_vars))
         }
         Expr::Unary(op, inner) => {
-            format!("{}{}", op, format_expr(&**inner, local_vars))
+            format!("{}{}", op.as_str(), format_expr(inner, local_vars))
         }
-        Expr::BinOp(op, left, right) => {
-            format!("{} {} {}", format_expr(&**left, local_vars), rust_binop(op), format_expr(&**right, local_vars))
+        Expr::Binary(op, left, right) => {
+            format!("{} {} {}", format_expr(left, local_vars), op.as_str(), format_expr(right, local_vars))
         }
         Expr::Range(op, left, right) => {
-            let left = left.as_ref().map(|e| format_expr(&**e, local_vars)).unwrap_or_default();
-            let right = right.as_ref().map(|e| format_expr(&**e, local_vars)).unwrap_or_default();
-            format!("({}{}{})", left, op, right)
+            let left = left.as_ref().map(|e| format_expr(e, local_vars)).unwrap_or_default();
+            let right = right.as_ref().map(|e| format_expr(e, local_vars)).unwrap_or_default();
+            format!("({}{}{})", left, op.as_str(), right)
         }
         Expr::Group(inner) => {
-            format!("({})", format_expr(&**inner, local_vars))
+            format!("({})", format_expr(inner, local_vars))
         }
         Expr::Tuple(elems) => {
-            let inner: Vec<String> = elems.iter().map(|e| format_expr(&**e, local_vars)).collect();
+            let inner: Vec<String> = elems.iter().map(|e| format_expr(e, local_vars)).collect();
             format!("({})", inner.join(", "))
         }
-        Expr::Call { path, args, .. } => {
-            let inner: Vec<String> = args.iter().map(|e| format_expr(&**e, local_vars)).collect();
-            format!("{}({})", format_expr(&**path, local_vars), inner.join(", "))
+        Expr::Call(path, args) => {
+            let inner: Vec<String> = args.iter().map(|e| format_expr(e, local_vars)).collect();
+            format!("{}({})", format_expr(path, local_vars), inner.join(", "))
         }
-        Expr::Filter(f) => {
-            if f.name == "format" {
-                if f.arguments.len() >= 2 {
-                    let fmt_str = format_expr(&f.arguments[0], local_vars);
-                    let args: Vec<String> = f.arguments[1..].iter().map(|arg| format_expr(arg, local_vars)).collect();
-                    format!("format!({}, {})", fmt_str, args.join(", "))
-                } else {
-                    "".to_string()
-                }
-            } else {
-                "".to_string()
-            }
+        Expr::Format(args) => {
+            let fmt_str = format_expr(&args[0], local_vars);
+            let args: Vec<String> = args[1..].iter().map(|arg| format_expr(arg, local_vars)).collect();
+            format!("format!({}, {})", fmt_str, args.join(", "))
         }
-        other => panic!("Unhandled expression: {:?}", other),
     }
 }
 
-fn format_cond_test(cond: &CondTest<'_>, local_vars: &HashSet<String>) -> String {
-    let expr_str = format_expr(&*cond.expr, local_vars);
-    if let Some(ref target) = cond.target {
+fn format_cond_test(cond: &Cond, local_vars: &HashSet<String>) -> String {
+    let expr_str = format_expr(&cond.expr, local_vars);
+    if let Some(ref target) = cond.pattern {
         // Borrow the scrutinee: templates only get `&self`, so binding by
         // value would try to move out of the model.
         format!("let {} = &({})", format_target(target), expr_str)
@@ -580,26 +216,11 @@ fn as_bool(expr: &str) -> String {
     format!("(*::core::borrow::Borrow::<bool>::borrow(&({})))", expr)
 }
 
-/// Emit a template node that sits inside an HTML start tag. Inside a quoted
-/// attribute value it is re-serialized (and escaped) for the attribute-level
-/// compiler; anywhere else in the tag html5ever would shred it into bogus
-/// attribute names, so that is a hard error.
-fn push_tag_level(html: &mut String, node: &Node<'_>, in_quote: Option<char>, what: &str) {
-    match in_quote {
-        Some(q) => html.push_str(&escape_for_attr(&reconstruct_node(node), q)),
-        None => bail(node_span(node), format_args!(
-            "{what} can only appear inside a quoted attribute value. Write `class=\"{{% if c %}}a{{% else %}}b{{% endif %}}\"` \
-             instead of `{{% if c %}}class=\"a\"{{% else %}}class=\"b\"{{% endif %}}`. \
-             (The only tag-level conditional supported is `{{% if c %}}checked{{% endif %}}`.)"
-        )),
-    }
-}
-
 /// A condition as a plain `bool` expression (usable in `&&` chains and under
 /// `!`). `if let PAT = EXPR` becomes `matches!(&(EXPR), PAT)`.
-fn cond_test_as_bool(cond: &CondTest<'_>, local_vars: &HashSet<String>) -> String {
-    let expr_str = format_expr(&*cond.expr, local_vars);
-    match &cond.target {
+fn cond_test_as_bool(cond: &Cond, local_vars: &HashSet<String>) -> String {
+    let expr_str = format_expr(&cond.expr, local_vars);
+    match &cond.pattern {
         Some(target) => format!(
             "{{ #[allow(unused_variables)] let m = matches!(&({}), {}); m }}",
             expr_str,
@@ -609,155 +230,25 @@ fn cond_test_as_bool(cond: &CondTest<'_>, local_vars: &HashSet<String>) -> Strin
     }
 }
 
-/// Where the template's HTML scanner is: in text, inside a tag (where
-/// quotes delimit attribute values), or in an HTML comment (where neither
-/// tags nor quotes count: an apostrophe in a comment opens nothing).
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Markup {
-    Text,
-    Tag,
-    Comment,
-}
-
-// Generate HTML with placeholders
-fn preprocess_nodes<'a>(
-    nodes: &'a [Node<'a>],
-    dynamic_counter: &mut usize,
-    dynamic_exprs: &mut HashMap<usize, &'a Expr<'a>>,
-    dynamic_loops: &mut HashMap<usize, &'a Node<'a>>,
-    dynamic_ifs: &mut HashMap<usize, &'a Node<'a>>,
-    markup: &mut Markup,
-    in_quote: &mut Option<char>,
-) -> String {
-    let mut html = String::new();
-    for node in nodes {
-        match node {
-            Node::Lit(lit) => {
-                let val = format!("{}{}{}", lit.lws, lit.val, lit.rws);
-                for (i, c) in val.char_indices() {
-                    match *markup {
-                        Markup::Comment => {
-                            if c == '>' && val[..i].ends_with("--") {
-                                *markup = Markup::Text;
-                            }
-                        }
-                        Markup::Tag => {
-                            if let Some(quote_char) = *in_quote {
-                                if c == quote_char {
-                                    *in_quote = None;
-                                }
-                            } else if c == '"' || c == '\'' {
-                                *in_quote = Some(c);
-                            } else if c == '>' {
-                                *markup = Markup::Text;
-                            } else if c == '-' && val[..i].ends_with("<!-") {
-                                *markup = Markup::Comment;
-                            }
-                        }
-                        Markup::Text => {
-                            if c == '<' {
-                                *markup = Markup::Tag;
-                            }
-                        }
-                    }
-                }
-                html.push_str(&val);
-            }
-            Node::Comment(_) => {}
-            Node::Expr(_, expr) => {
-                if *markup == Markup::Tag {
-                    push_tag_level(&mut html, node, *in_quote, "template expressions");
-                } else {
-                    let id = *dynamic_counter;
-                    *dynamic_counter += 1;
-                    dynamic_exprs.insert(id, &**expr);
-                    html.push_str(&format!("<template expr-id=\"{}\"></template>", id));
-                }
-            }
-            Node::Loop(loop_box) => {
-                if *markup == Markup::Tag {
-                    push_tag_level(&mut html, node, *in_quote, "`{% for %}`");
-                } else {
-                    let id = *dynamic_counter;
-                    *dynamic_counter += 1;
-                    dynamic_loops.insert(id, node);
-                    html.push_str(&format!("<template loop-id=\"{}\">", id));
-                    html.push_str(&preprocess_nodes(&loop_box.body, dynamic_counter, dynamic_exprs, dynamic_loops, dynamic_ifs, markup, in_quote));
-                    html.push_str("</template>");
-                }
-            }
-            Node::If(if_node) => {
-                if *markup == Markup::Tag {
-                    // `{% if cond %}checked{% endif %}` is the one tag-level
-                    // conditional we support; it becomes `checked="{{ cond }}"`.
-                    let checked_cond = match if_node.branches.as_slice() {
-                        [branch] => match (&branch.cond, branch.nodes.as_slice()) {
-                            (Some(cond), [Node::Lit(lit)]) if cond.target.is_none() && lit.val.trim() == "checked" => Some(&*cond.expr),
-                            _ => None,
-                        },
-                        _ => None,
-                    };
-                    match (in_quote.is_none(), checked_cond) {
-                        (true, Some(expr)) => {
-                            let cond = escape_for_attr(&reconstruct_expr(expr), '"');
-                            html.push_str(&format!(" checked=\"{{{{ {} }}}}\"", cond));
-                        }
-                        _ => push_tag_level(&mut html, node, *in_quote, "`{% if %}`"),
-                    }
-                } else {
-                    let id = *dynamic_counter;
-                    *dynamic_counter += 1;
-                    dynamic_ifs.insert(id, node);
-                    html.push_str(&format!("<template if-id=\"{}\">", id));
-                    for (branch_idx, branch_with_span) in if_node.branches.iter().enumerate() {
-                        let branch = &**branch_with_span;
-                        html.push_str(&format!("<template branch-id=\"{}\" branch=\"{}\">", id, branch_idx));
-                        html.push_str(&preprocess_nodes(&branch.nodes, dynamic_counter, dynamic_exprs, dynamic_loops, dynamic_ifs, markup, in_quote));
-                        html.push_str("</template>");
-                    }
-                    html.push_str("</template>");
-                }
-            }
-            Node::Break(_) => {
-                if *markup == Markup::Tag {
-                    push_tag_level(&mut html, node, *in_quote, "`{% break %}`");
-                } else {
-                    html.push_str("<template break></template>");
-                }
-            }
-            Node::Continue(_) => {
-                if *markup == Markup::Tag {
-                    push_tag_level(&mut html, node, *in_quote, "`{% continue %}`");
-                } else {
-                    html.push_str("<template continue></template>");
-                }
-            }
-            _ => {}
-        }
-    }
-    html
-}
-
-// Generate code for Askama nodes within attribute string interpolation
-fn generate_attr_string_code(nodes: &[Node<'_>], local_vars: &HashSet<String>) -> proc_macro2::TokenStream {
-    let has_complex = nodes.iter().any(|node| !matches!(node, Node::Lit(_) | Node::Expr(_, _)));
-    if !has_complex && !nodes.is_empty() {
+// Generate code for the parts of an attribute value
+fn generate_attr_string_code(parts: &[AttrPart], local_vars: &HashSet<String>) -> proc_macro2::TokenStream {
+    let has_complex = parts.iter().any(|part| matches!(part, AttrPart::If(_)));
+    if !has_complex && !parts.is_empty() {
         let mut format_str = String::new();
         let mut format_args = Vec::new();
-        for node in nodes {
-            match node {
-                Node::Lit(lit) => {
-                    let val = format!("{}{}{}", lit.lws, lit.val, lit.rws);
+        for part in parts {
+            match part {
+                AttrPart::Lit(val) => {
                     let escaped = val.replace("{", "{{").replace("}", "}}");
                     format_str.push_str(&escaped);
                 }
-                Node::Expr(_, expr) => {
-                    let expr_str = format_expr(&**expr, local_vars);
+                AttrPart::Expr(expr) => {
+                    let expr_str = format_expr(expr, local_vars);
                     let expr_tokens: proc_macro2::TokenStream = expr_str.parse().unwrap();
                     format_str.push_str("{}");
                     format_args.push(expr_tokens);
                 }
-                _ => unreachable!(),
+                AttrPart::If(_) => unreachable!(),
             }
         }
         return quote! {
@@ -765,27 +256,25 @@ fn generate_attr_string_code(nodes: &[Node<'_>], local_vars: &HashSet<String>) -
         };
     }
 
-    let mut parts = Vec::new();
-    for node in nodes {
-        match node {
-            Node::Lit(lit) => {
-                let val = format!("{}{}{}", lit.lws, lit.val, lit.rws);
-                parts.push(quote! { #val });
+    let mut code = Vec::new();
+    for part in parts {
+        match part {
+            AttrPart::Lit(val) => {
+                code.push(quote! { #val });
             }
-            Node::Expr(_, expr) => {
-                let expr_str = format_expr(&**expr, local_vars);
+            AttrPart::Expr(expr) => {
+                let expr_str = format_expr(expr, local_vars);
                 let expr_tokens: proc_macro2::TokenStream = expr_str.parse().unwrap();
-                parts.push(quote! { &*format!("{}", #expr_tokens) });
+                code.push(quote! { &*format!("{}", #expr_tokens) });
             }
-            Node::If(if_node) => {
+            AttrPart::If(branches) => {
                 let mut branches_code = proc_macro2::TokenStream::new();
-                for (i, branch_with_span) in if_node.branches.iter().enumerate() {
-                    let branch = &**branch_with_span;
+                for (i, branch) in branches.iter().enumerate() {
                     let mut branch_local_vars = local_vars.clone();
-                    if let Some(target) = branch.cond.as_ref().and_then(|c| c.target.as_ref()) {
+                    if let Some(target) = branch.cond.as_ref().and_then(|c| c.pattern.as_ref()) {
                         target_names(target, &mut branch_local_vars);
                     }
-                    let body_tokens = generate_attr_string_code(&branch.nodes, &branch_local_vars);
+                    let body_tokens = generate_attr_string_code(&branch.parts, &branch_local_vars);
                     if let Some(ref cond) = branch.cond {
                         let cond_str = format_cond_test(cond, local_vars);
                         let cond_tokens: proc_macro2::TokenStream = cond_str.parse().unwrap();
@@ -810,36 +299,39 @@ fn generate_attr_string_code(nodes: &[Node<'_>], local_vars: &HashSet<String>) -
                         });
                     }
                 }
-                parts.push(quote! { &*({
+                code.push(quote! { &*({
                     let mut s = String::new();
                     #branches_code
                     s
                 }) });
             }
-            Node::Comment(_) => {}
-            other => fail(format_args!(
-                "only `{{{{ expr }}}}` and `{{% if %}}` are supported inside attribute values, found `{}`; \
-                 build the value in Rust instead (e.g. a method on your model)",
-                reconstruct_node(other)
-            )),
         }
     }
-    if parts.is_empty() {
+    if code.is_empty() {
         quote! { "".to_string() }
     } else {
         quote! {
-            [#(#parts),*].join("")
+            [#(#code),*].join("")
         }
     }
 }
 
-// Recursively compile RcDom nodes into Rust builder calls
-struct MacroElementWrapper {
-    handle: Handle,
+/// The parts of `attr`'s value; a literal value is one part.
+fn attr_parts(attr: &Attr) -> Vec<AttrPart> {
+    match &attr.parts {
+        Some(parts) => parts.clone(),
+        None => vec![AttrPart::Lit(attr.value.clone())],
+    }
+}
+
+// Selector matching against the template's elements, at compile time.
+struct MacroElementWrapper<'t> {
+    tpl: &'t Template,
+    id: NodeId,
     active_classes: HashSet<String>,
-    /// Conditional classes taken as set in this matching pass, by element
-    /// (`handle_id`); the others are taken as unset.
-    assumed: std::rc::Rc<HashMap<usize, HashSet<String>>>,
+    /// Conditional classes taken as set in this matching pass, by element;
+    /// the others are taken as unset.
+    assumed: std::rc::Rc<HashMap<NodeId, HashSet<String>>>,
     /// Whether a `checked="{{ ... }}"` is taken as checked in this
     /// matching pass (a literal `checked` speaks for itself).
     checked: bool,
@@ -854,15 +346,16 @@ struct MacroElementWrapper {
     pointer: (u32, u32),
 }
 
-impl MacroElementWrapper {
-    fn with_assumed(handle: Handle, assumed: std::rc::Rc<HashMap<usize, HashSet<String>>>) -> Self {
-        let opaque = is_template_element(&handle);
-        let mut active_classes = get_static_classes(&handle);
-        active_classes.extend(assumed.get(&handle_id(&handle)).into_iter().flatten().cloned());
+impl<'t> MacroElementWrapper<'t> {
+    fn with_assumed(tpl: &'t Template, id: NodeId, assumed: std::rc::Rc<HashMap<NodeId, HashSet<String>>>) -> Self {
+        let opaque = is_template_element(tpl, id);
+        let mut active_classes = get_static_classes(tpl, id);
+        active_classes.extend(assumed.get(&id).into_iter().flatten().cloned());
         MacroElementWrapper {
+            tpl,
+            id,
             active_classes,
             assumed,
-            handle,
             checked: false,
             opaque,
             distance: u32::MAX,
@@ -870,46 +363,36 @@ impl MacroElementWrapper {
         }
     }
 
-    /// The element `handle` related to this one, `distance` levels up from
+    /// The element `id` related to this one, `distance` levels up from
     /// the element being styled, in the same matching pass.
-    fn relative(&self, handle: Handle, distance: u32) -> Self {
-        MacroElementWrapper { distance, pointer: self.pointer, ..MacroElementWrapper::with_assumed(handle, self.assumed.clone()) }
+    fn relative(&self, id: NodeId, distance: u32) -> Self {
+        MacroElementWrapper { distance, pointer: self.pointer, ..MacroElementWrapper::with_assumed(self.tpl, id, self.assumed.clone()) }
     }
 
     /// The element sibling `step` (-1 or 1) nodes away. Inside a loop's or
     /// branch's body, past its first or last element is whatever the
     /// template runs into, unknown until runtime.
     fn sibling(&self, step: isize) -> Option<Self> {
-        let parent_weak = self.handle.parent.take();
-        let parent = parent_weak.as_ref().and_then(|weak| weak.upgrade());
-        self.handle.parent.set(parent_weak);
-        let parent = parent?;
-        let siblings = parent.children.borrow();
-        let index = siblings.iter().position(|child| std::rc::Rc::ptr_eq(child, &self.handle))?;
-        let element = |sibling: &Handle| matches!(sibling.data, NodeData::Element { .. }).then(|| self.relative(sibling.clone(), u32::MAX));
+        let parent = self.tpl.node(self.id).parent?;
+        let siblings = self.tpl.children(parent);
+        let index = siblings.iter().position(|&child| child == self.id)?;
+        let element = |&sibling: &NodeId| is_element(self.tpl, sibling).then(|| self.relative(sibling, u32::MAX));
         let found = if step < 0 {
             siblings[..index].iter().rev().find_map(element)
         } else {
             siblings[index + 1..].iter().find_map(element)
         };
-        found.or_else(|| {
-            let owner = TEMPLATE_OWNERS.with(|m| m.borrow().get(&(std::rc::Rc::as_ptr(&parent) as usize)).cloned())?;
-            Some(self.relative(owner, u32::MAX))
-        })
+        found.or_else(|| is_template_element(self.tpl, parent).then(|| self.relative(parent, u32::MAX)))
     }
 }
 
 /// Classes an element always has: literal names outside any `{% if %}`.
-/// Parses the template syntax rather than splitting on whitespace, which
-/// would read the words of `{% if on %}` as classes `if` and `on`.
-fn get_static_classes(handle: &Handle) -> HashSet<String> {
+fn get_static_classes(tpl: &Template, id: NodeId) -> HashSet<String> {
     let mut static_classes = HashSet::new();
-    if let NodeData::Element { ref attrs, .. } = handle.data {
-        if let Some(attr) = attrs.borrow().iter().find(|a| a.name.local.as_ref() == "class") {
-            for (class, cond) in get_classes_and_conditions(attr.value.as_ref(), &HashSet::new()) {
-                if cond.is_none() {
-                    static_classes.insert(class);
-                }
+    if let Some(attr) = attribute(tpl, id, "class") {
+        for (class, cond) in get_classes_and_conditions(attr, &HashSet::new()) {
+            if cond.is_none() {
+                static_classes.insert(class);
             }
         }
     }
@@ -917,59 +400,39 @@ fn get_static_classes(handle: &Handle) -> HashSet<String> {
 }
 
 thread_local! {
-    /// html5ever keeps `<template>` children in a separate content fragment
-    /// with no link back to the `<template>` element. Maps fragment pointer to
-    /// its `<template>` so selector matching can walk up through
-    /// `{% for %}`/`{% if %}` wrappers.
-    static TEMPLATE_OWNERS: RefCell<HashMap<usize, Handle>> = RefCell::new(HashMap::new());
-
-    /// The conditional classes of the elements compiled so far, by element
-    /// (`Rc` pointer of its handle): each class and the `bool` variable the
-    /// element's code binds it to, in scope for its descendants' code.
-    static CLASS_VARS: RefCell<HashMap<usize, Vec<(String, String)>>> = RefCell::new(HashMap::new());
+    /// The conditional classes of the elements compiled so far, by element:
+    /// each class and the `bool` variable the element's code binds it to,
+    /// in scope for its descendants' code.
+    static CLASS_VARS: RefCell<HashMap<NodeId, Vec<(String, String)>>> = RefCell::new(HashMap::new());
 }
 
-fn handle_id(handle: &Handle) -> usize {
-    std::rc::Rc::as_ptr(handle) as usize
+/// Whether `id` is an element in the HTML sense: a tag, or a template
+/// block (which html5ever saw as a `<template>` placeholder).
+fn is_element(tpl: &Template, id: NodeId) -> bool {
+    !matches!(tpl.node(id).kind, Kind::Document | Kind::Text(_))
 }
 
-fn record_template_owners(handle: &Handle) {
-    if let NodeData::Element { template_contents, .. } = &handle.data {
-        if let Some(contents) = template_contents.borrow().as_ref() {
-            TEMPLATE_OWNERS.with(|m| m.borrow_mut().insert(std::rc::Rc::as_ptr(contents) as usize, handle.clone()));
-        }
-    }
-    for child in get_node_children(handle).iter() {
-        record_template_owners(child);
+/// A template block, or a `<template>` of the page: what stands for
+/// elements only known at runtime.
+fn is_template_element(tpl: &Template, id: NodeId) -> bool {
+    match &tpl.node(id).kind {
+        Kind::Element { tag, .. } => tag == "template",
+        Kind::Expr(_) | Kind::For(..) | Kind::If | Kind::Branch(_) | Kind::Break | Kind::Continue => true,
+        Kind::Document | Kind::Text(_) => false,
     }
 }
 
-fn dom_parent(handle: &Handle) -> Option<Handle> {
-    let parent_weak = handle.parent.take();
-    let parent = parent_weak.as_ref().and_then(|weak| weak.upgrade());
-    handle.parent.set(parent_weak);
-    let parent = parent?;
-    // Hop from a template content fragment to its `<template>` element.
-    let owner = TEMPLATE_OWNERS.with(|m| m.borrow().get(&(std::rc::Rc::as_ptr(&parent) as usize)).cloned());
-    Some(owner.unwrap_or(parent))
-}
-
-fn is_template_element(handle: &Handle) -> bool {
-    matches!(&handle.data, NodeData::Element { name, .. } if name.local.as_ref() == "template")
-}
-
-impl xerune_css::selector::Element for MacroElementWrapper {
-    // The nearest real element, skipping the `<template>` wrappers that stand
-    // in for `{% for %}`/`{% if %}`. Siblings still see the wrappers, which
-    // are opaque: which iteration or branch comes first is only known at
-    // runtime.
+impl xerune_css::selector::Element for MacroElementWrapper<'_> {
+    // The nearest real element, skipping the template blocks. Siblings
+    // still see the blocks, which are opaque: which iteration or branch
+    // comes first is only known at runtime.
     fn parent(&self) -> Option<Self> {
-        let mut parent = dom_parent(&self.handle)?;
-        while is_template_element(&parent) {
-            parent = dom_parent(&parent)?;
+        let mut parent = self.tpl.node(self.id).parent?;
+        while is_template_element(self.tpl, parent) {
+            parent = self.tpl.node(parent).parent?;
         }
         let distance = if self.distance == u32::MAX { u32::MAX } else { self.distance + 1 };
-        matches!(parent.data, NodeData::Element { .. }).then(|| self.relative(parent, distance))
+        matches!(self.tpl.node(parent).kind, Kind::Element { .. }).then(|| self.relative(parent, distance))
     }
 
     fn prev_sibling(&self) -> Option<Self> {
@@ -981,22 +444,23 @@ impl xerune_css::selector::Element for MacroElementWrapper {
     }
 
     fn tag(&self) -> &str {
-        match &self.handle.data {
-            NodeData::Element { name, .. } => name.local.as_ref(),
+        match &self.tpl.node(self.id).kind {
+            Kind::Element { tag, .. } => tag,
+            _ if is_template_element(self.tpl, self.id) => "template",
             _ => "",
         }
     }
 
     fn attribute(&self, name: &str) -> Option<std::borrow::Cow<'_, str>> {
-        let value = attribute_value(&self.handle, name)?;
-        Some(std::borrow::Cow::Owned(match name {
+        let attr = attribute(self.tpl, self.id, name)?;
+        Some(match name {
             // Only the classes active in this matching pass count. The raw
             // attribute is template source: `{% if on %}on{% endif %}`
             // contains the word `on` whether or not the class is applied.
-            "class" => self.active_classes.iter().cloned().collect::<Vec<_>>().join(" "),
-            "checked" if is_dynamic(&value) => return self.checked.then(|| std::borrow::Cow::Borrowed("")),
-            _ => value,
-        }))
+            "class" => std::borrow::Cow::Owned(self.active_classes.iter().cloned().collect::<Vec<_>>().join(" ")),
+            "checked" if attr.is_dynamic() => return self.checked.then(|| std::borrow::Cow::Borrowed("")),
+            _ => std::borrow::Cow::Borrowed(attr.value.as_str()),
+        })
     }
 
     fn has_class(&self, class: &str) -> bool {
@@ -1004,11 +468,12 @@ impl xerune_css::selector::Element for MacroElementWrapper {
     }
 
     fn is_empty(&self) -> bool {
-        self.handle.children.borrow().iter().all(|child| match &child.data {
-            NodeData::Text { contents } => contents.borrow().trim().is_empty(),
-            NodeData::Comment { .. } => true,
-            _ => false,
-        })
+        // A block's content is not its children in the HTML sense.
+        is_template_element(self.tpl, self.id)
+            || self.tpl.children(self.id).iter().all(|&child| match &self.tpl.node(child).kind {
+                Kind::Text(text) => text.trim().is_empty(),
+                _ => false,
+            })
     }
 
     fn state(&self, state: xerune_css::selector::State) -> bool {
@@ -1020,9 +485,9 @@ impl xerune_css::selector::Element for MacroElementWrapper {
         match state {
             // `checked="false"` is unchecked, as `parse_attributes_generic`
             // reads it.
-            State::Checked => match attribute_value(&self.handle, "checked") {
-                Some(v) if is_dynamic(&v) => self.checked,
-                Some(v) => v != "false",
+            State::Checked => match attribute(self.tpl, self.id, "checked") {
+                Some(attr) if attr.is_dynamic() => self.checked,
+                Some(attr) => attr.value != "false",
                 None => false,
             },
             State::Hover => on_pointer(self.pointer.0),
@@ -1041,14 +506,14 @@ impl xerune_css::selector::Element for MacroElementWrapper {
 /// it does, `Some(None)` if it matches whatever the pointer does. Hovered
 /// elements are one and its ancestors, so the levels to try are 0 (the
 /// element itself) up to its root, and none.
-fn pointer_match(selector: &xerune_css::selector::Selector, element: &mut MacroElementWrapper) -> Option<Option<String>> {
+fn pointer_match(selector: &xerune_css::selector::Selector, element: &mut MacroElementWrapper<'_>) -> Option<Option<String>> {
     use xerune_css::selector::State;
     let (hover, active) = (selector.uses_state(State::Hover), selector.uses_state(State::Active));
     element.pointer = (u32::MAX, u32::MAX);
     if !hover && !active {
         return selector.matches(element).then_some(None);
     }
-    let depth = std::iter::successors(Some(element.handle.clone()), dom_parent).count() as u32;
+    let depth = std::iter::successors(Some(element.id), |&id| element.tpl.node(id).parent).count() as u32;
     let levels: Vec<u32> = (0..=depth).chain([u32::MAX]).collect();
     let (hovers, actives) = match (hover, active) {
         (true, true) => (levels.clone(), levels),
@@ -1093,50 +558,45 @@ fn and_condition(a: Option<String>, b: Option<String>) -> Option<String> {
     }
 }
 
-fn attribute_value(handle: &Handle, name: &str) -> Option<String> {
-    match &handle.data {
-        NodeData::Element { attrs, .. } => attrs.borrow().iter().find(|a| a.name.local.as_ref() == name).map(|a| a.value.to_string()),
+/// Element `id`'s attribute `name`.
+fn attribute<'t>(tpl: &'t Template, id: NodeId, name: &str) -> Option<&'t Attr> {
+    match &tpl.node(id).kind {
+        Kind::Element { attrs, .. } => attrs.iter().find(|a| a.name == name),
         _ => None,
     }
 }
 
-fn is_dynamic(value: &str) -> bool {
-    value.contains("{{") || value.contains("{%")
-}
-
+/// The classes of a `class` attribute, each with the condition under which
+/// the element has it (`None`: always).
 fn get_classes_and_conditions(
-    class_attr_val: &str,
+    class_attr: &Attr,
     local_vars: &HashSet<String>,
 ) -> Vec<(String, Option<String>)> {
-    let syntax = askama_parser::Syntax::default();
-    let Ok(ast) = askama_parser::Ast::from_str(class_attr_val, None, &syntax) else {
-        return class_attr_val.split_whitespace().map(|c| (c.to_string(), None)).collect();
+    let Some(parts) = &class_attr.parts else {
+        return class_attr.value.split_whitespace().map(|c| (c.to_string(), None)).collect();
     };
 
-    fn walk_nodes(
-        nodes: &[askama_parser::Node<'_>],
+    fn walk_parts(
+        parts: &[AttrPart],
         cond: Option<String>,
         local_vars: &HashSet<String>,
         res: &mut Vec<(String, Option<String>)>,
-        class_attr_val: &str,
     ) {
-        for node in nodes {
-            match node {
-                askama_parser::Node::Lit(lit) => {
-                    let val = format!("{}{}{}", lit.lws, lit.val, lit.rws);
+        for part in parts {
+            match part {
+                AttrPart::Lit(val) => {
                     for cls in val.split_whitespace() {
                         if !cls.is_empty() {
                             res.push((cls.to_string(), cond.clone()));
                         }
                     }
                 }
-                askama_parser::Node::If(if_node) => {
+                AttrPart::If(branches) => {
                     // A branch applies when its own test holds and every
                     // earlier test in the chain failed (that is what makes
                     // `elif`/`else` exclusive).
                     let mut earlier: Vec<String> = Vec::new();
-                    for branch_with_span in &if_node.branches {
-                        let branch = &**branch_with_span;
+                    for branch in branches {
                         let mut parts: Vec<String> = cond.iter().cloned().collect();
                         parts.extend(earlier.iter().map(|c| format!("!({})", c)));
                         if let Some(ref c) = branch.cond {
@@ -1149,21 +609,17 @@ fn get_classes_and_conditions(
                             1 => parts.pop(),
                             _ => Some(parts.iter().map(|p| format!("({})", p)).collect::<Vec<_>>().join(" && ")),
                         };
-                        walk_nodes(&branch.nodes, branch_cond, local_vars, res, class_attr_val);
+                        walk_parts(&branch.parts, branch_cond, local_vars, res);
                     }
                 }
-                askama_parser::Node::Expr(..) => fail(format_args!(
-                    "class names produced by `{{{{ ... }}}}` (in `class=\"{class_attr_val}\"`) can't be styled: CSS is matched \
-                     at compile time. Use literal class names behind conditions instead: \
-                     `class=\"{{% if selected %}}active{{% endif %}}\"`"
-                )),
-                _ => {}
+                // Rejected by `xerune_template`: classes must be literal.
+                AttrPart::Expr(_) => {}
             }
         }
     }
 
     let mut res = Vec::new();
-    walk_nodes(ast.nodes(), None, local_vars, &mut res, class_attr_val);
+    walk_parts(parts, None, local_vars, &mut res);
     res
 }
 
@@ -1218,170 +674,117 @@ fn compile_media_guard(query: &xerune_css::media::Query) -> MediaGuard {
     MediaGuard::Guard(quote! { ::xerune::__private::matches_query(&[#(#groups),*]) })
 }
 
-fn compile_dom_node<'a>(
-    handle: &Handle,
+fn compile_node(
+    tpl: &Template,
+    id: NodeId,
     rules: &[GuardedRule],
     local_vars: &mut HashSet<String>,
-    dynamic_exprs: &HashMap<usize, &'a Expr<'a>>,
-    dynamic_loops: &HashMap<usize, &'a Node<'a>>,
-    dynamic_ifs: &HashMap<usize, &'a Node<'a>>,
 ) -> proc_macro2::TokenStream {
-    match &handle.data {
-        NodeData::Document => {
-            let children_code = compile_children(&get_node_children(handle), rules, local_vars, dynamic_exprs, dynamic_loops, dynamic_ifs);
+    let children = tpl.children(id);
+    match &tpl.node(id).kind {
+        Kind::Document => {
+            let children_code = compile_children(tpl, children, rules, local_vars);
             quote! {
                 #(#children_code)*
             }
         }
-        NodeData::Element { name, attrs, .. } => {
-            let tag = name.local.as_ref();
-            if tag == "style" || tag == "script" || tag == "head" {
-                return quote! {};
+        Kind::Expr(expr) => {
+            let expr_str = format_expr(expr, local_vars);
+            let expr_tokens: proc_macro2::TokenStream = expr_str.parse().unwrap();
+            quote! {
+                {
+                    use ::xerune::__private::ToDisplayString;
+                    let text_val = (#expr_tokens).to_display_string().into_owned();
+                    builder.append_text_node(measurer, parent, &parent_style, &text_val);
+                }
             }
+        }
+        Kind::For(pattern, iter) => {
+            let var_str = format_target(pattern);
+            let iter_str = match iter {
+                // Ranges are iterators already; `(0..n).iter()` doesn't exist.
+                Expr::Range(..) => format_expr(iter, local_vars),
+                _ => format!("({}).iter()", format_expr(iter, local_vars)),
+            };
 
-            if tag == "template" {
-                let attrs_ref = attrs.borrow();
-                
-                // 1. Template expression
-                let expr_id_attr = attrs_ref.iter().find(|a| a.name.local.as_ref() == "expr-id");
-                if let Some(attr) = expr_id_attr {
-                    let id = attr.value.to_string().parse::<usize>().unwrap();
-                    let expr = dynamic_exprs.get(&id).unwrap();
-                    let expr_str = format_expr(expr, local_vars);
-                    let expr_tokens: proc_macro2::TokenStream = expr_str.parse().unwrap();
-                    return quote! {
-                        {
-                            use ::xerune::__private::ToDisplayString;
-                            let text_val = (#expr_tokens).to_display_string().into_owned();
-                            builder.append_text_node(measurer, parent, &parent_style, &text_val);
-                        }
-                    };
-                }
+            let mut loop_local_vars = local_vars.clone();
+            target_names(pattern, &mut loop_local_vars);
+            loop_local_vars.insert("_loop_item_index".to_string());
+            loop_local_vars.insert("loop".to_string());
 
-                // 2. Loop
-                let loop_id_attr = attrs_ref.iter().find(|a| a.name.local.as_ref() == "loop-id");
-                if let Some(attr) = loop_id_attr {
-                    let id = attr.value.to_string().parse::<usize>().unwrap();
-                    let loop_node = dynamic_loops.get(&id).unwrap();
-                    if let Node::Loop(ref loop_box) = **loop_node {
-                        let var_str = format_target(&loop_box.var);
-                        let iter_str = match &*loop_box.iter {
-                            // Ranges are iterators already; `(0..n).iter()` doesn't exist.
-                            Expr::Range(..) => format_expr(&loop_box.iter, local_vars),
-                            _ => format!("({}).iter()", format_expr(&loop_box.iter, local_vars)),
-                        };
-                        
-                        let mut loop_local_vars = local_vars.clone();
-                        target_names(&loop_box.var, &mut loop_local_vars);
-                        loop_local_vars.insert("_loop_item_index".to_string());
-                        loop_local_vars.insert("loop".to_string());
-                        
-                        let children_code = compile_children(&get_node_children(handle), rules, &mut loop_local_vars, dynamic_exprs, dynamic_loops, dynamic_ifs);
-                        
-                        let var_tokens: proc_macro2::TokenStream = var_str.parse().unwrap();
-                        let iter_tokens: proc_macro2::TokenStream = iter_str.parse().unwrap();
+            let children_code = compile_children(tpl, children, rules, &mut loop_local_vars);
 
-                        let site = next_site();
-                        return quote! {
-                            {
-                                let parent = parent;
-                                // A `data-key` element of the body is keyed
-                                // by its key here instead of the index.
-                                let __loop_key = ::xerune::__private::element_key(__parent_key, #site);
-                                for (mut _loop_item_index, #var_tokens) in #iter_tokens.enumerate() {
-                                    let __parent_key = ::xerune::__private::element_key(__loop_key, _loop_item_index as u64);
-                                    #(#children_code)*
-                                }
-                            }
-                        };
+            let var_tokens: proc_macro2::TokenStream = var_str.parse().unwrap();
+            let iter_tokens: proc_macro2::TokenStream = iter_str.parse().unwrap();
+
+            let site = next_site();
+            quote! {
+                {
+                    let parent = parent;
+                    // A `data-key` element of the body is keyed
+                    // by its key here instead of the index.
+                    let __loop_key = ::xerune::__private::element_key(__parent_key, #site);
+                    for (mut _loop_item_index, #var_tokens) in #iter_tokens.enumerate() {
+                        let __parent_key = ::xerune::__private::element_key(__loop_key, _loop_item_index as u64);
+                        #(#children_code)*
                     }
                 }
+            }
+        }
+        Kind::If => {
+            let mut if_code = proc_macro2::TokenStream::new();
+            for (branch_idx, &branch) in children.iter().enumerate() {
+                let Kind::Branch(cond) = &tpl.node(branch).kind else { unreachable!() };
+                // `{% if let Some(x) = ... %}` binds `x` inside this branch only.
+                let mut branch_local_vars = local_vars.clone();
+                if let Some(target) = cond.as_ref().and_then(|c| c.pattern.as_ref()) {
+                    target_names(target, &mut branch_local_vars);
+                }
+                let children_code = compile_children(tpl, tpl.children(branch), rules, &mut branch_local_vars);
 
-                // 3. Template If
-                let if_id_attr = attrs_ref.iter().find(|a| a.name.local.as_ref() == "if-id");
-                if let Some(attr) = if_id_attr {
-                    let id = attr.value.to_string().parse::<usize>().unwrap();
-                    let if_node = dynamic_ifs.get(&id).unwrap();
-                    if let Node::If(ref if_struct) = **if_node {
-                        let mut if_code = proc_macro2::TokenStream::new();
-                        for (branch_idx, branch_with_span) in if_struct.branches.iter().enumerate() {
-                            let branch = &**branch_with_span;
-                            let branch_handle = {
-                                let children = get_node_children(handle);
-                                children.iter().find(|child| {
-                                    if let NodeData::Element { name: child_name, attrs: child_attrs, .. } = &child.data {
-                                        if child_name.local.as_ref() == "template" {
-                                            let child_attrs_ref = child_attrs.borrow();
-                                            let b_id_attr = child_attrs_ref.iter().find(|a| a.name.local.as_ref() == "branch-id");
-                                            let b_num_attr = child_attrs_ref.iter().find(|a| a.name.local.as_ref() == "branch");
-                                            if let (Some(b_id), Some(b_num)) = (b_id_attr, b_num_attr) {
-                                                return b_id.value.to_string().parse::<usize>().unwrap() == id
-                                                    && b_num.value.to_string().parse::<usize>().unwrap() == branch_idx;
-                                            }
-                                        }
-                                    }
-                                    false
-                                }).cloned()
-                            };
-
-                            if let Some(bh) = branch_handle {
-                                // `{% if let Some(x) = ... %}` binds `x` inside this branch only.
-                                let mut branch_local_vars = local_vars.clone();
-                                if let Some(target) = branch.cond.as_ref().and_then(|c| c.target.as_ref()) {
-                                    target_names(target, &mut branch_local_vars);
-                                }
-                                let children_code = compile_children(&get_node_children(&bh), rules, &mut branch_local_vars, dynamic_exprs, dynamic_loops, dynamic_ifs);
-                                
-                                if let Some(ref cond) = branch.cond {
-                                    let cond_str = format_cond_test(cond, local_vars);
-                                    let cond_tokens: proc_macro2::TokenStream = cond_str.parse().unwrap();
-                                    if branch_idx == 0 {
-                                        if_code.extend(quote! {
-                                            if #cond_tokens {
-                                                #(#children_code)*
-                                            }
-                                        });
-                                    } else {
-                                        if_code.extend(quote! {
-                                            else if #cond_tokens {
-                                                #(#children_code)*
-                                            }
-                                        });
-                                    }
-                                } else {
-                                    if_code.extend(quote! {
-                                        else {
-                                            #(#children_code)*
-                                        }
-                                    });
-                                }
+                if let Some(cond) = cond {
+                    let cond_str = format_cond_test(cond, local_vars);
+                    let cond_tokens: proc_macro2::TokenStream = cond_str.parse().unwrap();
+                    if branch_idx == 0 {
+                        if_code.extend(quote! {
+                            if #cond_tokens {
+                                #(#children_code)*
                             }
-                        }
-                        return if_code;
+                        });
+                    } else {
+                        if_code.extend(quote! {
+                            else if #cond_tokens {
+                                #(#children_code)*
+                            }
+                        });
                     }
+                } else {
+                    if_code.extend(quote! {
+                        else {
+                            #(#children_code)*
+                        }
+                    });
                 }
-
-                // 4. Break
-                if attrs_ref.iter().any(|a| a.name.local.as_ref() == "break") {
-                    return quote! { break; };
-                }
-
-                // 5. Continue
-                if attrs_ref.iter().any(|a| a.name.local.as_ref() == "continue") {
-                    return quote! { continue; };
-                }
-
+            }
+            if_code
+        }
+        Kind::Branch(_) => unreachable!("branches are compiled by their `if`"),
+        Kind::Break => quote! { break; },
+        Kind::Continue => quote! { continue; },
+        Kind::Element { tag, attrs } => {
+            let tag = tag.as_str();
+            if tag == "style" || tag == "script" || tag == "head" || tag == "template" {
                 return quote! {};
             }
 
             // Standard Element styling logic
-            let class_attr = attrs.borrow().iter().find(|a| a.name.local.as_ref() == "class").map(|a| a.value.to_string());
+            let class_attr = attribute(tpl, id, "class");
             let mut static_classes = HashSet::new();
             // Each conditional class, with the test of whichever branches set it.
             let mut conditional_classes: Vec<(String, Vec<String>)> = Vec::new();
 
-            if let Some(ref class_val) = class_attr {
-                let parsed_classes = get_classes_and_conditions(class_val, local_vars);
+            if let Some(class_attr) = class_attr {
+                let parsed_classes = get_classes_and_conditions(class_attr, local_vars);
                 for (cls, cond_opt) in parsed_classes {
                     match cond_opt {
                         Some(cond) => match conditional_classes.iter_mut().find(|(c, _)| *c == cls) {
@@ -1406,25 +809,24 @@ fn compile_dom_node<'a>(
                 class_bindings.push(quote! { let #ident: bool = #test; });
                 class_vars.push((cls.clone(), var));
             }
-            CLASS_VARS.with(|m| m.borrow_mut().insert(handle_id(handle), class_vars));
+            CLASS_VARS.with(|m| m.borrow_mut().insert(id, class_vars));
             // The conditional classes of the element and its ancestors.
-            let mut chain_classes: Vec<(usize, String, String)> = Vec::new();
-            let mut ancestor = Some(handle.clone());
+            let mut chain_classes: Vec<(NodeId, String, String)> = Vec::new();
+            let mut ancestor = Some(id);
             while let Some(element) = ancestor {
-                let id = handle_id(&element);
                 CLASS_VARS.with(|m| {
-                    for (cls, var) in m.borrow().get(&id).into_iter().flatten() {
-                        chain_classes.push((id, cls.clone(), var.clone()));
+                    for (cls, var) in m.borrow().get(&element).into_iter().flatten() {
+                        chain_classes.push((element, cls.clone(), var.clone()));
                     }
                 });
-                ancestor = dom_parent(&element);
+                ancestor = tpl.node(element).parent;
             }
 
             // A `checked="{{ ... }}"` (what `{% if c %}checked{% endif %}`
             // becomes) is checked at runtime unless it is "false", like
             // `parse_attributes_generic` reads it; `:checked` rules apply
             // under that condition.
-            let dynamic_checked = attrs.borrow().iter().position(|a| a.name.local.as_ref() == "checked" && is_dynamic(a.value.as_ref()));
+            let dynamic_checked = attrs.iter().position(|a| a.name == "checked" && a.is_dynamic());
 
             let has_parts = matches!(tag, "input" | "progress");
             let mut matched_rules = Vec::new();
@@ -1437,19 +839,19 @@ fn compile_dom_node<'a>(
                 };
                 // What is only known at runtime and the rule tests: the
                 // conditional classes it names, and a dynamic `checked`.
-                let classes: Vec<&(usize, String, String)> = chain_classes.iter().filter(|(_, cls, _)| rule.selector.mentions_class(cls)).take(10).collect();
+                let classes: Vec<&(NodeId, String, String)> = chain_classes.iter().filter(|(_, cls, _)| rule.selector.mentions_class(cls)).take(10).collect();
                 let checked = dynamic_checked.is_some() && rule.selector.uses_state(xerune_css::selector::State::Checked);
                 let unknowns = classes.len() + checked as usize;
                 // Whether it matches (and under which pointer condition)
                 // with each combination of them set.
                 let outcomes: Vec<Option<Option<String>>> = (0..1usize << unknowns).map(|set| {
-                    let mut assumed: HashMap<usize, HashSet<String>> = HashMap::new();
+                    let mut assumed: HashMap<NodeId, HashSet<String>> = HashMap::new();
                     for (i, (id, cls, _)) in classes.iter().enumerate() {
                         if set & (1 << i) != 0 {
                             assumed.entry(*id).or_default().insert(cls.clone());
                         }
                     }
-                    let mut wrapper = MacroElementWrapper::with_assumed(handle.clone(), std::rc::Rc::new(assumed));
+                    let mut wrapper = MacroElementWrapper::with_assumed(tpl, id, std::rc::Rc::new(assumed));
                     wrapper.distance = 0;
                     wrapper.checked = checked && set & (1 << classes.len()) != 0;
                     pointer_match(&rule.selector, &mut wrapper)
@@ -1528,8 +930,8 @@ fn compile_dom_node<'a>(
                     }
                 }
             }
-            let style_attribute = attrs.borrow().iter().find(|a| a.name.local.as_ref() == "style").map(|a| a.value.to_string());
-            if style_attribute.is_some_and(|style| style.contains('!') || is_dynamic(&style)) {
+            let style_attribute = attribute(tpl, id, "style");
+            if style_attribute.is_some_and(|style| style.value.contains('!') || style.is_dynamic()) {
                 important_applications.push(quote! { el.apply_important_style(attrs_slice); });
                 starting_important_applications.push(quote! { el.apply_important_style(attrs_slice); });
             }
@@ -1554,21 +956,16 @@ fn compile_dom_node<'a>(
             let mut dynamic_attrs = Vec::new();
             let mut dynamic_vars = Vec::new();
             let mut click = quote! {};
-            for (idx, attr) in attrs.borrow().iter().enumerate() {
-                let key = attr.name.local.as_ref();
-                let val = attr.value.as_ref();
+            for (idx, attr) in attrs.iter().enumerate() {
+                let key = attr.name.as_str();
+                let val = attr.value.as_str();
                 if let Some(method) = message_method(key) {
-                    let handler = compile_message(tag, key, method, val, local_vars);
+                    let handler = compile_message(attr, method, local_vars);
                     click.extend(handler);
                     continue;
                 }
-                if val.contains("{%") || val.contains("{{") {
-                    let syntax = Syntax::default();
-                    let val_ast = Ast::from_str(val, None, &syntax).unwrap_or_else(|e| fail(format_args!(
-                        "failed to parse template syntax in attribute `{key}=\"{val}\"` of <{tag}>: {}",
-                        e.message.as_deref().unwrap_or("syntax error")
-                    )));
-                    let val_tokens = generate_attr_string_code(val_ast.nodes(), local_vars);
+                if attr.is_dynamic() {
+                    let val_tokens = generate_attr_string_code(&attr_parts(attr), local_vars);
                     let var_name = syn::Ident::new(&format!("_dyn_attr_{}", idx), proc_macro2::Span::call_site());
                     dynamic_vars.push(quote! {
                         let #var_name: String = #val_tokens;
@@ -1588,28 +985,22 @@ fn compile_dom_node<'a>(
 
             // A literal input `type` picks the widget defaults up front, so
             // the CSS rules below apply on top of them.
-            let static_input_type = attrs.borrow().iter()
-                .find(|a| tag == "input" && a.name.local.as_ref() == "type" && !a.value.contains("{{") && !a.value.contains("{%"))
-                .map(|a| a.value.to_string());
+            let static_input_type = attrs.iter()
+                .find(|a| tag == "input" && a.name == "type" && !a.is_dynamic())
+                .map(|a| a.value.clone());
             let element_style = match static_input_type {
                 Some(input_type) => quote! { ::xerune::__private::ElementStyle::new_input(#input_type, &parent_style) },
                 None => quote! { ::xerune::__private::ElementStyle::new(#tag, &parent_style) },
             };
 
-            let child_compilation = compile_children(&get_node_children(handle), rules, local_vars, dynamic_exprs, dynamic_loops, dynamic_ifs);
+            let child_compilation = compile_children(tpl, children, rules, local_vars);
 
             let site = next_site();
             // `data-key` names the element among its siblings, so it keeps
             // its key when items before it come and go.
-            let key = match attrs.borrow().iter().find(|a| a.name.local.as_ref() == "data-key") {
+            let key = match attribute(tpl, id, "data-key") {
                 Some(attr) => {
-                    let value = attr.value.to_string();
-                    let syntax = Syntax::default();
-                    let ast = Ast::from_str(&value, None, &syntax).unwrap_or_else(|e| fail(format_args!(
-                        "failed to parse template syntax in attribute `data-key=\"{value}\"` of <{tag}>: {}",
-                        e.message.as_deref().unwrap_or("syntax error")
-                    )));
-                    let text = generate_attr_string_code(ast.nodes(), local_vars);
+                    let text = generate_attr_string_code(&attr_parts(attr), local_vars);
                     quote! {
                         ::xerune::__private::element_key(
                             ::xerune::__private::element_key(__loop_key, ::xerune::model::hash_bytes(#text.as_bytes())),
@@ -1650,8 +1041,7 @@ fn compile_dom_node<'a>(
                 builder.finish_element(el, node, &parent_style);
             }
         }
-        NodeData::Text { contents } => {
-            let text = contents.borrow().to_string();
+        Kind::Text(text) => {
             if text.trim().is_empty() {
                 return quote! {};
             }
@@ -1659,7 +1049,6 @@ fn compile_dom_node<'a>(
                 builder.append_text_node(measurer, parent, &parent_style, #text);
             }
         }
-        _ => quote! {},
     }
 }
 
@@ -1683,57 +1072,25 @@ fn message_method(attribute: &str) -> Option<&'static str> {
 /// argument's type is checked by the compiler. Anything else (`add`,
 /// `digit:7`, text around the expression) is parsed with `FromStr` when the
 /// view is built, after the name was checked at compile time.
-fn compile_message(tag: &str, attribute: &str, method: &str, val: &str, local_vars: &HashSet<String>) -> proc_macro2::TokenStream {
+fn compile_message(attr: &Attr, method: &str, local_vars: &HashSet<String>) -> proc_macro2::TokenStream {
     let set = syn::Ident::new(method, proc_macro2::Span::call_site());
     let set_text = syn::Ident::new(&format!("{method}_text"), proc_macro2::Span::call_site());
     let message_type = quote! { <Self as ::xerune::Model>::Message };
-    if !val.contains("{{") && !val.contains("{%") {
+    let val = attr.value.as_str();
+    let Some(parts) = attr.parts.as_deref().filter(|_| attr.is_dynamic()) else {
         return quote! { el.#set_text::<#message_type>(#val); };
-    }
-    let syntax = Syntax::default();
-    let ast = Ast::from_str(val, None, &syntax).unwrap_or_else(|e| fail(format_args!(
-        "failed to parse template syntax in attribute `{attribute}=\"{val}\"` of <{tag}>: {}",
-        e.message.as_deref().unwrap_or("syntax error")
-    )));
-    if let [Node::Lit(prefix), Node::Expr(_, expr)] = ast.nodes() {
-        if prefix.lws.is_empty() && prefix.rws.is_empty() && !prefix.val.is_empty() {
-            let constructor = message_constructor(prefix.val);
+    };
+    if let [AttrPart::Lit(prefix), AttrPart::Expr(expr)] = parts {
+        if !prefix.is_empty() && prefix.trim() == prefix {
+            let constructor = message_constructor(prefix);
             let expr: proc_macro2::TokenStream = format_expr(expr, local_vars).parse().unwrap();
             return quote! {
                 el.#set(#message_type::#constructor(::xerune::__private::message_arg(&(#expr))));
             };
         }
     }
-    let text = generate_attr_string_code(ast.nodes(), local_vars);
+    let text = generate_attr_string_code(parts, local_vars);
     quote! { el.#set_text::<#message_type>(&#text); }
-}
-
-// Find style content from HTML preprocessed templates
-fn extract_css_from_html(html: &str) -> String {
-    let dom = parse_document(RcDom::default(), Default::default())
-        .from_utf8()
-        .read_from(&mut html.as_bytes())
-        .unwrap();
-
-    fn walk(handle: &Handle, css: &mut String) {
-        if let NodeData::Element { name, .. } = &handle.data {
-            if name.local.as_ref() == "style" {
-                for child in get_node_children(handle).iter() {
-                    if let NodeData::Text { contents } = &child.data {
-                        css.push_str(&contents.borrow());
-                        css.push('\n');
-                    }
-                }
-            }
-        }
-        for child in get_node_children(handle).iter() {
-            walk(child, css);
-        }
-    }
-    
-    let mut css = String::new();
-    walk(&dom.document, &mut css);
-    css
 }
 
 /// The `@keyframes` blocks of `css`, with comments removed.
@@ -1815,46 +1172,6 @@ fn workspace_root(dir: &std::path::Path) -> Option<std::path::PathBuf> {
         .map(std::path::Path::to_path_buf)
 }
 
-// Recursive include resolver to inline included templates at compile time at string level.
-// Appends to `out` and records in `map` which file each chunk of `out` came from.
-fn resolve_includes_text(
-    file: usize,
-    cargo_manifest_dir: &std::path::Path,
-    parent_dir: &std::path::Path,
-    tracked_paths: &mut Vec<String>,
-    out: &mut String,
-    map: &mut SourceMap,
-) {
-    let content = map.files[file].1.clone();
-    let mut pos = 0;
-    while let Some(rel_idx) = content[pos..].find("{% include") {
-        let start_idx = pos + rel_idx;
-        map.segments.push(Segment { start: out.len(), file, file_offset: pos });
-        out.push_str(&content[pos..start_idx]);
-        let rest = &content[start_idx..];
-        let Some(end_idx) = rest.find("%}") else {
-            fail(format_args!("unterminated `{{% include %}}`\n  --> {}", map.describe_file_offset(file, start_idx)));
-        };
-        let path_str = rest["{% include".len()..end_idx].trim().trim_matches(|c| c == '"' || c == '\'');
-        if path_str.is_empty() {
-            fail(format_args!("expected `{{% include \"path\" %}}`\n  --> {}", map.describe_file_offset(file, start_idx)));
-        }
-
-        let (full_path, short_path) = find_template_file(path_str, cargo_manifest_dir, Some(parent_dir))
-            .unwrap_or_else(|e| fail(format_args!("{e}\n  --> {}", map.describe_file_offset(file, start_idx))));
-        let included_content = std::fs::read_to_string(&full_path)
-            .unwrap_or_else(|e| fail(format_args!("failed to read included template {full_path:?}: {e}")));
-        let included = map.add_file(short_path, included_content);
-        tracked_paths.push(full_path.to_string_lossy().into_owned());
-
-        let file_parent = full_path.parent().unwrap_or(parent_dir);
-        resolve_includes_text(included, cargo_manifest_dir, file_parent, tracked_paths, out, map);
-        pos = start_idx + end_idx + 2;
-    }
-    map.segments.push(Segment { start: out.len(), file, file_offset: pos });
-    out.push_str(&content[pos..]);
-}
-
 /// Message for panics that are not `TemplateError`s, i.e. compiler bugs.
 fn internal_error_message(payload: &(dyn std::any::Any + Send)) -> String {
     let detail = payload
@@ -1907,8 +1224,6 @@ pub fn derive_xerune_template(input: TokenStream) -> TokenStream {
     std::panic::set_hook(Box::new(|_| {}));
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| expand_template(&input, &template)));
     std::panic::set_hook(prev_hook);
-    CURRENT_TEMPLATE.with(|cur| cur.borrow_mut().take());
-    TEMPLATE_OWNERS.with(|m| m.borrow_mut().clear());
     CLASS_VARS.with(|m| m.borrow_mut().clear());
 
     match result {
@@ -1936,29 +1251,35 @@ fn expand_template(input: &DeriveInput, template: &TemplateRef) -> proc_macro2::
     let cargo_manifest_path = PathBuf::from(&cargo_manifest_dir);
 
     // Load the template; includes in an inline template resolve from the manifest dir
-    let mut source_map = SourceMap::default();
     let mut tracked_paths = Vec::new();
-    let (root_file, parent_dir) = match template {
+    let root = match template {
         TemplateRef::Path(template_path) => {
             let (full_template_path, short_path) = find_template_file(template_path, &cargo_manifest_path, None)
                 .unwrap_or_else(|e| fail(e));
             let template_content = std::fs::read_to_string(&full_template_path)
                 .unwrap_or_else(|e| fail(format_args!("failed to read template file {full_template_path:?}: {e}")));
-            let root_file = source_map.add_file(short_path, template_content);
             tracked_paths.push(full_template_path.to_string_lossy().into_owned());
-            (root_file, full_template_path.parent().unwrap_or(&cargo_manifest_path).to_path_buf())
+            xerune_template::File {
+                name: short_path,
+                dir: full_template_path.parent().unwrap_or(&cargo_manifest_path).to_path_buf(),
+                content: template_content,
+            }
         }
-        TemplateRef::Source(source) => {
-            (source_map.add_file("<inline template>".to_string(), source.clone()), cargo_manifest_path.clone())
-        }
+        TemplateRef::Source(source) => xerune_template::File {
+            name: "<inline template>".to_string(),
+            dir: cargo_manifest_path.clone(),
+            content: source.clone(),
+        },
     };
-    let parent_dir = parent_dir.as_path();
-
-    // Resolve includes at string level, remembering where each chunk came from
-    let mut resolved_content = String::new();
-    resolve_includes_text(root_file, &cargo_manifest_path, parent_dir, &mut tracked_paths, &mut resolved_content, &mut source_map);
-    let template_content_ref: &'static str = Box::leak(resolved_content.into_boxed_str());
-    CURRENT_TEMPLATE.with(|cur| *cur.borrow_mut() = Some((template_content_ref, source_map)));
+    let tpl = xerune_template::parse(root, &mut |path: &str, dir: &std::path::Path| {
+        let (full_path, short_path) = find_template_file(path, &cargo_manifest_path, Some(dir))?;
+        let content = std::fs::read_to_string(&full_path)
+            .map_err(|e| format!("failed to read included template {full_path:?}: {e}"))?;
+        tracked_paths.push(full_path.to_string_lossy().into_owned());
+        Ok(xerune_template::File { name: short_path, dir: full_path.parent().unwrap_or(dir).to_path_buf(), content })
+    })
+    .unwrap_or_else(|e| fail(e));
+    let css_content = &tpl.css;
 
     // Rebuild when a template changes: cargo tracks files read by include_bytes.
     tracked_paths.sort();
@@ -1969,51 +1290,11 @@ fn expand_template(input: &DeriveInput, template: &TemplateRef) -> proc_macro2::
         }
     });
 
-    // Parse template using askama_parser
-    let syntax = Syntax::default();
-    let ast = Ast::from_str(template_content_ref, None, &syntax).unwrap_or_else(|e| {
-        let msg = e.message.as_deref().unwrap_or("could not parse");
-        let loc = CURRENT_TEMPLATE.with(|cur| cur.borrow().as_ref().map(|(_, map)| map.describe(e.offset)));
-        let note = if msg.starts_with("unknown node") {
-            "\n  = note: conditions use Rust operators: `&&`, `||`, `!` (not `and`, `or`, `not`)"
-        } else {
-            ""
-        };
-        fail(format_args!("template syntax error: {msg}\n  --> {}{note}", loc.unwrap_or_default()))
-    });
-    validate_nodes(ast.nodes());
-
-    let mut dynamic_counter = 0;
-    let mut dynamic_exprs = HashMap::new();
-    let mut dynamic_loops = HashMap::new();
-    let mut dynamic_ifs = HashMap::new();
-    
-    let mut markup = Markup::Text;
-    let mut in_quote = None;
-    let preprocessed_html = preprocess_nodes(
-        ast.nodes(),
-        &mut dynamic_counter,
-        &mut dynamic_exprs,
-        &mut dynamic_loops,
-        &mut dynamic_ifs,
-        &mut markup,
-        &mut in_quote,
-    );
-
-    // Extract CSS stylesheet from the template
-    let css_content = extract_css_from_html(&preprocessed_html);
-
-    // Parse the preprocessed DOM tree
-    let dom = parse_document(RcDom::default(), Default::default())
-        .from_utf8()
-        .read_from(&mut preprocessed_html.as_bytes())
-        .unwrap();
-    record_template_owners(&dom.document);
     NEXT_SITE.with(|site| site.set(0));
 
     // Each rule of an `@media` block applies under a runtime viewport guard
     // of its block's queries (all of them, for nested blocks).
-    let sheet = xerune_css::sheet::StyleSheet::parse(&css_content);
+    let sheet = xerune_css::sheet::StyleSheet::parse(css_content);
     for selector in &sheet.dropped {
         eprintln!("xerune: CSS rule '{}' is ignored: its selector is invalid or uses something unsupported", selector);
     }
@@ -2036,19 +1317,23 @@ fn expand_template(input: &DeriveInput, template: &TemplateRef) -> proc_macro2::
 
     // Collect data-on-click action strings
     let mut raw_actions = Vec::new();
-    fn collect_actions(handle: &Handle, actions: &mut Vec<String>) {
-        if let NodeData::Element { ref attrs, .. } = handle.data {
-            for attr in attrs.borrow().iter() {
-                if message_method(attr.name.local.as_ref()).is_some() {
-                    actions.push(attr.value.to_string());
+    // Not inside template blocks, whose content html5ever kept apart.
+    fn collect_actions(tpl: &Template, id: NodeId, actions: &mut Vec<String>) {
+        if let Kind::Element { attrs, .. } = &tpl.node(id).kind {
+            for attr in attrs {
+                if message_method(&attr.name).is_some() {
+                    actions.push(attr.value.clone());
                 }
             }
         }
-        for child in handle.children.borrow().iter() {
-            collect_actions(child, actions);
+        if is_template_element(tpl, id) {
+            return;
+        }
+        for &child in tpl.children(id) {
+            collect_actions(tpl, child, actions);
         }
     }
-    collect_actions(&dom.document, &mut raw_actions);
+    collect_actions(&tpl, Template::ROOT, &mut raw_actions);
 
     let mut check_calls = Vec::new();
     for action in raw_actions {
@@ -2121,7 +1406,7 @@ fn expand_template(input: &DeriveInput, template: &TemplateRef) -> proc_macro2::
     let mut local_vars = HashSet::new();
     let uses = |state| rules.iter().any(|r| r.rule.selector.uses_state(state));
     let (uses_hover, uses_active) = (uses(xerune_css::selector::State::Hover), uses(xerune_css::selector::State::Active));
-    let body_compilation = compile_dom_node(&dom.document, &rules, &mut local_vars, &dynamic_exprs, &dynamic_loops, &dynamic_ifs);
+    let body_compilation = compile_node(&tpl, Template::ROOT, &rules, &mut local_vars);
 
     let expanded = quote! {
         #(#dummy_includes)*
@@ -2358,4 +1643,3 @@ pub fn derive_xerune_message(input: TokenStream) -> TokenStream {
 
     TokenStream::from(expanded)
 }
-

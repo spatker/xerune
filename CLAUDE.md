@@ -13,7 +13,8 @@ the working notes.
 | Path | What |
 |---|---|
 | `src/` | `xerune` lib: runtime, UI tree, CSS, backends |
-| `xerune_derive/` | `XeruneTemplate` / `XeruneMessage` macros. One big `lib.rs`: template parser, CSS splitting, codegen of `build_ui` |
+| `xerune_template/` | The template language: includes, Askama parse, validation (the supported subset is what `lower.rs` accepts), html5ever, giving one `Template` tree of elements and template blocks. Shared by the derive and (next) the studio's interpreter, so they can't drift |
+| `xerune_derive/` | `XeruneTemplate` / `XeruneMessage` macros. `lib.rs` compiles a `xerune_template::Template` to `build_ui`: compile-time selector matching, CSS splitting, codegen |
 | `xerune_css/` | The CSS parser both of them use (`no_std`): stylesheets and declarations (`sheet`), selectors with specificity and matching over an `Element` trait (`selector`), `@media` blocks and queries, comment/string-aware scanning. Change CSS reading here, not in either crate |
 | `xerune_render/` | Software rasterizer (blits, rounded rects, gradients, glyphs). Has a `no_std` mode |
 | `studio/` | WASM inspector (`wasm-pack build --target web`, `features = ["browser"]`) |
@@ -51,7 +52,8 @@ Templates: `{{ expr }}`, `{% if %}/{% elif %}/{% else %}`, `{% if let %}`,
 `data-on-transition{run,start,end,cancel}`. Selectors are matched when the
 derive runs; classes set by `{% if %}` (on the element or an ancestor) become
 runtime conditions. `tests/template_grammar.html` is
-the grammar regression fixture; extend it when touching the template parser.
+the grammar regression fixture; extend it when touching the template parser
+(`xerune_template/tests/parse.rs` parses every template in the repo).
 
 ## Commands
 

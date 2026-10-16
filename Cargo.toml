@@ -1,5 +1,5 @@
 [workspace]
-members = ["wpt_runner", "xerune_render", "xerune_derive", "xerune_css", "studio"]
+members = ["wpt_runner", "xerune_render", "xerune_derive", "xerune_css", "xerune_template", "studio"]
 
 
 [package]

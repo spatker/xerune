@@ -1,0 +1,17 @@
+[package]
+name = "xerune_template"
+version = "0.1.0"
+edition = "2024"
+description = "The template language of xerune: parsed once, compiled by its macro or interpreted by its studio"
+license = "MIT"
+repository = "https://github.com/spatker/xerune"
+readme = "../README.md"
+keywords = ["html", "template", "embedded", "xerune"]
+categories = ["embedded", "template-engine"]
+rust-version = "1.85"
+
+[dependencies]
+askama_parser = "0.14.0"
+html5ever = "0.36.1"
+markup5ever = "0.36.1"
+markup5ever_rcdom = "0.36.0"
