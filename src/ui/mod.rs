@@ -141,77 +141,6 @@ impl Ui {
         Self::from_builder(builder, root, &css, measurer, default_style, message_validator)
     }
 
-    #[cfg(feature = "std")]
-    fn preprocess_compiled_tree(
-        _taffy: &taffy::TaffyTree,
-        node_metadata: &mut NodeMap<NodeMetadata>,
-        node: NodeId,
-    ) {
-        let children = if let Some(meta) = node_metadata.get(&node) {
-            if meta.tag == "#text" {
-                return;
-            }
-            meta.children.clone()
-        } else {
-            return;
-        };
-
-        let mut child_elements = Vec::new();
-        for child in children {
-            if let Some(child_meta) = node_metadata.get(&child) {
-                if child_meta.tag != "#text" {
-                    child_elements.push(child);
-                }
-            }
-            Self::preprocess_compiled_tree(_taffy, node_metadata, child);
-        }
-
-        let num_children = child_elements.len();
-        for (i, child) in child_elements.iter().enumerate() {
-            if let Some(child_meta) = node_metadata.get_mut(child) {
-                let index_class = format!("nth-child-{}", i + 1);
-                let is_last = i + 1 == num_children;
-                
-                // 1. Mutate optimized class field
-                if let Some(ref mut class) = child_meta.class {
-                    let class_str = class.to_mut();
-                    class_str.push(' ');
-                    class_str.push_str(&index_class);
-                    if is_last {
-                        class_str.push_str(" last-child");
-                    }
-                } else {
-                    let mut class_val = index_class.clone();
-                    if is_last {
-                        class_val.push_str(" last-child");
-                    }
-                    child_meta.class = Some(Cow::Owned(class_val));
-                }
-
-                // 2. Mutate backward-compatible attrs field
-                let mut found_class = false;
-                for (k, v) in &mut child_meta.attrs {
-                    if k == "class" {
-                        v.push(' ');
-                        v.push_str(&index_class);
-                        if is_last {
-                            v.push_str(" last-child");
-                        }
-                        found_class = true;
-                        break;
-                    }
-                }
-                if !found_class && !child_meta.attrs.is_empty() {
-                    let mut class_val = index_class;
-                    if is_last {
-                        class_val.push_str(" last-child");
-                    }
-                    child_meta.attrs.push(("class".to_string(), class_val));
-                }
-            }
-        }
-    }
-
     /// Create a new UI layout engine from a precompiled template layout.
     pub fn new_compiled(
         model: &impl TemplateLayout,
@@ -254,7 +183,7 @@ impl Ui {
         #[cfg(feature = "std")]
         if !stylesheet_str.is_empty() || builder.node_metadata.iter().next().is_some() {
             // Resolve `@media` blocks against the current viewport first; the
-            // expanded text is what `simplecss` (which skips at-rules) parses.
+            // expanded text is what the stylesheet parser (which skips at-rules) reads.
             let expanded = if stylesheet_str.contains("@media") {
                 css::media::expand_for_viewport(stylesheet_str)
             } else {
@@ -265,24 +194,12 @@ impl Ui {
                 if let Some(c) = cache_guard.get(&expanded) {
                     c
                 } else {
-                    let has_nth_or_last_child = expanded.contains(":nth-child") || expanded.contains(":last-child");
                     let keyframes = css::parse_keyframes(&expanded);
-
-                    let css_str = css::rewrite_for_simplecss(&expanded);
-
-                    let cached_val = std::rc::Rc::new(style_resolution::CachedStyles::new(
-                        css_str,
-                        keyframes,
-                        has_nth_or_last_child,
-                    ));
+                    let cached_val = std::rc::Rc::new(style_resolution::CachedStyles::new(&expanded, keyframes));
                     cache_guard.insert(expanded, cached_val.clone());
                     cached_val
                 }
             });
-
-            if cached.has_nth_or_last_child {
-                Self::preprocess_compiled_tree(&builder.taffy, &mut builder.node_metadata, root);
-            }
 
             let mut style_cache = cached.style_cache.borrow_mut();
             
@@ -296,7 +213,7 @@ impl Ui {
                     &mut builder.interactions,
                     default_style,
                     message_validator,
-                    cached.stylesheet(),
+                    &cached.sheet,
                     &builder.node_metadata,
                     &mut base_styles,
                     &mut *style_cache,

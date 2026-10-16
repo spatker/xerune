@@ -7,6 +7,8 @@ use crate::graphics::TextMeasurer;
 use crate::css;
 #[cfg(feature = "std")]
 use crate::defaults;
+#[cfg(feature = "std")]
+use xerune_css::selector::PseudoElement;
 use super::node_map::NodeMap;
 #[cfg(feature = "std")]
 use super::metadata::NodeMetadata;
@@ -85,43 +87,20 @@ pub mod cache_config {
 }
 
 #[cfg(feature = "std")]
-type StyleSheetRef<'a> = simplecss::StyleSheet<'a>;
-
-#[cfg(feature = "std")]
-self_cell::self_cell!(
-    /// A parsed stylesheet together with the CSS text its rules borrow from.
-    struct ParsedStyleSheet {
-        owner: Box<str>,
-        #[covariant]
-        dependent: StyleSheetRef,
-    }
-);
-
-#[cfg(feature = "std")]
 pub(crate) struct CachedStyles {
-    sheet: ParsedStyleSheet,
+    pub(crate) sheet: xerune_css::sheet::StyleSheet,
     pub(crate) keyframes: HashMap<String, css::KeyframesAnimation>,
-    pub(crate) has_nth_or_last_child: bool,
     pub(crate) style_cache: std::cell::RefCell<HashMap<StyleCacheKey, (Style, ContainerStyle)>>,
 }
 
 #[cfg(feature = "std")]
 impl CachedStyles {
-    pub(crate) fn new(
-        css_str: String,
-        keyframes: HashMap<String, css::KeyframesAnimation>,
-        has_nth_or_last_child: bool,
-    ) -> Self {
+    pub(crate) fn new(css: &str, keyframes: HashMap<String, css::KeyframesAnimation>) -> Self {
         Self {
-            sheet: ParsedStyleSheet::new(css_str.into_boxed_str(), |css| simplecss::StyleSheet::parse(css)),
+            sheet: xerune_css::sheet::StyleSheet::parse(css),
             keyframes,
-            has_nth_or_last_child,
             style_cache: std::cell::RefCell::new(HashMap::with_capacity(cache_config::MAX_STYLE_RULE_CACHE_ENTRIES)),
         }
-    }
-
-    pub(crate) fn stylesheet(&self) -> &simplecss::StyleSheet<'_> {
-        self.sheet.borrow_dependent()
     }
 }
 
@@ -253,7 +232,7 @@ pub(crate) fn resolve_styles(
     interactions: &mut NodeMap<Interaction>,
     parent_style: ContainerStyle,
     message_validator: &impl Fn(&str) -> bool,
-    stylesheet: &simplecss::StyleSheet<'_>,
+    stylesheet: &xerune_css::sheet::StyleSheet,
     node_metadata: &NodeMap<NodeMetadata>,
     base_styles: &mut NodeMap<(Style, ContainerStyle)>,
     style_cache: &mut HashMap<StyleCacheKey, (Style, ContainerStyle)>,
@@ -351,20 +330,23 @@ pub(crate) fn resolve_styles(
 
         for font_pass in [true, false] {
             for &index in &cache_key.matched_rules {
-                for decl in &stylesheet.rules[index].declarations {
-                    let name_lower;
-                    let name = if decl.name.chars().any(|c| c.is_ascii_uppercase()) {
-                        name_lower = decl.name.to_lowercase();
-                        &name_lower
-                    } else {
-                        decl.name
-                    };
-                    // Only form controls have parts (`*::-moz-range-thumb`).
-                    let part_of_other = !matches!(&**tag, "input" | "progress")
-                        && crate::style::ControlPart::from_declaration(name).is_some_and(|(part, _)| part.of_form_control());
-                    if !part_of_other && css::sets_font_size(name) == font_pass {
-                        css::apply_declaration(name, decl.value, &mut c_style, &mut l_style);
+                let rule = &stylesheet.rules[index];
+                match rule.selector.pseudo_element() {
+                    None => {
+                        for decl in rule.declarations.iter().filter(|d| css::sets_font_size(&d.name) == font_pass) {
+                            css::apply_declaration(&decl.name, &decl.value, &mut c_style, &mut l_style);
+                        }
                     }
+                    // Kept as written: resolved for the part when it is built.
+                    // Only form controls have parts (`*::-moz-range-thumb`).
+                    Some(PseudoElement::Part(part)) if !font_pass && (!part.of_form_control() || matches!(&**tag, "input" | "progress")) => {
+                        c_style.part_declarations.extend(rule.declarations.iter().map(|d| crate::style::PartDeclaration {
+                            part,
+                            name: d.name.clone(),
+                            value: d.value.clone(),
+                        }));
+                    }
+                    Some(_) => {}
                 }
             }
         }

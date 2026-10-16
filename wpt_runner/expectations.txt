@@ -9,14 +9,14 @@
 # css/CSS2/borders                      22    22   481     4%      3
 # css/CSS2/box                           0     0     9     0%      0
 # css/CSS2/box-display                  14    14    68    17%     38
-# css/CSS2/cascade                      15    15    13    54%      4
+# css/CSS2/cascade                      16    16    12    57%      4
 # css/CSS2/colors                        5     5    14    26%      0
 # css/CSS2/linebox                       1     1   181     1%      8
 # css/CSS2/margin-padding-clear         31    30   639     5%     12
 # css/CSS2/normal-flow                  36    34   635     5%     75
 # css/CSS2/positioning                  14    14   472     3%     34
-# css/CSS2/selectors                    48    47   477     9%     20
-# css/CSS2/syntax                      110   110   147    43%     18
+# css/CSS2/selectors                    55    54   470    10%     20
+# css/CSS2/syntax                      135   135   122    53%     18
 # css/CSS2/text                        146   143   233    39%     30
 # css/CSS2/values                        8     8    16    33%      1
 # css/CSS2/visudet                       4     1    20    17%     14
@@ -25,22 +25,22 @@
 # css/css-backgrounds                   51    15   460    10%    136
 # css/css-borders                        1     0    57     2%     16
 # css/css-box                            0     0     2     0%     65
-# css/css-cascade                        7     5    24    23%     19
+# css/css-cascade                        6     4    25    19%     19
 # css/css-color                         45    44   236    16%     25
 # css/css-conditional                   16     2   115    12%     34
 # css/css-display                        3     3    39     7%     38
 # css/css-flexbox                      263   222   520    34%    189
-# css/css-images                        27     4   170    14%    199
+# css/css-images                        29     4   168    15%    199
 # css/css-overflow                      31    17   114    21%    278
 # css/css-position                       5     3    79     6%     66
 # css/css-sizing                        29    21   356     8%    146
 # css/css-text                         128    38   776    14%    213
 # css/css-ui                            10     2   116     8%     65
-# css/css-values                        19    11   133    12%     59
-# css/css-variables                     15    15   165     8%      2
+# css/css-values                        17    11   135    11%     59
+# css/css-variables                     16    16   164     9%      2
 # css/mediaqueries                       0     0    47     0%     11
-# css/selectors                         12     8    78    13%    135
-# total                               1140   876  7305    13%   1979
+# css/selectors                         32    27    58    36%    135
+# total                               1193   928  7252    14%   1979
 FAIL css/CSS2/abspos/abspos-containing-block-initial-004a.xht
 FAIL css/CSS2/abspos/abspos-containing-block-initial-004b.xht
 FAIL css/CSS2/abspos/abspos-containing-block-initial-004c.xht
@@ -939,7 +939,6 @@ FAIL css/CSS2/cascade/cascade-012.xht
 FAIL css/CSS2/cascade/html-attribute-009.xht
 FAIL css/CSS2/cascade/inherit-computed-002.html
 FAIL css/CSS2/cascade/sort-by-order-001.xht
-FAIL css/CSS2/cascade/specificity-004.xht
 FAIL css/CSS2/cascade/specificity-005.xht
 FAIL css/CSS2/cascade/specificity-006.xht
 FAIL css/CSS2/cascade/specificity-008.xht
@@ -2885,8 +2884,6 @@ FAIL css/CSS2/positioning/top-offset-002.xht
 FAIL css/CSS2/positioning/top-offset-003.xht
 FAIL css/CSS2/positioning/top-offset-percentage-001.xht
 FAIL css/CSS2/positioning/top-offset-percentage-002.xht
-FAIL css/CSS2/selectors/attribute-token-selector-002.xht
-FAIL css/CSS2/selectors/attribute-value-selector-005.html
 FAIL css/CSS2/selectors/attribute-value-selector-007.html
 FAIL css/CSS2/selectors/attribute-value-selector-008.xht
 FAIL css/CSS2/selectors/attribute-value-selector-009.xht
@@ -2909,8 +2906,6 @@ FAIL css/CSS2/selectors/descendent-selector-008.xht
 FAIL css/CSS2/selectors/descendent-selector-009.xht
 FAIL css/CSS2/selectors/descendent-selector-010.xht
 FAIL css/CSS2/selectors/descendent-selector-011.xht
-FAIL css/CSS2/selectors/first-child-selector-002.xht
-FAIL css/CSS2/selectors/first-child-selector-003.xht
 FAIL css/CSS2/selectors/first-letter-001.xht
 FAIL css/CSS2/selectors/first-letter-abspos.html
 FAIL css/CSS2/selectors/first-letter-inherit-001.xht
@@ -3346,8 +3341,6 @@ FAIL css/CSS2/selectors/first-line-pseudo-021.xht
 FAIL css/CSS2/selectors/first-line-selector-004.xht
 FAIL css/CSS2/selectors/first-line-selector-010.xht
 FAIL css/CSS2/selectors/first-line-selector-013.xht
-FAIL css/CSS2/selectors/html-case-sensitivity-001.html
-FAIL css/CSS2/selectors/id-selector-006.xht
 FAIL css/CSS2/selectors/lang-pseudoclass-001.html
 FAIL css/CSS2/selectors/lang-pseudoclass-002.xht
 FAIL css/CSS2/selectors/lang-selector-001.xht
@@ -3358,7 +3351,6 @@ FAIL css/CSS2/selectors/pseudo-002.xht
 FAIL css/CSS2/selectors/pseudo-006.xht
 FAIL css/CSS2/selectors/pseudo-008.xht
 FAIL css/CSS2/selectors/selectors-002.xht
-FAIL css/CSS2/selectors/selectors-parsing-001.xht
 FAIL css/CSS2/selectors/sibling-selector-003.xht
 FAIL css/CSS2/selectors/universal-selector-002.xht
 FAIL css/CSS2/selectors/universal-selector-005.xht
@@ -3420,14 +3412,12 @@ FAIL css/CSS2/syntax/at-charset-utf16-le-002.xht
 FAIL css/CSS2/syntax/at-charset-utf16-le-003.xht
 FAIL css/CSS2/syntax/at-rule-006.xht
 FAIL css/CSS2/syntax/at-rule-007.xht
-FAIL css/CSS2/syntax/bad-selector-001.xht
 FAIL css/CSS2/syntax/blocks-001.xht
-FAIL css/CSS2/syntax/blocks-and-strings-001.xht
 FAIL css/CSS2/syntax/case-sensitive-001.xht
 FAIL css/CSS2/syntax/case-sensitive-003.xht
 FAIL css/CSS2/syntax/case-sensitive-004.xht
 FAIL css/CSS2/syntax/case-sensitive-005.xht
-FAIL css/CSS2/syntax/case-sensitive-006.html
+FAIL css/CSS2/syntax/case-sensitive-007.xht
 FAIL css/CSS2/syntax/character-encoding-031.xht
 FAIL css/CSS2/syntax/character-encoding-041.xht
 FAIL css/CSS2/syntax/characters-0080-009F-001.xht
@@ -3435,10 +3425,8 @@ FAIL css/CSS2/syntax/charset-attr-001.xht
 FAIL css/CSS2/syntax/colors-001.xht
 FAIL css/CSS2/syntax/colors-006.xht
 FAIL css/CSS2/syntax/comments-008.xht
-FAIL css/CSS2/syntax/comments-009.xht
 FAIL css/CSS2/syntax/content-type-001.xht
 FAIL css/CSS2/syntax/core-syntax-001.xht
-FAIL css/CSS2/syntax/core-syntax-006.xht
 FAIL css/CSS2/syntax/core-syntax-007.xht
 FAIL css/CSS2/syntax/core-syntax-008.xht
 FAIL css/CSS2/syntax/counters-001.xht
@@ -3449,11 +3437,7 @@ FAIL css/CSS2/syntax/counters-006.xht
 FAIL css/CSS2/syntax/counters-007.xht
 FAIL css/CSS2/syntax/counters-008.xht
 FAIL css/CSS2/syntax/counters-009.xht
-FAIL css/CSS2/syntax/declaration-002.xht
-FAIL css/CSS2/syntax/declaration-004.xht
-FAIL css/CSS2/syntax/declaration-006.xht
 FAIL css/CSS2/syntax/eof-002.xht
-FAIL css/CSS2/syntax/eof-003.xht
 FAIL css/CSS2/syntax/eof-004.xht
 FAIL css/CSS2/syntax/eof-005.xht
 FAIL css/CSS2/syntax/eof-006.xht
@@ -3475,33 +3459,16 @@ FAIL css/CSS2/syntax/escapes-004.xht
 FAIL css/CSS2/syntax/escapes-005.xht
 FAIL css/CSS2/syntax/escapes-007.xht
 FAIL css/CSS2/syntax/escapes-012.xht
-FAIL css/CSS2/syntax/escapes-013.xht
 FAIL css/CSS2/syntax/escapes-015.xht
 FAIL css/CSS2/syntax/escapes-016.xht
-FAIL css/CSS2/syntax/ident-003.xht
-FAIL css/CSS2/syntax/ident-006.xht
-FAIL css/CSS2/syntax/ident-007.xht
-FAIL css/CSS2/syntax/ident-010.xht
-FAIL css/CSS2/syntax/ident-011.xht
-FAIL css/CSS2/syntax/ident-012.xht
-FAIL css/CSS2/syntax/ident-013.xht
 FAIL css/CSS2/syntax/import-000.xht
 FAIL css/CSS2/syntax/import-001.xht
-FAIL css/CSS2/syntax/malformed-decl-002.xht
-FAIL css/CSS2/syntax/malformed-decl-004.xht
-FAIL css/CSS2/syntax/malformed-decl-006.xht
-FAIL css/CSS2/syntax/malformed-decl-008.xht
 FAIL css/CSS2/syntax/matching-brackets-001.xht
 FAIL css/CSS2/syntax/matching-brackets-002.xht
 FAIL css/CSS2/syntax/matching-brackets-003.xht
 FAIL css/CSS2/syntax/quoted-string-001.xht
 FAIL css/CSS2/syntax/quoted-string-003.xht
 FAIL css/CSS2/syntax/scientific-notation-001.xht
-FAIL css/CSS2/syntax/sgml-comments-000.xht
-FAIL css/CSS2/syntax/sgml-comments-001.xht
-FAIL css/CSS2/syntax/sgml-comments-002.xht
-FAIL css/CSS2/syntax/signed-numbers-001.xht
-FAIL css/CSS2/syntax/strings-000.xht
 FAIL css/CSS2/syntax/uri-004.xht
 FAIL css/CSS2/syntax/uri-005.xht
 FAIL css/CSS2/syntax/uri-014.xht
@@ -4395,6 +4362,7 @@ FAIL css/css-cascade/revert-layer-012.html
 FAIL css/css-cascade/revert-layer-015.html
 FAIL css/css-cascade/revert-val-001.html
 FAIL css/css-cascade/revert-val-002.html
+FAIL css/css-cascade/scope-featureless.html
 FAIL css/css-cascade/scope-implicit-001-print.html
 FAIL css/css-cascade/scope-implicit-002-print.html
 FAIL css/css-cascade/scope-implicit-004-print.xhtml
@@ -5383,11 +5351,9 @@ FAIL css/css-images/gradient/gradient-single-stop-longer-hue-hsl.html
 FAIL css/css-images/gradient/gradient-single-stop-longer-hue-oklch.html
 FAIL css/css-images/gradient/gradient-single-stop-none-interpolation.html
 FAIL css/css-images/gradient/gradient-to-transparent.html
-FAIL css/css-images/gradient/legacy-color-gradient.html
 FAIL css/css-images/gradient/linear-gradient-relative-currentcolor-stop.html
 FAIL css/css-images/gradient/oklab-gradient.html
 FAIL css/css-images/gradient/repeating-gradient-hsl-and-oklch.html
-FAIL css/css-images/gradient/srgb-gradient.html
 FAIL css/css-images/gradient/srgb-linear-gradient.html
 FAIL css/css-images/gradient/xyz-gradient.html
 FAIL css/css-images/gradient-border-box.html
@@ -6932,6 +6898,8 @@ FAIL css/css-values/attr-color-invalid-cast.html
 FAIL css/css-values/attr-color-valid.html
 FAIL css/css-values/attr-in-max.html
 FAIL css/css-values/attr-length-invalid-cast.html
+FAIL css/css-values/attr-length-valid-zero-nofallback.html
+FAIL css/css-values/attr-length-valid-zero.html
 FAIL css/css-values/attr-length-valid.html
 FAIL css/css-values/attr-namespace-wildcard.html
 FAIL css/css-values/attr-notype-fallback.html
@@ -7146,7 +7114,6 @@ FAIL css/css-variables/variable-reference-31.html
 FAIL css/css-variables/variable-reference-33.html
 FAIL css/css-variables/variable-reference-35.html
 FAIL css/css-variables/variable-reference-36.html
-FAIL css/css-variables/variable-reference-37.html
 FAIL css/css-variables/variable-reference-38.html
 FAIL css/css-variables/variable-reference-39.html
 FAIL css/css-variables/variable-reference-40.html
@@ -7268,7 +7235,6 @@ FAIL css/mediaqueries/prefers-color-scheme-svg-image-normal.html
 FAIL css/mediaqueries/prefers-color-scheme-svg-image.html
 FAIL css/mediaqueries/scripting-print-noscript.html
 FAIL css/mediaqueries/scripting-print-script.html
-FAIL css/selectors/child-indexed-no-parent.html
 FAIL css/selectors/dir-pseudo-in-has.html
 FAIL css/selectors/dir-selector-ltr-001.html
 FAIL css/selectors/dir-selector-ltr-002.html
@@ -7303,40 +7269,21 @@ FAIL css/selectors/is-where-visited.html
 FAIL css/selectors/not-links.html
 FAIL css/selectors/nth-child-of-attribute.html
 FAIL css/selectors/nth-child-of-classname-002.html
-FAIL css/selectors/nth-child-of-classname.html
-FAIL css/selectors/nth-child-of-complex-selector-many-children.html
-FAIL css/selectors/nth-child-of-complex-selector.html
-FAIL css/selectors/nth-child-of-compound-selector.html
 FAIL css/selectors/nth-child-of-has.html
-FAIL css/selectors/nth-child-of-nesting.html
 FAIL css/selectors/nth-child-of-no-space-after-of.html
 FAIL css/selectors/nth-child-of-not.html
 FAIL css/selectors/nth-child-of-nth-child.html
-FAIL css/selectors/nth-child-of-pseudo.html
 FAIL css/selectors/nth-child-of-tagname.html
 FAIL css/selectors/nth-child-of-universal-selector.html
 FAIL css/selectors/nth-child-specificity-1.html
-FAIL css/selectors/nth-child-specificity-2.html
-FAIL css/selectors/nth-child-specificity-3.html
-FAIL css/selectors/nth-child-specificity-4.html
-FAIL css/selectors/nth-last-child-of-classname.html
-FAIL css/selectors/nth-last-child-of-complex-selector.html
-FAIL css/selectors/nth-last-child-of-compound-selector.html
-FAIL css/selectors/nth-last-child-of-nesting.html
 FAIL css/selectors/nth-last-child-of-no-space-after-of.html
-FAIL css/selectors/nth-last-child-of-style-sharing-1.html
-FAIL css/selectors/nth-last-child-of-style-sharing-2.html
 FAIL css/selectors/nth-last-child-of-tagname.html
 FAIL css/selectors/nth-last-child-specificity-1.html
-FAIL css/selectors/nth-last-child-specificity-2.html
-FAIL css/selectors/nth-last-child-specificity-3.html
-FAIL css/selectors/nth-last-child-specificity-4.html
 FAIL css/selectors/nth-of-invalid.html
 FAIL css/selectors/of-type-selectors.xhtml
 FAIL css/selectors/root-siblings.html
 FAIL css/selectors/scope-without-scoping.html
 FAIL css/selectors/selector-required.html
-FAIL css/selectors/selector-structural-pseudo-root.html
 FAIL css/selectors/selectors-4/details-open-pseudo-001.html
 FAIL css/selectors/selectors-4/lang-000.html
 FAIL css/selectors/selectors-4/lang-001.html

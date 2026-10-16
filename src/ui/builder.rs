@@ -343,90 +343,61 @@ pub(crate) struct TaffyElementWrapper<'a> {
 }
 
 #[cfg(feature = "std")]
-impl<'a> simplecss::Element for TaffyElementWrapper<'a> {
-    fn parent_element(&self) -> Option<Self> {
-        let mut curr = self.node;
-        while let Some(parent) = self.taffy.parent(curr) {
-            if let Some(parent_meta) = self.metadata.get(&parent) {
-                return Some(TaffyElementWrapper {
-                    node: parent,
-                    taffy: self.taffy,
-                    metadata: self.metadata,
-                    meta: parent_meta,
-                });
-            }
-            curr = parent;
-        }
-        None
+impl<'a> TaffyElementWrapper<'a> {
+    fn at(&self, node: NodeId) -> Option<Self> {
+        self.metadata.get(&node).map(|meta| TaffyElementWrapper { node, taffy: self.taffy, metadata: self.metadata, meta })
     }
 
-    fn prev_sibling_element(&self) -> Option<Self> {
+    /// The element sibling `step` (-1 or 1) children away.
+    fn sibling(&self, step: isize) -> Option<Self> {
         let parent = self.taffy.parent(self.node)?;
         let siblings = self.taffy.children(parent).ok()?;
-        let idx = siblings.iter().position(|&x| x == self.node)?;
-        if idx > 0 {
-            for &sibling in siblings[..idx].iter().rev() {
-                if let Some(sibling_meta) = self.metadata.get(&sibling) {
-                    return Some(TaffyElementWrapper {
-                        node: sibling,
-                        taffy: self.taffy,
-                        metadata: self.metadata,
-                        meta: sibling_meta,
-                    });
-                }
-            }
+        let index = siblings.iter().position(|&x| x == self.node)?;
+        let element = |&sibling: &NodeId| self.at(sibling).filter(|s| s.meta.tag != "#text");
+        if step < 0 {
+            siblings[..index].iter().rev().find_map(element)
+        } else {
+            siblings[index + 1..].iter().find_map(element)
         }
-        None
+    }
+}
+
+#[cfg(feature = "std")]
+impl<'a> xerune_css::selector::Element for TaffyElementWrapper<'a> {
+    fn parent(&self) -> Option<Self> {
+        core::iter::successors(self.taffy.parent(self.node), |&n| self.taffy.parent(n)).find_map(|n| self.at(n))
     }
 
-    fn has_local_name(&self, name: &str) -> bool {
-        self.meta.tag == name
+    fn prev_sibling(&self) -> Option<Self> {
+        self.sibling(-1)
     }
 
-    fn attribute_matches(&self, local_name: &str, operator: simplecss::AttributeOperator<'_>) -> bool {
-        if let ("checked", Some(checked)) = (local_name, self.meta.checked) {
-            return checked && operator.matches("");
-        }
-        if local_name == "class" {
-            if let Some(ref class) = self.meta.class {
-                return operator.matches(class);
-            }
-        } else if local_name == "id" {
-            if let Some(ref id) = self.meta.id {
-                return operator.matches(id);
-            }
-        }
-        if let Some(ref other) = self.meta.other_attrs {
-            for (k, v) in other {
-                if k == local_name {
-                    return operator.matches(v);
-                }
-            }
-        }
-        for (k, v) in &self.meta.attrs {
-            if k == local_name {
-                return operator.matches(v);
-            }
-        }
-        false
+    fn next_sibling(&self) -> Option<Self> {
+        self.sibling(1)
     }
 
-    fn pseudo_class_matches(&self, class: simplecss::PseudoClass<'_>) -> bool {
-        match class {
-            simplecss::PseudoClass::FirstChild => {
-                if let Some(parent) = self.taffy.parent(self.node) {
-                    if let Ok(siblings) = self.taffy.children(parent) {
-                        for &sibling in &siblings {
-                            if self.metadata.contains_key(&sibling) {
-                                return sibling == self.node;
-                            }
-                        }
-                    }
-                }
-                true
-            }
-            _ => false,
-        }
+    fn tag(&self) -> &str {
+        &self.meta.tag
+    }
+
+    fn attribute(&self, name: &str) -> Option<Cow<'_, str>> {
+        let field = match name {
+            "class" => self.meta.class.as_deref(),
+            "id" => self.meta.id.as_deref(),
+            _ => None,
+        };
+        field
+            .or_else(|| self.meta.other_attrs.iter().flatten().find(|(k, _)| k == name).map(|(_, v)| v.as_str()))
+            .or_else(|| self.meta.attrs.iter().find(|(k, _)| k == name).map(|(_, v)| v.as_str()))
+            .map(Cow::Borrowed)
+    }
+
+    fn is_empty(&self) -> bool {
+        self.meta.children.is_empty()
+    }
+
+    fn state(&self, state: xerune_css::selector::State) -> bool {
+        state == xerune_css::selector::State::Checked && self.meta.checked == Some(true)
     }
 }
 

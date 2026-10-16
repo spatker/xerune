@@ -1,6 +1,6 @@
 //! Minimal `@media` query support.
 //!
-//! The upstream `simplecss` parser silently skips all at-rules, so this module
+//! The stylesheet parsers skip at-rules, so this module
 //! provides two integration paths:
 //!
 //! - **Compiled templates (hot path)**: `xerune_derive` parses `@media` blocks
@@ -9,7 +9,7 @@
 //!   runtime cost is two atomic reads plus a tiny slice scan.
 //! - **Runtime string stylesheets (dynamic path)**: [`expand_for_viewport`]
 //!   rewrites a stylesheet, inlining the contents of matching `@media` blocks
-//!   (source order preserved) before `simplecss` parsing.
+//!   (source order preserved) before the stylesheet is parsed.
 //!
 //! Both read queries with `xerune_css::media`, which lists the supported
 //! features.

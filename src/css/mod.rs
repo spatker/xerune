@@ -18,41 +18,6 @@ use crate::alloc_prelude::*;
 
 use xerune_css::SLASH;
 
-/// Rewrites a stylesheet into something `simplecss` can match against the
-/// classes the DOM builder adds: `:nth-child(N)` becomes `.nth-child-N` and
-/// `:last-child` becomes `.last-child`. `simplecss` cuts a value off at `/`
-/// and loses the rest of the rule, so the `/` of `/<number>` (the line-height
-/// of a `font` shorthand) becomes [`SLASH`].
-#[cfg(feature = "std")]
-pub(crate) fn rewrite_for_simplecss(css: &str) -> String {
-    let css = xerune_css::rewrite_part_rules(css);
-    let css = css.as_ref();
-    const NTH: &str = ":nth-child(";
-    let mut out = String::with_capacity(css.len());
-    let mut rest = css;
-    while let Some(pos) = rest.find(NTH) {
-        out.push_str(&rest[..pos]);
-        let after = &rest[pos + NTH.len()..];
-        let inner = after.trim_start();
-        let digits = inner.len() - inner.trim_start_matches(|c: char| c.is_ascii_digit()).len();
-        let tail = inner[digits..].trim_start();
-        if digits > 0 && tail.starts_with(')') {
-            out.push_str(".nth-child-");
-            out.push_str(&inner[..digits]);
-            rest = &tail[1..];
-        } else {
-            out.push_str(NTH);
-            rest = after;
-        }
-    }
-    out.push_str(rest);
-    // An element is `[checked]` while it is checked (see the `Element`
-    // impls), which is what `:checked` means for checkboxes.
-    let css = out.replace(":last-child", ".last-child").replace(":checked", "[checked]");
-
-    xerune_css::protect_slashes(&css)
-}
-
 struct FastLayoutStyle {
     left: f32,
     top: f32,
@@ -915,7 +880,7 @@ fn apply_resolved_declaration(prop: &str, val: &str, current_style: &mut Contain
 
 #[cfg(all(test, feature = "std"))]
 mod tests {
-    use super::{resolve_font_relative_lengths, rewrite_for_simplecss};
+    use super::resolve_font_relative_lengths;
 
     #[test]
     fn box_shorthands_take_one_to_four_values() {
@@ -941,51 +906,4 @@ mod tests {
         assert_eq!(resolve("url(a2em.png)"), None);
         assert_eq!(resolve("system-ui, 'Emoji'"), None);
     }
-
-    #[test]
-    fn rewrite_for_simplecss_rewrites_structural_pseudo_classes() {
-        assert_eq!(rewrite_for_simplecss("li:nth-child(3) { }"), "li.nth-child-3 { }");
-        assert_eq!(rewrite_for_simplecss("li:nth-child( 12 ),a:last-child{}"), "li.nth-child-12,a.last-child{}");
-        // Only plain numbers are supported; anything else is left alone.
-        assert_eq!(rewrite_for_simplecss("li:nth-child(2n+1){}"), "li:nth-child(2n+1){}");
-        assert_eq!(rewrite_for_simplecss("li:nth-child(){}"), "li:nth-child(){}");
-    }
-
-    #[test]
-    fn part_rules_become_prefixed_declarations() {
-        assert_eq!(
-            rewrite_for_simplecss("progress::-webkit-progress-value { background: red; height: 4px }"),
-            "progress {-xerune-value-background: red;-xerune-value-height: 4px ;}"
-        );
-        // Selector lists split by part; plain selectors keep the rule.
-        assert_eq!(
-            rewrite_for_simplecss("a, .r::-webkit-slider-thumb, .r::-moz-range-thumb, ::-moz-range-progress { color: red }"),
-            "a { color: red }.r, .r {-xerune-thumb-color: red ;}* {-xerune-fill-color: red ;}"
-        );
-        // Unknown pseudo-elements and parts with pseudo-classes are dropped;
-        // at-rules, comments and values with `;` or `:` survive.
-        assert_eq!(rewrite_for_simplecss(".r::-webkit-slider-thumb:hover { color: red }"), "");
-        assert_eq!(rewrite_for_simplecss("p::first-line { color: red } i { }"), " i { }");
-        // `::before` / `::after`, also as CSS 2's `:before`.
-        assert_eq!(rewrite_for_simplecss("p::before { content: 'x' }"), "p {-xerune-before-content: 'x' ;}");
-        assert_eq!(rewrite_for_simplecss("a:hover:after,b:before{top:0}"), "a:hover {-xerune-after-top:0;}b {-xerune-before-top:0;}");
-        assert_eq!(
-            rewrite_for_simplecss("@keyframes k { 0% { left: 0 } } /* x::y { */ b::-moz-range-track { background: url(data:a;b) }"),
-            "@keyframes k { 0% { left: 0 } }b {-xerune-track-background: url(data:a;b) ;}"
-        );
-        let sheet = simplecss::StyleSheet::parse("progress {-xerune-value-background: red;}");
-        assert_eq!(sheet.rules[0].declarations[0].name, "-xerune-value-background");
-    }
-
-    #[test]
-    fn rewrite_for_simplecss_protects_slash_numbers() {
-        assert_eq!(rewrite_for_simplecss("font: 16px/1.5 sans"), "font: 16px\u{2044}1.5 sans");
-        assert_eq!(rewrite_for_simplecss("a/b /2/3."), "a/b \u{2044}2\u{2044}3.");
-        assert_eq!(rewrite_for_simplecss("x/"), "x/");
-        // The whole rule survives simplecss.
-        let css = rewrite_for_simplecss("p { font: 16px/1.5 sans; color: red; }");
-        let sheet = simplecss::StyleSheet::parse(&css);
-        assert_eq!(sheet.rules[0].declarations.len(), 2);
-    }
 }
-
