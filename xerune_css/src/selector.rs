@@ -499,7 +499,8 @@ impl<'a> Parser<'a> {
             match self.peek() {
                 Some('#') => {
                     self.pos += 1;
-                    compound.conditions.push(Condition::Id(self.name()?));
+                    // `#1a` is a hash, but not an id.
+                    compound.conditions.push(Condition::Id(self.ident()?));
                     specificity = add_specificity(specificity, ID);
                 }
                 Some('.') => {
@@ -690,14 +691,7 @@ impl<'a> Parser<'a> {
 
     /// An identifier, unescaped.
     fn ident(&mut self) -> Option<String> {
-        let rest = self.rest();
-        let mut chars = rest.chars();
-        let starts = match chars.next()? {
-            '-' => matches!(chars.next(), Some(c) if is_name_char(c) && !c.is_ascii_digit() || c == '-' || c == '\\'),
-            '\\' => true,
-            c => is_name_char(c) && !c.is_ascii_digit(),
-        };
-        if !starts {
+        if !starts_ident(self.rest()) {
             return None;
         }
         self.name()
@@ -755,6 +749,17 @@ impl<'a> Parser<'a> {
                 c => out.push(c),
             }
         }
+    }
+}
+
+/// Whether `text` starts with an identifier.
+pub(crate) fn starts_ident(text: &str) -> bool {
+    let mut chars = text.chars();
+    match chars.next() {
+        Some('-') => matches!(chars.next(), Some(c) if is_name_char(c) && !c.is_ascii_digit() || c == '-' || c == '\\'),
+        Some('\\') => true,
+        Some(c) => is_name_char(c) && !c.is_ascii_digit(),
+        None => false,
     }
 }
 
@@ -996,7 +1001,7 @@ html id=html
 
     #[test]
     fn invalid_selectors() {
-        for invalid in ["", "a >", "> a", "a,", "a:bogus", "a::", "[x", "[x=]", "#", ".1a", "a b:nth-child(x)", "ns|a", "a:not()", "a{"] {
+        for invalid in ["", "a >", "> a", "a,", "a:bogus", "a::", "[x", "[x=]", "#", ".1a", "a b:nth-child(x)", "ns|a", "a:not()", "a{", "#1a", "#-1"] {
             assert!(parse_selector_list(invalid).is_none(), "{invalid:?} should be invalid");
         }
         assert_eq!(parse_selector_list("a , b>c,d~e").map(|l| l.len()), Some(3));

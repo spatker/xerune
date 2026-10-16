@@ -53,7 +53,7 @@ impl StyleSheet {
             };
             let prelude = crate::text::strip_comments(&rest[..open]);
             let prelude = prelude.trim();
-            let at_rule = prelude.starts_with('@');
+            let at_rule = prelude.strip_prefix('@').is_some_and(crate::selector::starts_ident);
             if rest.as_bytes()[open] == b';' {
                 // `@import ...;`; a stray `;` in a selector drops the rule
                 // up to the end of its block.
@@ -210,7 +210,8 @@ mod tests {
 
     #[test]
     fn invalid_selector_lists_drop_the_rule() {
-        let sheet = StyleSheet::parse("a, b:bogus { x: 1 } c; d { x: 2 } e { x: 3 } f { x: 4");
+        // Not at-rules: `@ x` and `@1x` are part of the selector.
+        let sheet = StyleSheet::parse("a, b:bogus { x: 1 } c; d { x: 2 } @ i; g { x: 5 } @1i; h { x: 6 } e { x: 3 } f { x: 4");
         let values: Vec<_> = sheet.rules.iter().map(|r| r.declarations[0].value.as_str()).collect();
         assert_eq!(values, ["3", "4"]);
     }
