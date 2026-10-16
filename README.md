@@ -125,7 +125,7 @@ Open your browser to:
   *(Available apps: `music_player`, `todo`, `calculator`, `breakout`, `animation`, `animation_css`, `showcase`)*
 
 The page interprets the templates from disk: edit one and save, and the view
-updates within a second, without rebuilding the wasm (see `docs/guide.md`, section 10).
+updates within a second, without rebuilding the wasm (see `docs/guide.md`, section 11).
 
 ## License
 

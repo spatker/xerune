@@ -316,6 +316,8 @@ pub struct Context<M> {
     pub(crate) pending_timers: Vec<crate::runtime::timer::PendingTimer<M>>,
     pub(crate) cancelled_timers: Vec<crate::runtime::TimerId>,
     next_timer_id: u64,
+    /// Text asked for with [`Self::edit_text`], and how to tell the model.
+    pub(crate) text_request: Option<(crate::keyboard::TextRequest, crate::keyboard::OnText<M>)>,
 }
 
 impl<M> Context<M> {
@@ -327,6 +329,7 @@ impl<M> Context<M> {
             pending_timers: Vec::new(),
             cancelled_timers: Vec::new(),
             next_timer_id: 1,
+            text_request: None,
         }
     }
     
@@ -361,6 +364,20 @@ impl<M> Context<M> {
         self.next_timer_id += 1;
         self.pending_timers.push(crate::runtime::timer::PendingTimer { id, delay, message });
         id
+    }
+
+    /// Asks the user for text with the on-screen keyboard, which covers the
+    /// screen once `update` returns. When the user is done, the model gets
+    /// `on_done(Some(text))` on OK, or `on_done(None)` on Cancel:
+    ///
+    /// ```text
+    /// context.edit_text(TextRequest::new("Wi-Fi password").password().min_len(8).max_len(63),
+    ///                   |password| Msg::Password(password));
+    /// ```
+    ///
+    /// Asking again while the keyboard is open replaces the request.
+    pub fn edit_text(&mut self, request: crate::keyboard::TextRequest, on_done: impl FnOnce(Option<String>) -> M + Send + 'static) {
+        self.text_request = Some((request, Box::new(on_done)));
     }
 
     /// Stops a timer started with [`Self::after`] that hasn't fired yet.

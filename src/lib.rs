@@ -6,6 +6,9 @@
 
 #[cfg(not(feature = "std"))]
 extern crate alloc;
+// The runtime's own views (the on-screen keyboard) use the derive, whose
+// code names `::xerune`.
+extern crate self as xerune;
 
 /// Internal prelude for allocator-agnostic collections and types in `no_std` environments.
 #[doc(hidden)]
@@ -86,6 +89,7 @@ pub use images::{DefaultImageLoader, ImageError, ImageLoader};
 pub use style::{Overflow, ContainerStyle, RenderData, RenderKind, Display, TextAlign, LineHeight, WhiteSpace, Direction, WritingMode, FlexDirection, FlexWrap, AlignContent, AlignItems, CssJustifyContent, Position, BoxSizing};
 pub use model::{Model, InputEvent, XeruneMessage, NoMessage};
 pub use keys::{KeyAction, KeyMap};
+pub use keyboard::TextRequest;
 pub use ui::TemplateLayout;
 #[doc(hidden)]
 pub use ui::{Interaction, Ui, UiBuilder};

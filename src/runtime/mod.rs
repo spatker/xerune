@@ -33,6 +33,7 @@ use crate::images::ImageStore;
 use crate::style::{ContainerStyle, RenderKind};
 use crate::model::{InputEvent, Model};
 use crate::ui::{Interaction, Ui, NodeMap};
+use crate::keyboard::{Keyboard, KeyboardMsg, OnText, TextRequest};
 
 /// Message a backend's event proxy can send purely to wake the event loop (e.g. when a
 /// background image load completes). It is not forwarded to the model.
@@ -58,6 +59,14 @@ pub struct TouchState {
     pub has_scrolled: bool,
     /// Target scroll container NodeId resolved for this touch stroke.
     pub scroll_node: Option<NodeId>,
+}
+
+/// The on-screen keyboard while it is open: its state, how to tell the
+/// model the result, and the model's scroll positions to go back to.
+struct KeyboardSession<Msg> {
+    keyboard: Keyboard,
+    on_done: OnText<Msg>,
+    scroll_offsets: NodeMap<(f32, f32)>,
 }
 
 /// The Elm/MVU runtime engine coordinating state updates, layout, input events, and rendering.
@@ -110,6 +119,11 @@ pub struct Runtime<M: Model, R> {
     builds: u32,
     /// What keys do in the runtime's own UI.
     key_map: crate::keys::KeyMap,
+    /// The on-screen keyboard, shown instead of the model's view.
+    keyboard: Option<KeyboardSession<M::Message>>,
+    /// The next view replaces another tree (the keyboard's or the
+    /// model's): none of its elements were there before.
+    new_tree: bool,
 }
 
 impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
@@ -162,6 +176,8 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
              pointer_state: crate::ui::PointerState::default(),
              builds: 0,
              key_map: crate::keys::KeyMap::default(),
+             keyboard: None,
+             new_tree: true,
          };
          runtime.update_subscriptions();
          runtime
@@ -399,6 +415,13 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
                 }
                 false
             }
+            InputEvent::KeyDown(key) if self.keyboard.is_some() => {
+                match self.key_map.action(&key) {
+                    Some(action) => self.update_keyboard(|keyboard| keyboard.key(action)),
+                    None => false,
+                }
+            }
+            InputEvent::KeyUp(_) if self.keyboard.is_some() => false,
             InputEvent::KeyDown(key) => {
                 let msg_str = format!("keydown:{}", key);
                 self.process_message_str(&msg_str)
@@ -406,6 +429,12 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
             InputEvent::KeyUp(key) => {
                 let msg_str = format!("keyup:{}", key);
                 self.process_message_str(&msg_str)
+            }
+            InputEvent::TextInput { text, .. } if self.keyboard.is_some() => {
+                self.update_keyboard(|keyboard| {
+                    keyboard.type_text(&text);
+                    None
+                })
             }
             InputEvent::TextInput { id: event_id, text } => {
                 if let Some(ref focused) = self.focused_id {
@@ -489,20 +518,38 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
     }
 
     /// Feeds multiple text messages into the update loop. Returns true if the view changes.
+    ///
+    /// While the on-screen keyboard is open, its messages (`kb:type:a`,
+    /// `kb:ok`, ...) go to it.
     pub fn handle_messages(&mut self, messages: impl IntoIterator<Item = String>) -> bool {
+        let mut redraw = false;
         let mut any_update = false;
         for msg_str in messages {
+            if self.keyboard.is_some() {
+                if let Ok(msg) = KeyboardMsg::from_str(&msg_str) {
+                    if any_update {
+                        redraw |= self.sync_view_inner(true);
+                        any_update = false;
+                    }
+                    redraw |= self.update_keyboard(|keyboard| keyboard.press(msg));
+                    continue;
+                }
+            }
             if let Ok(msg) = M::Message::from_str(&msg_str) {
                 profile!("update");
                 self.model.update(msg, &mut self.context);
                 any_update = true;
+                // The keyboard opens now, for the messages after this one.
+                if self.context.text_request.is_some() {
+                    redraw |= self.sync_view_inner(true);
+                    any_update = false;
+                }
             }
         }
         if any_update {
-            self.sync_view_inner(true)
-        } else {
-            false
+            redraw |= self.sync_view_inner(true);
         }
+        redraw
     }
 
     fn process_message(&mut self, msg: M::Message) -> bool {
@@ -529,8 +576,12 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
         self.sync_view_inner(false)
     }
 
-    fn sync_view_inner(&mut self, allow_skip: bool) -> bool {
+    fn sync_view_inner(&mut self, mut allow_skip: bool) -> bool {
         self.update_timers();
+        if let Some((request, on_done)) = self.context.text_request.take() {
+            self.open_keyboard(request, on_done);
+            allow_skip = false;
+        }
         let fingerprint = self.model.view_fingerprint();
         // Skipping is only possible when the model explicitly supports
         // fingerprinting and its view-relevant state is unchanged since the
@@ -591,22 +642,33 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
         }
         let ui = {
             profile!("ui_new_compiled");
-            let validator = |s: &str| M::Message::from_str(s).is_ok();
-            // Elements not in the current view are new; on the first build,
-            // all are (the view built by `new` was never shown).
-            let previous_keys = self.ui.uses_starting_style.then(|| match self.builds {
-                1 => HashSet::new(),
-                _ => self.ui.keys.values().copied().collect(),
+            // Elements not in the current view are new; in a new tree, all
+            // are (also the first: the view built by `new` was never shown).
+            let previous_keys = self.ui.uses_starting_style.then(|| match self.new_tree {
+                true => HashSet::new(),
+                false => self.ui.keys.values().copied().collect(),
             });
-            Ui::new_compiled_after(&self.model, &self.measurer, self.default_style.clone(), &validator, self.pointer_state.clone(), previous_keys).unwrap()
+            match &self.keyboard {
+                Some(session) => {
+                    let validator = |s: &str| KeyboardMsg::from_str(s).is_ok();
+                    Ui::new_compiled_after(&session.keyboard, &self.measurer, self.default_style.clone(), &validator, self.pointer_state.clone(), previous_keys).unwrap()
+                }
+                None => {
+                    let validator = |s: &str| M::Message::from_str(s).is_ok();
+                    Ui::new_compiled_after(&self.model, &self.measurer, self.default_style.clone(), &validator, self.pointer_state.clone(), previous_keys).unwrap()
+                }
+            }
         };
         // Kept until the transitions have compared the views.
         let old = core::mem::replace(&mut self.ui, ui);
 
-        self.images.sync(self.ui.render_data.values().filter_map(|d| match &d.kind {
-            RenderKind::Image(src) => Some(src.as_str()),
-            _ => None,
-        }));
+        // The keyboard shows no images; the model's stay loaded for its view.
+        if self.keyboard.is_none() {
+            self.images.sync(self.ui.render_data.values().filter_map(|d| match &d.kind {
+                RenderKind::Image(src) => Some(src.as_str()),
+                _ => None,
+            }));
+        }
         Runtime::<M, R>::apply_image_sizes(&mut self.ui, &self.images);
         {
             profile!("compute_layout");
@@ -615,6 +677,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
         Runtime::<M, R>::sync_canvases(&self.ui, &mut self.context);
         self.restore_scroll();
         self.update_transitions(&old);
+        self.new_tree = false;
         self.animate(None);
     }
 
@@ -633,7 +696,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
             })
         };
         let mut events = Vec::new();
-        let old = (self.builds > 1).then_some(old);
+        let old = (!self.new_tree).then_some(old);
         transition::update_transitions(&mut self.transitions, &self.ui, old, now, animated, &mut events);
         self.queue_transition_events(events);
     }
@@ -663,6 +726,16 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
     /// Sends an element's message (`data-on-click`, `data-on-hover`) to the
     /// model. Returns true if the view changed.
     fn dispatch(&mut self, interaction: Interaction) -> bool {
+        if self.keyboard.is_some() {
+            let msg = match interaction {
+                Interaction::Message(message) => message.downcast_ref::<KeyboardMsg>().cloned(),
+                Interaction::Text(text) => KeyboardMsg::from_str(&text).ok(),
+            };
+            return match msg {
+                Some(msg) => self.update_keyboard(|keyboard| keyboard.press(msg)),
+                None => false,
+            };
+        }
         match interaction {
             Interaction::Message(message) => match message.downcast_ref::<M::Message>() {
                 Some(message) => self.process_message(message.clone()),
@@ -740,6 +813,46 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
             let _ = self.ui.compute_layout(self.cached_size);
         }
         applied
+    }
+
+    /// Shows the keyboard for `request` in place of the model's view (or
+    /// replaces the open keyboard's request). The caller rebuilds.
+    fn open_keyboard(&mut self, request: TextRequest, on_done: OnText<M::Message>) {
+        let scroll_offsets = match self.keyboard.take() {
+            Some(session) => session.scroll_offsets,
+            None => core::mem::take(&mut self.scroll_offsets),
+        };
+        self.keyboard = Some(KeyboardSession { keyboard: Keyboard::new(request), on_done, scroll_offsets });
+        self.switch_tree();
+    }
+
+    /// Changes the keyboard with `f`, which returns its result once the
+    /// user is done; then closes it and sends the model its message, or
+    /// rebuilds the keyboard. Returns true (the view changed).
+    fn update_keyboard(&mut self, f: impl FnOnce(&mut Keyboard) -> Option<Option<String>>) -> bool {
+        let Some(session) = self.keyboard.as_mut() else { return false };
+        let Some(result) = f(&mut session.keyboard) else {
+            return self.sync_view_inner(false);
+        };
+        let session = self.keyboard.take().expect("the keyboard is open");
+        self.scroll_offsets = session.scroll_offsets;
+        self.switch_tree();
+        let msg = (session.on_done)(result);
+        profile!("update");
+        self.model.update(msg, &mut self.context);
+        self.sync_view_inner(false)
+    }
+
+    /// The next view is another tree: what the pointer was over, the
+    /// focus, animations and transitions were the old tree's. Element keys
+    /// of different templates can be the same, so nothing carries over.
+    fn switch_tree(&mut self) {
+        self.new_tree = true;
+        self.focused_id = None;
+        self.pointer_state = crate::ui::PointerState::default();
+        self.active_animations.clear();
+        self.transitions.clear();
+        self.transition_messages.clear();
     }
 
     /// The pointer is at (`x`, `y`), pressed or not. Sends the

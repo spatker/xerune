@@ -519,7 +519,45 @@ tests use a `ManualClock` they move themselves.
 
 ---
 
-## 8. Headless Snapshots
+## 8. On-screen Keyboard
+
+Devices without a keyboard type text with the runtime's on-screen keyboard.
+A model asks for text from `update`; the keyboard then covers the screen, in
+place of the model's view, until the user presses OK or Cancel, and the model
+gets the result as its own message:
+
+```rust
+Msg::EditPassword => ctx.edit_text(
+    TextRequest::new("Wi-Fi password").password().min_len(8).max_len(63),
+    |password| Msg::Password(password), // Option<String>: None on Cancel
+),
+```
+
+`TextRequest` sets the title, the text to start from (`.text(..)`), a hidden
+password with a Show key (`.password()`), and limits: OK waits for `min_len`
+characters, and typing stops at `max_len`. The keyboard has QWERTY letters with
+Shift (once, or locked when pressed twice) and two pages of symbols, which
+together type all printable ASCII, a single line with a caret moved by the
+`‹` `›` keys, and Del. Long text scrolls to keep the caret in view.
+
+While it is open, input goes to the keyboard and not the model: taps press its
+keys, text from a hardware keyboard types into it, and other keys act by the
+runtime's `KeyMap`. By default Enter is OK, Escape Cancel, Backspace deletes
+and Left/Right move the caret, by the names of winit and the evdev backend. A
+device with other buttons binds its own:
+
+```rust
+runtime.set_key_map(KeyMap::default().bind("KEY_F1", KeyAction::Cancel));
+```
+
+The model keeps running underneath (timers, subscriptions, background
+messages), and its view, with its scroll positions, comes back when the
+keyboard closes. Snapshots reach the keyboard's states with its messages,
+which start with `kb:`: `XERUNE_SNAPSHOT_MESSAGES="edit_password;kb:type:a;kb:shift;kb:symbols"`.
+
+---
+
+## 9. Headless Snapshots
 
 Any app can render a single frame to a PNG instead of opening a window, which makes the UI easy to check from tests, CI or an AI agent. Every built-in backend honours these variables, so no code changes are needed:
 
@@ -545,7 +583,7 @@ The frame goes through the app's own renderer, so fonts and drawing match the re
 
 ---
 
-## 9. Running on Embedded Linux (fbdev / DRM)
+## 10. Running on Embedded Linux (fbdev / DRM)
 
 Configure `Cargo.toml` features to enable embedded backends:
 ```toml
@@ -564,7 +602,7 @@ framebuffer by itself. Touch input is mapped to the rotated UI.
 
 ---
 
-## 10. WebAssembly & Browser Deployment
+## 11. WebAssembly & Browser Deployment
 
 Xerune applications can compile to WebAssembly to run directly in web browsers or inside **Xerune Studio** (a web-based live inspector).
 
@@ -616,7 +654,7 @@ of the compiled template.
 
 ---
 
-## 11. WPT Reftests
+## 12. WPT Reftests
 
 `wpt_runner` checks Xerune against the [web-platform-tests](https://github.com/web-platform-tests/wpt) reftests of the CSS features it implements. Each test is rendered by Xerune and compared pixel for pixel with Chromium's screenshot of the test's reference.
 

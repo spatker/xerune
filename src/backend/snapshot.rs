@@ -105,7 +105,7 @@ impl SnapshotBackend {
 
         for message in &self.messages {
             // Report typos instead of silently snapshotting the wrong state.
-            if <M::Message as core::str::FromStr>::from_str(message).is_err() {
+            if <M::Message as core::str::FromStr>::from_str(message).is_err() && !crate::keyboard::is_keyboard_message(message) {
                 return Err(BackendError::Run(format!("unknown message {message:?}")));
             }
         }
