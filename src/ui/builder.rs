@@ -25,6 +25,12 @@ pub struct UiBuilder {
     /// The elements under the pointer, for `:hover` and `:active`.
     pub pointer: PointerState,
     pub hover_handlers: NodeMap<super::HoverHandlers>,
+    pub transition_handlers: NodeMap<super::TransitionHandlers>,
+    /// The keys of the view this one replaces, to tell new elements:
+    /// `@starting-style` rules are computed for those. `None` computes none.
+    pub previous_keys: Option<HashSet<u64>>,
+    pub starting_styles: NodeMap<(Style, crate::style::ContainerStyle)>,
+    pub uses_starting_style: bool,
 }
 
 /// Gives an element's `::before` / `::after` boxes keys from its own `key`.
@@ -100,7 +106,36 @@ impl UiBuilder {
             keys: NodeMap::with_capacity(capacity),
             pointer: PointerState::default(),
             hover_handlers: NodeMap::new(),
+            transition_handlers: NodeMap::new(),
+            previous_keys: None,
+            starting_styles: NodeMap::new(),
+            uses_starting_style: false,
         }
+    }
+
+    /// The template has `@starting-style` rules.
+    pub fn note_starting_style(&mut self) {
+        self.uses_starting_style = true;
+    }
+
+    /// Whether the element with `key` is new in this view and its
+    /// `@starting-style` style is wanted.
+    pub fn is_new(&self, key: u64) -> bool {
+        self.previous_keys.as_ref().is_some_and(|keys| !keys.contains(&key))
+    }
+
+    /// Reads `attrs` into the starting style `el` of a new element, as
+    /// [`Self::begin_element`] does for its style.
+    #[inline(never)]
+    pub fn starting_attributes(&self, el: &mut ElementStyle, attrs: &[(Cow<'static, str>, Cow<'_, str>)], message_validator: &dyn Fn(&str) -> bool) {
+        super::attributes::parse_attribute_slice(el.tag, attrs, &mut el.style, &mut el.layout, &mut el.parsed, message_validator);
+    }
+
+    /// Keeps `el`, the style `node` starts from by `@starting-style`.
+    #[inline(never)]
+    pub fn set_starting_style(&mut self, node: NodeId, mut el: ElementStyle, parent_style: &crate::style::ContainerStyle) {
+        super::style_resolution::resolve_box(parent_style, &mut el.layout, &mut el.style);
+        self.starting_styles.insert(node, (el.layout, el.style));
     }
 
     /// The [`PointerLevel`] of the element with `key`, whose parent's is
@@ -369,6 +404,9 @@ impl UiBuilder {
         if !el.parsed.hover.is_empty() {
             self.hover_handlers.insert(node, core::mem::take(&mut el.parsed.hover));
         }
+        if !el.parsed.transition.is_empty() {
+            self.transition_handlers.insert(node, core::mem::take(&mut el.parsed.transition));
+        }
         let generated = super::style_resolution::finalize_node_style(
             node,
             el.tag,
@@ -492,6 +530,7 @@ impl<'a> xerune_css::selector::Element for TaffyElementWrapper<'a> {
 /// The element-building steps are out-of-line functions taking this bundle so
 /// that the generated `build_ui` doesn't inline style setup and drop glue for
 /// every element in the template.
+#[derive(Clone)]
 pub struct ElementStyle {
     tag: &'static str,
     layout: Style,
@@ -541,6 +580,62 @@ impl ElementStyle {
         match message.parse::<M>() {
             Ok(message) => self.on_hover_out(message),
             Err(_) => crate::diag::warn_once("data-on-hover-out is not a message of the model", message),
+        }
+    }
+
+    /// A transition of the element being created sends `message` (a compiled
+    /// `data-on-transitionrun`).
+    pub fn on_transitionrun<M: 'static>(&mut self, message: M) {
+        self.parsed.transition.run = Some(Interaction::Message(Rc::new(message)));
+    }
+
+    /// [`Self::on_transitionrun`] with a message parsed as `M`.
+    pub fn on_transitionrun_text<M: core::str::FromStr + 'static>(&mut self, message: &str) {
+        match message.parse::<M>() {
+            Ok(message) => self.on_transitionrun(message),
+            Err(_) => crate::diag::warn_once("data-on-transitionrun is not a message of the model", message),
+        }
+    }
+
+    /// A transition of the element starting to move sends `message` (a compiled
+    /// `data-on-transitionstart`).
+    pub fn on_transitionstart<M: 'static>(&mut self, message: M) {
+        self.parsed.transition.start = Some(Interaction::Message(Rc::new(message)));
+    }
+
+    /// [`Self::on_transitionstart`] with a message parsed as `M`.
+    pub fn on_transitionstart_text<M: core::str::FromStr + 'static>(&mut self, message: &str) {
+        match message.parse::<M>() {
+            Ok(message) => self.on_transitionstart(message),
+            Err(_) => crate::diag::warn_once("data-on-transitionstart is not a message of the model", message),
+        }
+    }
+
+    /// A transition of the element ending sends `message` (a compiled
+    /// `data-on-transitionend`).
+    pub fn on_transitionend<M: 'static>(&mut self, message: M) {
+        self.parsed.transition.end = Some(Interaction::Message(Rc::new(message)));
+    }
+
+    /// [`Self::on_transitionend`] with a message parsed as `M`.
+    pub fn on_transitionend_text<M: core::str::FromStr + 'static>(&mut self, message: &str) {
+        match message.parse::<M>() {
+            Ok(message) => self.on_transitionend(message),
+            Err(_) => crate::diag::warn_once("data-on-transitionend is not a message of the model", message),
+        }
+    }
+
+    /// A transition of the element being cancelled sends `message` (a compiled
+    /// `data-on-transitioncancel`).
+    pub fn on_transitioncancel<M: 'static>(&mut self, message: M) {
+        self.parsed.transition.cancel = Some(Interaction::Message(Rc::new(message)));
+    }
+
+    /// [`Self::on_transitioncancel`] with a message parsed as `M`.
+    pub fn on_transitioncancel_text<M: core::str::FromStr + 'static>(&mut self, message: &str) {
+        match message.parse::<M>() {
+            Ok(message) => self.on_transitioncancel(message),
+            Err(_) => crate::diag::warn_once("data-on-transitioncancel is not a message of the model", message),
         }
     }
 

@@ -855,10 +855,6 @@ struct MacroElementWrapper {
 }
 
 impl MacroElementWrapper {
-    fn new(handle: Handle) -> Self {
-        Self::with_assumed(handle, Default::default())
-    }
-
     fn with_assumed(handle: Handle, assumed: std::rc::Rc<HashMap<usize, HashSet<String>>>) -> Self {
         let opaque = is_template_element(&handle);
         let mut active_classes = get_static_classes(&handle);
@@ -1180,6 +1176,8 @@ struct MatchedRule {
     /// Guard expression (`xerune::css::media::matches_query(...)`) when the
     /// rule was declared inside an `@media` block; None = always applies.
     media_guard: Option<proc_macro2::TokenStream>,
+    /// From `@starting-style`: only for the style a new element starts from.
+    starting: bool,
 }
 
 /// A style rule together with the `@media` guard it appeared under.
@@ -1480,16 +1478,22 @@ fn compile_dom_node<'a>(
                         declarations: declarations.clone(),
                         condition: and_condition(known, pointer),
                         media_guard: guard.clone(),
+                        starting: rule.starting,
                     });
                 }
             }
 
             let mut rule_applications = Vec::new();
             let mut important_applications = Vec::new();
+            // With the `@starting-style` rules too, in cascade order: the
+            // style a new element starts from.
+            let has_starting = matched_rules.iter().any(|r| r.starting);
+            let mut starting_applications = Vec::new();
+            let mut starting_important_applications = Vec::new();
             for rule in matched_rules {
                 let important = rule.part.is_none();
                 let (important_declarations, declarations): (Vec<_>, Vec<_>) = rule.declarations.into_iter().partition(|d| important && d.2);
-                for (declarations, applications) in [(declarations, &mut rule_applications), (important_declarations, &mut important_applications)] {
+                for (declarations, applications, starting_applications) in [(declarations, &mut rule_applications, &mut starting_applications), (important_declarations, &mut important_applications, &mut starting_important_applications)] {
                     if declarations.is_empty() {
                         continue;
                     }
@@ -1516,13 +1520,34 @@ fn compile_dom_node<'a>(
                             }
                         };
                     }
-                    applications.push(body);
+                    if has_starting {
+                        starting_applications.push(body.clone());
+                    }
+                    if !rule.starting {
+                        applications.push(body);
+                    }
                 }
             }
             let style_attribute = attrs.borrow().iter().find(|a| a.name.local.as_ref() == "style").map(|a| a.value.to_string());
             if style_attribute.is_some_and(|style| style.contains('!') || is_dynamic(&style)) {
                 important_applications.push(quote! { el.apply_important_style(attrs_slice); });
+                starting_important_applications.push(quote! { el.apply_important_style(attrs_slice); });
             }
+            let (starting_capture, starting_finish) = if has_starting {
+                (
+                    quote! { let __starting = builder.is_new(__key).then(|| el.clone()); },
+                    quote! {
+                        if let Some(mut el) = __starting {
+                            #(#starting_applications)*
+                            builder.starting_attributes(&mut el, attrs_slice, message_validator);
+                            #(#starting_important_applications)*
+                            builder.set_starting_style(node, el, &parent_style);
+                        }
+                    },
+                )
+            } else {
+                (quote! {}, quote! {})
+            };
 
             // Create attribute constructor
             let mut static_attrs = Vec::new();
@@ -1605,11 +1630,13 @@ fn compile_dom_node<'a>(
                         #(#dynamic_attrs),*
                     ];
                     let mut el = #element_style;
+                    #starting_capture
                     // Match and apply CSS rules
                     #(#rule_applications)*
                     #click
                     let node = builder.begin_element(&mut el, parent, attrs_slice, message_validator, __key);
                     #(#important_applications)*
+                    #starting_finish
                     (el, node)
                 };
                 {
@@ -1643,6 +1670,10 @@ fn message_method(attribute: &str) -> Option<&'static str> {
         "data-on-click" => Some("on_click"),
         "data-on-hover" => Some("on_hover"),
         "data-on-hover-out" => Some("on_hover_out"),
+        "data-on-transitionrun" => Some("on_transitionrun"),
+        "data-on-transitionstart" => Some("on_transitionstart"),
+        "data-on-transitionend" => Some("on_transitionend"),
+        "data-on-transitioncancel" => Some("on_transitioncancel"),
         _ => None,
     }
 }
@@ -2082,6 +2113,11 @@ fn expand_template(input: &DeriveInput, template: &TemplateRef) -> proc_macro2::
         quote! { builder.set_keyframes(::xerune::__private::parse_keyframes(#keyframes_css)); }
     };
 
+    let starting_init = if rules.iter().any(|r| r.rule.starting) {
+        quote! { builder.note_starting_style(); }
+    } else {
+        quote! {}
+    };
     let mut local_vars = HashSet::new();
     let uses = |state| rules.iter().any(|r| r.rule.selector.uses_state(state));
     let (uses_hover, uses_active) = (uses(xerune_css::selector::State::Hover), uses(xerune_css::selector::State::Active));
@@ -2138,6 +2174,7 @@ fn expand_template(input: &DeriveInput, template: &TemplateRef) -> proc_macro2::
                 };
 
                 #keyframes_init
+                #starting_init
                 let parent = builder.begin_root(default_style);
                 let parent_style = default_style.clone();
                 let __parent_key: u64 = 0;

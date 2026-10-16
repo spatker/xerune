@@ -246,3 +246,91 @@ fn hover_fades_in_and_out() {
     assert!((63..=64).contains(&sim.red(0)), "fading back from halfway: {}", sim.red(0));
 }
 
+
+#[derive(XeruneTemplate)]
+#[template(source = r#"<style>
+  body { margin: 0; }
+  div { position: relative; width: 10px; height: 10px; background-color: #ff0000; transition: background-color 1s linear; }
+  @starting-style {
+    .fades { background-color: #000000; }
+  }
+</style>
+<main><div class="fades"></div>{% if shown %}<div class="fades"></div><div></div>{% endif %}</main>"#)]
+struct Starting {
+    shown: bool,
+}
+
+impl Model for Starting {
+    type Message = Msg;
+    fn update(&mut self, msg: Msg, _context: &mut Context<Self::Message>) {
+        if msg == Msg::Show {
+            self.shown = true;
+        }
+    }
+}
+
+/// An element that appears starts from its `@starting-style` style, also
+/// when the app starts; without one, it doesn't transition.
+#[test]
+fn starting_style_transitions_elements_that_appear() {
+    let mut sim = Sim::new(Starting { shown: false });
+    sim.at(500);
+    assert!((127..=128).contains(&sim.red(0)), "fading in since the start: {}", sim.red(0));
+    sim.send("show");
+    sim.at(1000);
+    assert_eq!(sim.red(0), 255);
+    assert!((127..=128).contains(&sim.red(1)), "the new one fades in: {}", sim.red(1));
+    assert_eq!(sim.red(2), 255, "no @starting-style: no transition");
+}
+
+#[derive(Debug, PartialEq, Clone, XeruneMessage)]
+enum EventMsg {
+    Toggle,
+    Run,
+    Start,
+    End,
+    Cancel,
+}
+
+#[derive(XeruneTemplate)]
+#[template(source = r#"<style>
+  body { margin: 0; }
+  div { position: relative; left: 0px; width: 10px; height: 10px; background-color: #000000; transition: left 1s linear 200ms; }
+  .on { left: 100px; }
+</style>
+<main><div class="{% if on %}on{% endif %}" data-on-transitionrun="run" data-on-transitionstart="start"
+  data-on-transitionend="end" data-on-transitioncancel="cancel"></div></main>"#)]
+struct Events {
+    on: bool,
+    log: Vec<EventMsg>,
+}
+
+impl Model for Events {
+    type Message = EventMsg;
+    fn update(&mut self, msg: EventMsg, _context: &mut Context<Self::Message>) {
+        match msg {
+            EventMsg::Toggle => self.on = !self.on,
+            other => self.log.push(other),
+        }
+    }
+}
+
+#[test]
+fn transitions_send_run_start_end_and_cancel() {
+    let mut sim = Sim::new(Events { on: false, log: Vec::new() });
+    sim.send("toggle");
+    sim.at(100);
+    assert_eq!(sim.runtime.model().log, [EventMsg::Run], "run at once, start after the delay");
+    sim.at(200);
+    assert_eq!(sim.runtime.model().log, [EventMsg::Run, EventMsg::Start]);
+    sim.at(1200);
+    assert_eq!(sim.runtime.model().log, [EventMsg::Run, EventMsg::Start, EventMsg::End]);
+
+    // Sent back partway: the running one is cancelled, a new one runs.
+    sim.send("toggle");
+    sim.at(1700);
+    sim.send("toggle");
+    sim.at(1701);
+    let log = &sim.runtime.model().log[3..];
+    assert_eq!(log, [EventMsg::Run, EventMsg::Start, EventMsg::Cancel, EventMsg::Run]);
+}

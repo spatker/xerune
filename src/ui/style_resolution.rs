@@ -238,6 +238,7 @@ pub(crate) fn resolve_styles(
     keys: &mut NodeMap<u64>,
     pointer: &super::builder::PointerState,
     hover_handlers: &mut NodeMap<super::HoverHandlers>,
+    transition_handlers: &mut NodeMap<super::TransitionHandlers>,
     base_styles: &mut NodeMap<(Style, ContainerStyle)>,
     style_cache: &mut HashMap<StyleCacheKey, (Style, ContainerStyle)>,
 ) {
@@ -304,7 +305,8 @@ pub(crate) fn resolve_styles(
         pointer,
     };
     let matched_rules = stylesheet.rules.iter().enumerate()
-        .filter_map(|(index, rule)| (rule.media.is_none_or(|m| media[m]) && rule.selector.matches(&el_wrapper)).then_some(index))
+        // `@starting-style` rules aren't computed for HTML parsed at runtime.
+        .filter_map(|(index, rule)| (!rule.starting && rule.media.is_none_or(|m| media[m]) && rule.selector.matches(&el_wrapper)).then_some(index))
         .collect();
     let cache_key = StyleCacheKey {
         tag: meta.tag.clone(),
@@ -454,6 +456,7 @@ pub(crate) fn resolve_styles(
             keys,
             pointer,
             hover_handlers,
+            transition_handlers,
             base_styles,
             style_cache,
         );
@@ -461,6 +464,9 @@ pub(crate) fn resolve_styles(
 
     if !parsed.hover.is_empty() {
         hover_handlers.insert(node, parsed.hover.clone());
+    }
+    if !parsed.transition.is_empty() {
+        transition_handlers.insert(node, parsed.transition.clone());
     }
     let generated = finish_node(node, tag, &parent_style, &mut layout_style, &mut current_style, &parsed, taffy, render_data, interactions, base_styles);
     if let Some(&key) = keys.get(node) {

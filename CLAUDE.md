@@ -47,7 +47,10 @@ Modules:
 
 Templates: `{{ expr }}`, `{% if %}/{% elif %}/{% else %}`, `{% if let %}`,
 `{% for x in xs %}` with `loop.index`/`loop.index0`, `data-on-click="msg:{{ arg }}"`
-(message strings parsed by `XeruneMessage`). `tests/template_grammar.html` is
+(message strings parsed by `XeruneMessage`), also `data-on-hover(-out)` and
+`data-on-transition{run,start,end,cancel}`. Selectors are matched when the
+derive runs; classes set by `{% if %}` (on the element or an ancestor) become
+runtime conditions. `tests/template_grammar.html` is
 the grammar regression fixture; extend it when touching the template parser.
 
 ## Commands

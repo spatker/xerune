@@ -31,7 +31,22 @@ pub(crate) struct RunningTransition {
     pub(crate) start_time: Instant,
     pub(crate) duration: Duration,
     pub(crate) easing: Easing,
+    /// Whether its delay is over (its start event was sent).
+    pub(crate) started: bool,
 }
+
+/// What happened to a transition, for the element's
+/// `data-on-transition*` messages.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum TransitionEvent {
+    Run,
+    Start,
+    End,
+    Cancel,
+}
+
+/// Transition events, by the element's node in the current view.
+pub(crate) type Events = Vec<(NodeId, TransitionEvent)>;
 
 impl RunningTransition {
     /// How far it is at `now` (0..=1), before easing. It shows its start
@@ -72,13 +87,21 @@ fn new_transition(node_id: NodeId, start_value: Value, end_value: Value, timing:
         end_value,
         reversing_shortening_factor: 1.0,
         start_time: offset(now, timing.delay),
-        duration: Duration::from_secs_f32(timing.duration),
+        duration: seconds(timing.duration),
         easing: timing.easing,
+        started: false,
     })
 }
 
-fn offset(now: Instant, seconds: f32) -> Instant {
-    if seconds >= 0.0 { now + Duration::from_secs_f32(seconds) } else { now - Duration::from_secs_f32(-seconds) }
+fn offset(now: Instant, by: f32) -> Instant {
+    if by >= 0.0 { now + seconds(by) } else { now - seconds(-by) }
+}
+
+/// A CSS time in seconds, to the microsecond: `0.2` in `f32` is a hair over
+/// 200 ms, which would miss the frame at exactly 200 ms.
+fn seconds(s: f32) -> Duration {
+    // `+ 0.5` rounds (times are positive here); `f64::round` needs std.
+    Duration::from_micros((s as f64 * 1e6 + 0.5) as u64)
 }
 
 /// The value `property` shows for `node` in `ui`: its style as drawn,
@@ -88,10 +111,12 @@ fn shown(ui: &Ui, node: NodeId, property: Property) -> Option<Value> {
 }
 
 /// Starts, reverses and cancels the transitions of the newly built `ui`
-/// against `old`, the view it replaces, at `now`. `animated` says which
+/// against `old`, the view it replaces (`None`: the first view, whose
+/// elements are all new), at `now`. An element new in `ui` starts from its
+/// `@starting-style` style, if it has one. `animated` says which
 /// properties of an element keyframe animations set; those don't
 /// transition.
-pub(crate) fn update_transitions(store: &mut TransitionStore, ui: &Ui, old: &Ui, now: Instant, animated: impl Fn(u64, Property) -> bool) {
+pub(crate) fn update_transitions(store: &mut TransitionStore, ui: &Ui, old: Option<&Ui>, now: Instant, animated: impl Fn(u64, Property) -> bool, events: &mut Events) {
     let transitioning: Vec<(NodeId, u64, &Transitions)> = ui
         .render_data
         .iter()
@@ -100,7 +125,7 @@ pub(crate) fn update_transitions(store: &mut TransitionStore, ui: &Ui, old: &Ui,
     if transitioning.is_empty() && store.is_empty() {
         return;
     }
-    let old_nodes: HashMap<u64, NodeId> = old.keys.iter().map(|(node, &key)| (key, node)).collect();
+    let old_nodes: HashMap<u64, NodeId> = old.map(|old| old.keys.iter().map(|(node, &key)| (key, node)).collect()).unwrap_or_default();
     let mut declared = HashSet::new();
 
     for (node, key, transitions) in transitioning {
@@ -133,43 +158,71 @@ pub(crate) fn update_transitions(store: &mut TransitionStore, ui: &Ui, old: &Ui,
                                 end_value: after.clone(),
                                 reversing_shortening_factor: factor,
                                 start_time: offset(now, delay),
-                                duration: Duration::from_secs_f32(timing.duration * factor),
+                                duration: seconds(timing.duration * factor),
                                 easing: timing.easing,
+                                started: false,
                             })
                         } else {
                             new_transition(node, current.clone(), after.clone(), timing, now)
                         }
                     });
+                    events.push((node, TransitionEvent::Cancel));
                     match replacement {
-                        Some(transition) => *running = transition,
+                        Some(transition) => {
+                            events.push((node, TransitionEvent::Run));
+                            *running = transition;
+                        }
                         None => {
                             store.remove(&(key, property));
                         }
                     }
                 }
                 None => {
-                    // An element that wasn't in the previous view doesn't transition.
-                    let Some(before) = old_nodes.get(&key).and_then(|&old_node| shown(old, old_node, property)) else { continue };
+                    // An element that wasn't in the previous view starts
+                    // from its `@starting-style` style, or doesn't transition.
+                    let before = match (old, old_nodes.get(&key)) {
+                        (Some(old), Some(&old_node)) => shown(old, old_node, property),
+                        _ => ui.starting_styles.get(node).and_then(|(layout, style)| property.get(style, layout)),
+                    };
+                    let Some(before) = before else { continue };
                     if before == after {
                         continue;
                     }
                     if let Some(transition) = timing.as_ref().and_then(|timing| new_transition(node, before, after, timing, now)) {
+                        events.push((node, TransitionEvent::Run));
                         store.insert((key, property), transition);
                     }
                 }
             }
         }
     }
-    // Gone, or no longer transitioning the property: it shows its own value.
-    store.retain(|key, _| declared.contains(key));
+    // Gone, or no longer transitioning the property: it shows its own
+    // value. Elements still there hear of it.
+    if store.keys().any(|key| !declared.contains(key)) {
+        let nodes: HashMap<u64, NodeId> = ui.keys.iter().map(|(node, &key)| (key, node)).collect();
+        store.retain(|key, _| {
+            let keep = declared.contains(key);
+            if let (false, Some(&node)) = (keep, nodes.get(&key.0)) {
+                events.push((node, TransitionEvent::Cancel));
+            }
+            keep
+        });
+    }
 }
 
 /// Sets each transition's value at `now` on `ui`, and drops the finished
 /// ones (their end value is the element's own). Returns whether any
 /// property that affects layout was set.
-pub(crate) fn apply_transitions(store: &mut TransitionStore, ui: &mut Ui, now: Instant) -> bool {
+pub(crate) fn apply_transitions(store: &mut TransitionStore, ui: &mut Ui, now: Instant, events: &mut Events) -> bool {
     let mut layout_affected = false;
-    for (&(_, property), transition) in store.iter() {
+    for (&(_, property), transition) in store.iter_mut() {
+        if !transition.started && now >= transition.start_time {
+            transition.started = true;
+            events.push((transition.node_id, TransitionEvent::Start));
+        }
+        if transition.is_finished(now) {
+            events.push((transition.node_id, TransitionEvent::End));
+        }
         let value = transition.value_at(now);
         let (Some(data), Ok(layout)) = (ui.render_data.get_mut(transition.node_id), ui.taffy.style(transition.node_id)) else { continue };
         let mut layout = layout.clone();

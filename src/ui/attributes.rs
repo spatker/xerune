@@ -9,6 +9,7 @@ use crate::alloc_prelude::*;
 
 use super::Interaction;
 
+#[derive(Clone)]
 pub struct ParsedAttributes {
     pub element_type: defaults::ElementType,
     /// A range's `value`; `None` is the middle of `min`..`max`.
@@ -23,6 +24,8 @@ pub struct ParsedAttributes {
     pub interaction_id: Option<Interaction>,
     /// `data-on-hover` and `data-on-hover-out`.
     pub hover: super::HoverHandlers,
+    /// `data-on-transitionrun` and the other transition events.
+    pub transition: super::TransitionHandlers,
     pub image_src: String,
     pub canvas_id: String,
     pub element_id: Option<String>,
@@ -43,6 +46,7 @@ impl ParsedAttributes {
             checkbox_checked: false,
             interaction_id: None,
             hover: super::HoverHandlers::default(),
+            transition: super::TransitionHandlers::default(),
             image_src: String::new(),
             canvas_id: String::new(),
             element_id: None,
@@ -144,6 +148,18 @@ pub fn parse_attributes_generic<'a>(
                      parsed.hover.enter = handler;
                  } else {
                      parsed.hover.leave = handler;
+                 }
+             }
+             "data-on-transitionrun" | "data-on-transitionstart" | "data-on-transitionend" | "data-on-transitioncancel" => {
+                 if !message_validator(value) {
+                     log::warn!("Invalid message in {}: {}", name, value);
+                 }
+                 let handler = Some(Interaction::Text(value.to_string()));
+                 match name {
+                     "data-on-transitionrun" => parsed.transition.run = handler,
+                     "data-on-transitionstart" => parsed.transition.start = handler,
+                     "data-on-transitionend" => parsed.transition.end = handler,
+                     _ => parsed.transition.cancel = handler,
                  }
              }
              _ => {

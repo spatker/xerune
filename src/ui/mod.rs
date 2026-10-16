@@ -106,6 +106,29 @@ impl HoverHandlers {
     }
 }
 
+/// The messages an element sends as its transitions go
+/// (`data-on-transitionrun`, `-transitionstart`, `-transitionend`,
+/// `-transitioncancel`, after the DOM's transition events). Each is sent
+/// once per transitioning property; unlike DOM events they don't bubble.
+#[derive(Debug, Clone, Default)]
+pub struct TransitionHandlers {
+    /// A transition was created (it may still wait out its delay).
+    pub run: Option<Interaction>,
+    /// Its delay is over: it starts moving.
+    pub start: Option<Interaction>,
+    /// It reached its end value.
+    pub end: Option<Interaction>,
+    /// It was removed before its end: reversed, replaced, or its property
+    /// no longer transitions.
+    pub cancel: Option<Interaction>,
+}
+
+impl TransitionHandlers {
+    pub(crate) fn is_empty(&self) -> bool {
+        self.run.is_none() && self.start.is_none() && self.end.is_none() && self.cancel.is_none()
+    }
+}
+
 /// The core layout engine containing the taffy tree and metadata maps.
 pub struct Ui {
     /// The taffy layout tree.
@@ -143,8 +166,16 @@ pub struct Ui {
     pub uses_hover: bool,
     /// The `data-on-hover` / `data-on-hover-out` messages of elements.
     pub hover_handlers: NodeMap<HoverHandlers>,
+    /// The `data-on-transition*` messages of elements.
+    pub transition_handlers: NodeMap<TransitionHandlers>,
     /// Whether any rule uses `:active`.
     pub uses_active: bool,
+    /// The styles elements that are new in this view start from, by
+    /// `@starting-style` rules, for those that have any.
+    pub starting_styles: NodeMap<(Style, ContainerStyle)>,
+    /// Whether the template has `@starting-style` rules, so the next
+    /// build computes starting styles for its new elements.
+    pub uses_starting_style: bool,
 }
 
 impl Ui {
@@ -191,9 +222,24 @@ impl Ui {
         message_validator: &impl Fn(&str) -> bool,
         pointer: PointerState,
     ) -> Result<Self, TaffyError> {
+        Self::new_compiled_after(model, measurer, default_style, message_validator, pointer, None)
+    }
+
+    /// Like [`Self::new_compiled_with_pointer`], for a view replacing one
+    /// whose elements had `previous_keys`: the others are new, and get the
+    /// styles of `@starting-style` rules computed. `None` computes none.
+    pub fn new_compiled_after(
+        model: &impl TemplateLayout,
+        measurer: &impl TextMeasurer,
+        default_style: ContainerStyle,
+        message_validator: &impl Fn(&str) -> bool,
+        pointer: PointerState,
+        previous_keys: Option<HashSet<u64>>,
+    ) -> Result<Self, TaffyError> {
         profile!("ui_new_compiled");
         let mut builder = UiBuilder::new();
         builder.pointer = pointer;
+        builder.previous_keys = previous_keys;
         let root = {
             profile!("build_ui");
             model.build_ui(&mut builder, measurer, &default_style, message_validator)
@@ -279,6 +325,7 @@ impl Ui {
                     &mut builder.keys,
                     &builder.pointer,
                     &mut builder.hover_handlers,
+                    &mut builder.transition_handlers,
                     &mut base_styles,
                     &mut *style_cache,
                 );
@@ -315,6 +362,9 @@ impl Ui {
             uses_hover,
             uses_active,
             hover_handlers: builder.hover_handlers,
+            transition_handlers: builder.transition_handlers,
+            starting_styles: builder.starting_styles,
+            uses_starting_style: builder.uses_starting_style,
         })
     }
 

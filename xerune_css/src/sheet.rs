@@ -34,6 +34,9 @@ pub struct Rule {
     /// The `@media` blocks the rule is in, as an index into
     /// [`StyleSheet::media`]; `None` outside any.
     pub media: Option<usize>,
+    /// Inside `@starting-style`: the rule only applies to the style an
+    /// element starts from when it appears, for transitions.
+    pub starting: bool,
 }
 
 /// A parsed stylesheet.
@@ -57,10 +60,11 @@ pub struct StyleSheet {
 
 impl StyleSheet {
     /// Parses `css`. Rules with an invalid selector list, at-rules other
-    /// than `@media` and rules without declarations are dropped.
+    /// than `@media` and `@starting-style`, and rules without declarations
+    /// are dropped.
     pub fn parse(css: &str) -> Self {
         let mut sheet = StyleSheet::default();
-        sheet.parse_block(css, &mut Vec::new());
+        sheet.parse_block(css, &mut Vec::new(), false);
         // Stable, so equal specificities keep source order.
         sheet.rules.sort_by_key(|rule| rule.selector.specificity());
         let rules = &sheet.rules;
@@ -77,8 +81,8 @@ impl StyleSheet {
     }
 
     /// Reads the rules of `css`, which is inside the `@media` blocks whose
-    /// queries are `queries`.
-    fn parse_block(&mut self, css: &str, queries: &mut Vec<Query>) {
+    /// queries are `queries`, and inside `@starting-style` if `starting`.
+    fn parse_block(&mut self, css: &str, queries: &mut Vec<Query>, starting: bool) {
         let media = (!queries.is_empty()).then(|| {
             self.media.push(queries.clone());
             self.media.len() - 1
@@ -109,17 +113,20 @@ impl StyleSheet {
             let body = rest[open + 1..end].strip_suffix('}').unwrap_or(&rest[open + 1..end]);
             if at_rule {
                 let name_end = prelude[1..].find(|c: char| !(c.is_alphanumeric() || c == '-' || c == '_')).map_or(prelude.len(), |i| i + 1);
-                if prelude[1..name_end].eq_ignore_ascii_case("media") {
+                let name = &prelude[1..name_end];
+                if name.eq_ignore_ascii_case("media") {
                     queries.push(crate::media::parse_query(&prelude[name_end..]));
-                    self.parse_block(body, queries);
+                    self.parse_block(body, queries, starting);
                     queries.pop();
+                } else if name.eq_ignore_ascii_case("starting-style") {
+                    self.parse_block(body, queries, true);
                 }
             } else {
                 match parse_selector_list(prelude) {
                     Some(selectors) => {
                         let declarations: Rc<[Declaration]> = parse_declarations(body).into();
                         if !declarations.is_empty() {
-                            self.rules.extend(selectors.into_iter().map(|selector| Rule { selector, declarations: declarations.clone(), media }));
+                            self.rules.extend(selectors.into_iter().map(|selector| Rule { selector, declarations: declarations.clone(), media, starting }));
                         }
                     }
                     None => self.dropped.push(String::from(prelude)),
@@ -296,6 +303,13 @@ mod tests {
         );
         let rules: Vec<_> = sheet.rules.iter().map(|r| pairs(&r.declarations)).collect();
         assert_eq!(rules, vec![vec![("a", "1", false), ("d", "3", false)], vec![("f", "5", false)]]);
+    }
+
+    #[test]
+    fn starting_style_blocks_mark_their_rules() {
+        let sheet = StyleSheet::parse("a { x: 1 } @starting-style { b { x: 2 } @media (min-width: 1px) { c { x: 3 } } } d { x: 4 }");
+        let starting: Vec<_> = sheet.rules.iter().map(|r| (r.declarations[0].value.as_str(), r.starting, r.media.is_some())).collect();
+        assert_eq!(starting, [("1", false, false), ("2", true, false), ("3", true, true), ("4", false, false)]);
     }
 
     #[test]

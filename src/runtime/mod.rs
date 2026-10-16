@@ -97,6 +97,8 @@ pub struct Runtime<M: Model, R> {
     pub(crate) active_animations: HashMap<u64, ActiveAnimation>,
     /// Running transitions, by element key and property.
     transitions: transition::TransitionStore,
+    /// Messages of `data-on-transition*` events, for the next poll.
+    transition_messages: Vec<Interaction>,
     pub(crate) touch_state: Option<TouchState>,
     images: ImageStore,
     /// Where the pointer was last seen, and whether it is pressed.
@@ -150,6 +152,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
              frame_clock: None,
              active_animations: HashMap::new(),
              transitions: HashMap::new(),
+             transition_messages: Vec::new(),
              touch_state: None,
              images,
              pointer: None,
@@ -579,7 +582,13 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
         let ui = {
             profile!("ui_new_compiled");
             let validator = |s: &str| M::Message::from_str(s).is_ok();
-            Ui::new_compiled_with_pointer(&self.model, &self.measurer, self.default_style.clone(), &validator, self.pointer_state.clone()).unwrap()
+            // Elements not in the current view are new; on the first build,
+            // all are (the view built by `new` was never shown).
+            let previous_keys = self.ui.uses_starting_style.then(|| match self.builds {
+                1 => HashSet::new(),
+                _ => self.ui.keys.values().copied().collect(),
+            });
+            Ui::new_compiled_after(&self.model, &self.measurer, self.default_style.clone(), &validator, self.pointer_state.clone(), previous_keys).unwrap()
         };
         // Kept until the transitions have compared the views.
         let old = core::mem::replace(&mut self.ui, ui);
@@ -613,7 +622,32 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
                 k.keyframes.iter().flat_map(|frame| &frame.declarations).any(|(p, _)| *p == property)
             })
         };
-        transition::update_transitions(&mut self.transitions, &self.ui, old, now, animated);
+        let mut events = Vec::new();
+        let old = (self.builds > 1).then_some(old);
+        transition::update_transitions(&mut self.transitions, &self.ui, old, now, animated, &mut events);
+        self.queue_transition_events(events);
+    }
+
+    /// Keeps the messages the elements send for `events`, for the next poll.
+    fn queue_transition_events(&mut self, events: transition::Events) {
+        for (node, event) in events {
+            let Some(handlers) = self.ui.transition_handlers.get(node) else { continue };
+            let handler = match event {
+                transition::TransitionEvent::Run => &handlers.run,
+                transition::TransitionEvent::Start => &handlers.start,
+                transition::TransitionEvent::End => &handlers.end,
+                transition::TransitionEvent::Cancel => &handlers.cancel,
+            };
+            self.transition_messages.extend(handler.clone());
+        }
+    }
+
+    /// The model's messages for queued transition events.
+    fn take_transition_messages(&mut self) -> Vec<M::Message> {
+        core::mem::take(&mut self.transition_messages).into_iter().filter_map(|interaction| match interaction {
+            Interaction::Message(message) => message.downcast_ref::<M::Message>().cloned(),
+            Interaction::Text(text) => M::Message::from_str(&text).ok(),
+        }).collect()
     }
 
     /// Sends an element's message (`data-on-click`, `data-on-hover`) to the
@@ -687,7 +721,9 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
             applied = true;
         }
         if !self.transitions.is_empty() {
-            layout_affected |= transition::apply_transitions(&mut self.transitions, &mut self.ui, start);
+            let mut events = Vec::new();
+            layout_affected |= transition::apply_transitions(&mut self.transitions, &mut self.ui, start, &mut events);
+            self.queue_transition_events(events);
             applied = true;
         }
         if layout_affected {
@@ -887,7 +923,9 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
             redraw |= self.sync_view_inner(false);
         }
 
-        let mut messages = Vec::new();
+        // Transition events since the last poll (from input, or this
+        // poll's image rebuild) come first, as they happened first.
+        let mut messages = self.take_transition_messages();
         let mut due: Vec<usize> = (0..self.timers.len()).filter(|&i| self.timers[i].deadline <= now).collect();
         due.sort_by_key(|&i| self.timers[i].deadline);
         let mut fired: Vec<_> = due.iter().map(|&i| self.timers[i].clone()).collect();
@@ -931,8 +969,20 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
         if frame {
             redraw |= self.animate(Some(now));
         }
+        // Events of this poll's rebuild and frame, answered right away; what
+        // those answers set off waits for the next poll.
+        let messages = self.take_transition_messages();
+        if !messages.is_empty() {
+            for message in messages {
+                profile!("update");
+                self.model.update(message, &mut self.context);
+            }
+            redraw |= self.sync_view_inner(true);
+        }
 
-        let wake = if self.wants_frames() {
+        let wake = if !self.transition_messages.is_empty() {
+            Wake::At(now)
+        } else if self.wants_frames() {
             let interval = self.frame_interval();
             let (_, next) = *self.frame_clock.get_or_insert((now, now + interval));
             Wake::Frame(next)

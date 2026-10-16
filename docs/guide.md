@@ -393,6 +393,26 @@ rebuilding the view: paint-only properties just repaint, layout properties
 re-run layout. As with keyframes, the browser studio leaves them to the
 browser.
 
+An element that appears starts from its `@starting-style` style, if any
+(also when the app starts), so it can transition in:
+
+```css
+.panel { left: 0%; transition: left 0.3s ease-out; }
+@starting-style {
+    .panel { left: 100%; }
+}
+```
+
+Elements send the model messages as their transitions go, like the DOM's
+transition events (once per property; they don't bubble):
+`data-on-transitionrun` (created, maybe still in its delay),
+`data-on-transitionstart` (moving), `data-on-transitionend` and
+`data-on-transitioncancel` (reversed, replaced or no longer transitioning). An
+element that has slid out of view can leave the template on
+`transitionend` instead of being laid out off screen; see the music player's
+list and player views. `@starting-style` applies to compiled templates; HTML
+parsed at runtime ignores it.
+
 ---
 
 ## 7. Timers, Intervals and Frames
