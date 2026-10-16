@@ -10,9 +10,6 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
     
-    <!-- Nunjucks Templating Library (Jinja2/Askama Compatible) -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/nunjucks/3.2.4/nunjucks.min.js"></script>
-
     <style>
         :root {
             --bg-color: #0b0f19;
@@ -207,15 +204,45 @@
             word-break: break-all;
         }
 
-        /* styling inside our hosted application */
+        /* The app runs in its own document, at the size of the device's
+           display (800x480, or portrait). */
+        .app-frame {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 14px;
+        }
+
         #app {
-            background-color: #1e1e1e;
+            border: 0;
+            background-color: #000;
             border-radius: 8px;
             box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
-            width: 100%;
-            max-width: 800px;
-            min-height: 560px;
-            position: relative;
+            width: 800px;
+            height: 480px;
+        }
+
+        #app.portrait {
+            width: 480px;
+            height: 800px;
+        }
+
+        .frame-controls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            color: var(--text-muted);
+            font-size: 13px;
+        }
+
+        .frame-controls button {
+            padding: 6px 12px;
+            background: #161c2d;
+            border: 1px solid var(--border-color);
+            color: var(--text-color);
+            border-radius: 8px;
+            font-family: inherit;
+            cursor: pointer;
         }
 
         footer {
@@ -248,8 +275,12 @@
     <div class="main-container">
         <!-- Rendered App -->
         <div class="app-host">
-            <div id="app">
-                <!-- App DOM will be dynamically injected here -->
+            <div class="app-frame">
+                <iframe id="app" title="App"></iframe>
+                <div class="frame-controls">
+                    <button id="rotate">Portrait</button>
+                    <span>Edit the template and save: the view updates within a second.</span>
+                </div>
             </div>
         </div>
 
@@ -290,18 +321,20 @@
             AnimationCssApp, 
             ShowcaseApp, 
             BreakoutApp 
-        } from "./pkg/xerune_studio.js?v=10";
-        import { initXeruneApp } from "../xerune.js?v=9";
-
-        window.addEventListener("click", (e) => {
-            console.log("Global window click target:", e.target);
-            console.log("Global window click path:", e.composedPath());
-        }, true);
-        window.addEventListener("mousedown", (e) => {
-            console.log("Global window mousedown target:", e.target);
-        }, true);
+        } from "./pkg/xerune_studio.js?v=11";
+        import { initXeruneApp } from "../xerune.js?v=10";
 
         let currentAppCleanup = null;
+        let currentApp = null;
+
+        /** A fresh, empty document in the frame, for the next app. */
+        function freshFrame() {
+            const frame = document.getElementById("app");
+            return new Promise((resolve) => {
+                frame.onload = () => resolve(frame.contentDocument);
+                frame.srcdoc = "<!DOCTYPE html><html><head><meta charset=\"UTF-8\"></head><body></body></html>";
+            });
+        }
 
         async function loadApp(appName) {
             // 1. Cleanup previous application
@@ -309,6 +342,8 @@
                 currentAppCleanup();
                 currentAppCleanup = null;
             }
+            currentApp?.free();
+            currentApp = null;
 
             // 2. Reset side logs panel
             const logs = document.getElementById("logs");
@@ -343,17 +378,14 @@
                 app = new BreakoutApp("");
                 templatePath = "../examples/breakout/templates/breakout.html";
             }
+            currentApp = app;
 
-            // 4. Fetch the template HTML text
-            const response = await fetch(templatePath);
-            const templateText = await response.text();
-
-            // 5. Initialize Xerune app inside browser DOM
+            // 4. Run it in the frame's document
+            const doc = await freshFrame();
             currentAppCleanup = initXeruneApp({
-                app: app,
-                containerId: "app",
-                templateText: templateText,
-                templateBaseDir: templatePath.substring(0, templatePath.lastIndexOf("/")),
+                app,
+                doc,
+                templatePath,
                 onStateUpdate: (state) => {
                     // Update state view panel
                     document.getElementById("state-json").innerText = JSON.stringify(state, null, 2);
@@ -366,7 +398,13 @@
                     const time = new Date().toLocaleTimeString().split(' ')[0];
                     const item = document.createElement("div");
                     item.className = "log-item";
-                    item.innerHTML = `<span class="log-time">[${time}]</span><span class="log-message">${msg}</span>`;
+                    const timeEl = document.createElement("span");
+                    timeEl.className = "log-time";
+                    timeEl.textContent = `[${time}]`;
+                    const messageEl = document.createElement("span");
+                    messageEl.className = "log-message";
+                    messageEl.textContent = msg;
+                    item.append(timeEl, messageEl);
                     logs.appendChild(item);
                     logs.scrollTop = logs.scrollHeight;
                 }
@@ -381,6 +419,14 @@
             const selectEl = document.getElementById("example-select");
             selectEl.addEventListener("change", (e) => {
                 loadApp(e.target.value).catch(console.error);
+            });
+
+            // Portrait: 480x800; the app hears of it as a resize
+            const rotate = document.getElementById("rotate");
+            rotate.addEventListener("click", () => {
+                const frame = document.getElementById("app");
+                frame.classList.toggle("portrait");
+                rotate.textContent = frame.classList.contains("portrait") ? "Landscape" : "Portrait";
             });
 
             // Initial load

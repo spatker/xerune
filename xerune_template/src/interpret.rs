@@ -31,8 +31,9 @@ impl Methods for () {
     }
 }
 
-/// The view of `template` for a model whose data is `model`, as the HTML of
-/// the body's content. `<style>` is left out (see [`Template::css`]).
+/// The view of `template` for a model whose data is `model`, as HTML: the
+/// `<body>` and its content. `<head>` and `<style>` are left out (see
+/// [`Template::css`]).
 pub fn render_html(template: &Template, model: &Value, methods: &dyn Methods) -> Result<String, Error> {
     let mut interp = Interp { tpl: template, model, methods, scopes: Vec::new(), loops: Vec::new(), out: String::new() };
     interp.children(Template::ROOT, Keys { parent: 0, loop_key: 0 }).map_err(Error)?;
@@ -169,8 +170,9 @@ impl<'a> Interp<'a> {
             Kind::Element { tag, attrs } => {
                 match tag.as_str() {
                     "head" | "style" | "script" | "template" => return Ok(Flow::Normal),
-                    // The page has its own; their content goes into its body.
-                    "html" | "body" => return self.children(id, keys),
+                    // The page has its own; the body's attributes and
+                    // content go to the page's body.
+                    "html" => return self.children(id, keys),
                     _ => {}
                 }
                 let key = match attrs.iter().find(|a| a.name == "data-key") {

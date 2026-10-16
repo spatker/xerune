@@ -13,11 +13,11 @@ the working notes.
 | Path | What |
 |---|---|
 | `src/` | `xerune` lib: runtime, UI tree, CSS, backends |
-| `xerune_template/` | The template language: includes, Askama parse, validation (the supported subset is what `lower.rs` accepts), html5ever, giving one `Template` tree of elements and template blocks. Shared by the derive and (next) the studio's interpreter, so they can't drift |
+| `xerune_template/` | The template language: includes, Askama parse, validation (the supported subset is what `lower.rs` accepts), html5ever, giving one `Template` tree of elements and template blocks. Shared by the derive and, with feature `interpret`, the studio's interpreter (`render_html`), so they can't drift |
 | `xerune_derive/` | `XeruneTemplate` / `XeruneMessage` macros. `lib.rs` compiles a `xerune_template::Template` to `build_ui`: compile-time selector matching, CSS splitting, codegen |
 | `xerune_css/` | The CSS parser both of them use (`no_std`): stylesheets and declarations (`sheet`), selectors with specificity and matching over an `Element` trait (`selector`), `@media` blocks and queries, comment/string-aware scanning. Change CSS reading here, not in either crate |
 | `xerune_render/` | Software rasterizer (blits, rounded rects, gradients, glyphs). Has a `no_std` mode |
-| `studio/` | WASM inspector (`wasm-pack build --target web`, `features = ["browser"]`) |
+| `studio/` | WASM inspector (`wasm-pack build --target web`, `features = ["browser"]`): the model runs in wasm, the view is the template interpreted live (`xerune.js` polls the files; no rebuild for template edits, one for newly called model methods) |
 | `wpt_runner/` | WPT reftests vs Chromium screenshots; scope in `suites.txt`, known failures in `expectations.txt` (`docs/guide.md` §11) |
 | `examples/<name>/` | `main.rs` (runtime + `xerune::App`) + `<name>_impl.rs` (model; also used by tests, benches, studio) + `templates/*.html`; `examples/support/` loads the bundled fonts |
 | `tests/` | Integration tests; HTML fixtures in `tests/*.html`, `tests/canvas/`, `tests/gaps/`; trybuild cases in `tests/template_errors/` |

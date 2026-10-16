@@ -584,6 +584,36 @@ python3 -m http.server 8000
 - **Studio with live state inspector**: `http://localhost:8000/studio/index.html`
 - **Standalone full-screen web runner**: `http://localhost:8000/examples/standalone.html?app=music_player`
 
+### 4. Live templates
+
+In the browser the model runs in wasm, but the view is not compiled in: the
+page reads the template files from the server, and the wasm interprets
+them (`xerune_template`, the same parser and rules as the derive). Save a
+template and the page shows the change within a second, markup and CSS
+alike, with no rebuild and no reload; a template error is shown over the
+last good view, with its `file:line`. Every element carries a key in
+`data-xk`, so updates patch the page in place and transitions, `:hover`
+and scroll positions survive. `tests/interpret_tests.rs` checks the
+interpreter against the compiled templates.
+
+The template reads the model through serde, so the model must derive
+`Serialize`; fields marked `#[serde(skip)]` don't exist for it. Methods
+can't be found at run time: the derive builds a table of the methods the
+template calls (`self.total()`, `current_track.glow()`), so a template
+edit that calls a method it didn't call before needs one rebuild of the
+wasm. Their arguments and results go through serde too. A method of a
+loop variable (`{% for t in tracks %}{{ t.glow() }}`) can't be called in
+the browser; call a method of the model with the index instead. `{{ }}`
+shows strings, numbers, `bool`s and `char`s, printed as Rust prints them;
+a value of your own type needs a field or method that gives one of those.
+
+To run your own app, export a class with `xerune::export_browser_app!(MyApp, MyModel)`
+(feature `browser`) and hand it to `initXeruneApp` from `xerune.js` with
+the template's URL (see `studio/src/lib.rs` and `examples/standalone.html`).
+Clicks, hover (`data-on-hover`/`-out`) and keys go to `update` as text.
+Transition messages come from the runtime, which follows the transitions
+of the compiled template.
+
 ---
 
 ## 11. WPT Reftests

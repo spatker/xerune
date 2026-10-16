@@ -1,3 +1,7 @@
+//! The examples in the browser, for the studio (`studio/index.html`) and
+//! standalone pages (`examples/standalone.html`); see `xerune.js`.
+
+#[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 
 #[path = "../../examples/todo/todo_impl.rs"]
@@ -21,400 +25,86 @@ pub mod showcase_impl;
 #[path = "../../examples/breakout/breakout_impl.rs"]
 pub mod breakout_impl;
 
-// 1. Todo App WASM Binding
+/// The model in `json` (a saved state), or `default` when it is empty.
 #[cfg(target_arch = "wasm32")]
-#[wasm_bindgen]
-pub struct TodoApp {
-    runtime: xerune::runtime::Runtime<todo_impl::TodoList, xerune::backend::browser_impl::DummyTextMeasurer>,
+fn model_or<M: serde::de::DeserializeOwned>(json: &str, default: impl FnOnce() -> M) -> M {
+    if json.is_empty() { default() } else { serde_json::from_str(json).expect("Failed to deserialize initial state") }
 }
+
+xerune::export_browser_app!(TodoApp, todo_impl::TodoList);
+xerune::export_browser_app!(CalculatorApp, calculator_impl::CalculatorModel);
+xerune::export_browser_app!(MusicPlayerApp, music_player_impl::MusicPlayerModel);
+xerune::export_browser_app!(AnimationApp, animation_impl::AnimationModel);
+xerune::export_browser_app!(AnimationCssApp, animation_css_impl::AnimationCssModel);
+xerune::export_browser_app!(ShowcaseApp, showcase_impl::ShowcaseModel);
+xerune::export_browser_app!(BreakoutApp, breakout_impl::BreakoutModel);
 
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
 impl TodoApp {
     #[wasm_bindgen(constructor)]
-    pub fn new(initial_state_json: &str) -> Self {
-        console_error_panic_hook::set_once();
-        
-        let model: todo_impl::TodoList = if initial_state_json.is_empty() {
-            todo_impl::TodoList::default()
-        } else {
-            serde_json::from_str(initial_state_json).expect("Failed to deserialize initial state")
-        };
-        
-        let measurer = xerune::backend::browser_impl::DummyTextMeasurer;
-        let runtime = xerune::runtime::Runtime::new(model, measurer);
-        Self { runtime }
+    pub fn new(state_json: &str) -> Self {
+        Self::from_model(model_or(state_json, todo_impl::TodoList::default))
     }
-
-    #[wasm_bindgen]
-    pub fn update(&mut self, msg_str: &str) -> bool {
-        self.runtime.handle_event(xerune::model::InputEvent::Message(msg_str.to_string()))
-    }
-
-    #[wasm_bindgen]
-    pub fn poll(&mut self) -> bool {
-        self.runtime.poll().redraw
-    }
-
-    #[wasm_bindgen]
-    pub fn get_state_json(&self) -> String {
-        serde_json::to_string(self.runtime.model()).expect("Failed to serialize model")
-    }
-
-    #[wasm_bindgen]
-    pub fn get_canvas_pixels(&self, id: &str) -> Option<Vec<u8>> {
-        self.runtime.context().canvases.get(id).map(|c| c.data.clone())
-    }
-
-    #[wasm_bindgen]
-    pub fn get_canvas_width(&self, id: &str) -> u32 {
-        self.runtime.context().canvases.get(id).map(|c| c.width).unwrap_or(0)
-    }
-
-    #[wasm_bindgen]
-    pub fn get_canvas_height(&self, id: &str) -> u32 {
-        self.runtime.context().canvases.get(id).map(|c| c.height).unwrap_or(0)
-    }
-}
-
-// 2. Calculator App WASM Binding
-#[cfg(target_arch = "wasm32")]
-#[wasm_bindgen]
-pub struct CalculatorApp {
-    runtime: xerune::runtime::Runtime<calculator_impl::CalculatorModel, xerune::backend::browser_impl::DummyTextMeasurer>,
 }
 
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
 impl CalculatorApp {
     #[wasm_bindgen(constructor)]
-    pub fn new(initial_state_json: &str) -> Self {
-        console_error_panic_hook::set_once();
-        
-        let model: calculator_impl::CalculatorModel = if initial_state_json.is_empty() {
-            calculator_impl::CalculatorModel::default()
-        } else {
-            serde_json::from_str(initial_state_json).expect("Failed to deserialize initial state")
-        };
-        
-        let measurer = xerune::backend::browser_impl::DummyTextMeasurer;
-        let runtime = xerune::runtime::Runtime::new(model, measurer);
-        Self { runtime }
+    pub fn new(state_json: &str) -> Self {
+        Self::from_model(model_or(state_json, calculator_impl::CalculatorModel::default))
     }
-
-    #[wasm_bindgen]
-    pub fn update(&mut self, msg_str: &str) -> bool {
-        self.runtime.handle_event(xerune::model::InputEvent::Message(msg_str.to_string()))
-    }
-
-    #[wasm_bindgen]
-    pub fn poll(&mut self) -> bool {
-        self.runtime.poll().redraw
-    }
-
-    #[wasm_bindgen]
-    pub fn get_state_json(&self) -> String {
-        serde_json::to_string(self.runtime.model()).expect("Failed to serialize model")
-    }
-
-    #[wasm_bindgen]
-    pub fn get_canvas_pixels(&self, id: &str) -> Option<Vec<u8>> {
-        self.runtime.context().canvases.get(id).map(|c| c.data.clone())
-    }
-
-    #[wasm_bindgen]
-    pub fn get_canvas_width(&self, id: &str) -> u32 {
-        self.runtime.context().canvases.get(id).map(|c| c.width).unwrap_or(0)
-    }
-
-    #[wasm_bindgen]
-    pub fn get_canvas_height(&self, id: &str) -> u32 {
-        self.runtime.context().canvases.get(id).map(|c| c.height).unwrap_or(0)
-    }
-}
-
-// 3. Music Player App WASM Binding
-#[cfg(target_arch = "wasm32")]
-#[wasm_bindgen]
-pub struct MusicPlayerApp {
-    runtime: xerune::runtime::Runtime<music_player_impl::MusicPlayerModel, xerune::backend::browser_impl::DummyTextMeasurer>,
 }
 
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
 impl MusicPlayerApp {
+    /// `tracks_json`: the track list (the page fetches it; there is no
+    /// file system).
     #[wasm_bindgen(constructor)]
-    pub fn new(initial_state_json: &str, tracks_json: &str) -> Self {
-        console_error_panic_hook::set_once();
-        
-        let mut model: music_player_impl::MusicPlayerModel = if initial_state_json.is_empty() {
-            music_player_impl::MusicPlayerModel::new(
-                if tracks_json.is_empty() { None } else { Some(tracks_json) }
-            )
-        } else {
-            serde_json::from_str(initial_state_json).expect("Failed to deserialize initial state")
-        };
-        
+    pub fn new(state_json: &str, tracks_json: &str) -> Self {
+        let tracks = || music_player_impl::MusicPlayerModel::new((!tracks_json.is_empty()).then_some(tracks_json));
+        let mut model = model_or(state_json, tracks);
         if model.tracks.is_empty() && !tracks_json.is_empty() {
-            model = music_player_impl::MusicPlayerModel::new(Some(tracks_json));
+            model = tracks();
         }
-
-        let measurer = xerune::backend::browser_impl::DummyTextMeasurer;
-        let runtime = xerune::runtime::Runtime::new(model, measurer);
-        Self { runtime }
+        Self::from_model(model)
     }
-
-    #[wasm_bindgen]
-    pub fn update(&mut self, msg_str: &str) -> bool {
-        self.runtime.handle_event(xerune::model::InputEvent::Message(msg_str.to_string()))
-    }
-
-    #[wasm_bindgen]
-    pub fn poll(&mut self) -> bool {
-        self.runtime.poll().redraw
-    }
-
-    #[wasm_bindgen]
-    pub fn get_state_json(&self) -> String {
-        serde_json::to_string(self.runtime.model()).expect("Failed to serialize model")
-    }
-
-    #[wasm_bindgen]
-    pub fn get_canvas_pixels(&self, id: &str) -> Option<Vec<u8>> {
-        self.runtime.context().canvases.get(id).map(|c| c.data.clone())
-    }
-
-    #[wasm_bindgen]
-    pub fn get_canvas_width(&self, id: &str) -> u32 {
-        self.runtime.context().canvases.get(id).map(|c| c.width).unwrap_or(0)
-    }
-
-    #[wasm_bindgen]
-    pub fn get_canvas_height(&self, id: &str) -> u32 {
-        self.runtime.context().canvases.get(id).map(|c| c.height).unwrap_or(0)
-    }
-}
-
-// 4. Animation App WASM Binding
-#[cfg(target_arch = "wasm32")]
-#[wasm_bindgen]
-pub struct AnimationApp {
-    runtime: xerune::runtime::Runtime<animation_impl::AnimationModel, xerune::backend::browser_impl::DummyTextMeasurer>,
 }
 
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
 impl AnimationApp {
     #[wasm_bindgen(constructor)]
-    pub fn new(initial_state_json: &str) -> Self {
-        console_error_panic_hook::set_once();
-        
-        let model: animation_impl::AnimationModel = if initial_state_json.is_empty() {
-            animation_impl::AnimationModel::new(100)
-        } else {
-            serde_json::from_str(initial_state_json).expect("Failed to deserialize initial state")
-        };
-        
-        let measurer = xerune::backend::browser_impl::DummyTextMeasurer;
-        let runtime = xerune::runtime::Runtime::new(model, measurer);
-        Self { runtime }
+    pub fn new(state_json: &str) -> Self {
+        Self::from_model(model_or(state_json, || animation_impl::AnimationModel::new(100)))
     }
-
-    #[wasm_bindgen]
-    pub fn update(&mut self, msg_str: &str) -> bool {
-        self.runtime.handle_event(xerune::model::InputEvent::Message(msg_str.to_string()))
-    }
-
-    #[wasm_bindgen]
-    pub fn poll(&mut self) -> bool {
-        self.runtime.poll().redraw
-    }
-
-    #[wasm_bindgen]
-    pub fn get_state_json(&self) -> String {
-        serde_json::to_string(self.runtime.model()).expect("Failed to serialize model")
-    }
-
-    #[wasm_bindgen]
-    pub fn get_canvas_pixels(&self, id: &str) -> Option<Vec<u8>> {
-        self.runtime.context().canvases.get(id).map(|c| c.data.clone())
-    }
-
-    #[wasm_bindgen]
-    pub fn get_canvas_width(&self, id: &str) -> u32 {
-        self.runtime.context().canvases.get(id).map(|c| c.width).unwrap_or(0)
-    }
-
-    #[wasm_bindgen]
-    pub fn get_canvas_height(&self, id: &str) -> u32 {
-        self.runtime.context().canvases.get(id).map(|c| c.height).unwrap_or(0)
-    }
-}
-
-// 5. CSS Animation App WASM Binding
-#[cfg(target_arch = "wasm32")]
-#[wasm_bindgen]
-pub struct AnimationCssApp {
-    runtime: xerune::runtime::Runtime<animation_css_impl::AnimationCssModel, xerune::backend::browser_impl::DummyTextMeasurer>,
 }
 
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
 impl AnimationCssApp {
     #[wasm_bindgen(constructor)]
-    pub fn new(initial_state_json: &str) -> Self {
-        console_error_panic_hook::set_once();
-        
-        let model: animation_css_impl::AnimationCssModel = if initial_state_json.is_empty() {
-            animation_css_impl::AnimationCssModel
-        } else {
-            serde_json::from_str(initial_state_json).expect("Failed to deserialize initial state")
-        };
-        
-        let measurer = xerune::backend::browser_impl::DummyTextMeasurer;
-        let runtime = xerune::runtime::Runtime::new(model, measurer);
-        Self { runtime }
+    pub fn new(state_json: &str) -> Self {
+        Self::from_model(model_or(state_json, || animation_css_impl::AnimationCssModel))
     }
-
-    #[wasm_bindgen]
-    pub fn update(&mut self, msg_str: &str) -> bool {
-        self.runtime.handle_event(xerune::model::InputEvent::Message(msg_str.to_string()))
-    }
-
-    #[wasm_bindgen]
-    pub fn poll(&mut self) -> bool {
-        self.runtime.poll().redraw
-    }
-
-    #[wasm_bindgen]
-    pub fn get_state_json(&self) -> String {
-        serde_json::to_string(self.runtime.model()).expect("Failed to serialize model")
-    }
-
-    #[wasm_bindgen]
-    pub fn get_canvas_pixels(&self, id: &str) -> Option<Vec<u8>> {
-        self.runtime.context().canvases.get(id).map(|c| c.data.clone())
-    }
-
-    #[wasm_bindgen]
-    pub fn get_canvas_width(&self, id: &str) -> u32 {
-        self.runtime.context().canvases.get(id).map(|c| c.width).unwrap_or(0)
-    }
-
-    #[wasm_bindgen]
-    pub fn get_canvas_height(&self, id: &str) -> u32 {
-        self.runtime.context().canvases.get(id).map(|c| c.height).unwrap_or(0)
-    }
-}
-
-// 6. Showcase App WASM Binding
-#[cfg(target_arch = "wasm32")]
-#[wasm_bindgen]
-pub struct ShowcaseApp {
-    runtime: xerune::runtime::Runtime<showcase_impl::ShowcaseModel, xerune::backend::browser_impl::DummyTextMeasurer>,
 }
 
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
 impl ShowcaseApp {
     #[wasm_bindgen(constructor)]
-    pub fn new(initial_state_json: &str) -> Self {
-        console_error_panic_hook::set_once();
-        
-        let model: showcase_impl::ShowcaseModel = if initial_state_json.is_empty() {
-            showcase_impl::ShowcaseModel::default()
-        } else {
-            serde_json::from_str(initial_state_json).expect("Failed to deserialize initial state")
-        };
-        
-        let measurer = xerune::backend::browser_impl::DummyTextMeasurer;
-        let runtime = xerune::runtime::Runtime::new(model, measurer);
-        Self { runtime }
+    pub fn new(state_json: &str) -> Self {
+        Self::from_model(model_or(state_json, showcase_impl::ShowcaseModel::default))
     }
-
-    #[wasm_bindgen]
-    pub fn update(&mut self, msg_str: &str) -> bool {
-        self.runtime.handle_event(xerune::model::InputEvent::Message(msg_str.to_string()))
-    }
-
-    #[wasm_bindgen]
-    pub fn poll(&mut self) -> bool {
-        self.runtime.poll().redraw
-    }
-
-    #[wasm_bindgen]
-    pub fn get_state_json(&self) -> String {
-        serde_json::to_string(self.runtime.model()).expect("Failed to serialize model")
-    }
-
-    #[wasm_bindgen]
-    pub fn get_canvas_pixels(&self, id: &str) -> Option<Vec<u8>> {
-        self.runtime.context().canvases.get(id).map(|c| c.data.clone())
-    }
-
-    #[wasm_bindgen]
-    pub fn get_canvas_width(&self, id: &str) -> u32 {
-        self.runtime.context().canvases.get(id).map(|c| c.width).unwrap_or(0)
-    }
-
-    #[wasm_bindgen]
-    pub fn get_canvas_height(&self, id: &str) -> u32 {
-        self.runtime.context().canvases.get(id).map(|c| c.height).unwrap_or(0)
-    }
-}
-
-// 7. Breakout App WASM Binding
-#[cfg(target_arch = "wasm32")]
-#[wasm_bindgen]
-pub struct BreakoutApp {
-    runtime: xerune::runtime::Runtime<breakout_impl::BreakoutModel, xerune::backend::browser_impl::DummyTextMeasurer>,
 }
 
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
 impl BreakoutApp {
     #[wasm_bindgen(constructor)]
-    pub fn new(initial_state_json: &str) -> Self {
-        console_error_panic_hook::set_once();
-        
-        let model: breakout_impl::BreakoutModel = if initial_state_json.is_empty() {
-            breakout_impl::BreakoutModel::default()
-        } else {
-            serde_json::from_str(initial_state_json).expect("Failed to deserialize initial state")
-        };
-        
-        let measurer = xerune::backend::browser_impl::DummyTextMeasurer;
-        let runtime = xerune::runtime::Runtime::new(model, measurer);
-        Self { runtime }
-    }
-
-    #[wasm_bindgen]
-    pub fn update(&mut self, msg_str: &str) -> bool {
-        self.runtime.handle_event(xerune::model::InputEvent::Message(msg_str.to_string()))
-    }
-
-    #[wasm_bindgen]
-    pub fn poll(&mut self) -> bool {
-        self.runtime.poll().redraw
-    }
-
-    #[wasm_bindgen]
-    pub fn get_state_json(&self) -> String {
-        serde_json::to_string(self.runtime.model()).expect("Failed to serialize model")
-    }
-
-    #[wasm_bindgen]
-    pub fn get_canvas_pixels(&self, id: &str) -> Option<Vec<u8>> {
-        self.runtime.context().canvases.get(id).map(|c| c.data.clone())
-    }
-
-    #[wasm_bindgen]
-    pub fn get_canvas_width(&self, id: &str) -> u32 {
-        self.runtime.context().canvases.get(id).map(|c| c.width).unwrap_or(0)
-    }
-
-    #[wasm_bindgen]
-    pub fn get_canvas_height(&self, id: &str) -> u32 {
-        self.runtime.context().canvases.get(id).map(|c| c.height).unwrap_or(0)
+    pub fn new(state_json: &str) -> Self {
+        Self::from_model(model_or(state_json, breakout_impl::BreakoutModel::default))
     }
 }

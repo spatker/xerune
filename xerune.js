@@ -1,308 +1,287 @@
-function saveFocus() {
-    const active = document.activeElement;
-    if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) {
-        return {
-            id: active.id,
-            selectionStart: active.selectionStart,
-            selectionEnd: active.selectionEnd
-        };
-    }
-    return null;
-}
-
-function restoreFocus(saved) {
-    if (!saved) return;
-    const el = document.getElementById(saved.id);
-    if (el) {
-        el.focus();
-        try {
-            el.setSelectionRange(saved.selectionStart, saved.selectionEnd);
-        } catch (e) {}
-    }
-}
-
-function saveScrollPositions(container) {
-    const scrollable = [];
-    const elements = container.querySelectorAll('.track-list, .todo-list');
-    elements.forEach((el) => {
-        if (el.scrollTop > 0 || el.scrollLeft > 0) {
-            scrollable.push({
-                class: el.classList.contains('track-list') ? 'track-list' : 'todo-list',
-                scrollTop: el.scrollTop,
-                scrollLeft: el.scrollLeft
-            });
-        }
-    });
-    return scrollable;
-}
-
-function restoreScrollPositions(container, saved) {
-    if (!saved) return;
-    saved.forEach(item => {
-        const el = container.querySelector('.' + item.class);
-        if (el) {
-            el.scrollTop = item.scrollTop;
-            el.scrollLeft = item.scrollLeft;
-        }
-    });
-}
+// Runs a Xerune app (a wasm class from `xerune::export_browser_app!`) in a
+// browser document: the studio's iframe, or a standalone page's own document.
+//
+// The model runs in wasm, as on the device. Its view is the template itself,
+// read from disk and interpreted in wasm into HTML (`view_html`); the browser
+// lays it out and draws it with the template's CSS, and runs its CSS
+// animations and transitions. The template files are checked every second,
+// so editing the markup or the CSS shows up without rebuilding the wasm or
+// reloading the page (calling a model method the template didn't call before
+// needs one rebuild: `wasm-pack build --target web` in `studio/`).
+//
+// Every element carries a key in `data-xk`: re-renders patch the document by
+// key instead of replacing it, so transitions, :hover, focus and scroll
+// positions survive. Messages go back to the app as text: the elements'
+// `data-on-click`, `data-on-hover` and `data-on-hover-out`, and keys.
 
 /**
- * Initializes a Xerune WASM application in the browser DOM.
- * 
  * @param {Object} config
- * @param {Object} config.app Instantiated WASM application (e.g. new TodoApp(""))
- * @param {string} config.containerId DOM element ID where the app should be rendered
- * @param {string} config.templateText Raw HTML template string
- * @param {Function} [config.onStateUpdate] Callback triggered when the state updates
- * @param {Function} [config.onMessageSent] Callback triggered when an event message is dispatched
+ * @param {Object} config.app The wasm app (e.g. `new TodoApp("")`)
+ * @param {string} config.templatePath URL of the template file
+ * @param {Document} [config.doc] The document to run in (default: this page's)
+ * @param {Function} [config.onStateUpdate] Called with the model state after each render
+ * @param {Function} [config.onMessageSent] Called with each message sent to the app
+ * @returns {Function} Stops the app and removes its listeners
  */
-export function initXeruneApp({ app, containerId, templateText, templateBaseDir, onStateUpdate, onMessageSent }) {
-    const container = document.getElementById(containerId);
-    if (!container) {
-        console.error("Container element not found:", containerId);
-        return;
+export function initXeruneApp({ app, templatePath, doc = document, onStateUpdate, onMessageSent }) {
+    const win = doc.defaultView;
+    const listeners = [];
+    const listen = (target, type, handler, options) => {
+        target.addEventListener(type, handler, options);
+        listeners.push(() => target.removeEventListener(type, handler, options));
+    };
+
+    // 1. The page: Roboto and no scrollbars, as on the device, the template's
+    // CSS, and a place for errors (outside the body, which the view replaces).
+    const head = (id, tag) => {
+        let el = doc.getElementById(id);
+        if (!el) {
+            el = doc.createElement(tag);
+            el.id = id;
+            doc.head.appendChild(el);
+        }
+        return el;
+    };
+    const font = (file) => new URL(`resources/fonts/${file}`, import.meta.url);
+    head("xerune-base", "style").textContent = `
+        @font-face { font-family: Roboto; font-weight: 400; src: url("${font("Roboto-Regular.ttf")}"); }
+        @font-face { font-family: Roboto; font-weight: 700; src: url("${font("Roboto-Bold.ttf")}"); }
+        html { font-family: Roboto, sans-serif; }
+        * { scrollbar-width: none; }
+        #xerune-error { position: fixed; inset: auto 8px 8px 8px; z-index: 2147483647; margin: 0; padding: 10px 12px;
+            max-height: 50%; overflow: auto; background: #2a0f12f2; color: #ffb4b4; border: 1px solid #ff6b6b;
+            border-radius: 6px; font: 12px/1.4 monospace; white-space: pre-wrap; }`;
+    const styleEl = head("xerune-style", "style");
+    let errorEl = null;
+    const showError = (message) => {
+        if (!errorEl) {
+            errorEl = doc.createElement("pre");
+            errorEl.id = "xerune-error";
+            doc.documentElement.appendChild(errorEl);
+        }
+        errorEl.textContent = message;
+    };
+    const clearError = () => {
+        errorEl?.remove();
+        errorEl = null;
+    };
+
+    // 2. The template, live from disk.
+    const root = new URL(templatePath, location.href);
+    let lastFiles = null;
+    let templateError = null;
+    async function loadTemplate() {
+        let json;
+        try {
+            json = JSON.stringify(await templateFiles(root));
+        } catch (e) {
+            showError(`reading the template failed: ${e.message}`);
+            return;
+        }
+        if (json === lastFiles) return;
+        lastFiles = json;
+        try {
+            app.set_template(root.pathname, json);
+            templateError = null;
+            styleEl.textContent = app.template_css();
+        } catch (e) {
+            templateError = String(e);
+        }
+        render(true);
     }
 
-    // 1. Extract style block
-    let cleanedTemplateText = templateText;
-    const styleMatch = templateText.match(/<style>([\s\S]*?)<\/style>/);
-    
-    // Remove existing xerune app style element to prevent style pollution
-    const oldStyle = document.getElementById("xerune-app-style");
-    if (oldStyle) {
-        oldStyle.remove();
-    }
-    
-    if (styleMatch) {
-        const styleEl = document.createElement("style");
-        styleEl.id = "xerune-app-style";
-        
-        // Scope CSS rules to `#app` to prevent bleeding into the outer studio UI
-        const rawCss = styleMatch[1].replace(/\/\*[\s\S]*?\*\//g, "");
-        const scopedCss = rawCss.replace(/([^\r\n,{}]+)(,[^\r\n,{}]+)*\s*{(?:[^{}]*|{[^{}]*})*}/g, (match) => {
-            const braceIdx = match.indexOf('{');
-            if (braceIdx === -1) return match;
-            const selectorPart = match.substring(0, braceIdx);
-            const bodyPart = match.substring(braceIdx);
-            
-            const scopedSelectors = selectorPart.split(',').map(sel => {
-                sel = sel.trim();
-                if (sel === 'body' || sel === 'html') {
-                    return '#app';
-                }
-                if (sel.startsWith('@') || sel.startsWith('to') || sel.startsWith('from') || /^\d+%/.test(sel)) {
-                    return sel;
-                }
-                return `#app ${sel}`;
-            });
-            
-            return scopedSelectors.join(', ') + ' ' + bodyPart;
-        });
-        
-        styleEl.innerHTML = scopedCss;
-        document.head.appendChild(styleEl);
-        cleanedTemplateText = templateText.replace(/<style>[\s\S]*?<\/style>/, "");
-    }
-
-    // Canvas sync helper
-    function syncCanvases() {
-        const canvases = container.querySelectorAll("canvas");
-        for (const canvas of canvases) {
-            const id = canvas.id;
-            if (!id) continue;
-            const pixels = app.get_canvas_pixels(id);
-            if (pixels) {
-                const width = app.get_canvas_width(id);
-                const height = app.get_canvas_height(id);
-                if (width > 0 && height > 0) {
-                    canvas.width = width;
-                    canvas.height = height;
-                    const ctx = canvas.getContext("2d");
-                    const imgData = ctx.createImageData(width, height);
-                    imgData.data.set(new Uint8ClampedArray(pixels));
-                    ctx.putImageData(imgData, 0, 0);
-                }
-            }
+    // 3. Rendering: patch the document to the app's view.
+    const parser = new DOMParser();
+    let lastHtml = null;
+    function render(force = false) {
+        let html;
+        try {
+            html = app.view_html();
+        } catch (e) {
+            showError(templateError ?? String(e));
+            return;
         }
-    }
-
-    // Initialize Nunjucks environment and pre-compile the template
-    const loaderPath = templateBaseDir || '.';
-    window.nunjucksEnv = new nunjucks.Environment(new nunjucks.WebLoader(loaderPath));
-    window.nunjucksEnv.addFilter('format', function(val, fmt) {
-        const fmtStr = val;
-        const num = fmt;
-        if (typeof fmtStr === 'string' && fmtStr.includes("{:.0}")) {
-            return Math.round(num);
+        if (templateError) {
+            showError(templateError);
+        } else {
+            clearError();
         }
-        if (typeof fmtStr === 'string' && fmtStr.includes("{:.1}")) {
-            return num.toFixed(1);
+        if (force || html !== lastHtml) {
+            lastHtml = html;
+            morph(doc.body, parser.parseFromString(html, "text/html").body);
         }
-        if (typeof fmtStr === 'string' && fmtStr.includes("{:.2}")) {
-            return num.toFixed(2);
-        }
-        return num;
-    });
-    const env = window.nunjucksEnv;
-    const compiledTemplate = nunjucks.compile(cleanedTemplateText, env);
-
-    let lastRenderedHtml = "";
-
-    // 2. Render function
-    function render() {
-        const stateJson = app.get_state_json();
-        const state = JSON.parse(stateJson);
-        const rendered = compiledTemplate.render(state);
-        
-        if (rendered !== lastRenderedHtml) {
-            const savedFocus = saveFocus();
-            const savedScrolls = saveScrollPositions(container);
-            
-            container.innerHTML = rendered;
-            lastRenderedHtml = rendered;
-            
-            restoreScrollPositions(container, savedScrolls);
-            restoreFocus(savedFocus);
-        }
-        
         syncCanvases();
-        
         if (onStateUpdate) {
-            onStateUpdate(state);
+            onStateUpdate(JSON.parse(app.get_state_json()));
         }
     }
 
-    // 3. Attach event listeners
-    // Click events (via delegation)
-    const clickHandler = (event) => {
-        console.log("DOM Clicked target:", event.target);
-        const target = event.target.closest("[data-on-click]");
-        if (target) {
-            const action = target.getAttribute("data-on-click");
-            console.log("Matched data-on-click action:", action);
-            if (action) {
-                const changed = app.update(action);
-                console.log("app.update returned changed:", changed);
-                if (onMessageSent) {
-                    onMessageSent(action);
-                }
-                if (changed) {
-                    render();
-                }
-            }
+    function send(message) {
+        const changed = app.update(message);
+        if (onMessageSent) {
+            onMessageSent(message);
+        }
+        if (changed) {
+            render();
+        }
+    }
+
+    function syncCanvases() {
+        for (const canvas of doc.querySelectorAll("canvas[id]")) {
+            const pixels = app.get_canvas_pixels(canvas.id);
+            const width = app.get_canvas_width(canvas.id);
+            const height = app.get_canvas_height(canvas.id);
+            if (!pixels || width === 0 || height === 0) continue;
+            canvas.width = width;
+            canvas.height = height;
+            const image = canvas.getContext("2d").createImageData(width, height);
+            image.data.set(new Uint8ClampedArray(pixels));
+            canvas.getContext("2d").putImageData(image, 0, 0);
+        }
+    }
+
+    // 4. Size, for the model's `on_resize` and `@media`.
+    const resize = () => {
+        if (app.set_size(doc.documentElement.clientWidth, doc.documentElement.clientHeight)) {
+            render();
         }
     };
-    container.addEventListener("mousedown", clickHandler);
+    listen(win, "resize", resize);
 
-    // Keypress for text input characters (to support character-by-character updates)
-    const keypressHandler = (event) => {
+    // 5. Input: the elements' messages, as text.
+    listen(doc, "click", (event) => {
+        const el = event.target.closest?.("[data-on-click]");
+        if (el) {
+            send(el.getAttribute("data-on-click"));
+        }
+    });
+    // `mouseenter`/`mouseleave` reach a capturing listener once per element
+    // entered or left: entering a child doesn't leave its parent.
+    for (const [type, attribute] of [["mouseenter", "data-on-hover"], ["mouseleave", "data-on-hover-out"]]) {
+        listen(doc, type, (event) => {
+            const message = event.target.getAttribute?.(attribute);
+            if (message) {
+                send(message);
+            }
+        }, true);
+    }
+
+    // Text inputs: the model owns their text.
+    listen(doc, "keypress", (event) => {
         const target = event.target;
-        if (target && target.tagName === "INPUT" && target.type === "text") {
-            const id = target.id;
-            const char = event.key;
-            if (char && char.length === 1) {
-                const action = `${id}:text:${char}`;
-                const changed = app.update(action);
-                if (onMessageSent) {
-                    onMessageSent(action);
-                }
-                if (changed) {
-                    render();
-                }
-                event.preventDefault(); // Let state control the input value
-            }
-        }
-    };
-    container.addEventListener("keypress", keypressHandler);
-
-    // Keydown for text inputs (Backspace, Enter, Arrow keys)
-    const keydownHandler = (event) => {
-        const target = event.target;
-        if (target && target.tagName === "INPUT" && target.type === "text") {
-            const keys = ["Backspace", "Enter", "ArrowUp", "ArrowDown"];
-            if (keys.includes(event.key)) {
-                const action = `keydown:${event.key}`;
-                const changed = app.update(action);
-                if (onMessageSent) {
-                    onMessageSent(action);
-                }
-                if (changed) {
-                    render();
-                }
-                event.preventDefault();
-            }
-        }
-    };
-    container.addEventListener("keydown", keydownHandler);
-
-    // Global Keydown for general keyboard navigation & game controls
-    const globalKeydownHandler = (event) => {
-        if (document.activeElement && document.activeElement.tagName === "INPUT") {
-            return;
-        }
-        const keys = ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", "Space", "Escape"];
-        let keyName = event.key;
-        if (keyName === " ") keyName = "Space";
-        
-        if (keys.includes(keyName)) {
-            const action = `keydown:${keyName}`;
-            const changed = app.update(action);
-            if (onMessageSent) {
-                onMessageSent(action);
-            }
-            if (changed) {
-                render();
-            }
+        if (target.tagName === "INPUT" && target.type === "text" && event.key.length === 1) {
+            send(`${target.id}:text:${event.key}`);
             event.preventDefault();
         }
-    };
-
-    // Global Keyup for game controls (so keys_held gets updated correctly)
-    const globalKeyupHandler = (event) => {
-        if (document.activeElement && document.activeElement.tagName === "INPUT") {
-            return;
-        }
-        const keys = ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", "Space", "Escape"];
-        let keyName = event.key;
-        if (keyName === " ") keyName = "Space";
-        
-        if (keys.includes(keyName)) {
-            const action = `keyup:${keyName}`;
-            const changed = app.update(action);
-            if (onMessageSent) {
-                onMessageSent(action);
-            }
-            if (changed) {
-                render();
-            }
+    });
+    const keys = ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", "Space", "Escape", "Backspace"];
+    const keyName = (event) => (event.key === " " ? "Space" : event.key);
+    listen(doc, "keydown", (event) => {
+        const inInput = event.target.tagName === "INPUT";
+        const name = keyName(event);
+        if (keys.includes(name) && (!inInput || ["Backspace", "Enter", "ArrowUp", "ArrowDown"].includes(name))) {
+            send(`keydown:${name}`);
             event.preventDefault();
         }
-    };
-    
-    document.addEventListener("keydown", globalKeydownHandler);
-    document.addEventListener("keyup", globalKeyupHandler);
+    });
+    listen(doc, "keyup", (event) => {
+        const name = keyName(event);
+        if (event.target.tagName !== "INPUT" && keys.includes(name)) {
+            send(`keyup:${name}`);
+            event.preventDefault();
+        }
+    });
 
-    // 4. Timers, subscriptions and frames: poll the runtime every frame
-    let animationFrameId;
-    function frame() {
+    // 6. Timers, subscriptions and frames (transition messages too: the
+    // runtime follows the transitions of the compiled template).
+    let frameId;
+    const frame = () => {
         if (app.poll()) {
             render();
         }
-        animationFrameId = requestAnimationFrame(frame);
-    }
-
-    // Initial render
-    render();
-    animationFrameId = requestAnimationFrame(frame);
-
-    // Return cleanup function to destroy the app when switching
-    return () => {
-        cancelAnimationFrame(animationFrameId);
-        container.removeEventListener("mousedown", clickHandler);
-        container.removeEventListener("keypress", keypressHandler);
-        container.removeEventListener("keydown", keydownHandler);
-        document.removeEventListener("keydown", globalKeydownHandler);
-        document.removeEventListener("keyup", globalKeyupHandler);
+        frameId = win.requestAnimationFrame(frame);
     };
+
+    resize();
+    const templateTimer = setInterval(loadTemplate, 1000);
+    loadTemplate().then(() => {
+        frameId = win.requestAnimationFrame(frame);
+    });
+
+    return () => {
+        win.cancelAnimationFrame(frameId);
+        clearInterval(templateTimer);
+        listeners.forEach((remove) => remove());
+    };
+}
+
+/** The template at `url` and the files it includes, by path, fetched fresh. */
+async function templateFiles(url, files = {}) {
+    if (url.pathname in files) return files;
+    const response = await fetch(url, { cache: "no-store" });
+    if (!response.ok) throw new Error(`${url.pathname}: ${response.status}`);
+    const text = await response.text();
+    files[url.pathname] = text;
+    for (const m of text.matchAll(/\{%[-+~]?\s*include\s+["']([^"']+)["']\s*[-+~]?%\}/g)) {
+        await templateFiles(new URL(m[1], url), files);
+    }
+    return files;
+}
+
+/** Makes element `from` match `to`: attributes, then children. */
+function morph(from, to) {
+    for (const attr of [...from.attributes]) {
+        if (!to.hasAttribute(attr.name)) from.removeAttribute(attr.name);
+    }
+    for (const attr of to.attributes) {
+        if (from.getAttribute(attr.name) !== attr.value) from.setAttribute(attr.name, attr.value);
+    }
+    if (from.tagName === "INPUT") {
+        // The attributes set an input's initial state; what it shows lives in properties.
+        const value = to.getAttribute("value") ?? "";
+        if (from.value !== value) from.value = value;
+        from.checked = to.hasAttribute("checked");
+    }
+    morphChildren(from, to);
+}
+
+/** Makes the children of `from` match those of `to`, keeping elements of
+ * the same key (and tag) wherever they move, and text in place. */
+function morphChildren(from, to) {
+    const keyed = new Map();
+    for (const child of from.children) {
+        if (child.dataset.xk) keyed.set(child.dataset.xk, child);
+    }
+    let cursor = from.firstChild;
+    for (const next of [...to.childNodes]) {
+        let match = null;
+        if (next.nodeType === Node.ELEMENT_NODE) {
+            const old = keyed.get(next.getAttribute("data-xk"));
+            if (old && old.tagName === next.tagName) {
+                match = old;
+                keyed.delete(next.getAttribute("data-xk"));
+            }
+        } else if (cursor && cursor.nodeType === next.nodeType) {
+            match = cursor;
+        }
+        if (!match) {
+            from.insertBefore(from.ownerDocument.importNode(next, true), cursor);
+            continue;
+        }
+        if (match === cursor) {
+            cursor = cursor.nextSibling;
+        } else {
+            from.insertBefore(match, cursor);
+        }
+        if (next.nodeType === Node.ELEMENT_NODE) {
+            morph(match, next);
+        } else if (match.nodeValue !== next.nodeValue) {
+            match.nodeValue = next.nodeValue;
+        }
+    }
+    while (cursor) {
+        const following = cursor.nextSibling;
+        from.removeChild(cursor);
+        cursor = following;
+    }
 }

@@ -123,7 +123,7 @@ pub mod __private {
     pub use taffy::NodeId;
     pub use crate::__if_interpret as if_interpret;
     #[cfg(feature = "interpret")]
-    pub use xerune_template::{FromValue, Methods as TemplateMethods, Value, to_value};
+    pub use xerune_template::{FromValue, Methods as TemplateMethods, Template, Value, render_html, to_value};
 
     /// A `data-on-click` argument as the message field's type `T`: the
     /// value itself, a reference to it (`&String` for a `String` field), or

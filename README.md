@@ -124,6 +124,9 @@ Open your browser to:
 - **Standalone Web Runner**: [http://localhost:8000/examples/standalone.html?app=music_player](http://localhost:8000/examples/standalone.html?app=music_player)  
   *(Available apps: `music_player`, `todo`, `calculator`, `breakout`, `animation`, `animation_css`, `showcase`)*
 
+The page interprets the templates from disk: edit one and save, and the view
+updates within a second, without rebuilding the wasm (see `docs/guide.md`, section 10).
+
 ## License
 
 Licensed under the MIT License.
