@@ -37,6 +37,7 @@ fn start<M: Model + ui::TemplateLayout>(model: M) -> Runtime<M, Measurer> {
     runtime
 }
 
+/// Within half a pixel: layout places boxes at whole pixels.
 fn close(a: f32, b: f32) -> bool {
     (a - b).abs() < 0.6
 }
@@ -199,4 +200,41 @@ fn the_shorthand_reads_names_and_functions() {
     runtime.tick_at_ms(250);
     let reds: Vec<u8> = boxes(&runtime).into_iter().map(|(_, c)| c.0).collect();
     assert!((63..=64).contains(&reds[0]) && (127..=128).contains(&reds[1]), "{reds:?}");
+}
+
+#[derive(XeruneTemplate)]
+#[template(source = r#"<style>
+  body { margin: 0; }
+  @keyframes fade { from { background-color: #000000; } to { background-color: #ff0000; } }
+  div { width: 10px; height: 10px; background-color: #0000ff; }
+  .on { animation: fade 1s linear; }
+</style>
+<main><div class="{% if on %}on{% endif %}"></div></main>"#)]
+struct Toggle {
+    on: bool,
+}
+
+impl Model for Toggle {
+    type Message = Msg;
+    fn update(&mut self, msg: Msg, _context: &mut Context) {
+        if msg == Msg::Touch {
+            self.on = true;
+        }
+    }
+}
+
+/// An animation starts when its element gets it, not at the last tick:
+/// backends don't tick while nothing animates, so after an idle spell the
+/// first tick must not count the idle time. (Real time: the runtime's own
+/// clock.)
+#[test]
+fn animations_start_when_declared_not_at_the_last_tick() {
+    let mut runtime = Runtime::new(Toggle { on: false }, Measurer);
+    runtime.set_size(400.0, 300.0);
+    runtime.tick();
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    runtime.handle_event(InputEvent::Message("touch".into()));
+    runtime.tick();
+    let (_, (r, _, _)) = boxes(&runtime)[0];
+    assert!(r < 40, "the animation is barely started, not 300 ms in: red {r}");
 }

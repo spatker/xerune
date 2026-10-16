@@ -29,14 +29,16 @@ pub struct ActiveAnimation {
     pub play_state: Arc<str>,
     /// Elapsed duration since animation start.
     pub elapsed: core::time::Duration,
+    /// The time `elapsed` runs up to.
+    pub updated: crate::runtime::time::Instant,
     /// Flags if the animation sequence has completed all iterations.
     pub is_finished: bool,
 }
 
 impl ActiveAnimation {
     /// The animation `name` an element with `style` (at `node_id`) declares,
-    /// from its start.
-    pub(crate) fn new(node_id: NodeId, name: Arc<str>, style: &ContainerStyle) -> Self {
+    /// starting `now`.
+    pub(crate) fn new(node_id: NodeId, name: Arc<str>, style: &ContainerStyle, now: crate::runtime::time::Instant) -> Self {
         ActiveAnimation {
             node_id,
             name,
@@ -48,6 +50,7 @@ impl ActiveAnimation {
             fill_mode: style.animation_fill_mode.clone(),
             play_state: style.animation_play_state.clone(),
             elapsed: core::time::Duration::ZERO,
+            updated: now,
             is_finished: false,
         }
     }

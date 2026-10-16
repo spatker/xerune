@@ -535,7 +535,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
         }
         Runtime::<M, R>::sync_canvases(&self.ui, &mut self.context);
         self.restore_scroll();
-        self.animate(core::time::Duration::ZERO);
+        self.animate(None);
     }
 
     /// Sends an element's message (`data-on-click`, `data-on-hover`) to the
@@ -553,17 +553,19 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
         }
     }
 
-    /// Moves the view's keyframe animations on by `dt` and applies them.
+    /// Moves the view's keyframe animations on to `now` and applies them.
     /// Animations are kept by element key: one starts when an element
-    /// declares an animation (or another name), and goes on through
-    /// rebuilds. Called with no time after a build, so a rebuilt view shows
-    /// its animations right away. Returns true if anything was set.
-    fn animate(&mut self, dt: core::time::Duration) -> bool {
+    /// declares an animation (or another name), at the clock's current
+    /// time, and goes on through rebuilds. Called without a time after a
+    /// build, so a rebuilt view shows its animations right away. Returns
+    /// true if anything was set.
+    fn animate(&mut self, now: Option<Instant>) -> bool {
         // In the browser (the studio), the page shows the template as HTML
         // and the browser runs its animations; nothing draws these styles.
         if cfg!(target_arch = "wasm32") || (self.ui.keyframes.is_empty() && self.active_animations.is_empty()) {
             return false;
         }
+        let start = now.unwrap_or_else(|| self.clock_now());
         let mut declared = HashSet::new();
         for (node, data) in &self.ui.render_data {
             let (Some(name), Some(&key)) = (&data.style.animation_name, self.ui.keys.get(node)) else { continue };
@@ -574,7 +576,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
                     active.play_state = data.style.animation_play_state.clone();
                 }
                 _ => {
-                    self.active_animations.insert(key, ActiveAnimation::new(node, name.clone(), &data.style));
+                    self.active_animations.insert(key, ActiveAnimation::new(node, name.clone(), &data.style, start));
                 }
             }
         }
@@ -585,8 +587,11 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
         let mut applied = false;
         let mut layout_affected = false;
         for active in self.active_animations.values_mut() {
-            if active.is_running() {
-                active.elapsed += dt;
+            if let Some(now) = now {
+                if active.is_running() {
+                    active.elapsed += now.saturating_duration_since(active.updated);
+                }
+                active.updated = now;
             }
             let (Some((base_layout, base_style)), Some(keyframes)) = (self.ui.base_styles.get(active.node_id), self.ui.keyframes.get(&*active.name)) else {
                 continue;
@@ -811,6 +816,13 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
 
     /// Evaluates animations and timers using the specified millisecond elapsed time duration.
     pub fn tick_at_ms(&mut self, now_ms: u64) -> TickResult {
+        if self.ms_clock_anchor.is_none() {
+            // Animations declared before the host's clock started (while the
+            // view was set up) start at its first timestamp.
+            for active in self.active_animations.values_mut() {
+                active.updated = self.last_tick_time;
+            }
+        }
         let (anchor_ms, anchor) = *self.ms_clock_anchor.get_or_insert((now_ms, self.last_tick_time));
         let now = anchor + core::time::Duration::from_millis(now_ms.saturating_sub(anchor_ms));
         self.tick_with_time(now)
@@ -865,10 +877,8 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
             self.drain_pending_timers(now);
         }
 
-        let dt = now.duration_since(self.last_tick_time);
         self.last_tick_time = now;
-
-        needs_redraw |= self.animate(dt);
+        needs_redraw |= self.animate(Some(now));
 
         let target_frame_duration = core::time::Duration::from_nanos((1_000_000_000.0 / self.target_fps as f64) as u64);
         
