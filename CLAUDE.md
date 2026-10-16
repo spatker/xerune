@@ -122,6 +122,7 @@ not gcc-arm or `cargo check`: it links against the boards' glibc 2.39):
 
 - Text: inline elements (`<b>`, `<span>`) are separate flex items, not one inline formatting context (`known_gaps::text_flows_around_inline_elements`). No OpenType shaping: fontdue ignores GPOS kerning (`known_gaps::gpos_kerning_narrows_lines`) and font features (`proportional-nums`; the calculator's right-aligned tabular digits shift as in Chromium), no complex scripts or bidi; `harfrust` is the planned shaper behind `TextMeasurer::shape`. Thai/Lao/Khmer/Myanmar break only at spaces.
 - `:first-child` / `+` selectors don't see through `{% for %}` / `{% if %}`.
+- `data-on-hover` / `data-on-hover-out` are not implemented (`known_gaps::hover_sends_the_elements_hover_messages`); the music player's rows rely on them.
 - Images: PNG only.
 - Borders: per-side width/color/style, but every style is drawn solid (no
   dashed/dotted/double/3D); `z-index` stacking is simplified (see

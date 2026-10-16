@@ -47,6 +47,9 @@
 
     <div class="track-list">
         {% for track in tracks %}
+        <!-- FIXME: data-on-hover/-out are not implemented yet
+             (known_gaps::hover_sends_the_elements_hover_messages), so rows
+             don't highlight under the pointer. -->
         <div id="track-{{ track.id }}" data-on-click="select_track:{{ track.id }}" data-on-hover="hover_track:{{ track.id }}"
             data-on-hover-out="unhover_track"
             class="track {% if track.id == hovered_track %}hovered{% elif loop.index0 == active_list_index %}active{% endif %}">

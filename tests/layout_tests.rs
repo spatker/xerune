@@ -1306,6 +1306,40 @@ mod known_gaps {
     use std::collections::HashMap;
     use xerune::*;
 
+    #[derive(Debug, Clone, PartialEq, XeruneMessage)]
+    enum HoverMsg {
+        Enter(usize),
+        Leave,
+    }
+
+    #[derive(XeruneTemplate)]
+    #[template(source = r#"<body style="margin: 0px">
+        <div style="height: 20px" data-on-hover="enter:{{ index }}" data-on-hover-out="leave">row</div>
+    </body>"#)]
+    struct HoverModel {
+        index: usize,
+        received: Vec<HoverMsg>,
+    }
+
+    impl Model for HoverModel {
+        type Message = HoverMsg;
+        fn update(&mut self, msg: HoverMsg, _context: &mut Context) {
+            self.received.push(msg);
+        }
+    }
+
+    /// The music player's track list uses these to highlight the row under
+    /// the pointer.
+    #[test]
+    #[ignore = "FIXME: data-on-hover / data-on-hover-out are not compiled; Hover events reach no element"]
+    fn hover_sends_the_elements_hover_messages() {
+        let mut runtime = Runtime::new(HoverModel { index: 3, received: Vec::new() }, CharMeasurer);
+        crate::set_size(&mut runtime, 200.0, 200.0);
+        runtime.handle_event(InputEvent::Hover { x: 10.0, y: 10.0 });
+        runtime.handle_event(InputEvent::Hover { x: 10.0, y: 100.0 });
+        assert_eq!(runtime.model().received, [HoverMsg::Enter(3), HoverMsg::Leave]);
+    }
+
     /// 8px per character, so long text really is long.
     struct CharMeasurer;
     impl TextMeasurer for CharMeasurer {
