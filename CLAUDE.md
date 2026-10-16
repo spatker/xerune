@@ -29,7 +29,7 @@ the working notes.
    viewport didn't change. Rebuild = generated `build_ui` → `UiBuilder` →
    style resolution → fresh Taffy tree.
 3. Taffy layout → walk → absolute `DrawCommand`s (rects, text, images,
-   checkbox/slider/progress, canvas, clip push/pop).
+   check marks, canvas, clip push/pop).
 4. `Renderer` (normally `xerune_render`) draws into a `u32` buffer; the backend presents it.
 
 Modules:
