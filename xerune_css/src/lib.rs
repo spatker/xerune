@@ -10,6 +10,8 @@ extern crate alloc;
 
 pub mod media;
 pub mod pseudo;
+pub mod selector;
+pub mod sheet;
 pub mod text;
 
 pub use pseudo::{rewrite_part_rules, ControlPart};
