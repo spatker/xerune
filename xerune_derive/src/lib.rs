@@ -837,6 +837,9 @@ fn generate_attr_string_code(nodes: &[Node<'_>], local_vars: &HashSet<String>) -
 struct MacroElementWrapper {
     handle: Handle,
     active_classes: HashSet<String>,
+    /// Conditional classes taken as set in this matching pass, by element
+    /// (`handle_id`); the others are taken as unset.
+    assumed: std::rc::Rc<HashMap<usize, HashSet<String>>>,
     /// Whether a `checked="{{ ... }}"` is taken as checked in this
     /// matching pass (a literal `checked` speaks for itself).
     checked: bool,
@@ -853,9 +856,16 @@ struct MacroElementWrapper {
 
 impl MacroElementWrapper {
     fn new(handle: Handle) -> Self {
+        Self::with_assumed(handle, Default::default())
+    }
+
+    fn with_assumed(handle: Handle, assumed: std::rc::Rc<HashMap<usize, HashSet<String>>>) -> Self {
         let opaque = is_template_element(&handle);
+        let mut active_classes = get_static_classes(&handle);
+        active_classes.extend(assumed.get(&handle_id(&handle)).into_iter().flatten().cloned());
         MacroElementWrapper {
-            active_classes: get_static_classes(&handle),
+            active_classes,
+            assumed,
             handle,
             checked: false,
             opaque,
@@ -867,7 +877,7 @@ impl MacroElementWrapper {
     /// The element `handle` related to this one, `distance` levels up from
     /// the element being styled, in the same matching pass.
     fn relative(&self, handle: Handle, distance: u32) -> Self {
-        MacroElementWrapper { distance, pointer: self.pointer, ..MacroElementWrapper::new(handle) }
+        MacroElementWrapper { distance, pointer: self.pointer, ..MacroElementWrapper::with_assumed(handle, self.assumed.clone()) }
     }
 
     /// The element sibling `step` (-1 or 1) nodes away. Inside a loop's or
@@ -916,6 +926,15 @@ thread_local! {
     /// its `<template>` so selector matching can walk up through
     /// `{% for %}`/`{% if %}` wrappers.
     static TEMPLATE_OWNERS: RefCell<HashMap<usize, Handle>> = RefCell::new(HashMap::new());
+
+    /// The conditional classes of the elements compiled so far, by element
+    /// (`Rc` pointer of its handle): each class and the `bool` variable the
+    /// element's code binds it to, in scope for its descendants' code.
+    static CLASS_VARS: RefCell<HashMap<usize, Vec<(String, String)>>> = RefCell::new(HashMap::new());
+}
+
+fn handle_id(handle: &Handle) -> usize {
+    std::rc::Rc::as_ptr(handle) as usize
 }
 
 fn record_template_owners(handle: &Handle) {
@@ -1360,17 +1379,47 @@ fn compile_dom_node<'a>(
             // Standard Element styling logic
             let class_attr = attrs.borrow().iter().find(|a| a.name.local.as_ref() == "class").map(|a| a.value.to_string());
             let mut static_classes = HashSet::new();
-            let mut conditional_classes = Vec::new();
+            // Each conditional class, with the test of whichever branches set it.
+            let mut conditional_classes: Vec<(String, Vec<String>)> = Vec::new();
 
             if let Some(ref class_val) = class_attr {
                 let parsed_classes = get_classes_and_conditions(class_val, local_vars);
                 for (cls, cond_opt) in parsed_classes {
-                    if let Some(cond) = cond_opt {
-                        conditional_classes.push((cls, cond));
-                    } else {
-                        static_classes.insert(cls);
+                    match cond_opt {
+                        Some(cond) => match conditional_classes.iter_mut().find(|(c, _)| *c == cls) {
+                            Some((_, conds)) => conds.push(cond),
+                            None => conditional_classes.push((cls, vec![cond])),
+                        },
+                        None => {
+                            static_classes.insert(cls);
+                        }
                     }
                 }
+            }
+            conditional_classes.retain(|(cls, _)| !static_classes.contains(cls));
+            // Bound to variables here, so the rules of descendants, whose
+            // code is nested in this element's, can test them too.
+            let mut class_bindings = Vec::new();
+            let mut class_vars = Vec::new();
+            for (cls, conds) in &conditional_classes {
+                let var = format!("__class_{}", next_site());
+                let ident = syn::Ident::new(&var, proc_macro2::Span::call_site());
+                let test: proc_macro2::TokenStream = conds.iter().map(|c| format!("({c})")).collect::<Vec<_>>().join(" || ").parse().unwrap();
+                class_bindings.push(quote! { let #ident: bool = #test; });
+                class_vars.push((cls.clone(), var));
+            }
+            CLASS_VARS.with(|m| m.borrow_mut().insert(handle_id(handle), class_vars));
+            // The conditional classes of the element and its ancestors.
+            let mut chain_classes: Vec<(usize, String, String)> = Vec::new();
+            let mut ancestor = Some(handle.clone());
+            while let Some(element) = ancestor {
+                let id = handle_id(&element);
+                CLASS_VARS.with(|m| {
+                    for (cls, var) in m.borrow().get(&id).into_iter().flatten() {
+                        chain_classes.push((id, cls.clone(), var.clone()));
+                    }
+                });
+                ancestor = dom_parent(&element);
             }
 
             // A `checked="{{ ... }}"` (what `{% if c %}checked{% endif %}`
@@ -1378,54 +1427,60 @@ fn compile_dom_node<'a>(
             // `parse_attributes_generic` reads it; `:checked` rules apply
             // under that condition.
             let dynamic_checked = attrs.borrow().iter().position(|a| a.name.local.as_ref() == "checked" && is_dynamic(a.value.as_ref()));
-            let checked_condition = dynamic_checked.map(|_| "_dyn_checked".to_string());
 
             let has_parts = matches!(tag, "input" | "progress");
             let mut matched_rules = Vec::new();
             for GuardedRule { rule, guard } in rules {
-                let mut wrapper = MacroElementWrapper::new(handle.clone());
-                wrapper.active_classes = static_classes.clone();
-                wrapper.distance = 0;
                 // Only form controls have parts (`*::-moz-range-thumb`).
                 let part = match rule.selector.pseudo_element() {
                     None => None,
                     Some(PseudoElement::Part(part)) if has_parts || !part.of_form_control() => Some(part),
                     Some(_) => continue,
                 };
+                // What is only known at runtime and the rule tests: the
+                // conditional classes it names, and a dynamic `checked`.
+                let classes: Vec<&(usize, String, String)> = chain_classes.iter().filter(|(_, cls, _)| rule.selector.mentions_class(cls)).take(10).collect();
+                let checked = dynamic_checked.is_some() && rule.selector.uses_state(xerune_css::selector::State::Checked);
+                let unknowns = classes.len() + checked as usize;
+                // Whether it matches (and under which pointer condition)
+                // with each combination of them set.
+                let outcomes: Vec<Option<Option<String>>> = (0..1usize << unknowns).map(|set| {
+                    let mut assumed: HashMap<usize, HashSet<String>> = HashMap::new();
+                    for (i, (id, cls, _)) in classes.iter().enumerate() {
+                        if set & (1 << i) != 0 {
+                            assumed.entry(*id).or_default().insert(cls.clone());
+                        }
+                    }
+                    let mut wrapper = MacroElementWrapper::with_assumed(handle.clone(), std::rc::Rc::new(assumed));
+                    wrapper.distance = 0;
+                    wrapper.checked = checked && set & (1 << classes.len()) != 0;
+                    pointer_match(&rule.selector, &mut wrapper)
+                }).collect();
+                // Leave out the unknowns the outcome doesn't depend on.
+                let relevant: Vec<usize> = (0..unknowns).filter(|&i| (0..outcomes.len()).any(|set| outcomes[set] != outcomes[set ^ (1 << i)])).collect();
+                let tests: Vec<String> = classes.iter().map(|(_, _, var)| var.clone()).chain(checked.then(|| "_dyn_checked".to_string())).collect();
+                let mut conditions: Vec<(Option<String>, Vec<String>)> = Vec::new();
+                let irrelevant: usize = (0..unknowns).filter(|i| !relevant.contains(i)).map(|i| 1 << i).sum();
+                // One combination per assignment of the relevant ones.
+                for (set, outcome) in outcomes.iter().enumerate().filter(|(set, _)| set & irrelevant == 0) {
+                    let Some(pointer) = outcome else { continue };
+                    let literals: Vec<String> = relevant.iter().map(|&i| if set & (1 << i) != 0 { tests[i].clone() } else { format!("!{}", tests[i]) }).collect();
+                    match conditions.iter_mut().find(|(p, _)| p == pointer) {
+                        Some((_, alternatives)) => alternatives.push(literals.join(" && ")),
+                        None => conditions.push((pointer.clone(), vec![literals.join(" && ")])),
+                    }
+                }
                 let declarations: Vec<(String, String, bool)> = rule.declarations.iter()
                     .map(|d| (d.name.clone(), d.value.clone(), d.important))
                     .collect();
-                let mut push = |condition: Option<String>| matched_rules.push(MatchedRule {
-                    part,
-                    declarations: declarations.clone(),
-                    condition,
-                    media_guard: guard.clone(),
-                });
-
-                if let Some(condition) = pointer_match(&rule.selector, &mut wrapper) {
-                    push(condition);
-                    continue;
-                }
-                for (cls, cond) in &conditional_classes {
-                    let mut active = static_classes.clone();
-                    active.insert(cls.clone());
-                    wrapper.active_classes = active;
-                    wrapper.checked = false;
-                    if let Some(condition) = pointer_match(&rule.selector, &mut wrapper) {
-                        push(and_condition(Some(cond.clone()), condition));
-                    } else if let Some(checked) = &checked_condition {
-                        wrapper.checked = true;
-                        if let Some(condition) = pointer_match(&rule.selector, &mut wrapper) {
-                            push(and_condition(Some(format!("({cond}) && ({checked})")), condition));
-                        }
-                    }
-                }
-                if let Some(checked) = &checked_condition {
-                    wrapper.active_classes = static_classes.clone();
-                    wrapper.checked = true;
-                    if let Some(condition) = pointer_match(&rule.selector, &mut wrapper) {
-                        push(and_condition(Some(checked.clone()), condition));
-                    }
+                for (pointer, alternatives) in conditions {
+                    let known = (!relevant.is_empty()).then(|| alternatives.iter().map(|a| format!("({a})")).collect::<Vec<_>>().join(" || "));
+                    matched_rules.push(MatchedRule {
+                        part,
+                        declarations: declarations.clone(),
+                        condition: and_condition(known, pointer),
+                        media_guard: guard.clone(),
+                    });
                 }
             }
 
@@ -1540,6 +1595,7 @@ fn compile_dom_node<'a>(
                 None => quote! { ::xerune::__private::element_key(__parent_key, #site) },
             };
             quote! {
+                #(#class_bindings)*
                 let __key = #key;
                 let __pointer = builder.pointer_level(__key, __parent_pointer);
                 let (el, node) = {
@@ -1822,6 +1878,7 @@ pub fn derive_xerune_template(input: TokenStream) -> TokenStream {
     std::panic::set_hook(prev_hook);
     CURRENT_TEMPLATE.with(|cur| cur.borrow_mut().take());
     TEMPLATE_OWNERS.with(|m| m.borrow_mut().clear());
+    CLASS_VARS.with(|m| m.borrow_mut().clear());
 
     match result {
         Ok(tokens) => tokens.into(),

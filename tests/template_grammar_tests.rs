@@ -160,3 +160,50 @@ fn comments_hide_quotes_and_expressions() {
     let t = texts(model(true, None, "T"));
     assert_eq!(count(&t, "quoted-T"), 1, "{t:?}");
 }
+
+/// Selectors that test classes set by `{% if %}` are decided at runtime,
+/// on the element itself and on its ancestors, alone or together.
+#[derive(XeruneTemplate)]
+#[template(source = r#"<style>
+  p { color: #000000; }
+  .open .child { color: #ff0000; }
+  .x.y { color: #00ff00; }
+  .x:not(.y) { color: #0000ff; }
+  .row.on > .cell { color: #ffff00; }
+</style>
+<div class="{% if open %}open{% endif %}"><section><p class="child">descendant</p></section></div>
+<p class="{% if x %}x{% endif %} {% if y %}y{% endif %}">both</p>
+{% for on in rows %}<div class="row {% if on %}on{% endif %}"><p class="cell">cell-{{ loop.index }}</p></div>{% endfor %}"#)]
+struct ConditionalClasses {
+    open: bool,
+    x: bool,
+    y: bool,
+    rows: Vec<bool>,
+}
+
+impl Model for ConditionalClasses {
+    type Message = Msg;
+    fn update(&mut self, _msg: Self::Message, _context: &mut Context<Self::Message>) {}
+}
+
+fn colors(model: ConditionalClasses) -> Vec<(String, (u8, u8, u8))> {
+    let mut runtime = Runtime::new(model, MockMeasurer);
+    runtime.compute_layout(taffy::geometry::Size::MAX_CONTENT);
+    let mut out: Vec<_> = runtime.ui.render_data.values().filter_map(|d| match &d.kind {
+        RenderKind::Text(t) => Some((t.to_string(), (d.style.color.r, d.style.color.g, d.style.color.b))),
+        _ => None,
+    }).collect();
+    out.sort();
+    out
+}
+
+#[test]
+fn conditional_classes_match_on_elements_and_ancestors() {
+    let black = (0, 0, 0);
+    let all_off = colors(ConditionalClasses { open: false, x: false, y: false, rows: vec![false, true] });
+    assert_eq!(all_off, [("both".into(), black), ("cell-1".into(), black), ("cell-2".into(), (255, 255, 0)), ("descendant".into(), black)]);
+    let on = colors(ConditionalClasses { open: true, x: true, y: false, rows: vec![] });
+    assert_eq!(on, [("both".into(), (0, 0, 255)), ("descendant".into(), (255, 0, 0))], ":not(.y) holds while y is unset");
+    let both = colors(ConditionalClasses { open: false, x: true, y: true, rows: vec![] });
+    assert_eq!(both[0], ("both".into(), (0, 255, 0)), ".x.y needs both conditional classes");
+}

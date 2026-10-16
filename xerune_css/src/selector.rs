@@ -244,6 +244,18 @@ impl Selector {
         })
     }
 
+    /// Whether matching can depend on whether an element has `class`: the
+    /// selector names it, or tests the `class` attribute.
+    pub fn mentions_class(&self, class: &str) -> bool {
+        self.compounds.iter().flat_map(|c| &c.conditions).any(|condition| match condition {
+            Condition::Class(c) => c == class,
+            Condition::Attribute { name, .. } => name == "class",
+            Condition::Not(list) | Condition::Is(list) => list.iter().any(|s| s.mentions_class(class)),
+            Condition::Nth { of: Some(of), .. } => of.iter().any(|s| s.mentions_class(class)),
+            _ => false,
+        })
+    }
+
     fn match_at<E: Element>(&self, index: usize, element: &E) -> Match {
         let compound = &self.compounds[index];
         and(compound.matches(element), || {
