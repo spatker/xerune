@@ -441,6 +441,9 @@ pub struct ContainerStyle {
     pub animation_fill_mode: Arc<str>,
     /// Animation play state control state.
     pub animation_play_state: Arc<str>,
+    /// `transition-*`; `None` is the initial `all 0s`, which transitions
+    /// nothing.
+    pub transitions: Option<Arc<crate::css::transition::Transitions>>,
     /// `color-scheme: dark`: the default canvas color is dark instead of white.
     pub color_scheme_dark: bool,
     /// `accent-color` of form controls (inherited); `None` is `auto`.
@@ -506,6 +509,7 @@ impl Default for ContainerStyle {
             animation_direction: Arc::from("normal"),
             animation_fill_mode: Arc::from("none"),
             animation_play_state: Arc::from("running"),
+            transitions: None,
             color_scheme_dark: false,
             accent_color: None,
             appearance_none: false,

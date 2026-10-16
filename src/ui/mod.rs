@@ -1046,6 +1046,7 @@ pub(crate) fn text_style(parent_style: &ContainerStyle) -> ContainerStyle {
     style.animation_direction = Arc::from("normal");
     style.animation_fill_mode = Arc::from("none");
     style.animation_play_state = Arc::from("running");
+    style.transitions = None;
     style
 }
 

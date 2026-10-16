@@ -321,7 +321,7 @@ pub fn parse_duration_sec(val: &str) -> f32 {
 }
 
 /// A CSS time (`1.5s`, `200ms`) in seconds; `None` if `val` isn't one.
-fn parse_time(val: &str) -> Option<f32> {
+pub(crate) fn parse_time(val: &str) -> Option<f32> {
     let val = val.trim().to_ascii_lowercase();
     let (number, scale) = match val.strip_suffix("ms") {
         Some(number) => (number, 0.001),

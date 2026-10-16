@@ -111,6 +111,7 @@ pub fn get_default_style(tag: &str, parent_style: &ContainerStyle) -> StyleBundl
     bundle.container_style.animation_direction = Arc::from("normal");
     bundle.container_style.animation_fill_mode = Arc::from("none");
     bundle.container_style.animation_play_state = Arc::from("running");
+    bundle.container_style.transitions = None;
 
     // The HTML rendering section's default styles (html.css in browsers).
     bundle.container_style.display = match tag {

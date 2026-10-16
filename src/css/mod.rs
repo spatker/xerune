@@ -4,6 +4,8 @@ pub(crate) mod parser;
 pub(crate) mod animation;
 pub(crate) mod gradient;
 pub mod media;
+/// `transition` and its longhands.
+pub mod transition;
 
 pub use gradient::{parse_gradient, interpolate_gradient};
 pub use parser::{parse_hex_color, parse_px, parse_dimension, parse_length_percentage, parse_length_percentage_auto, parse_box_shadow};
@@ -875,6 +877,12 @@ fn apply_resolved_declaration(prop: &str, val: &str, current_style: &mut Contain
          }
          "animation" => {
              parse_animation_shorthand(val, current_style);
+         }
+         p if p.starts_with("transition") => {
+             let transitions = current_style.transitions.get_or_insert_with(Default::default);
+             if !transition::apply_transition_property(p, val, Arc::make_mut(transitions)) {
+                 crate::diag::warn_once("Unsupported CSS property", prop);
+             }
          }
          _ => {
              crate::diag::warn_once("Unsupported CSS property", prop);
