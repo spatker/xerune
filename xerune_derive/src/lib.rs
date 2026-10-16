@@ -293,7 +293,7 @@ fn text_piece(handle: &Handle, local_vars: &HashSet<String>, dynamic_exprs: &Has
 /// and keeps the spaces between its pieces.
 fn compile_children<'a>(
     children: &[Handle],
-    rulesets: &[MediaRuleSet],
+    rules: &[GuardedRule],
     local_vars: &mut HashSet<String>,
     dynamic_exprs: &HashMap<usize, &'a Expr<'a>>,
     dynamic_loops: &HashMap<usize, &'a Node<'a>>,
@@ -333,7 +333,7 @@ fn compile_children<'a>(
             continue;
         }
         flush(&mut run, &mut code);
-        code.push(compile_dom_node(child, rulesets, local_vars, dynamic_exprs, dynamic_loops, dynamic_ifs));
+        code.push(compile_dom_node(child, rules, local_vars, dynamic_exprs, dynamic_loops, dynamic_ifs));
     }
     flush(&mut run, &mut code);
     code
@@ -1064,9 +1064,9 @@ struct MatchedRule {
     media_guard: Option<proc_macro2::TokenStream>,
 }
 
-/// A parsed stylesheet region together with the `@media` guard it appeared under.
-struct MediaRuleSet {
-    sheet: xerune_css::sheet::StyleSheet,
+/// A style rule together with the `@media` guard it appeared under.
+struct GuardedRule {
+    rule: xerune_css::sheet::Rule,
     /// Some(expr) => wrap rule application in `if expr`; None => always.
     guard: Option<proc_macro2::TokenStream>,
 }
@@ -1128,7 +1128,7 @@ fn compile_media_guard(text: &str) -> (MediaGuard, bool) {
 
 fn compile_dom_node<'a>(
     handle: &Handle,
-    rulesets: &[MediaRuleSet],
+    rules: &[GuardedRule],
     local_vars: &mut HashSet<String>,
     dynamic_exprs: &HashMap<usize, &'a Expr<'a>>,
     dynamic_loops: &HashMap<usize, &'a Node<'a>>,
@@ -1136,7 +1136,7 @@ fn compile_dom_node<'a>(
 ) -> proc_macro2::TokenStream {
     match &handle.data {
         NodeData::Document => {
-            let children_code = compile_children(&get_node_children(handle), rulesets, local_vars, dynamic_exprs, dynamic_loops, dynamic_ifs);
+            let children_code = compile_children(&get_node_children(handle), rules, local_vars, dynamic_exprs, dynamic_loops, dynamic_ifs);
             quote! {
                 #(#children_code)*
             }
@@ -1184,7 +1184,7 @@ fn compile_dom_node<'a>(
                         loop_local_vars.insert("_loop_item_index".to_string());
                         loop_local_vars.insert("loop".to_string());
                         
-                        let children_code = compile_children(&get_node_children(handle), rulesets, &mut loop_local_vars, dynamic_exprs, dynamic_loops, dynamic_ifs);
+                        let children_code = compile_children(&get_node_children(handle), rules, &mut loop_local_vars, dynamic_exprs, dynamic_loops, dynamic_ifs);
                         
                         let var_tokens: proc_macro2::TokenStream = var_str.parse().unwrap();
                         let iter_tokens: proc_macro2::TokenStream = iter_str.parse().unwrap();
@@ -1233,7 +1233,7 @@ fn compile_dom_node<'a>(
                                 if let Some(target) = branch.cond.as_ref().and_then(|c| c.target.as_ref()) {
                                     target_names(target, &mut branch_local_vars);
                                 }
-                                let children_code = compile_children(&get_node_children(&bh), rulesets, &mut branch_local_vars, dynamic_exprs, dynamic_loops, dynamic_ifs);
+                                let children_code = compile_children(&get_node_children(&bh), rules, &mut branch_local_vars, dynamic_exprs, dynamic_loops, dynamic_ifs);
                                 
                                 if let Some(ref cond) = branch.cond {
                                     let cond_str = format_cond_test(cond, local_vars);
@@ -1302,50 +1302,48 @@ fn compile_dom_node<'a>(
 
             let has_parts = matches!(tag, "input" | "progress");
             let mut matched_rules = Vec::new();
-            for rs in rulesets {
-                for rule in &rs.sheet.rules {
-                    let mut wrapper = MacroElementWrapper::new(handle.clone());
-                    wrapper.active_classes = static_classes.clone();
-                    // Only form controls have parts (`*::-moz-range-thumb`).
-                    let part = match rule.selector.pseudo_element() {
-                        None => None,
-                        Some(PseudoElement::Part(part)) if has_parts || !part.of_form_control() => Some(part),
-                        Some(_) => continue,
-                    };
-                    let declarations: Vec<(String, String)> = rule.declarations.iter()
-                        .map(|d| (d.name.clone(), d.value.clone()))
-                        .collect();
-                    let mut push = |condition: Option<String>| matched_rules.push(MatchedRule {
-                        part,
-                        declarations: declarations.clone(),
-                        condition,
-                        media_guard: rs.guard.clone(),
-                    });
+            for GuardedRule { rule, guard } in rules {
+                let mut wrapper = MacroElementWrapper::new(handle.clone());
+                wrapper.active_classes = static_classes.clone();
+                // Only form controls have parts (`*::-moz-range-thumb`).
+                let part = match rule.selector.pseudo_element() {
+                    None => None,
+                    Some(PseudoElement::Part(part)) if has_parts || !part.of_form_control() => Some(part),
+                    Some(_) => continue,
+                };
+                let declarations: Vec<(String, String)> = rule.declarations.iter()
+                    .map(|d| (d.name.clone(), d.value.clone()))
+                    .collect();
+                let mut push = |condition: Option<String>| matched_rules.push(MatchedRule {
+                    part,
+                    declarations: declarations.clone(),
+                    condition,
+                    media_guard: guard.clone(),
+                });
 
+                if rule.selector.matches(&wrapper) {
+                    push(None);
+                    continue;
+                }
+                for (cls, cond) in &conditional_classes {
+                    let mut active = static_classes.clone();
+                    active.insert(cls.clone());
+                    wrapper.active_classes = active;
+                    wrapper.checked = false;
                     if rule.selector.matches(&wrapper) {
-                        push(None);
-                        continue;
-                    }
-                    for (cls, cond) in &conditional_classes {
-                        let mut active = static_classes.clone();
-                        active.insert(cls.clone());
-                        wrapper.active_classes = active;
-                        wrapper.checked = false;
-                        if rule.selector.matches(&wrapper) {
-                            push(Some(cond.clone()));
-                        } else if let Some(checked) = &checked_condition {
-                            wrapper.checked = true;
-                            if rule.selector.matches(&wrapper) {
-                                push(Some(format!("({cond}) && ({checked})")));
-                            }
-                        }
-                    }
-                    if let Some(checked) = &checked_condition {
-                        wrapper.active_classes = static_classes.clone();
+                        push(Some(cond.clone()));
+                    } else if let Some(checked) = &checked_condition {
                         wrapper.checked = true;
                         if rule.selector.matches(&wrapper) {
-                            push(Some(checked.clone()));
+                            push(Some(format!("({cond}) && ({checked})")));
                         }
+                    }
+                }
+                if let Some(checked) = &checked_condition {
+                    wrapper.active_classes = static_classes.clone();
+                    wrapper.checked = true;
+                    if rule.selector.matches(&wrapper) {
+                        push(Some(checked.clone()));
                     }
                 }
             }
@@ -1424,7 +1422,7 @@ fn compile_dom_node<'a>(
                 None => quote! { ::xerune::__private::ElementStyle::new(#tag, &parent_style) },
             };
 
-            let child_compilation = compile_children(&get_node_children(handle), rulesets, local_vars, dynamic_exprs, dynamic_loops, dynamic_ifs);
+            let child_compilation = compile_children(&get_node_children(handle), rules, local_vars, dynamic_exprs, dynamic_loops, dynamic_ifs);
 
             quote! {
                 let (el, node) = {
@@ -1791,9 +1789,9 @@ fn expand_template(input: &DeriveInput, template: &TemplateRef) -> proc_macro2::
     record_template_owners(&dom.document);
 
     // The stylesheet parser skips at-rules, so split `@media` blocks out first:
-    // each region keeps its parsed rules plus a runtime viewport guard.
+    // each region's rules get a runtime viewport guard.
     let media_pieces = split_media_css(&css_content);
-    let mut rulesets: Vec<MediaRuleSet> = Vec::new();
+    let mut rules: Vec<GuardedRule> = Vec::new();
     let mut keyframes_css = String::new();
     for (query, text) in &media_pieces {
         keyframes_css.push_str(text);
@@ -1812,8 +1810,12 @@ fn expand_template(input: &DeriveInput, template: &TemplateRef) -> proc_macro2::
                 }
             }
         };
-        rulesets.push(MediaRuleSet { sheet, guard });
+        rules.extend(sheet.rules.into_iter().map(|rule| GuardedRule { rule, guard: guard.clone() }));
     }
+    // Cascade order across regions: an `@media` rule doesn't beat a more
+    // specific rule outside it. The sort is stable, so the regions' source
+    // order decides between equal specificities.
+    rules.sort_by_key(|r| r.rule.selector.specificity());
 
     // Collect data-on-click action strings
     let mut raw_actions = Vec::new();
@@ -1895,7 +1897,7 @@ fn expand_template(input: &DeriveInput, template: &TemplateRef) -> proc_macro2::
     };
 
     let mut local_vars = HashSet::new();
-    let body_compilation = compile_dom_node(&dom.document, &rulesets, &mut local_vars, &dynamic_exprs, &dynamic_loops, &dynamic_ifs);
+    let body_compilation = compile_dom_node(&dom.document, &rules, &mut local_vars, &dynamic_exprs, &dynamic_loops, &dynamic_ifs);
 
     let expanded = quote! {
         #(#dummy_includes)*

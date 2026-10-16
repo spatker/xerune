@@ -805,6 +805,36 @@ fn templates_match_structural_selectors_outside_loops() {
     assert_eq!(colors, [(0, 0, 0), (0, 255, 0), (0, 0, 255), (0, 0, 0), (0, 0, 0)]);
 }
 
+#[derive(XeruneTemplate)]
+#[template(source = r#"<style>
+  .p .q { width: 10px; height: 10px; background: #ff0000; }
+  @media (min-width: 1px) { .q { background: #0000ff; } .p .r { background: #00ff00; } }
+  .r { width: 10px; height: 10px; background: #ff0000; }
+</style>
+<div class="p"><div class="q"></div><div class="r"></div></div>"#)]
+struct MediaCascadeModel;
+
+impl Model for MediaCascadeModel {
+    type Message = MockMsg;
+    fn update(&mut self, _msg: Self::Message, _context: &mut Context) {}
+}
+
+/// A rule in a matching `@media` block takes part in the cascade like any
+/// other: it loses to a more specific rule outside the block and beats a
+/// less specific one after it.
+#[test]
+fn media_rules_cascade_by_specificity() {
+    let mut runtime = Runtime::new(MediaCascadeModel, MockMeasurer);
+    crate::set_size(&mut runtime, 800.0, 600.0);
+    let mut boxes: Vec<_> = runtime.ui.build_commands(&std::collections::HashMap::new(), None).iter().filter_map(|c| match c {
+        DrawCommand::DrawRect { color: Some(c), rect, .. } if rect.width == 10.0 => Some((rect.y, (c.r, c.g, c.b))),
+        _ => None,
+    }).collect();
+    boxes.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let colors: Vec<_> = boxes.iter().map(|b| b.1).collect();
+    assert_eq!(colors, [(255, 0, 0), (0, 255, 0)]);
+}
+
 mod canvas {
     //! The canvas background: browsers paint `<html>`'s background (else
     //! `<body>`'s, else white) behind every frame.
