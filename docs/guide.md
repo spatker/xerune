@@ -235,6 +235,22 @@ As in browsers, `box-sizing` defaults to `content-box`: `width: 800px; padding: 
 
 **Form controls.** `<input type="checkbox">`, `<input type="range">` and `<progress>` look like Chromium's: the same default sizes (13×13, 129×16 and 10em×1em) and margins, a grey-bordered white checkbox that turns into an accent-colored one with a white check mark, and rounded light-grey tracks filled with the accent color. `accent-color` (inherited, like in browsers) recolors them; `width`/`height` resize them as in Chromium (the range's track and thumb keep their size, a progress track is half the control's height). A range takes `min`, `max` (default 0 and 100), `step` (default 1, or `any`) and `value` like in HTML: the value defaults to the middle, is clamped to the range and snaps to a step from `min`. A progress bar shows `value` out of `max` (default 1). As in Chromium, a native-looking checkbox ignores `background`, `border` and `border-radius`; `appearance: none` turns it into a plain box styled by its CSS, and `:checked` (or `[checked]`) styles the checked state, also when it comes from `{% if done %}checked{% endif %}`. A progress bar or range with `appearance: none` falls back to what Chromium draws then: a grey bar with a green value, a bare thumb.
 
+The parts of a range and a progress bar take CSS through the pseudo-elements pages already use for Chromium and Firefox: `::-webkit-slider-runnable-track` / `::-moz-range-track`, `::-webkit-slider-thumb` / `::-moz-range-thumb`, `::-moz-range-progress` (the track up to the thumb), `::-webkit-progress-bar` and `::-webkit-progress-value` / `::-moz-progress-bar`. A part with CSS is drawn as a box (size, margins, background or gradient, border, radius, shadow; sizes include the border) laid out as Chromium lays it out; parts without CSS keep their native look. Chromium only honors part styles under `appearance: none`; Xerune applies them either way, so `::-webkit-slider-thumb { background: red; }` alone gives a red native-shaped thumb, while the usual web recipe works as in a browser:
+
+```css
+input[type=range] { -webkit-appearance: none; width: 200px; }
+input[type=range]::-webkit-slider-runnable-track { height: 6px; border-radius: 3px; background: #334155; }
+input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 18px; height: 18px; border-radius: 50%;
+    background: #f59e0b; margin-top: -6px;   /* centers it on the 6px track */
+}
+progress { appearance: none; height: 10px; }
+progress::-webkit-progress-bar { background: #e2e8f0; border-radius: 5px; }
+progress::-webkit-progress-value { background: linear-gradient(90deg, #22d3ee, #a78bfa); border-radius: 5px; }
+```
+
+Part selectors with pseudo-classes (`::-webkit-slider-thumb:hover`) and other pseudo-elements (`::before`) are ignored.
+
 Unsupported **tags** fall back to a generic inline-block box (with a one-time warning). Elements with dedicated behaviour: `div`, `p`, `pre`, `span`, `h1`–`h6`, `ul`/`li`, `table`/`tr`/`td`/`th` (+ `thead`/`tbody`/`tfoot`), `strong`/`b`, `img`, `button`, `input` (`type="checkbox"`, `"range"`, text), `progress`, `canvas`, `br`.
 
 ---

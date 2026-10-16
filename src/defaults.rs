@@ -84,6 +84,7 @@ pub fn get_default_style(tag: &str, parent_style: &ContainerStyle) -> StyleBundl
     bundle.container_style.text_overflow_ellipsis = false;
     bundle.container_style.order = 0;
     bundle.container_style.appearance_none = false;
+    bundle.container_style.part_declarations = Vec::new();
     bundle.container_style.flex_direction = FlexDirection::Row;
     bundle.container_style.flex_wrap = FlexWrap::NoWrap;
     bundle.container_style.justify_content = None;

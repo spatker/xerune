@@ -20,6 +20,148 @@ use crate::alloc_prelude::*;
 /// SLASH, which never occurs in CSS).
 const SLASH: char = '\u{2044}';
 
+/// Byte offset of the first `wanted` in `css` outside comments and strings.
+#[cfg(feature = "std")]
+fn find_outside_comments(css: &str, wanted: &[u8]) -> Option<usize> {
+    let bytes = css.as_bytes();
+    let mut i = 0;
+    let mut quote = None;
+    while i < bytes.len() {
+        let b = bytes[i];
+        match quote {
+            Some(q) if b == q => quote = None,
+            Some(_) if b == b'\\' => i += 1,
+            Some(_) => {}
+            None if b == b'/' && bytes.get(i + 1) == Some(&b'*') => {
+                i = css[i + 2..].find("*/").map_or(bytes.len(), |end| i + 2 + end + 1);
+            }
+            None if b == b'"' || b == b'\'' => quote = Some(b),
+            None if wanted.contains(&b) => return Some(i),
+            None => {}
+        }
+        i += 1;
+    }
+    None
+}
+
+/// `css` split at each top-level `separator` (outside parentheses, comments
+/// and strings).
+#[cfg(feature = "std")]
+fn split_top_level(css: &str, separator: u8) -> Vec<&str> {
+    let mut pieces = Vec::new();
+    let mut depth = 0usize;
+    let mut start = 0;
+    let mut i = 0;
+    while let Some(offset) = find_outside_comments(&css[i..], &[separator, b'(', b')']) {
+        let at = i + offset;
+        match css.as_bytes()[at] {
+            b'(' => depth += 1,
+            b')' => depth = depth.saturating_sub(1),
+            _ if depth == 0 => {
+                pieces.push(&css[start..at]);
+                start = at + 1;
+            }
+            _ => {}
+        }
+        i = at + 1;
+    }
+    pieces.push(&css[start..]);
+    pieces
+}
+
+#[cfg(feature = "std")]
+fn strip_comments(css: &str) -> String {
+    let mut out = String::with_capacity(css.len());
+    let mut rest = css;
+    while let Some(start) = rest.find("/*") {
+        out.push_str(&rest[..start]);
+        rest = rest[start + 2..].find("*/").map_or("", |end| &rest[start + 2 + end + 2..]);
+    }
+    out.push_str(rest);
+    out
+}
+
+/// Rules for form control parts (`progress::-webkit-progress-value
+/// { background: red }`), which simplecss can't parse, become rules for the
+/// control with prefixed declarations (`progress { -xerune-value-background:
+/// red }`, see [`crate::style::ControlPart`]). Selectors of other
+/// pseudo-elements, or with anything after the part, are dropped. Mirrored
+/// in `xerune_derive`.
+#[cfg(feature = "std")]
+pub(crate) fn rewrite_part_rules(css: &str) -> std::borrow::Cow<'_, str> {
+    use crate::style::ControlPart;
+    if !css.contains("::") {
+        return std::borrow::Cow::Borrowed(css);
+    }
+    let mut out = String::with_capacity(css.len());
+    let mut rest = css;
+    while let Some(open) = find_outside_comments(rest, b"{") {
+        // The block's end, past nested blocks.
+        let mut depth = 1;
+        let mut end = open + 1;
+        while depth > 0 {
+            match find_outside_comments(&rest[end..], b"{}") {
+                Some(offset) => {
+                    end += offset;
+                    depth = if rest.as_bytes()[end] == b'{' { depth + 1 } else { depth - 1 };
+                    end += 1;
+                }
+                None => {
+                    end = rest.len();
+                    break;
+                }
+            }
+        }
+        let prelude = strip_comments(&rest[..open]);
+        if prelude.trim_start().starts_with('@') || !prelude.contains("::") {
+            out.push_str(&rest[..end]);
+        } else {
+            let body = rest[open + 1..end].strip_suffix('}').unwrap_or(&rest[open + 1..end]);
+            let mut plain = Vec::new();
+            let mut parts: Vec<(ControlPart, Vec<&str>)> = Vec::new();
+            for selector in split_top_level(&prelude, b',') {
+                let selector = selector.trim();
+                let Some((host, pseudo)) = selector.split_once("::") else {
+                    plain.push(selector);
+                    continue;
+                };
+                let name_end = pseudo.find(|c: char| !(c.is_ascii_alphanumeric() || c == '-' || c == '_')).unwrap_or(pseudo.len());
+                let (Some(part), true) = (ControlPart::from_pseudo_element(&pseudo[..name_end]), pseudo[name_end..].trim().is_empty()) else {
+                    continue;
+                };
+                let host = if host.trim().is_empty() { "*" } else { host.trim() };
+                match parts.iter_mut().find(|(p, _)| *p == part) {
+                    Some((_, hosts)) => hosts.push(host),
+                    None => parts.push((part, vec![host])),
+                }
+            }
+            if !plain.is_empty() {
+                out.push_str(&plain.join(", "));
+                out.push_str(" {");
+                out.push_str(body);
+                out.push('}');
+            }
+            for (part, hosts) in parts {
+                out.push_str(&hosts.join(", "));
+                out.push_str(" {");
+                for declaration in split_top_level(body, b';') {
+                    if let Some((name, value)) = strip_comments(declaration).split_once(':') {
+                        out.push_str(part.declaration_prefix());
+                        out.push_str(name.trim());
+                        out.push(':');
+                        out.push_str(value);
+                        out.push(';');
+                    }
+                }
+                out.push('}');
+            }
+        }
+        rest = &rest[end..];
+    }
+    out.push_str(rest);
+    std::borrow::Cow::Owned(out)
+}
+
 /// Rewrites a stylesheet into something `simplecss` can match against the
 /// classes the DOM builder adds: `:nth-child(N)` becomes `.nth-child-N` and
 /// `:last-child` becomes `.last-child`. `simplecss` cuts a value off at `/`
@@ -27,6 +169,8 @@ const SLASH: char = '\u{2044}';
 /// of a `font` shorthand) becomes [`SLASH`].
 #[cfg(feature = "std")]
 pub(crate) fn rewrite_for_simplecss(css: &str) -> String {
+    let css = rewrite_part_rules(css);
+    let css = css.as_ref();
     const NTH: &str = ":nth-child(";
     let mut out = String::with_capacity(css.len());
     let mut rest = css;
@@ -256,6 +400,11 @@ fn border_side<'a>(border: &'a mut crate::style::Borders, prop: &str) -> Option<
 
 /// Applies a single CSS key-value declaration to the given styling structures.
 pub fn apply_declaration(prop: &str, val: &str, current_style: &mut ContainerStyle, taffy_style: &mut Style) {
+    // Kept as written: resolved for the part when the control is built.
+    if let Some((part, name)) = crate::style::ControlPart::from_declaration(prop) {
+        current_style.part_declarations.push(crate::style::PartDeclaration { part, name: name.to_string(), value: val.to_string() });
+        return;
+    }
     // `line-height: 1.5em` stays relative: it is resolved where it is used.
     if prop != "line-height" {
         // In `font-size` itself, `em` is the parent's font size.
@@ -954,6 +1103,29 @@ mod tests {
         // Only plain numbers are supported; anything else is left alone.
         assert_eq!(rewrite_for_simplecss("li:nth-child(2n+1){}"), "li:nth-child(2n+1){}");
         assert_eq!(rewrite_for_simplecss("li:nth-child(){}"), "li:nth-child(){}");
+    }
+
+    #[test]
+    fn part_rules_become_prefixed_declarations() {
+        assert_eq!(
+            rewrite_for_simplecss("progress::-webkit-progress-value { background: red; height: 4px }"),
+            "progress {-xerune-value-background: red;-xerune-value-height: 4px ;}"
+        );
+        // Selector lists split by part; plain selectors keep the rule.
+        assert_eq!(
+            rewrite_for_simplecss("a, .r::-webkit-slider-thumb, .r::-moz-range-thumb, ::-moz-range-progress { color: red }"),
+            "a { color: red }.r, .r {-xerune-thumb-color: red ;}* {-xerune-fill-color: red ;}"
+        );
+        // Unknown pseudo-elements and parts with pseudo-classes are dropped;
+        // at-rules, comments and values with `;` or `:` survive.
+        assert_eq!(rewrite_for_simplecss(".r::-webkit-slider-thumb:hover { color: red }"), "");
+        assert_eq!(rewrite_for_simplecss("p::before { content: 'x' } i { }"), " i { }");
+        assert_eq!(
+            rewrite_for_simplecss("@keyframes k { 0% { left: 0 } } /* x::y { */ b::-moz-range-track { background: url(data:a;b) }"),
+            "@keyframes k { 0% { left: 0 } }b {-xerune-track-background: url(data:a;b) ;}"
+        );
+        let sheet = simplecss::StyleSheet::parse("progress {-xerune-value-background: red;}");
+        assert_eq!(sheet.rules[0].declarations[0].name, "-xerune-value-background");
     }
 
     #[test]

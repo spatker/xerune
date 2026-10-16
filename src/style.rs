@@ -302,6 +302,85 @@ pub struct BoxShadow {
     pub inset: bool,
 }
 
+/// A pseudo-element of a form control, styled with the selectors pages use
+/// for Chromium and Firefox (`::-webkit-slider-thumb`, `::-moz-range-thumb`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum ControlPart {
+    /// `<progress>`'s `::-webkit-progress-bar`: the track.
+    ProgressBar,
+    /// `<progress>`'s `::-webkit-progress-value` / `::-moz-progress-bar`.
+    ProgressValue,
+    /// A range's `::-webkit-slider-runnable-track` / `::-moz-range-track`.
+    SliderTrack,
+    /// A range's `::-webkit-slider-thumb` / `::-moz-range-thumb`.
+    SliderThumb,
+    /// A range's `::-moz-range-progress`: the track up to the thumb.
+    SliderFill,
+}
+
+impl ControlPart {
+    const PARTS: [(ControlPart, &'static str, &'static [&'static str]); 5] = [
+        (ControlPart::ProgressBar, "-xerune-bar-", &["-webkit-progress-bar"]),
+        (ControlPart::ProgressValue, "-xerune-value-", &["-webkit-progress-value", "-moz-progress-bar"]),
+        (ControlPart::SliderTrack, "-xerune-track-", &["-webkit-slider-runnable-track", "-moz-range-track"]),
+        (ControlPart::SliderThumb, "-xerune-thumb-", &["-webkit-slider-thumb", "-moz-range-thumb"]),
+        (ControlPart::SliderFill, "-xerune-fill-", &["-moz-range-progress"]),
+    ];
+
+    /// The part a pseudo-element name (without `::`) selects.
+    pub fn from_pseudo_element(name: &str) -> Option<Self> {
+        Self::PARTS.iter().find(|(_, _, names)| names.iter().any(|n| n.eq_ignore_ascii_case(name))).map(|(part, _, _)| *part)
+    }
+
+    /// Part rules reach the control as declarations with this prefix
+    /// (`-xerune-thumb-background`), since simplecss can't parse `::`.
+    pub fn declaration_prefix(self) -> &'static str {
+        Self::PARTS.iter().find(|(part, _, _)| *part == self).map_or("", |(_, prefix, _)| prefix)
+    }
+
+    /// The part and property of a prefixed declaration name.
+    pub fn from_declaration(name: &str) -> Option<(Self, &str)> {
+        if !name.starts_with("-xerune-") {
+            return None;
+        }
+        Self::PARTS.iter().find_map(|(part, prefix, _)| name.strip_prefix(prefix).map(|prop| (*part, prop)))
+    }
+}
+
+/// A declaration for one of an element's [`ControlPart`]s.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PartDeclaration {
+    /// The part it styles.
+    pub part: ControlPart,
+    /// Property name.
+    pub name: String,
+    /// Property value.
+    pub value: String,
+}
+
+/// A form control part with CSS, resolved like an element's style. Its
+/// size and margins are in `layout`; sizes are border-box.
+#[derive(Debug, Clone)]
+pub struct PartStyle {
+    /// Painted properties.
+    pub style: ContainerStyle,
+    /// Size and margins.
+    pub layout: taffy::Style,
+}
+
+/// The parts of a range or progress bar that have CSS; the others keep
+/// their native look.
+#[derive(Debug, Clone, Default)]
+pub struct ControlParts(pub Vec<(ControlPart, PartStyle)>);
+
+impl ControlParts {
+    /// The style of `part`, if it has CSS.
+    pub fn get(&self, part: ControlPart) -> Option<&PartStyle> {
+        self.0.iter().find(|(p, _)| *p == part).map(|(_, style)| style)
+    }
+}
+
 /// The resolved styling properties of an HTML container element.
 #[derive(Debug, Clone)]
 pub struct ContainerStyle {
@@ -413,6 +492,9 @@ pub struct ContainerStyle {
     /// `appearance: none`: a form control is drawn as a plain CSS box
     /// instead of its native look.
     pub appearance_none: bool,
+    /// Declarations for the element's form control parts, in cascade
+    /// order (not inherited).
+    pub part_declarations: Vec<PartDeclaration>,
 }
 
 impl Default for ContainerStyle {
@@ -471,6 +553,7 @@ impl Default for ContainerStyle {
             color_scheme_dark: false,
             accent_color: None,
             appearance_none: false,
+            part_declarations: Vec::new(),
         }
     }
 }
@@ -485,10 +568,10 @@ pub enum RenderData {
     Image(String, ContainerStyle),
     /// Styled checkbox control.
     Checkbox(bool, ContainerStyle),
-    /// Styled slider control.
-    Slider(f32, ContainerStyle),
-    /// Styled progress bar control (value, max, style).
-    Progress(f32, f32, ContainerStyle),
+    /// Range input (position of the value from 0 to 1, style, styled parts).
+    Slider(f32, ContainerStyle, Option<Box<ControlParts>>),
+    /// Progress bar (value, max, style, styled parts).
+    Progress(f32, f32, ContainerStyle, Option<Box<ControlParts>>),
     /// Styled canvas viewport buffer mapping.
     Canvas(String, ContainerStyle),
     /// Styled text input field (id, text value, style).
@@ -503,8 +586,8 @@ impl RenderData {
             RenderData::Text(_, style) => style,
             RenderData::Image(_, style) => style,
             RenderData::Checkbox(_, style) => style,
-            RenderData::Slider(_, style) => style,
-            RenderData::Progress(_, _, style) => style,
+            RenderData::Slider(_, style, _) => style,
+            RenderData::Progress(_, _, style, _) => style,
             RenderData::Canvas(_, style) => style,
             RenderData::TextInput(_, _, style) => style,
         }

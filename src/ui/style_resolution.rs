@@ -360,7 +360,9 @@ pub(crate) fn resolve_styles(
                     } else {
                         decl.name
                     };
-                    if css::sets_font_size(name) == font_pass {
+                    // Only form controls have parts (`*::-moz-range-thumb`).
+                    let part_of_other = name.starts_with("-xerune-") && !matches!(&**tag, "input" | "progress");
+                    if !part_of_other && css::sets_font_size(name) == font_pass {
                         css::apply_declaration(name, decl.value, &mut c_style, &mut l_style);
                     }
                 }

@@ -1,7 +1,7 @@
 #![allow(missing_docs)]
 
 use taffy::prelude::*;
-use crate::style::{ContainerStyle, RenderData};
+use crate::style::{ContainerStyle, ControlPart, RenderData};
 use crate::css;
 use crate::defaults;
 use super::node_map::NodeMap;
@@ -357,10 +357,12 @@ pub(crate) fn process_element_type(
             render_data.insert(id, RenderData::Checkbox(parsed.checkbox_checked, current_style));
         },
         defaults::ElementType::Slider => {
-            render_data.insert(id, RenderData::Slider(range_fraction(parsed), current_style));
+            let parts = super::controls::resolve_parts(&current_style, &[ControlPart::SliderTrack, ControlPart::SliderThumb, ControlPart::SliderFill]);
+            render_data.insert(id, RenderData::Slider(range_fraction(parsed), current_style, parts));
         },
         defaults::ElementType::Progress => {
-            render_data.insert(id, RenderData::Progress(parsed.progress_value, parsed.progress_max, current_style));
+            let parts = super::controls::resolve_parts(&current_style, &[ControlPart::ProgressBar, ControlPart::ProgressValue]);
+            render_data.insert(id, RenderData::Progress(parsed.progress_value, parsed.progress_max, current_style, parts));
         },
         defaults::ElementType::Canvas => {
             render_data.insert(id, RenderData::Canvas(parsed.canvas_id.clone(), current_style));

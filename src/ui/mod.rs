@@ -902,7 +902,7 @@ fn traverse_layout(
         // its background and border, as in Chromium.
         let maybe_style = match data {
             RenderData::Container(style) | RenderData::Text(_, style) => Some(style),
-            RenderData::Slider(_, style) | RenderData::Progress(_, _, style) => Some(style),
+            RenderData::Slider(_, style, _) | RenderData::Progress(_, _, style, _) => Some(style),
             RenderData::Checkbox(_, style) if style.appearance_none => Some(style),
             _ => None,
         };
@@ -951,10 +951,12 @@ fn traverse_layout(
                 });
             },
             RenderData::Checkbox(checked, style) => controls::checkbox(commands, rect, *checked, style),
-            RenderData::Slider(fraction, style) => controls::slider(commands, controls::content_box(rect, style), *fraction, style),
-            RenderData::Progress(value, max, style) => {
+            RenderData::Slider(fraction, style, parts) => {
+                controls::slider(commands, controls::content_box(rect, style), *fraction, style, parts.as_deref());
+            }
+            RenderData::Progress(value, max, style, parts) => {
                 let fraction = if *max > 0.0 { value / max } else { 0.0 };
-                controls::progress(commands, controls::content_box(rect, style), fraction, style);
+                controls::progress(commands, controls::content_box(rect, style), fraction, style, parts.as_deref());
             }
             RenderData::Canvas(id, style) => {
                 let b = style.border.widths();

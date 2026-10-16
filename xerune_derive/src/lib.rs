@@ -1058,6 +1058,156 @@ struct MediaRuleSet {
     guard: Option<proc_macro2::TokenStream>,
 }
 
+/// The declaration prefix of a form control part's pseudo-element (without
+/// `::`). Mirrors `xerune::style::ControlPart`.
+fn part_prefix(pseudo_element: &str) -> Option<&'static str> {
+    const PARTS: [(&str, &[&str]); 5] = [
+        ("-xerune-bar-", &["-webkit-progress-bar"]),
+        ("-xerune-value-", &["-webkit-progress-value", "-moz-progress-bar"]),
+        ("-xerune-track-", &["-webkit-slider-runnable-track", "-moz-range-track"]),
+        ("-xerune-thumb-", &["-webkit-slider-thumb", "-moz-range-thumb"]),
+        ("-xerune-fill-", &["-moz-range-progress"]),
+    ];
+    PARTS.iter().find(|(_, names)| names.iter().any(|n| n.eq_ignore_ascii_case(pseudo_element))).map(|(prefix, _)| *prefix)
+}
+
+/// Byte offset of the first `wanted` in `css` outside comments and strings.
+fn find_outside_comments(css: &str, wanted: &[u8]) -> Option<usize> {
+    let bytes = css.as_bytes();
+    let mut i = 0;
+    let mut quote = None;
+    while i < bytes.len() {
+        let b = bytes[i];
+        match quote {
+            Some(q) if b == q => quote = None,
+            Some(_) if b == b'\\' => i += 1,
+            Some(_) => {}
+            None if b == b'/' && bytes.get(i + 1) == Some(&b'*') => {
+                i = css[i + 2..].find("*/").map_or(bytes.len(), |end| i + 2 + end + 1);
+            }
+            None if b == b'"' || b == b'\'' => quote = Some(b),
+            None if wanted.contains(&b) => return Some(i),
+            None => {}
+        }
+        i += 1;
+    }
+    None
+}
+
+/// `css` split at each top-level `separator` (outside parentheses, comments
+/// and strings).
+fn split_top_level(css: &str, separator: u8) -> Vec<&str> {
+    let mut pieces = Vec::new();
+    let mut depth = 0usize;
+    let mut start = 0;
+    let mut i = 0;
+    while let Some(offset) = find_outside_comments(&css[i..], &[separator, b'(', b')']) {
+        let at = i + offset;
+        match css.as_bytes()[at] {
+            b'(' => depth += 1,
+            b')' => depth = depth.saturating_sub(1),
+            _ if depth == 0 => {
+                pieces.push(&css[start..at]);
+                start = at + 1;
+            }
+            _ => {}
+        }
+        i = at + 1;
+    }
+    pieces.push(&css[start..]);
+    pieces
+}
+
+fn strip_comments(css: &str) -> String {
+    let mut out = String::with_capacity(css.len());
+    let mut rest = css;
+    while let Some(start) = rest.find("/*") {
+        out.push_str(&rest[..start]);
+        rest = rest[start + 2..].find("*/").map_or("", |end| &rest[start + 2 + end + 2..]);
+    }
+    out.push_str(rest);
+    out
+}
+
+/// Rules for form control parts (`progress::-webkit-progress-value
+/// { background: red }`), which simplecss can't parse, become rules for the
+/// control with prefixed declarations (`progress { -xerune-value-background:
+/// red }`, see `xerune::style::ControlPart`). Selectors of other
+/// pseudo-elements, or with anything after the part, are dropped. Mirrors
+/// `xerune::css::rewrite_part_rules`.
+fn rewrite_part_rules(css: &str) -> String {
+    if !css.contains("::") {
+        return css.to_string();
+    }
+    let mut out = String::with_capacity(css.len());
+    let mut rest = css;
+    while let Some(open) = find_outside_comments(rest, b"{") {
+        // The block's end, past nested blocks.
+        let mut depth = 1;
+        let mut end = open + 1;
+        while depth > 0 {
+            match find_outside_comments(&rest[end..], b"{}") {
+                Some(offset) => {
+                    end += offset;
+                    depth = if rest.as_bytes()[end] == b'{' { depth + 1 } else { depth - 1 };
+                    end += 1;
+                }
+                None => {
+                    end = rest.len();
+                    break;
+                }
+            }
+        }
+        let prelude = strip_comments(&rest[..open]);
+        if prelude.trim_start().starts_with('@') || !prelude.contains("::") {
+            out.push_str(&rest[..end]);
+        } else {
+            let body = rest[open + 1..end].strip_suffix('}').unwrap_or(&rest[open + 1..end]);
+            let mut plain = Vec::new();
+            let mut parts: Vec<(&str, Vec<&str>)> = Vec::new();
+            for selector in split_top_level(&prelude, b',') {
+                let selector = selector.trim();
+                let Some((host, pseudo)) = selector.split_once("::") else {
+                    plain.push(selector);
+                    continue;
+                };
+                let name_end = pseudo.find(|c: char| !(c.is_ascii_alphanumeric() || c == '-' || c == '_')).unwrap_or(pseudo.len());
+                let (Some(part), true) = (part_prefix(&pseudo[..name_end]), pseudo[name_end..].trim().is_empty()) else {
+                    continue;
+                };
+                let host = if host.trim().is_empty() { "*" } else { host.trim() };
+                match parts.iter_mut().find(|(p, _)| *p == part) {
+                    Some((_, hosts)) => hosts.push(host),
+                    None => parts.push((part, vec![host])),
+                }
+            }
+            if !plain.is_empty() {
+                out.push_str(&plain.join(", "));
+                out.push_str(" {");
+                out.push_str(body);
+                out.push('}');
+            }
+            for (part, hosts) in parts {
+                out.push_str(&hosts.join(", "));
+                out.push_str(" {");
+                for declaration in split_top_level(body, b';') {
+                    if let Some((name, value)) = strip_comments(declaration).split_once(':') {
+                        out.push_str(part);
+                        out.push_str(name.trim());
+                        out.push(':');
+                        out.push_str(value);
+                        out.push(';');
+                    }
+                }
+                out.push('}');
+            }
+        }
+        rest = &rest[end..];
+    }
+    out.push_str(rest);
+    out
+}
+
 /// `simplecss` cuts a value off at `/` and loses the rest of the rule, so the
 /// `/` of `/<number>` (the line-height in `font: 14px/1.4`) becomes U+2044
 /// FRACTION SLASH, which the runtime's `font` parser accepts. Mirrors
@@ -1543,6 +1693,7 @@ fn compile_dom_node<'a>(
             let dynamic_checked = attrs.borrow().iter().position(|a| a.name.local.as_ref() == "checked" && is_dynamic(a.value.as_ref()));
             let checked_condition = dynamic_checked.map(|_| "_dyn_checked".to_string());
 
+            let has_parts = matches!(tag, "input" | "progress");
             let mut matched_rules = Vec::new();
             for rs in rulesets {
                 for rule in &rs.sheet.rules {
@@ -1551,8 +1702,16 @@ fn compile_dom_node<'a>(
                         active_classes: static_classes.clone(),
                         checked: false,
                     };
+                    // Only form controls have parts (`*::-moz-range-thumb`).
+                    let declarations: Vec<(String, String)> = rule.declarations.iter()
+                        .filter(|d| has_parts || !d.name.starts_with("-xerune-"))
+                        .map(|d| (d.name.to_string(), d.value.to_string()))
+                        .collect();
+                    if declarations.is_empty() {
+                        continue;
+                    }
                     let mut push = |condition: Option<String>| matched_rules.push(MatchedRule {
-                        declarations: rule.declarations.iter().map(|d| (d.name.to_string(), d.value.to_string())).collect(),
+                        declarations: declarations.clone(),
                         condition,
                         media_guard: rs.guard.clone(),
                     });
@@ -2029,9 +2188,9 @@ fn expand_template(input: &DeriveInput, template: &TemplateRef) -> proc_macro2::
     for (query, text) in &media_pieces {
         keyframes_css.push_str(text);
         keyframes_css.push('\n');
-        // `:checked` is matched as `[checked]`, as in
-        // `xerune::css::rewrite_for_simplecss`.
-        let sheet_text: &'static str = Box::leak(protect_slashes(text).replace(":checked", "[checked]").into_boxed_str());
+        // Part rules become prefixed declarations and `:checked` is
+        // matched as `[checked]`, as in `xerune::css::rewrite_for_simplecss`.
+        let sheet_text: &'static str = Box::leak(protect_slashes(&rewrite_part_rules(text)).replace(":checked", "[checked]").into_boxed_str());
         let sheet = simplecss::StyleSheet::parse(sheet_text);
         let guard = match query {
             None => None,

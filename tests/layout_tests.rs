@@ -1519,6 +1519,109 @@ mod controls {
         assert_eq!(rect_at(&commands(Checked(true)), rect).0, Some(rgb(0x0000ff)));
     }
 
+    const PART_CSS: &str = "
+        body { margin: 0px; }
+        div { display: flex; }
+        input[type=range] { -webkit-appearance: none; width: 200px; height: 24px; margin: 0px; }
+        .s::-webkit-slider-runnable-track { height: 6px; border-radius: 3px; background: #334155; }
+        .s::-webkit-slider-thumb { -webkit-appearance: none; width: 18px; height: 18px; border-radius: 50%;
+                                   background: #f59e0b; margin-top: -6px; border: 2px solid #ffffff; }
+        .red::-webkit-slider-thumb { background: red; }
+        progress { appearance: none; width: 200px; height: 10px; }
+        progress::-webkit-progress-bar { background: #e2e8f0; border-radius: 5px; }
+        progress::-webkit-progress-value { background: linear-gradient(90deg, #22d3ee 0%, #a78bfa 100%); border-radius: 5px; }
+        *::-moz-range-progress { background: blue; }
+    ";
+
+    #[derive(XeruneTemplate)]
+    #[template(source = r#"<style>
+        body { margin: 0px; }
+        div { display: flex; }
+        input[type=range] { -webkit-appearance: none; width: 200px; height: 24px; margin: 0px; }
+        .s::-webkit-slider-runnable-track { height: 6px; border-radius: 3px; background: #334155; }
+        .s::-webkit-slider-thumb { -webkit-appearance: none; width: 18px; height: 18px; border-radius: 50%;
+                                   background: #f59e0b; margin-top: -6px; border: 2px solid #ffffff; }
+        .red::-webkit-slider-thumb { background: red; }
+        progress { appearance: none; width: 200px; height: 10px; }
+        progress::-webkit-progress-bar { background: #e2e8f0; border-radius: 5px; }
+        progress::-webkit-progress-value { background: linear-gradient(90deg, #22d3ee 0%, #a78bfa 100%); border-radius: 5px; }
+        *::-moz-range-progress { background: blue; }
+    </style>
+    <body>
+        <div><input type="range" class="s" value="30"></div>
+        <div><progress value="0.5"></progress></div>
+        <div><input type="range" class="red" value="50" style="appearance: auto"></div>
+    </body>"#)]
+    struct Parts;
+    impl Model for Parts {
+        type Message = String;
+        fn update(&mut self, _msg: String, _context: &mut Context) {}
+    }
+
+    /// Typical web CSS for range and progress parts, laid out as in
+    /// Chromium (compared against its screenshots while writing this).
+    fn check_parts(commands: &[DrawCommand]) {
+        // The track spans the range, centered; the thumb (appearance: none)
+        // sits at the track's top plus its margin, 30% along the track minus
+        // itself, on whole pixels.
+        let fill_and_radius = |rect| { let (fill, _, radius) = rect_at(commands, rect); (fill, radius) };
+        assert_eq!(fill_and_radius(Rect::new(0.0, 9.0, 200.0, 6.0)), (Some(rgb(0x334155)), 3.0));
+        assert_eq!(rect_at(commands, Rect::new(55.0, 3.0, 18.0, 18.0)), (Some(rgb(0xf59e0b)), border(2.0, 0xffffff), 9999.0));
+        // The fill (`::-moz-range-progress`) runs to the thumb's middle.
+        assert_eq!(rect_at(commands, Rect::new(0.0, 9.0, 64.0, 6.0)).0, Some(rgb(0x0000ff)));
+
+        let bar = Rect::new(0.0, 24.0, 200.0, 10.0);
+        assert_eq!(fill_and_radius(bar), (Some(rgb(0xe2e8f0)), 5.0));
+        let value = commands.iter().find_map(|c| match c {
+            DrawCommand::DrawRect { rect, gradient: Some(_), border_radius, .. } => Some((*rect, *border_radius)),
+            _ => None,
+        });
+        assert_eq!(value, Some((Rect { width: 100.0, ..bar }, 5.0)));
+
+        // Styling only the thumb's color keeps the native track and shape.
+        assert_eq!(rect_at(commands, Rect::new(1.0, 34.0 + 8.0, 198.0, 8.0)).0, Some(rgb(0xefefef)));
+        assert_eq!(fill_and_radius(Rect::new(1.0 + 0.5 * 182.0, 34.0 + 4.0, 16.0, 16.0)), (Some(rgb(0xff0000)), 8.0));
+    }
+
+    #[test]
+    fn parts_are_styled_with_pseudo_elements() {
+        check_parts(&commands(Parts));
+    }
+
+    #[test]
+    fn runtime_css_styles_parts() {
+        struct RuntimeParts;
+        impl Model for RuntimeParts {
+            type Message = String;
+            fn update(&mut self, _msg: String, _context: &mut Context) {}
+        }
+        impl ui::TemplateLayout for RuntimeParts {
+            fn stylesheet(&self) -> &'static str {
+                PART_CSS
+            }
+            fn build_ui(
+                &self,
+                builder: &mut ui::UiBuilder,
+                _measurer: &impl TextMeasurer,
+                _default_style: &style::ContainerStyle,
+                _message_validator: &impl Fn(&str) -> bool,
+            ) -> taffy::NodeId {
+                let body = builder.create_element("body", &[]);
+                for node in [
+                    builder.create_slider(30.0, &[("type", "range"), ("class", "s")]),
+                    builder.create_progress(0.5, 1.0, &[]),
+                    builder.create_slider(50.0, &[("type", "range"), ("class", "red"), ("style", "appearance: auto")]),
+                ] {
+                    let row = builder.create_element("div", &[]);
+                    builder.append_child(row, node);
+                    builder.append_child(body, row);
+                }
+                body
+            }
+        }
+        check_parts(&commands(RuntimeParts));
+    }
+
     /// Runtime stylesheets (no compiled template) must not reset an
     /// `<input>`'s size to its type's defaults after CSS set it.
     #[test]

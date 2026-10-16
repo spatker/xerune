@@ -789,8 +789,8 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
                             RenderData::Text(_, style) => *style = base_container.clone(),
                             RenderData::Image(_, style) => *style = base_container.clone(),
                             RenderData::Checkbox(_, style) => *style = base_container.clone(),
-                            RenderData::Slider(_, style) => *style = base_container.clone(),
-                            RenderData::Progress(_, _, style) => *style = base_container.clone(),
+                            RenderData::Slider(_, style, _) => *style = base_container.clone(),
+                            RenderData::Progress(_, _, style, _) => *style = base_container.clone(),
                             RenderData::Canvas(_, style) => *style = base_container.clone(),
                             RenderData::TextInput(_, _, style) => *style = base_container.clone(),
                         }
@@ -922,8 +922,8 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
                             RenderData::Text(_, style) => *style = current_container,
                             RenderData::Image(_, style) => *style = current_container,
                             RenderData::Checkbox(_, style) => *style = current_container,
-                            RenderData::Slider(_, style) => *style = current_container,
-                            RenderData::Progress(_, _, style) => *style = current_container,
+                            RenderData::Slider(_, style, _) => *style = current_container,
+                            RenderData::Progress(_, _, style, _) => *style = current_container,
                             RenderData::Canvas(_, style) => *style = current_container,
                             RenderData::TextInput(_, _, style) => *style = current_container,
                         }
