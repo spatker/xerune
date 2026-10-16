@@ -38,6 +38,9 @@ pub struct StyleSheet {
     pub rules: Vec<Rule>,
     /// Whether any declaration is `!important`.
     pub has_important: bool,
+    /// The selectors of the rules dropped because they are invalid (or
+    /// use something xerune doesn't support), for warnings.
+    pub dropped: Vec<String>,
 }
 
 impl StyleSheet {
@@ -45,6 +48,7 @@ impl StyleSheet {
     /// rules without declarations are dropped.
     pub fn parse(css: &str) -> Self {
         let mut rules = Vec::new();
+        let mut dropped = Vec::new();
         let mut rest = css;
         loop {
             rest = skip_cdo_cdc(rest);
@@ -60,17 +64,24 @@ impl StyleSheet {
             if rest.as_bytes()[open] == b';' {
                 // `@import ...;`; a stray `;` in a selector drops the rule
                 // up to the end of its block.
+                if !at_rule {
+                    let brace = find_outside_comments(rest, b"{").unwrap_or(rest.len());
+                    dropped.push(String::from(crate::text::strip_comments(&rest[..brace]).trim()));
+                }
                 rest = if at_rule { &rest[open + 1..] } else { &rest[block_end(rest, open)..] };
                 continue;
             }
             let end = block_end(rest, open);
             if !at_rule {
                 let body = rest[open + 1..end].strip_suffix('}').unwrap_or(&rest[open + 1..end]);
-                if let Some(selectors) = parse_selector_list(prelude) {
-                    let declarations: Rc<[Declaration]> = parse_declarations(body).into();
-                    if !declarations.is_empty() {
-                        rules.extend(selectors.into_iter().map(|selector| Rule { selector, declarations: declarations.clone() }));
+                match parse_selector_list(prelude) {
+                    Some(selectors) => {
+                        let declarations: Rc<[Declaration]> = parse_declarations(body).into();
+                        if !declarations.is_empty() {
+                            rules.extend(selectors.into_iter().map(|selector| Rule { selector, declarations: declarations.clone() }));
+                        }
                     }
+                    None => dropped.push(String::from(prelude)),
                 }
             }
             rest = &rest[end..];
@@ -78,7 +89,7 @@ impl StyleSheet {
         // Stable, so equal specificities keep source order.
         rules.sort_by_key(|rule| rule.selector.specificity());
         let has_important = rules.iter().any(|rule| rule.declarations.iter().any(|d| d.important));
-        StyleSheet { rules, has_important }
+        StyleSheet { rules, has_important, dropped }
     }
 }
 
@@ -264,5 +275,6 @@ mod tests {
         let sheet = StyleSheet::parse("a, b:bogus { x: 1 } c; d { x: 2 } @ i; g { x: 5 } @1i; h { x: 6 } [ i { x: 7 } ] j { x: 8 } e { x: 3 } f { x: 4");
         let values: Vec<_> = sheet.rules.iter().map(|r| r.declarations[0].value.as_str()).collect();
         assert_eq!(values, ["3", "4"]);
+        assert_eq!(sheet.dropped, ["a, b:bogus", "c; d", "@ i; g", "@1i; h", "[ i { x: 7 } ] j"]);
     }
 }

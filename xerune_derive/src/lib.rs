@@ -1813,6 +1813,9 @@ fn expand_template(input: &DeriveInput, template: &TemplateRef) -> proc_macro2::
         keyframes_css.push_str(text);
         keyframes_css.push('\n');
         let sheet = xerune_css::sheet::StyleSheet::parse(text);
+        for selector in &sheet.dropped {
+            eprintln!("xerune: CSS rule '{}' is ignored: its selector is invalid or uses something unsupported", selector);
+        }
         let guard = match query {
             None => None,
             Some(q) => {
