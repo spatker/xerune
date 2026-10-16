@@ -60,6 +60,7 @@ pub mod runtime;
 pub mod css;
 pub mod text;
 pub mod screen;
+pub mod keys;
 /// Default styles for standard HTML element tags. Internal.
 #[doc(hidden)]
 pub mod defaults;
@@ -83,6 +84,7 @@ pub use images::{DefaultImageLoader, ImageError, ImageLoader};
 #[doc(hidden)]
 pub use style::{Overflow, ContainerStyle, RenderData, RenderKind, Display, TextAlign, LineHeight, WhiteSpace, Direction, WritingMode, FlexDirection, FlexWrap, AlignContent, AlignItems, CssJustifyContent, Position, BoxSizing};
 pub use model::{Model, InputEvent, XeruneMessage, NoMessage};
+pub use keys::{KeyAction, KeyMap};
 pub use ui::TemplateLayout;
 #[doc(hidden)]
 pub use ui::{Interaction, Ui, UiBuilder};

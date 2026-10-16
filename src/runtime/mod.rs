@@ -108,6 +108,8 @@ pub struct Runtime<M: Model, R> {
     pointer_state: crate::ui::PointerState,
     /// Counts views built, to tell whether a message rebuilt it.
     builds: u32,
+    /// What keys do in the runtime's own UI.
+    key_map: crate::keys::KeyMap,
 }
 
 impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
@@ -159,6 +161,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
              pressed: false,
              pointer_state: crate::ui::PointerState::default(),
              builds: 0,
+             key_map: crate::keys::KeyMap::default(),
          };
          runtime.update_subscriptions();
          runtime
@@ -196,6 +199,13 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
     /// device without rebuilding.
     pub fn set_target_fps(&mut self, fps: u32) {
         self.target_fps = fps.max(1);
+    }
+
+    /// Which keys move, press and cancel in the runtime's own UI (the
+    /// on-screen keyboard). [`crate::KeyMap::default`] knows the built-in
+    /// backends' names; a device with other buttons binds its own.
+    pub fn set_key_map(&mut self, key_map: crate::keys::KeyMap) {
+        self.key_map = key_map;
     }
 
     /// The frame rate in effect (see [`Self::set_target_fps`]).
