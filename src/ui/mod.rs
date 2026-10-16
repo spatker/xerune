@@ -921,17 +921,20 @@ fn traverse_layout(
         if let Some(style) = maybe_style {
             overflow = style.overflow;
 
-            if let Some(ref bs) = style.box_shadow {
-                commands.push(DrawCommand::DrawBoxShadow {
-                    rect,
-                    border_radius: style.border_radius,
-                    offset_x: bs.offset_x,
-                    offset_y: bs.offset_y,
-                    blur_radius: bs.blur_radius,
-                    spread_radius: bs.spread_radius,
-                    color: bs.color,
-                    inset: bs.inset,
-                });
+            // An outer shadow is under the background; an inset one is
+            // above it, inside the padding box (CSS Backgrounds 3, 7.1).
+            let shadow = |bs: &crate::style::BoxShadow, rect: Rect, border_radius: f32| DrawCommand::DrawBoxShadow {
+                rect,
+                border_radius,
+                offset_x: bs.offset_x,
+                offset_y: bs.offset_y,
+                blur_radius: bs.blur_radius,
+                spread_radius: bs.spread_radius,
+                color: bs.color,
+                inset: bs.inset,
+            };
+            if let Some(bs) = style.box_shadow.as_ref().filter(|bs| !bs.inset) {
+                commands.push(shadow(bs, rect, style.border_radius));
             }
 
             // A background propagated to the canvas is painted there instead.
@@ -945,6 +948,13 @@ fn traverse_layout(
                     border_radius: style.border_radius,
                     border: style.border.resolved(style.color),
                 });
+            }
+            if let Some(bs) = style.box_shadow.as_ref().filter(|bs| bs.inset) {
+                let b = &style.border;
+                let (top, right, bottom, left) = (b.top.used_width(), b.right.used_width(), b.bottom.used_width(), b.left.used_width());
+                let padding_box = Rect::new(rect.x + left, rect.y + top, (rect.width - left - right).max(0.0), (rect.height - top - bottom).max(0.0));
+                let radius = (style.border_radius - top.max(right).max(bottom).max(left)).max(0.0);
+                commands.push(shadow(bs, padding_box, radius));
             }
         }
 
