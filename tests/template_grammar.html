@@ -20,4 +20,12 @@
     <div>{% for red in flags %}<p class="{% if red %}red{% else %}blue{% endif %}">var-named-like-class</p>{% endfor %}</div>
     <div class="{% if off %}green{% endif %}"><em>template-keyword-not-a-class</em></div>
     <div>{% for flag in flags %}<p class="{% if flag %}red{% else %}blue{% endif %}">bool-loop-var</p>{% endfor %}</div>
+    <div>{% for flag in flags %}
+        <!-- an apostrophe in a comment doesn't open a quote -->
+        <p style="margin-left: {{ loop.index0 }}px" class="{% if flag %}red{% else %}blue{% endif %}">after-comment</p>
+    {% endfor %}</div>
+    <!-- nor does a {{ title }} expression make a comment tag-level -->
+    <p>after-expression-comment</p>
+    <!-- text again after the comments above -->
+    <span>quoted-{{ title }}</span>
 </div>

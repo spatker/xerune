@@ -597,6 +597,16 @@ fn cond_test_as_bool(cond: &CondTest<'_>, local_vars: &HashSet<String>) -> Strin
     }
 }
 
+/// Where the template's HTML scanner is: in text, inside a tag (where
+/// quotes delimit attribute values), or in an HTML comment (where neither
+/// tags nor quotes count: an apostrophe in a comment opens nothing).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Markup {
+    Text,
+    Tag,
+    Comment,
+}
+
 // Generate HTML with placeholders
 fn preprocess_nodes<'a>(
     nodes: &'a [Node<'a>],
@@ -604,7 +614,7 @@ fn preprocess_nodes<'a>(
     dynamic_exprs: &mut HashMap<usize, &'a Expr<'a>>,
     dynamic_loops: &mut HashMap<usize, &'a Node<'a>>,
     dynamic_ifs: &mut HashMap<usize, &'a Node<'a>>,
-    in_tag: &mut bool,
+    markup: &mut Markup,
     in_quote: &mut Option<char>,
 ) -> String {
     let mut html = String::new();
@@ -612,26 +622,38 @@ fn preprocess_nodes<'a>(
         match node {
             Node::Lit(lit) => {
                 let val = format!("{}{}{}", lit.lws, lit.val, lit.rws);
-                for c in val.chars() {
-                    if *in_tag {
-                        if let Some(quote_char) = *in_quote {
-                            if c == quote_char {
-                                *in_quote = None;
+                for (i, c) in val.char_indices() {
+                    match *markup {
+                        Markup::Comment => {
+                            if c == '>' && val[..i].ends_with("--") {
+                                *markup = Markup::Text;
                             }
-                        } else if c == '"' || c == '\'' {
-                            *in_quote = Some(c);
-                        } else if c == '>' {
-                            *in_tag = false;
                         }
-                    } else if c == '<' {
-                        *in_tag = true;
+                        Markup::Tag => {
+                            if let Some(quote_char) = *in_quote {
+                                if c == quote_char {
+                                    *in_quote = None;
+                                }
+                            } else if c == '"' || c == '\'' {
+                                *in_quote = Some(c);
+                            } else if c == '>' {
+                                *markup = Markup::Text;
+                            } else if c == '-' && val[..i].ends_with("<!-") {
+                                *markup = Markup::Comment;
+                            }
+                        }
+                        Markup::Text => {
+                            if c == '<' {
+                                *markup = Markup::Tag;
+                            }
+                        }
                     }
                 }
                 html.push_str(&val);
             }
             Node::Comment(_) => {}
             Node::Expr(_, expr) => {
-                if *in_tag {
+                if *markup == Markup::Tag {
                     push_tag_level(&mut html, node, *in_quote, "template expressions");
                 } else {
                     let id = *dynamic_counter;
@@ -641,19 +663,19 @@ fn preprocess_nodes<'a>(
                 }
             }
             Node::Loop(loop_box) => {
-                if *in_tag {
+                if *markup == Markup::Tag {
                     push_tag_level(&mut html, node, *in_quote, "`{% for %}`");
                 } else {
                     let id = *dynamic_counter;
                     *dynamic_counter += 1;
                     dynamic_loops.insert(id, node);
                     html.push_str(&format!("<template loop-id=\"{}\">", id));
-                    html.push_str(&preprocess_nodes(&loop_box.body, dynamic_counter, dynamic_exprs, dynamic_loops, dynamic_ifs, in_tag, in_quote));
+                    html.push_str(&preprocess_nodes(&loop_box.body, dynamic_counter, dynamic_exprs, dynamic_loops, dynamic_ifs, markup, in_quote));
                     html.push_str("</template>");
                 }
             }
             Node::If(if_node) => {
-                if *in_tag {
+                if *markup == Markup::Tag {
                     // `{% if cond %}checked{% endif %}` is the one tag-level
                     // conditional we support; it becomes `checked="{{ cond }}"`.
                     let checked_cond = match if_node.branches.as_slice() {
@@ -678,21 +700,21 @@ fn preprocess_nodes<'a>(
                     for (branch_idx, branch_with_span) in if_node.branches.iter().enumerate() {
                         let branch = &**branch_with_span;
                         html.push_str(&format!("<template branch-id=\"{}\" branch=\"{}\">", id, branch_idx));
-                        html.push_str(&preprocess_nodes(&branch.nodes, dynamic_counter, dynamic_exprs, dynamic_loops, dynamic_ifs, in_tag, in_quote));
+                        html.push_str(&preprocess_nodes(&branch.nodes, dynamic_counter, dynamic_exprs, dynamic_loops, dynamic_ifs, markup, in_quote));
                         html.push_str("</template>");
                     }
                     html.push_str("</template>");
                 }
             }
             Node::Break(_) => {
-                if *in_tag {
+                if *markup == Markup::Tag {
                     push_tag_level(&mut html, node, *in_quote, "`{% break %}`");
                 } else {
                     html.push_str("<template break></template>");
                 }
             }
             Node::Continue(_) => {
-                if *in_tag {
+                if *markup == Markup::Tag {
                     push_tag_level(&mut html, node, *in_quote, "`{% continue %}`");
                 } else {
                     html.push_str("<template continue></template>");
@@ -1928,7 +1950,7 @@ fn expand_template(input: &DeriveInput, template: &TemplateRef) -> proc_macro2::
     let mut dynamic_loops = HashMap::new();
     let mut dynamic_ifs = HashMap::new();
     
-    let mut in_tag = false;
+    let mut markup = Markup::Text;
     let mut in_quote = None;
     let preprocessed_html = preprocess_nodes(
         ast.nodes(),
@@ -1936,7 +1958,7 @@ fn expand_template(input: &DeriveInput, template: &TemplateRef) -> proc_macro2::
         &mut dynamic_exprs,
         &mut dynamic_loops,
         &mut dynamic_ifs,
-        &mut in_tag,
+        &mut markup,
         &mut in_quote,
     );
 

@@ -147,3 +147,16 @@ fn selectors_match_through_loops_and_ifs() {
     assert!(t.iter().filter(|(s, _)| s == "if-loop-descendant").all(|(_, c)| *c == blue));
     assert_eq!((count(&t, "loop-child"), count(&t, "if-loop-descendant")), (2, 2));
 }
+
+/// Comments are skipped when the template compiler tracks tags and quotes:
+/// an apostrophe in one used to open a "quote" that swallowed the
+/// following markup.
+#[test]
+fn comments_hide_quotes_and_expressions() {
+    let t = texts(model(true, None, ""));
+    assert_eq!(count(&t, "after-comment"), 2, "{t:?}");
+    assert_eq!(color_of(&t, "after-comment"), Color::from_rgba8(255, 0, 0, 255));
+    assert_eq!(count(&t, "after-expression-comment"), 1, "{t:?}");
+    let t = texts(model(true, None, "T"));
+    assert_eq!(count(&t, "quoted-T"), 1, "{t:?}");
+}
