@@ -24,7 +24,7 @@ macro_rules! profile {
 
 use crate::graphics::{Context, Damage, DrawCommand, Rect, TextMeasurer, Renderer, RenderResources, Surface};
 use crate::images::ImageStore;
-use crate::style::{ContainerStyle, RenderKind, AnimationIterationCount};
+use crate::style::{ContainerStyle, RenderKind};
 use crate::model::{InputEvent, Model};
 use crate::ui::{Interaction, Ui, NodeMap};
 
@@ -77,7 +77,8 @@ pub struct Runtime<M, R> {
     pub target_fps: u32,
     pub(crate) timers: Vec<Timer>,
     next_timer_id: usize,
-    pub(crate) active_animations: HashMap<NodeId, ActiveAnimation>,
+    /// Running keyframe animations, by element key.
+    pub(crate) active_animations: HashMap<u64, ActiveAnimation>,
     last_tick_time: Instant,
     /// `(now_ms, instant)` from the first `tick_at_ms` call: host millisecond
     /// timestamps are measured relative to it, keeping that clock continuous
@@ -534,6 +535,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
         }
         Runtime::<M, R>::sync_canvases(&self.ui, &mut self.context);
         self.restore_scroll();
+        self.animate(core::time::Duration::ZERO);
     }
 
     /// Sends an element's message (`data-on-click`, `data-on-hover`) to the
@@ -549,6 +551,61 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
             },
             Interaction::Text(text) => self.process_message_str(&text),
         }
+    }
+
+    /// Moves the view's keyframe animations on by `dt` and applies them.
+    /// Animations are kept by element key: one starts when an element
+    /// declares an animation (or another name), and goes on through
+    /// rebuilds. Called with no time after a build, so a rebuilt view shows
+    /// its animations right away. Returns true if anything was set.
+    fn animate(&mut self, dt: core::time::Duration) -> bool {
+        // In the browser (the studio), the page shows the template as HTML
+        // and the browser runs its animations; nothing draws these styles.
+        if cfg!(target_arch = "wasm32") || (self.ui.keyframes.is_empty() && self.active_animations.is_empty()) {
+            return false;
+        }
+        let mut declared = HashSet::new();
+        for (node, data) in &self.ui.render_data {
+            let (Some(name), Some(&key)) = (&data.style.animation_name, self.ui.keys.get(node)) else { continue };
+            declared.insert(key);
+            match self.active_animations.get_mut(&key) {
+                Some(active) if active.name == *name => {
+                    active.node_id = node;
+                    active.play_state = data.style.animation_play_state.clone();
+                }
+                _ => {
+                    self.active_animations.insert(key, ActiveAnimation::new(node, name.clone(), &data.style));
+                }
+            }
+        }
+        // Elements gone or without the animation now: a rebuild already
+        // gave them their own style.
+        self.active_animations.retain(|key, _| declared.contains(key));
+
+        let mut applied = false;
+        let mut layout_affected = false;
+        for active in self.active_animations.values_mut() {
+            if active.is_running() {
+                active.elapsed += dt;
+            }
+            let (Some((base_layout, base_style)), Some(keyframes)) = (self.ui.base_styles.get(active.node_id), self.ui.keyframes.get(&*active.name)) else {
+                continue;
+            };
+            let mut layout = base_layout.clone();
+            let mut style = base_style.clone();
+            if let Some(progress) = active.progress() {
+                layout_affected |= animation::apply_keyframes(keyframes, progress, active.easing, base_style, base_layout, &mut style, &mut layout);
+            }
+            let _ = self.ui.taffy.set_style(active.node_id, layout);
+            if let Some(data) = self.ui.render_data.get_mut(active.node_id) {
+                data.style = style;
+            }
+            applied = true;
+        }
+        if layout_affected {
+            let _ = self.ui.compute_layout(self.cached_size);
+        }
+        applied
     }
 
     /// The pointer is at (`x`, `y`), pressed or not. Sends the
@@ -811,210 +868,11 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
         let dt = now.duration_since(self.last_tick_time);
         self.last_tick_time = now;
 
-        #[cfg(not(target_arch = "wasm32"))]
-        if !self.ui.keyframes.is_empty() || !self.active_animations.is_empty() {
-            let mut declared_animations = HashMap::new();
-            for (node_id, render_data) in &self.ui.render_data {
-                let style = &render_data.style;
-                if let Some(ref name) = style.animation_name {
-                    declared_animations.insert(node_id, (name.clone(), style.clone()));
-                }
-            }
-
-            let mut animated_properties_changed = false;
-
-            for (node_id, (name, style)) in &declared_animations {
-                let play_state = style.animation_play_state.clone();
-                
-                if let Some(active) = self.active_animations.get_mut(node_id) {
-                    if active.name != *name {
-                        *active = ActiveAnimation {
-                            node_id: *node_id,
-                            name: name.clone(),
-                            duration: style.animation_duration,
-                            timing_function: style.animation_timing_function.clone(),
-                            delay: style.animation_delay,
-                            iteration_count: style.animation_iteration_count,
-                            direction: style.animation_direction.clone(),
-                            fill_mode: style.animation_fill_mode.clone(),
-                            play_state: play_state.clone(),
-                            elapsed: core::time::Duration::ZERO,
-                            is_finished: false,
-                        };
-                        animated_properties_changed = true;
-                    } else {
-                        active.play_state = play_state;
-                    }
-                } else {
-                    self.active_animations.insert(*node_id, ActiveAnimation {
-                        node_id: *node_id,
-                        name: name.clone(),
-                        duration: style.animation_duration,
-                        timing_function: style.animation_timing_function.clone(),
-                        delay: style.animation_delay,
-                        iteration_count: style.animation_iteration_count,
-                        direction: style.animation_direction.clone(),
-                        fill_mode: style.animation_fill_mode.clone(),
-                        play_state: play_state.clone(),
-                        elapsed: core::time::Duration::ZERO,
-                        is_finished: false,
-                    });
-                    animated_properties_changed = true;
-                }
-            }
-
-            let mut nodes_to_restore = Vec::new();
-            self.active_animations.retain(|node_id, _| {
-                let keep = declared_animations.contains_key(node_id);
-                if !keep {
-                    nodes_to_restore.push(*node_id);
-                    animated_properties_changed = true;
-                }
-                keep
-            });
-
-            for node_id in nodes_to_restore {
-                if let Some((base_layout, base_container)) = self.ui.base_styles.get(&node_id) {
-                    let _ = self.ui.taffy.set_style(node_id, base_layout.clone());
-                    if let Some(render_data) = self.ui.render_data.get_mut(&node_id) {
-                        render_data.style = base_container.clone();
-                    }
-                }
-            }
-
-            let mut layout_affected = false;
-
-            for (node_id, active) in &mut self.active_animations {
-                if active.is_finished {
-                    continue;
-                }
-
-                if &*active.play_state != "paused" {
-                    active.elapsed += dt;
-                }
-
-                let elapsed_sec = active.elapsed.as_secs_f32() - active.delay;
-                let duration = active.duration.max(0.001);
-                let raw_progress = elapsed_sec / duration;
-
-                let finished = match active.iteration_count {
-                    AnimationIterationCount::Infinite => false,
-                    AnimationIterationCount::Count(count) => raw_progress >= count,
-                };
-
-                let mut apply_kf = true;
-                let progress = if finished {
-                    active.is_finished = true;
-                    if &*active.fill_mode == "forwards" || &*active.fill_mode == "both" {
-                        let final_raw = match active.iteration_count {
-                            AnimationIterationCount::Infinite => 0.0,
-                            AnimationIterationCount::Count(c) => c,
-                        };
-                        let final_iter = (final_raw.max(0.001) - 0.0001) as u32;
-                        let mut final_p = final_raw % 1.0;
-                        if final_p == 0.0 && final_raw > 0.0 {
-                            final_p = 1.0;
-                        }
-                        let is_rev = match &*active.direction {
-                            "reverse" => true,
-                            "alternate" => final_iter % 2 == 1,
-                            "alternate-reverse" => final_iter % 2 == 0,
-                            _ => false,
-                        };
-                        if is_rev { 1.0 - final_p } else { final_p }
-                    } else {
-                        apply_kf = false;
-                        0.0
-                    }
-                } else if elapsed_sec < 0.0 {
-                    if &*active.fill_mode == "backwards" || &*active.fill_mode == "both" {
-                        let is_rev = &*active.direction == "reverse" || &*active.direction == "alternate-reverse";
-                        if is_rev { 1.0 } else { 0.0 }
-                    } else {
-                        apply_kf = false;
-                        0.0
-                    }
-                } else {
-                    let progress = raw_progress % 1.0;
-                    let iteration = raw_progress as u32;
-                    let is_rev = match &*active.direction {
-                        "reverse" => true,
-                        "alternate" => iteration % 2 == 1,
-                        "alternate-reverse" => iteration % 2 == 0,
-                        _ => false,
-                    };
-                    if is_rev { 1.0 - progress } else { progress }
-                };
-
-                let eased = if apply_kf {
-                    animation::ease(progress, &active.timing_function)
-                } else {
-                    0.0
-                };
-
-                if let Some((base_layout, base_container)) = self.ui.base_styles.get(node_id) {
-                    let mut current_layout = base_layout.clone();
-                    let mut current_container = base_container.clone();
-
-                    if apply_kf {
-                        if let Some(keyframes_anim) = self.ui.keyframes.get(&*active.name) {
-                            let mut animated_properties = HashSet::new();
-                            for kf in &keyframes_anim.keyframes {
-                                for (prop, _) in &kf.declarations {
-                                    animated_properties.insert(prop.clone());
-                                }
-                            }
-
-                            let mut kf1: Option<&crate::css::Keyframe> = None;
-                            let mut kf2: Option<&crate::css::Keyframe> = None;
-                            for kf in &keyframes_anim.keyframes {
-                                if kf.percentage <= eased {
-                                    kf1 = Some(kf);
-                                }
-                                if kf.percentage >= eased && kf2.is_none() {
-                                    kf2 = Some(kf);
-                                }
-                            }
-
-                            let p1 = kf1.map(|k| k.percentage).unwrap_or(0.0);
-                            let p2 = kf2.map(|k| k.percentage).unwrap_or(1.0);
-                            let segment_t = if p2 > p1 {
-                                (eased - p1) / (p2 - p1)
-                            } else {
-                                1.0
-                            };
-
-                            for prop in animated_properties {
-                                let val1 = animation::get_prop_val(kf1, &prop, base_container, base_layout);
-                                let val2 = animation::get_prop_val(kf2, &prop, base_container, base_layout);
-
-                                if let (Some(v1), Some(v2)) = (val1, val2) {
-                                    if ["width", "height", "left", "right", "top", "bottom", "margin-left", "margin-right", "margin-top", "margin-bottom", "padding-left", "padding-right", "padding-top", "padding-bottom"].contains(&prop.as_str()) {
-                                        layout_affected = true;
-                                    }
-
-                                    animation::interpolate_property(&prop, &v1, &v2, segment_t, &mut current_container, &mut current_layout);
-                                }
-                            }
-                        }
-                    }
-
-                    let _ = self.ui.taffy.set_style(*node_id, current_layout);
-                    if let Some(render_data) = self.ui.render_data.get_mut(node_id) {
-                        render_data.style = current_container;
-                    }
-                    needs_redraw = true;
-                }
-            }
-
-            if layout_affected {
-                let _ = self.ui.compute_layout(self.cached_size);
-            }
-        }
+        needs_redraw |= self.animate(dt);
 
         let target_frame_duration = core::time::Duration::from_nanos((1_000_000_000.0 / self.target_fps as f64) as u64);
         
-        let mut min_sleep = if self.active_animations.values().any(|a| !a.is_finished && &*a.play_state != "paused") {
+        let mut min_sleep = if self.active_animations.values().any(ActiveAnimation::is_running) {
             target_frame_duration
         } else {
             core::time::Duration::from_secs(3600 * 24)

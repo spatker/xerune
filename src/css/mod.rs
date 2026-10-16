@@ -8,7 +8,7 @@ pub mod media;
 pub use gradient::{parse_gradient, interpolate_gradient};
 pub use parser::{parse_hex_color, parse_px, parse_dimension, parse_length_percentage, parse_length_percentage_auto, parse_box_shadow};
 use parser::{parse_padding, parse_margin};
-pub use animation::{Keyframe, KeyframesAnimation, parse_duration_sec, parse_animation_shorthand};
+pub use animation::{Easing, Keyframe, KeyframesAnimation, Property as AnimatedProperty, Side, Value as AnimatedValue, parse_duration_sec, parse_animation_shorthand};
 pub use animation::parse_keyframes;
 
 use crate::{Color, ContainerStyle, Display, TextAlign, Direction, WritingMode, FlexDirection, FlexWrap, AlignContent, AlignItems, CssJustifyContent, BoxSizing, style::AnimationIterationCount};

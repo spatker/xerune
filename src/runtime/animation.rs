@@ -1,18 +1,22 @@
 use taffy::prelude::*;
+use crate::css::{AnimatedProperty, AnimatedValue, Easing, KeyframesAnimation};
 use crate::style::{ContainerStyle, AnimationIterationCount};
 use crate::alloc_prelude::*;
 
-/// Representation of an active CSS animation currently running on a node.
+/// Representation of an active CSS animation currently running on an
+/// element. The runtime keeps it by the element's key, so it goes on when
+/// the view is rebuilt.
 #[derive(Clone, Debug)]
 pub struct ActiveAnimation {
-    /// The NodeId of the layout node this animation applies to.
+    /// The layout node of the element in the current view.
     pub node_id: NodeId,
     /// The name of the animation keyframe mapping.
     pub name: Arc<str>,
     /// Duration of the animation sequence in seconds.
     pub duration: f32,
-    /// The easing/timing function name.
-    pub timing_function: Arc<str>,
+    /// The element's `animation-timing-function`, for keyframes that set
+    /// none of their own.
+    pub easing: Easing,
     /// Delay before animation startup in seconds.
     pub delay: f32,
     /// Number of times the animation should execute.
@@ -29,276 +33,116 @@ pub struct ActiveAnimation {
     pub is_finished: bool,
 }
 
-pub(crate) fn ease(t: f32, func: &str) -> f32 {
-    match func {
-        "linear" => t,
-        "ease" => solve_cubic_bezier(0.25, 0.1, 0.25, 1.0, t),
-        "ease-in" => solve_cubic_bezier(0.42, 0.0, 1.0, 1.0, t),
-        "ease-out" => solve_cubic_bezier(0.0, 0.0, 0.58, 1.0, t),
-        "ease-in-out" => solve_cubic_bezier(0.42, 0.0, 0.58, 1.0, t),
-        _ => {
-            if func.starts_with("cubic-bezier(") && func.ends_with(')') {
-                let inner = &func["cubic-bezier(".len()..func.len() - 1];
-                let parts: Vec<&str> = inner.split(',').collect();
-                if parts.len() == 4 {
-                    let x1 = parts[0].trim().parse::<f32>().unwrap_or(0.0);
-                    let y1 = parts[1].trim().parse::<f32>().unwrap_or(0.0);
-                    let x2 = parts[2].trim().parse::<f32>().unwrap_or(1.0);
-                    let y2 = parts[3].trim().parse::<f32>().unwrap_or(1.0);
-                    return solve_cubic_bezier(x1, y1, x2, y2, t);
+impl ActiveAnimation {
+    /// The animation `name` an element with `style` (at `node_id`) declares,
+    /// from its start.
+    pub(crate) fn new(node_id: NodeId, name: Arc<str>, style: &ContainerStyle) -> Self {
+        ActiveAnimation {
+            node_id,
+            name,
+            duration: style.animation_duration,
+            easing: Easing::parse(&style.animation_timing_function).unwrap_or(Easing::CubicBezier(0.25, 0.1, 0.25, 1.0)),
+            delay: style.animation_delay,
+            iteration_count: style.animation_iteration_count,
+            direction: style.animation_direction.clone(),
+            fill_mode: style.animation_fill_mode.clone(),
+            play_state: style.animation_play_state.clone(),
+            elapsed: core::time::Duration::ZERO,
+            is_finished: false,
+        }
+    }
+
+    /// Whether time moves it on: started, not finished and not paused.
+    pub(crate) fn is_running(&self) -> bool {
+        !self.is_finished && &*self.play_state != "paused"
+    }
+
+    fn reversed(&self, iteration: u32) -> bool {
+        match &*self.direction {
+            "reverse" => true,
+            "alternate" => iteration % 2 == 1,
+            "alternate-reverse" => iteration % 2 == 0,
+            _ => false,
+        }
+    }
+
+    /// Where in the keyframes the animation is (0 at `0%`, 1 at `100%`),
+    /// after its direction; `None` when it has no effect (in its delay or
+    /// after it ended, without a fill mode for that). Marks it finished
+    /// once its iterations are over.
+    pub(crate) fn progress(&mut self) -> Option<f32> {
+        let fills = |mode: &str| &*self.fill_mode == mode || &*self.fill_mode == "both";
+        let elapsed = self.elapsed.as_secs_f32() - self.delay;
+        if elapsed < 0.0 {
+            return fills("backwards").then(|| if self.reversed(0) { 1.0 } else { 0.0 });
+        }
+        let iterations = elapsed / self.duration.max(0.001);
+        if let AnimationIterationCount::Count(count) = self.iteration_count {
+            if iterations >= count {
+                self.is_finished = true;
+                if !fills("forwards") {
+                    return None;
                 }
-            }
-            t
-        }
-    }
-}
-
-fn solve_cubic_bezier(x1: f32, y1: f32, x2: f32, y2: f32, t: f32) -> f32 {
-    if t <= 0.0 { return 0.0; }
-    if t >= 1.0 { return 1.0; }
-
-    let mut u = t;
-    for _ in 0..8 {
-        let x = sample_curve_x(x1, x2, u);
-        let dx = sample_curve_derivative_x(x1, x2, u);
-        if dx.abs() < 1e-6 {
-            break;
-        }
-        let next_u = u - (x - t) / dx;
-        u = next_u.clamp(0.0, 1.0);
-    }
-    sample_curve_y(y1, y2, u)
-}
-
-fn sample_curve_x(x1: f32, x2: f32, t: f32) -> f32 {
-    let tm = 1.0 - t;
-    3.0 * tm * tm * t * x1 + 3.0 * tm * t * t * x2 + t * t * t
-}
-
-fn sample_curve_y(y1: f32, y2: f32, t: f32) -> f32 {
-    let tm = 1.0 - t;
-    3.0 * tm * tm * t * y1 + 3.0 * tm * t * t * y2 + t * t * t
-}
-
-fn sample_curve_derivative_x(x1: f32, x2: f32, t: f32) -> f32 {
-    let tm = 1.0 - t;
-    3.0 * tm * tm * x1 + 6.0 * tm * t * (x2 - x1) + 3.0 * t * t * (1.0 - x2)
-}
-
-fn interpolate_color(c1: crate::graphics::Color, c2: crate::graphics::Color, t: f32) -> crate::graphics::Color {
-    crate::graphics::Color {
-        r: ((1.0 - t) * c1.r as f32 + t * c2.r as f32 + 0.5) as u8,
-        g: ((1.0 - t) * c1.g as f32 + t * c2.g as f32 + 0.5) as u8,
-        b: ((1.0 - t) * c1.b as f32 + t * c2.b as f32 + 0.5) as u8,
-        a: ((1.0 - t) * c1.a as f32 + t * c2.a as f32 + 0.5) as u8,
-    }
-}
-
-fn interpolate_f32(v1: f32, v2: f32, t: f32) -> f32 {
-    (1.0 - t) * v1 + t * v2
-}
-
-fn interpolate_length_percentage(lp1: LengthPercentage, lp2: LengthPercentage, t: f32) -> Option<LengthPercentage> {
-    let r1 = lp1.into_raw();
-    let r2 = lp2.into_raw();
-    match (r1.tag(), r2.tag()) {
-        (taffy::style::CompactLength::LENGTH_TAG, taffy::style::CompactLength::LENGTH_TAG) => {
-            Some(LengthPercentage::length(interpolate_f32(r1.value(), r2.value(), t)))
-        }
-        (taffy::style::CompactLength::PERCENT_TAG, taffy::style::CompactLength::PERCENT_TAG) => {
-            Some(LengthPercentage::percent(interpolate_f32(r1.value(), r2.value(), t)))
-        }
-        _ => None,
-    }
-}
-
-fn interpolate_length_percentage_auto(lp1: LengthPercentageAuto, lp2: LengthPercentageAuto, t: f32) -> Option<LengthPercentageAuto> {
-    let r1 = lp1.into_raw();
-    let r2 = lp2.into_raw();
-    match (r1.tag(), r2.tag()) {
-        (taffy::style::CompactLength::LENGTH_TAG, taffy::style::CompactLength::LENGTH_TAG) => {
-            Some(LengthPercentageAuto::length(interpolate_f32(r1.value(), r2.value(), t)))
-        }
-        (taffy::style::CompactLength::PERCENT_TAG, taffy::style::CompactLength::PERCENT_TAG) => {
-            Some(LengthPercentageAuto::percent(interpolate_f32(r1.value(), r2.value(), t)))
-        }
-        _ => None,
-    }
-}
-
-fn interpolate_dimension(d1: Dimension, d2: Dimension, t: f32) -> Option<Dimension> {
-    let r1 = d1.into_raw();
-    let r2 = d2.into_raw();
-    match (r1.tag(), r2.tag()) {
-        (taffy::style::CompactLength::LENGTH_TAG, taffy::style::CompactLength::LENGTH_TAG) => {
-            Some(Dimension::length(interpolate_f32(r1.value(), r2.value(), t)))
-        }
-        (taffy::style::CompactLength::PERCENT_TAG, taffy::style::CompactLength::PERCENT_TAG) => {
-            Some(Dimension::percent(interpolate_f32(r1.value(), r2.value(), t)))
-        }
-        _ => None,
-    }
-}
-
-pub(crate) fn interpolate_property(
-    prop: &str,
-    val1: &str,
-    val2: &str,
-    t: f32,
-    style: &mut ContainerStyle,
-    taffy_style: &mut Style,
-) {
-    if prop == "background" || prop == "background-image" {
-        let parse = crate::css::parse_gradient;
-        if let (Some(g1), Some(g2)) = (parse(val1), parse(val2)) {
-            style.background_gradient = Some(crate::css::interpolate_gradient(&g1, &g2, t));
-            style.background_color = None;
-        } else if let (Some(c1), Some(c2)) = (crate::css::parse_hex_color(val1), crate::css::parse_hex_color(val2)) {
-            style.background_color = Some(interpolate_color(c1, c2, t));
-            style.background_gradient = None;
-        }
-    }
-    else if ["color", "background-color", "border-color"].contains(&prop) {
-        if let (Some(c1), Some(c2)) = (crate::css::parse_hex_color(val1), crate::css::parse_hex_color(val2)) {
-            let interpolated = interpolate_color(c1, c2, t);
-            match prop {
-                "color" => style.color = interpolated,
-                "background-color" => style.background_color = Some(interpolated),
-                "border-color" => style.border.sides_mut().into_iter().for_each(|side| side.color = Some(interpolated)),
-                _ => {}
+                // The end of the last iteration, which may be partway.
+                let last = (count.max(0.001) - 0.0001) as u32;
+                let end = match count % 1.0 {
+                    0.0 if count > 0.0 => 1.0,
+                    part => part,
+                };
+                return Some(if self.reversed(last) { 1.0 - end } else { end });
             }
         }
-    }
-    else if ["border-radius", "border-width", "font-size"].contains(&prop) {
-        if let (Some(v1), Some(v2)) = (crate::css::parse_px(val1), crate::css::parse_px(val2)) {
-            let interpolated = (1.0 - t) * v1 + t * v2;
-            match prop {
-                "border-radius" => style.border_radius = interpolated,
-                "border-width" => style.border.sides_mut().into_iter().for_each(|side| side.width = interpolated),
-                "font-size" => style.font_size = interpolated,
-                _ => {}
-            }
-        }
-    }
-    else if ["width", "height"].contains(&prop) {
-        if let (Some(d1), Some(d2)) = (crate::css::parse_dimension(val1), crate::css::parse_dimension(val2)) {
-            if let Some(interpolated) = interpolate_dimension(d1, d2, t) {
-                match prop {
-                    "width" => {
-                        taffy_style.size.width = interpolated;
-                        let raw = interpolated.into_raw();
-                        if raw.tag() == taffy::style::CompactLength::LENGTH_TAG {
-                            style.width = Some(raw.value());
-                        }
-                    }
-                    "height" => {
-                        taffy_style.size.height = interpolated;
-                        let raw = interpolated.into_raw();
-                        if raw.tag() == taffy::style::CompactLength::LENGTH_TAG {
-                            style.height = Some(raw.value());
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        }
-    }
-    else if ["left", "right", "top", "bottom", "margin-left", "margin-right", "margin-top", "margin-bottom"].contains(&prop) {
-        if let (Some(lp1), Some(lp2)) = (crate::css::parse_length_percentage_auto(val1), crate::css::parse_length_percentage_auto(val2)) {
-            if let Some(interpolated) = interpolate_length_percentage_auto(lp1, lp2, t) {
-                match prop {
-                    "left" => taffy_style.inset.left = interpolated,
-                    "right" => taffy_style.inset.right = interpolated,
-                    "top" => taffy_style.inset.top = interpolated,
-                    "bottom" => taffy_style.inset.bottom = interpolated,
-                    "margin-left" => taffy_style.margin.left = interpolated,
-                    "margin-right" => taffy_style.margin.right = interpolated,
-                    "margin-top" => taffy_style.margin.top = interpolated,
-                    "margin-bottom" => taffy_style.margin.bottom = interpolated,
-                    _ => {}
-                }
-            }
-        }
-    }
-    else if ["padding-left", "padding-right", "padding-top", "padding-bottom"].contains(&prop) {
-        if let (Some(lp1), Some(lp2)) = (crate::css::parse_length_percentage(val1), crate::css::parse_length_percentage(val2)) {
-            if let Some(interpolated) = interpolate_length_percentage(lp1, lp2, t) {
-                match prop {
-                    "padding-left" => {
-                        taffy_style.padding.left = interpolated;
-                        let raw = interpolated.into_raw();
-                        if raw.tag() == taffy::style::CompactLength::LENGTH_TAG {
-                            style.padding_left = raw.value();
-                        }
-                    }
-                    "padding-right" => {
-                        taffy_style.padding.right = interpolated;
-                        let raw = interpolated.into_raw();
-                        if raw.tag() == taffy::style::CompactLength::LENGTH_TAG {
-                            style.padding_right = raw.value();
-                        }
-                    }
-                    "padding-top" => {
-                        taffy_style.padding.top = interpolated;
-                        let raw = interpolated.into_raw();
-                        if raw.tag() == taffy::style::CompactLength::LENGTH_TAG {
-                            style.padding_top = raw.value();
-                        }
-                    }
-                    "padding-bottom" => {
-                        taffy_style.padding.bottom = interpolated;
-                        let raw = interpolated.into_raw();
-                        if raw.tag() == taffy::style::CompactLength::LENGTH_TAG {
-                            style.padding_bottom = raw.value();
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        }
+        let iteration = iterations as u32;
+        let progress = iterations % 1.0;
+        Some(if self.reversed(iteration) { 1.0 - progress } else { progress })
     }
 }
 
-pub(crate) fn get_prop_val(
-    kf: Option<&crate::css::Keyframe>,
-    prop: &str,
-    base_container: &ContainerStyle,
+/// Sets each property `keyframes` animate to its value at `progress`, on
+/// the element's own (`base_*`) style written into `style` / `layout`.
+/// Each property goes between the nearest keyframes that set it, with
+/// implicit `0%` / `100%` keyframes of the element's own value, and eases
+/// with the timing function of the keyframe the segment starts at (else the
+/// element's `easing`). Returns whether a property that affects layout was
+/// set.
+pub(crate) fn apply_keyframes(
+    keyframes: &KeyframesAnimation,
+    progress: f32,
+    easing: Easing,
+    base_style: &ContainerStyle,
     base_layout: &Style,
-) -> Option<String> {
-    if let Some(k) = kf {
-        if let Some((_, val)) = k.declarations.iter().find(|(p, _)| p == prop) {
-            return Some(val.clone());
+    style: &mut ContainerStyle,
+    layout: &mut Style,
+) -> bool {
+    let mut properties: Vec<AnimatedProperty> = Vec::new();
+    for (property, _) in keyframes.keyframes.iter().flat_map(|k| &k.declarations) {
+        if !properties.contains(property) {
+            properties.push(*property);
         }
     }
-    match prop {
-        "color" => Some(format!("rgba({},{},{},{})", base_container.color.r, base_container.color.g, base_container.color.b, base_container.color.a as f32 / 255.0)),
-        "background-color" => base_container.background_color.map(|c| format!("rgba({},{},{},{})", c.r, c.g, c.b, c.a as f32 / 255.0)),
-        "border-radius" => Some(format!("{}px", base_container.border_radius)),
-        "border-width" => Some(format!("{}px", base_container.border.top.width)),
-        "border-color" => base_container.border.top.color.map(|c| format!("rgba({},{},{},{})", c.r, c.g, c.b, c.a as f32 / 255.0)),
-        "font-size" => Some(format!("{}px", base_container.font_size)),
-        "width" => format_compact_length(base_layout.size.width.into_raw()),
-        "height" => format_compact_length(base_layout.size.height.into_raw()),
-        "padding-left" => format_compact_length(base_layout.padding.left.into_raw()),
-        "padding-right" => format_compact_length(base_layout.padding.right.into_raw()),
-        "padding-top" => format_compact_length(base_layout.padding.top.into_raw()),
-        "padding-bottom" => format_compact_length(base_layout.padding.bottom.into_raw()),
-        "margin-left" => format_compact_length(base_layout.margin.left.into_raw()),
-        "margin-right" => format_compact_length(base_layout.margin.right.into_raw()),
-        "margin-top" => format_compact_length(base_layout.margin.top.into_raw()),
-        "margin-bottom" => format_compact_length(base_layout.margin.bottom.into_raw()),
-        "left" => format_compact_length(base_layout.inset.left.into_raw()),
-        "right" => format_compact_length(base_layout.inset.right.into_raw()),
-        "top" => format_compact_length(base_layout.inset.top.into_raw()),
-        "bottom" => format_compact_length(base_layout.inset.bottom.into_raw()),
-        _ => None,
+    let mut layout_affected = false;
+    for property in properties {
+        let Some(own) = property.get(base_style, base_layout) else { continue };
+        let frames = keyframes.keyframes.iter().filter_map(|k| {
+            let value = k.declarations.iter().find(|(p, _)| *p == property).map(|(_, v)| v)?;
+            Some((k.percentage, value, k.easing))
+        });
+        let mut from: (f32, &AnimatedValue, Option<Easing>) = (0.0, &own, None);
+        let mut to: (f32, &AnimatedValue) = (1.0, &own);
+        let mut found_to = false;
+        for (percentage, value, keyframe_easing) in frames {
+            if percentage <= progress {
+                from = (percentage, value, keyframe_easing);
+            }
+            if percentage >= progress && !found_to {
+                to = (percentage, value);
+                found_to = true;
+            }
+        }
+        let t = if to.0 > from.0 { (progress - from.0) / (to.0 - from.0) } else { 0.0 };
+        let eased = from.2.unwrap_or(easing).apply(t);
+        property.set(&from.1.interpolate(to.1, eased), style, layout);
+        layout_affected |= property.affects_layout();
     }
-}
-
-fn format_compact_length(cl: taffy::style::CompactLength) -> Option<String> {
-    match cl.tag() {
-        taffy::style::CompactLength::LENGTH_TAG => Some(format!("{}px", cl.value())),
-        taffy::style::CompactLength::PERCENT_TAG => Some(format!("{}%", cl.value() * 100.0)),
-        _ => None,
-    }
+    layout_affected
 }
