@@ -302,66 +302,7 @@ pub struct BoxShadow {
     pub inset: bool,
 }
 
-/// A pseudo-element: `::before` / `::after`, or a part of a form control,
-/// styled with the selectors pages use for Chromium and Firefox
-/// (`::-webkit-slider-thumb`, `::-moz-range-thumb`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[non_exhaustive]
-pub enum ControlPart {
-    /// `<progress>`'s `::-webkit-progress-bar`: the track.
-    ProgressBar,
-    /// `<progress>`'s `::-webkit-progress-value` / `::-moz-progress-bar`.
-    ProgressValue,
-    /// A range's `::-webkit-slider-runnable-track` / `::-moz-range-track`.
-    SliderTrack,
-    /// A range's `::-webkit-slider-thumb` / `::-moz-range-thumb`.
-    SliderThumb,
-    /// A range's `::-moz-range-progress`: the track up to the thumb.
-    SliderFill,
-    /// A text input's `::placeholder`.
-    Placeholder,
-    /// `::before`: a box generated as the element's first child.
-    Before,
-    /// `::after`: a box generated as the element's last child.
-    After,
-}
-
-impl ControlPart {
-    const PARTS: [(ControlPart, &'static str, &'static [&'static str]); 8] = [
-        (ControlPart::ProgressBar, "-xerune-bar-", &["-webkit-progress-bar"]),
-        (ControlPart::ProgressValue, "-xerune-value-", &["-webkit-progress-value", "-moz-progress-bar"]),
-        (ControlPart::SliderTrack, "-xerune-track-", &["-webkit-slider-runnable-track", "-moz-range-track"]),
-        (ControlPart::SliderThumb, "-xerune-thumb-", &["-webkit-slider-thumb", "-moz-range-thumb"]),
-        (ControlPart::SliderFill, "-xerune-fill-", &["-moz-range-progress"]),
-        (ControlPart::Placeholder, "-xerune-placeholder-", &["placeholder", "-webkit-input-placeholder", "-moz-placeholder"]),
-        (ControlPart::Before, "-xerune-before-", &["before"]),
-        (ControlPart::After, "-xerune-after-", &["after"]),
-    ];
-
-    /// The part a pseudo-element name (without `::`) selects.
-    pub fn from_pseudo_element(name: &str) -> Option<Self> {
-        Self::PARTS.iter().find(|(_, _, names)| names.iter().any(|n| n.eq_ignore_ascii_case(name))).map(|(part, _, _)| *part)
-    }
-
-    /// Part rules reach the control as declarations with this prefix
-    /// (`-xerune-thumb-background`), since simplecss can't parse `::`.
-    pub fn declaration_prefix(self) -> &'static str {
-        Self::PARTS.iter().find(|(part, _, _)| *part == self).map_or("", |(_, prefix, _)| prefix)
-    }
-
-    /// Whether this is a part of a form control, not a generated box.
-    pub fn of_form_control(self) -> bool {
-        !matches!(self, ControlPart::Before | ControlPart::After)
-    }
-
-    /// The part and property of a prefixed declaration name.
-    pub fn from_declaration(name: &str) -> Option<(Self, &str)> {
-        if !name.starts_with("-xerune-") {
-            return None;
-        }
-        Self::PARTS.iter().find_map(|(part, prefix, _)| name.strip_prefix(prefix).map(|prop| (*part, prop)))
-    }
-}
+pub use xerune_css::ControlPart;
 
 /// A declaration for one of an element's [`ControlPart`]s.
 #[derive(Debug, Clone, PartialEq)]

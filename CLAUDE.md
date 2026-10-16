@@ -14,6 +14,7 @@ the working notes.
 |---|---|
 | `src/` | `xerune` lib: runtime, UI tree, CSS, backends |
 | `xerune_derive/` | `XeruneTemplate` / `XeruneMessage` macros. One big `lib.rs`: template parser, CSS splitting, codegen of `build_ui` |
+| `xerune_css/` | CSS text handling both of them use (`no_std`): comment/string-aware scanning, `::before`/part rules rewritten for `simplecss`, slash protection. Change CSS reading here, not in either crate |
 | `xerune_render/` | Software rasterizer (blits, rounded rects, gradients, glyphs). Has a `no_std` mode |
 | `studio/` | WASM inspector (`wasm-pack build --target web`, `features = ["browser"]`) |
 | `wpt_runner/` | WPT reftests vs Chromium screenshots; scope in `suites.txt`, known failures in `expectations.txt` (`docs/guide.md` §10) |

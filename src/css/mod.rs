@@ -16,171 +16,7 @@ use taffy::prelude::*;
 use taffy::style::Style;
 use crate::alloc_prelude::*;
 
-/// Stands in for `/` in values that pass through `simplecss` (U+2044 FRACTION
-/// SLASH, which never occurs in CSS).
-const SLASH: char = '\u{2044}';
-
-/// Byte offset of the first `wanted` in `css` outside comments and strings.
-#[cfg(feature = "std")]
-fn find_outside_comments(css: &str, wanted: &[u8]) -> Option<usize> {
-    let bytes = css.as_bytes();
-    let mut i = 0;
-    let mut quote = None;
-    while i < bytes.len() {
-        let b = bytes[i];
-        match quote {
-            Some(q) if b == q => quote = None,
-            Some(_) if b == b'\\' => i += 1,
-            Some(_) => {}
-            None if b == b'/' && bytes.get(i + 1) == Some(&b'*') => {
-                i = css[i + 2..].find("*/").map_or(bytes.len(), |end| i + 2 + end + 1);
-            }
-            None if b == b'"' || b == b'\'' => quote = Some(b),
-            None if wanted.contains(&b) => return Some(i),
-            None => {}
-        }
-        i += 1;
-    }
-    None
-}
-
-/// `css` split at each top-level `separator` (outside parentheses, comments
-/// and strings).
-#[cfg(feature = "std")]
-fn split_top_level(css: &str, separator: u8) -> Vec<&str> {
-    let mut pieces = Vec::new();
-    let mut depth = 0usize;
-    let mut start = 0;
-    let mut i = 0;
-    while let Some(offset) = find_outside_comments(&css[i..], &[separator, b'(', b')']) {
-        let at = i + offset;
-        match css.as_bytes()[at] {
-            b'(' => depth += 1,
-            b')' => depth = depth.saturating_sub(1),
-            _ if depth == 0 => {
-                pieces.push(&css[start..at]);
-                start = at + 1;
-            }
-            _ => {}
-        }
-        i = at + 1;
-    }
-    pieces.push(&css[start..]);
-    pieces
-}
-
-#[cfg(feature = "std")]
-fn strip_comments(css: &str) -> String {
-    let mut out = String::with_capacity(css.len());
-    let mut rest = css;
-    while let Some(start) = rest.find("/*") {
-        out.push_str(&rest[..start]);
-        rest = rest[start + 2..].find("*/").map_or("", |end| &rest[start + 2 + end + 2..]);
-    }
-    out.push_str(rest);
-    out
-}
-
-/// `prelude` with CSS 2's `:before` / `:after` spelled `::before` / `::after`.
-#[cfg(feature = "std")]
-fn legacy_pseudo_elements(prelude: String) -> String {
-    let mut out = String::with_capacity(prelude.len() + 2);
-    let mut rest = prelude.as_str();
-    while let Some(pos) = rest.find(':') {
-        out.push_str(&rest[..=pos]);
-        let after = &rest[pos + 1..];
-        let name_end = after.find(|c: char| !(c.is_ascii_alphanumeric() || c == '-' || c == '_')).unwrap_or(after.len());
-        let name = &after[..name_end];
-        if !out[..out.len() - 1].ends_with(':') && (name.eq_ignore_ascii_case("before") || name.eq_ignore_ascii_case("after")) {
-            out.push(':');
-        }
-        rest = after;
-    }
-    out.push_str(rest);
-    out
-}
-
-/// Rules for `::before` / `::after` and form control parts
-/// (`progress::-webkit-progress-value { background: red }`), which simplecss
-/// can't parse, become rules for the element with prefixed declarations
-/// (`progress { -xerune-value-background: red }`, see
-/// [`crate::style::ControlPart`]). Selectors of other
-/// pseudo-elements, or with anything after the part, are dropped. Mirrored
-/// in `xerune_derive`.
-#[cfg(feature = "std")]
-pub(crate) fn rewrite_part_rules(css: &str) -> std::borrow::Cow<'_, str> {
-    use crate::style::ControlPart;
-    if !css.contains("::") && !css.contains(":before") && !css.contains(":after") {
-        return std::borrow::Cow::Borrowed(css);
-    }
-    let mut out = String::with_capacity(css.len());
-    let mut rest = css;
-    while let Some(open) = find_outside_comments(rest, b"{") {
-        // The block's end, past nested blocks.
-        let mut depth = 1;
-        let mut end = open + 1;
-        while depth > 0 {
-            match find_outside_comments(&rest[end..], b"{}") {
-                Some(offset) => {
-                    end += offset;
-                    depth = if rest.as_bytes()[end] == b'{' { depth + 1 } else { depth - 1 };
-                    end += 1;
-                }
-                None => {
-                    end = rest.len();
-                    break;
-                }
-            }
-        }
-        let prelude = legacy_pseudo_elements(strip_comments(&rest[..open]));
-        if prelude.trim_start().starts_with('@') || !prelude.contains("::") {
-            out.push_str(&rest[..end]);
-        } else {
-            let body = rest[open + 1..end].strip_suffix('}').unwrap_or(&rest[open + 1..end]);
-            let mut plain = Vec::new();
-            let mut parts: Vec<(ControlPart, Vec<&str>)> = Vec::new();
-            for selector in split_top_level(&prelude, b',') {
-                let selector = selector.trim();
-                let Some((host, pseudo)) = selector.split_once("::") else {
-                    plain.push(selector);
-                    continue;
-                };
-                let name_end = pseudo.find(|c: char| !(c.is_ascii_alphanumeric() || c == '-' || c == '_')).unwrap_or(pseudo.len());
-                let (Some(part), true) = (ControlPart::from_pseudo_element(&pseudo[..name_end]), pseudo[name_end..].trim().is_empty()) else {
-                    continue;
-                };
-                let host = if host.trim().is_empty() { "*" } else { host.trim() };
-                match parts.iter_mut().find(|(p, _)| *p == part) {
-                    Some((_, hosts)) => hosts.push(host),
-                    None => parts.push((part, vec![host])),
-                }
-            }
-            if !plain.is_empty() {
-                out.push_str(&plain.join(", "));
-                out.push_str(" {");
-                out.push_str(body);
-                out.push('}');
-            }
-            for (part, hosts) in parts {
-                out.push_str(&hosts.join(", "));
-                out.push_str(" {");
-                for declaration in split_top_level(body, b';') {
-                    if let Some((name, value)) = strip_comments(declaration).split_once(':') {
-                        out.push_str(part.declaration_prefix());
-                        out.push_str(name.trim());
-                        out.push(':');
-                        out.push_str(value);
-                        out.push(';');
-                    }
-                }
-                out.push('}');
-            }
-        }
-        rest = &rest[end..];
-    }
-    out.push_str(rest);
-    std::borrow::Cow::Owned(out)
-}
+use xerune_css::SLASH;
 
 /// Rewrites a stylesheet into something `simplecss` can match against the
 /// classes the DOM builder adds: `:nth-child(N)` becomes `.nth-child-N` and
@@ -189,7 +25,7 @@ pub(crate) fn rewrite_part_rules(css: &str) -> std::borrow::Cow<'_, str> {
 /// of a `font` shorthand) becomes [`SLASH`].
 #[cfg(feature = "std")]
 pub(crate) fn rewrite_for_simplecss(css: &str) -> String {
-    let css = rewrite_part_rules(css);
+    let css = xerune_css::rewrite_part_rules(css);
     let css = css.as_ref();
     const NTH: &str = ":nth-child(";
     let mut out = String::with_capacity(css.len());
@@ -214,17 +50,7 @@ pub(crate) fn rewrite_for_simplecss(css: &str) -> String {
     // impls), which is what `:checked` means for checkboxes.
     let css = out.replace(":last-child", ".last-child").replace(":checked", "[checked]");
 
-    let mut out = String::with_capacity(css.len());
-    let mut rest = css.as_str();
-    while let Some(pos) = rest.find('/') {
-        out.push_str(&rest[..pos]);
-        let after = &rest[pos + 1..];
-        let num = after.len() - after.trim_start_matches(|c: char| c.is_ascii_digit() || c == '.').len();
-        out.push(if num == 0 { '/' } else { SLASH });
-        rest = after;
-    }
-    out.push_str(rest);
-    out
+    xerune_css::protect_slashes(&css)
 }
 
 struct FastLayoutStyle {

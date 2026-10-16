@@ -1,5 +1,5 @@
 [workspace]
-members = ["wpt_runner", "xerune_render", "xerune_derive", "studio"]
+members = ["wpt_runner", "xerune_render", "xerune_derive", "xerune_css", "studio"]
 
 
 [package]
@@ -52,6 +52,7 @@ emoji = []
 [dependencies]
 # Exact: generated code uses `xerune::__private`, which changes with the macro.
 xerune_derive = { version = "=0.1.0", path = "xerune_derive" }
+xerune_css = { version = "=0.1.0", path = "xerune_css" }
 wasm-bindgen = { version = "0.2", optional = true }
 serde = { version = "1.0", features = ["derive"], optional = true }
 serde_json = { version = "1.0", optional = true }

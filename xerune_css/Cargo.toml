@@ -1,0 +1,13 @@
+[package]
+name = "xerune_css"
+version = "0.1.0"
+edition = "2024"
+description = "CSS text handling shared by xerune and its template macro"
+license = "MIT"
+repository = "https://github.com/spatker/xerune"
+readme = "../README.md"
+keywords = ["css", "embedded", "xerune"]
+categories = ["embedded", "no-std", "parsing"]
+rust-version = "1.85"
+
+[dependencies]

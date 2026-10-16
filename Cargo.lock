@@ -3249,9 +3249,14 @@ dependencies = [
  "ureq",
  "wasm-bindgen",
  "winit",
+ "xerune_css",
  "xerune_derive",
  "xerune_render",
 ]
+
+[[package]]
+name = "xerune_css"
+version = "0.1.0"
 
 [[package]]
 name = "xerune_derive"
@@ -3265,6 +3270,7 @@ dependencies = [
  "quote",
  "simplecss",
  "syn 2.0.114",
+ "xerune_css",
 ]
 
 [[package]]
