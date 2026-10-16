@@ -40,13 +40,22 @@
     .chip.bad { color: #fb7185; background-color: rgba(244,63,94,0.12); }
     .btn { display: flex; justify-content: center; align-items: center; padding: 11px 16px; border-radius: 12px;
            font-size: 13px; font-weight: bold; color: #ffffff; background-color: #141c2e;
-           border: 1px solid rgba(255,255,255,0.08); }
+           border: 1px solid rgba(255,255,255,0.08);
+           transition: background 0.15s ease-out, border-color 0.15s ease-out; }
+    .btn:hover { background-color: #1c2740; border-color: rgba(255,255,255,0.18); }
+    .btn:active { background-color: #26344f; transition-duration: 0.05s; }
     .btn.blue { background: linear-gradient(180deg, #0ea5e9 0%, #0369a1 100%); border: 1px solid rgba(125,211,252,0.4);
                 box-shadow: 0px 4px 14px rgba(14,165,233,0.30); }
     .btn.rose { background: linear-gradient(180deg, #f43f5e 0%, #be123c 100%); border: 1px solid rgba(253,164,175,0.4);
                 box-shadow: 0px 4px 14px rgba(244,63,94,0.30); }
     .btn.violet { background: linear-gradient(180deg, #8b5cf6 0%, #6d28d9 100%); border: 1px solid rgba(196,181,253,0.4);
                   box-shadow: 0px 4px 14px rgba(139,92,246,0.30); }
+    .btn.blue:hover { background: linear-gradient(180deg, #38bdf8 0%, #0284c7 100%); }
+    .btn.rose:hover { background: linear-gradient(180deg, #fb7185 0%, #e11d48 100%); }
+    .btn.violet:hover { background: linear-gradient(180deg, #a78bfa 0%, #7c3aed 100%); }
+    .btn.blue:active { background: linear-gradient(180deg, #0284c7 0%, #075985 100%); }
+    .btn.rose:active { background: linear-gradient(180deg, #e11d48 0%, #9f1239 100%); }
+    .btn.violet:active { background: linear-gradient(180deg, #7c3aed 0%, #5b21b6 100%); }
 
     /* Toggle switch: a checkbox whose knob is its ::before. */
     .switch-row { display: flex; flex-direction: row; align-items: center; justify-content: space-between; padding: 7px 0; }
@@ -54,10 +63,10 @@
     .switch-name { font-size: 13px; color: #e6ebf5; }
     .switch-hint { font-size: 11px; color: #5d6b85; margin-top: 2px; }
     .switch { appearance: none; position: relative; width: 40px; height: 22px; margin: 0; border-radius: 11px;
-              background-color: #1e293b; }
+              background: linear-gradient(90deg, #1e293b 0%, #1e293b 100%); transition: background 0.18s ease-out; }
     .switch:checked { background: linear-gradient(90deg, #0ea5e9 0%, #22d3ee 100%); }
     .switch::before { content: ""; position: absolute; left: 3px; top: 3px; width: 16px; height: 16px; border-radius: 8px;
-                      background-color: #e2e8f0; box-shadow: 0px 1px 3px rgba(0,0,0,0.5); }
+                      background-color: #e2e8f0; box-shadow: 0px 1px 3px rgba(0,0,0,0.5); transition: left 0.18s ease-out; }
     .switch:checked::before { left: 21px; }
 
     /* ---------- system ---------- */
