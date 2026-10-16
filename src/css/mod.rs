@@ -96,7 +96,8 @@ fn parse_layout_style_fast(s: &str) -> Option<FastLayoutStyle> {
 }
 
 /// Parses a CSS inline style string (e.g., "color: #ff0000; border-width: 2px;")
-/// and applies the values directly onto the given styling structures.
+/// and applies the values directly onto the given styling structures; the
+/// `!important` ones are left for [`parse_inline_style_important`].
 pub fn parse_inline_style(style_str: &str, current_style: &mut ContainerStyle, taffy_style: &mut Style) {
     if style_str.starts_with("left:") {
         if let Some(parsed) = parse_layout_style_fast(style_str) {
@@ -109,13 +110,22 @@ pub fn parse_inline_style(style_str: &str, current_style: &mut ContainerStyle, t
         }
     }
 
+    apply_inline_style(style_str, false, current_style, taffy_style);
+}
+
+/// Applies the `!important` declarations of a `style` attribute, which
+/// come after the stylesheet's (see [`parse_inline_style`] for the others).
+pub fn parse_inline_style_important(style_str: &str, current_style: &mut ContainerStyle, taffy_style: &mut Style) {
+    if style_str.contains('!') {
+        apply_inline_style(style_str, true, current_style, taffy_style);
+    }
+}
+
+fn apply_inline_style(style_str: &str, important: bool, current_style: &mut ContainerStyle, taffy_style: &mut Style) {
     for font_pass in [true, false] {
-        for decl in style_str.split(';') {
-            if let Some((key, val)) = decl.split_once(':') {
-                let (key, val) = (key.trim(), val.trim());
-                if !key.is_empty() && !val.is_empty() && sets_font_size(key) == font_pass {
-                    apply_declaration(key, val, current_style, taffy_style);
-                }
+        for d in xerune_css::sheet::declarations(style_str) {
+            if d.important == important && sets_font_size(&d.name) == font_pass {
+                apply_declaration(&d.name, &d.value, current_style, taffy_style);
             }
         }
     }

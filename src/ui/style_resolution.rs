@@ -313,6 +313,13 @@ pub(crate) fn resolve_styles(
         viewport: (vw.round() as u32, vh.round() as u32),
     };
 
+    // Applied after the `style` attribute, so not part of the cached style.
+    let important_rules: Vec<usize> = match stylesheet.has_important {
+        true => cache_key.matched_rules.iter().copied()
+            .filter(|&i| stylesheet.rules[i].selector.pseudo_element().is_none() && stylesheet.rules[i].declarations.iter().any(|d| d.important))
+            .collect(),
+        false => Vec::new(),
+    };
     let (mut layout_style, mut current_style) = if let Some(cached_styles) = style_cache.get(&cache_key) {
         CACHE_STATS.with(|stats| {
             let (hits, misses) = stats.get();
@@ -333,7 +340,8 @@ pub(crate) fn resolve_styles(
                 let rule = &stylesheet.rules[index];
                 match rule.selector.pseudo_element() {
                     None => {
-                        for decl in rule.declarations.iter().filter(|d| css::sets_font_size(&d.name) == font_pass) {
+                        // `!important` ones come after the `style` attribute.
+                        for decl in rule.declarations.iter().filter(|d| !d.important && css::sets_font_size(&d.name) == font_pass) {
                             css::apply_declaration(&decl.name, &decl.value, &mut c_style, &mut l_style);
                         }
                     }
@@ -389,6 +397,16 @@ pub(crate) fn resolve_styles(
     });
     if let Some(style_str) = style_str {
         css::parse_inline_style(style_str, &mut current_style, &mut layout_style);
+    }
+    for font_pass in [true, false] {
+        for &index in &important_rules {
+            for decl in stylesheet.rules[index].declarations.iter().filter(|d| d.important && css::sets_font_size(&d.name) == font_pass) {
+                css::apply_declaration(&decl.name, &decl.value, &mut current_style, &mut layout_style);
+            }
+        }
+    }
+    if let Some(style_str) = style_str {
+        css::parse_inline_style_important(style_str, &mut current_style, &mut layout_style);
     }
 
     // 3. Process other attributes using generic parser

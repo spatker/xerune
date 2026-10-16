@@ -3,6 +3,7 @@
 //! At-rules are skipped (`@media` is split out first, see
 //! [`crate::media`]), as are nested rules.
 
+use alloc::borrow::Cow;
 use alloc::rc::Rc;
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -35,6 +36,8 @@ pub struct Rule {
 pub struct StyleSheet {
     /// The rules in cascade order: by specificity, then source order.
     pub rules: Vec<Rule>,
+    /// Whether any declaration is `!important`.
+    pub has_important: bool,
 }
 
 impl StyleSheet {
@@ -48,7 +51,7 @@ impl StyleSheet {
             if rest.is_empty() {
                 break;
             }
-            let Some(open) = find_outside_comments(rest, b"{;") else {
+            let Some(open) = prelude_end(rest) else {
                 break;
             };
             let prelude = crate::text::strip_comments(&rest[..open]);
@@ -74,7 +77,25 @@ impl StyleSheet {
         }
         // Stable, so equal specificities keep source order.
         rules.sort_by_key(|rule| rule.selector.specificity());
-        StyleSheet { rules }
+        let has_important = rules.iter().any(|rule| rule.declarations.iter().any(|d| d.important));
+        StyleSheet { rules, has_important }
+    }
+}
+
+/// The offset of the `{` or `;` that ends the prelude at the start of
+/// `css`. A `{` inside `[ ]` or `( )` is part of the prelude.
+fn prelude_end(css: &str) -> Option<usize> {
+    let mut depth = 0usize;
+    let mut at = 0;
+    loop {
+        at += find_outside_comments(&css[at..], b"{;[]()")?;
+        match css.as_bytes()[at] {
+            b'[' | b'(' => depth += 1,
+            b']' | b')' => depth = depth.saturating_sub(1),
+            _ if depth == 0 => return Some(at),
+            _ => {}
+        }
+        at += 1;
     }
 }
 
@@ -109,19 +130,39 @@ fn block_end(css: &str, open: usize) -> usize {
     css.len()
 }
 
+/// A declaration borrowed from the text it was read from, where it could
+/// be (a lowercase name, no comments).
+#[derive(Debug, Clone, PartialEq)]
+pub struct DeclarationRef<'a> {
+    /// The property, ASCII-lowercased (custom properties keep their case).
+    pub name: Cow<'a, str>,
+    /// The value as written, without comments and `!important`.
+    pub value: Cow<'a, str>,
+    /// Whether the value ended in `!important`.
+    pub important: bool,
+}
+
 /// The declarations of a block's contents (or a `style` attribute), in
 /// order. Invalid ones are skipped; so are nested rules.
-pub fn parse_declarations(block: &str) -> Vec<Declaration> {
-    let mut declarations = Vec::new();
+pub fn declarations(block: &str) -> impl Iterator<Item = DeclarationRef<'_>> {
     let mut rest = block;
-    while !rest.trim().is_empty() {
+    core::iter::from_fn(move || loop {
+        if rest.trim().is_empty() {
+            return None;
+        }
         let (text, next) = next_declaration(rest);
         rest = next;
         if let Some(declaration) = parse_declaration(text) {
-            declarations.push(declaration);
+            return Some(declaration);
         }
-    }
-    declarations
+    })
+}
+
+/// [`declarations`], owned.
+pub fn parse_declarations(block: &str) -> Vec<Declaration> {
+    declarations(block)
+        .map(|d| Declaration { name: d.name.into_owned(), value: d.value.into_owned(), important: d.important })
+        .collect()
 }
 
 /// The text of the first declaration in `block` and what follows it: up to
@@ -144,8 +185,12 @@ fn next_declaration(block: &str) -> (&str, &str) {
 }
 
 /// One `name: value` declaration; `None` when it has no name or value.
-fn parse_declaration(text: &str) -> Option<Declaration> {
-    let text = crate::text::strip_comments(text);
+fn parse_declaration(text: &str) -> Option<DeclarationRef<'_>> {
+    if text.contains("/*") {
+        let text = crate::text::strip_comments(text);
+        let d = parse_declaration(&text)?;
+        return Some(DeclarationRef { name: Cow::Owned(d.name.into_owned()), value: Cow::Owned(d.value.into_owned()), important: d.important });
+    }
     let (name, value) = text.split_once(':')?;
     let name = name.trim();
     let valid_name = !name.is_empty()
@@ -164,8 +209,12 @@ fn parse_declaration(text: &str) -> Option<Declaration> {
     if value.is_empty() {
         return None;
     }
-    let name = if name.starts_with("--") { String::from(name) } else { name.to_ascii_lowercase() };
-    Some(Declaration { name, value: String::from(value), important })
+    let name = if name.starts_with("--") || !name.bytes().any(|b| b.is_ascii_uppercase()) {
+        Cow::Borrowed(name)
+    } else {
+        Cow::Owned(name.to_ascii_lowercase())
+    };
+    Some(DeclarationRef { name, value: Cow::Borrowed(value), important })
 }
 
 #[cfg(test)]
@@ -210,8 +259,9 @@ mod tests {
 
     #[test]
     fn invalid_selector_lists_drop_the_rule() {
-        // Not at-rules: `@ x` and `@1x` are part of the selector.
-        let sheet = StyleSheet::parse("a, b:bogus { x: 1 } c; d { x: 2 } @ i; g { x: 5 } @1i; h { x: 6 } e { x: 3 } f { x: 4");
+        // Not at-rules: `@ x` and `@1x` are part of the selector. A `{` in
+        // `[ ]` belongs to the selector too.
+        let sheet = StyleSheet::parse("a, b:bogus { x: 1 } c; d { x: 2 } @ i; g { x: 5 } @1i; h { x: 6 } [ i { x: 7 } ] j { x: 8 } e { x: 3 } f { x: 4");
         let values: Vec<_> = sheet.rules.iter().map(|r| r.declarations[0].value.as_str()).collect();
         assert_eq!(values, ["3", "4"]);
     }

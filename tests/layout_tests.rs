@@ -835,6 +835,37 @@ fn media_rules_cascade_by_specificity() {
     assert_eq!(colors, [(255, 0, 0), (0, 255, 0)]);
 }
 
+#[derive(XeruneTemplate)]
+#[template(source = r#"<style>
+  div { width: 10px; height: 10px; }
+  #a { background: #ff0000 !important; }
+  .a { background: #0000ff; }
+  .b { background: #ff0000 !important; }
+</style>
+<div id="a" class="a" style="background: #00ff00"></div>
+<div class="b" style="background: #0000ff !important"></div>"#)]
+struct ImportantModel;
+
+impl Model for ImportantModel {
+    type Message = MockMsg;
+    fn update(&mut self, _msg: Self::Message, _context: &mut Context) {}
+}
+
+/// `!important` declarations beat the `style` attribute, unless it is
+/// `!important` too.
+#[test]
+fn important_declarations_come_last() {
+    let mut runtime = Runtime::new(ImportantModel, MockMeasurer);
+    crate::set_size(&mut runtime, 800.0, 600.0);
+    let mut boxes: Vec<_> = runtime.ui.build_commands(&std::collections::HashMap::new(), None).iter().filter_map(|c| match c {
+        DrawCommand::DrawRect { color: Some(c), rect, .. } if rect.width == 10.0 => Some((rect.y, (c.r, c.g, c.b))),
+        _ => None,
+    }).collect();
+    boxes.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let colors: Vec<_> = boxes.iter().map(|b| b.1).collect();
+    assert_eq!(colors, [(255, 0, 0), (0, 0, 255)]);
+}
+
 mod canvas {
     //! The canvas background: browsers paint `<html>`'s background (else
     //! `<body>`'s, else white) behind every frame.

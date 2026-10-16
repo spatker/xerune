@@ -9,13 +9,13 @@
 # css/CSS2/borders                      22    22   481     4%      3
 # css/CSS2/box                           0     0     9     0%      0
 # css/CSS2/box-display                  14    14    68    17%     38
-# css/CSS2/cascade                      16    16    12    57%      4
+# css/CSS2/cascade                      18    18    10    64%      4
 # css/CSS2/colors                        5     5    14    26%      0
 # css/CSS2/linebox                       1     1   181     1%      8
 # css/CSS2/margin-padding-clear         31    30   639     5%     12
 # css/CSS2/normal-flow                  36    34   635     5%     75
 # css/CSS2/positioning                  14    14   472     3%     34
-# css/CSS2/selectors                    55    54   470    10%     20
+# css/CSS2/selectors                    56    55   469    11%     20
 # css/CSS2/syntax                      135   135   122    53%     18
 # css/CSS2/text                        146   143   233    39%     30
 # css/CSS2/values                        8     8    16    33%      1
@@ -27,7 +27,7 @@
 # css/css-box                            0     0     2     0%     65
 # css/css-cascade                        6     4    25    19%     19
 # css/css-color                         45    44   236    16%     25
-# css/css-conditional                   16     2   115    12%     34
+# css/css-conditional                   17     2   114    13%     34
 # css/css-display                        3     3    39     7%     38
 # css/css-flexbox                      263   222   520    34%    189
 # css/css-images                        29     4   168    15%    199
@@ -40,7 +40,7 @@
 # css/css-variables                     16    16   164     9%      2
 # css/mediaqueries                       0     0    47     0%     11
 # css/selectors                         32    27    58    36%    135
-# total                               1193   928  7252    14%   1979
+# total                               1197   931  7248    14%   1979
 FAIL css/CSS2/abspos/abspos-containing-block-initial-004a.xht
 FAIL css/CSS2/abspos/abspos-containing-block-initial-004b.xht
 FAIL css/CSS2/abspos/abspos-containing-block-initial-004c.xht
@@ -932,10 +932,8 @@ FAIL css/CSS2/box-display/root-box-002.xht
 FAIL css/CSS2/box-display/three-block-in-inlines-cascading-margins.html
 FAIL css/CSS2/box-display/two-block-in-inlines-with-text-between.html
 FAIL css/CSS2/cascade/at-import-011.xht
-FAIL css/CSS2/cascade/cascade-009.xht
 FAIL css/CSS2/cascade/cascade-009a.xht
 FAIL css/CSS2/cascade/cascade-009b.xht
-FAIL css/CSS2/cascade/cascade-012.xht
 FAIL css/CSS2/cascade/html-attribute-009.xht
 FAIL css/CSS2/cascade/inherit-computed-002.html
 FAIL css/CSS2/cascade/sort-by-order-001.xht
@@ -3350,7 +3348,6 @@ FAIL css/CSS2/selectors/lang-selector-006.xht
 FAIL css/CSS2/selectors/pseudo-002.xht
 FAIL css/CSS2/selectors/pseudo-006.xht
 FAIL css/CSS2/selectors/pseudo-008.xht
-FAIL css/CSS2/selectors/selectors-002.xht
 FAIL css/CSS2/selectors/sibling-selector-003.xht
 FAIL css/CSS2/selectors/universal-selector-002.xht
 FAIL css/CSS2/selectors/universal-selector-005.xht
@@ -4712,7 +4709,6 @@ FAIL css/css-conditional/css-supports-026.xht
 FAIL css/css-conditional/css-supports-031.xht
 FAIL css/css-conditional/css-supports-033.xht
 FAIL css/css-conditional/css-supports-034.xht
-FAIL css/css-conditional/css-supports-035.xht
 FAIL css/css-conditional/css-supports-036.xht
 FAIL css/css-conditional/css-supports-040.xht
 FAIL css/css-conditional/css-supports-041.xht

@@ -462,6 +462,14 @@ impl ElementStyle {
         crate::css::apply_declarations(declarations, &mut self.style, &mut self.layout);
     }
 
+    /// Applies the `!important` declarations of the `style` attribute in
+    /// `attrs`, after the stylesheet's.
+    pub fn apply_important_style(&mut self, attrs: &[(Cow<'static, str>, Cow<'_, str>)]) {
+        if let Some((_, style)) = attrs.iter().find(|(name, _)| name == "style") {
+            crate::css::parse_inline_style_important(style, &mut self.style, &mut self.layout);
+        }
+    }
+
     /// Applies CSS declarations for the element's pseudo-element `part`
     /// (`::before`, a slider's thumb), kept as written until it is built.
     pub fn apply_part(&mut self, part: crate::style::ControlPart, declarations: &[(&str, &str)]) {

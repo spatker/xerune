@@ -1057,7 +1057,8 @@ fn get_classes_and_conditions(
 struct MatchedRule {
     /// The pseudo-element the declarations are for, if any.
     part: Option<xerune_css::ControlPart>,
-    declarations: Vec<(String, String)>,
+    /// Name, value and whether it is `!important`.
+    declarations: Vec<(String, String, bool)>,
     condition: Option<String>,
     /// Guard expression (`xerune::css::media::matches_query(...)`) when the
     /// rule was declared inside an `@media` block; None = always applies.
@@ -1311,8 +1312,8 @@ fn compile_dom_node<'a>(
                     Some(PseudoElement::Part(part)) if has_parts || !part.of_form_control() => Some(part),
                     Some(_) => continue,
                 };
-                let declarations: Vec<(String, String)> = rule.declarations.iter()
-                    .map(|d| (d.name.clone(), d.value.clone()))
+                let declarations: Vec<(String, String, bool)> = rule.declarations.iter()
+                    .map(|d| (d.name.clone(), d.value.clone(), d.important))
                     .collect();
                 let mut push = |condition: Option<String>| matched_rules.push(MatchedRule {
                     part,
@@ -1348,32 +1349,46 @@ fn compile_dom_node<'a>(
                 }
             }
 
+            // `!important` declarations come after the `style` attribute,
+            // which `begin_element` applies.
             let mut rule_applications = Vec::new();
+            let mut important_applications = Vec::new();
             for rule in matched_rules {
-                let (names, values): (Vec<_>, Vec<_>) = rule.declarations.into_iter().unzip();
-                let mut body = match rule.part {
-                    None => quote! { el.apply(&[#((#names, #values)),*]); },
-                    Some(part) => {
-                        let part = syn::Ident::new(&format!("{part:?}"), proc_macro2::Span::call_site());
-                        quote! { el.apply_part(::xerune::__private::ControlPart::#part, &[#((#names, #values)),*]); }
+                let important = rule.part.is_none();
+                let (important_declarations, declarations): (Vec<_>, Vec<_>) = rule.declarations.into_iter().partition(|d| important && d.2);
+                for (declarations, applications) in [(declarations, &mut rule_applications), (important_declarations, &mut important_applications)] {
+                    if declarations.is_empty() {
+                        continue;
                     }
-                };
-                if let Some(cond) = rule.condition {
-                    let cond_tokens: proc_macro2::TokenStream = cond.parse().unwrap();
-                    body = quote! {
-                        if #cond_tokens {
-                            #body
+                    let (names, values): (Vec<_>, Vec<_>) = declarations.into_iter().map(|(name, value, _)| (name, value)).unzip();
+                    let mut body = match rule.part {
+                        None => quote! { el.apply(&[#((#names, #values)),*]); },
+                        Some(part) => {
+                            let part = syn::Ident::new(&format!("{part:?}"), proc_macro2::Span::call_site());
+                            quote! { el.apply_part(::xerune::__private::ControlPart::#part, &[#((#names, #values)),*]); }
                         }
                     };
+                    if let Some(cond) = &rule.condition {
+                        let cond_tokens: proc_macro2::TokenStream = cond.parse().unwrap();
+                        body = quote! {
+                            if #cond_tokens {
+                                #body
+                            }
+                        };
+                    }
+                    if let Some(guard) = &rule.media_guard {
+                        body = quote! {
+                            if #guard {
+                                #body
+                            }
+                        };
+                    }
+                    applications.push(body);
                 }
-                if let Some(guard) = rule.media_guard {
-                    body = quote! {
-                        if #guard {
-                            #body
-                        }
-                    };
-                }
-                rule_applications.push(body);
+            }
+            let style_attribute = attrs.borrow().iter().find(|a| a.name.local.as_ref() == "style").map(|a| a.value.to_string());
+            if style_attribute.is_some_and(|style| style.contains('!') || is_dynamic(&style)) {
+                important_applications.push(quote! { el.apply_important_style(attrs_slice); });
             }
 
             // Create attribute constructor
@@ -1436,6 +1451,7 @@ fn compile_dom_node<'a>(
                     #(#rule_applications)*
                     #click
                     let node = builder.begin_element(&mut el, parent, attrs_slice, message_validator);
+                    #(#important_applications)*
                     (el, node)
                 };
                 {
