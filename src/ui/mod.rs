@@ -241,24 +241,20 @@ impl Ui {
         let (mut uses_hover, mut uses_active) = (false, false);
         #[cfg(feature = "std")]
         if !stylesheet_str.is_empty() || builder.node_metadata.iter().next().is_some() {
-            // Resolve `@media` blocks against the current viewport first; the
-            // expanded text is what the stylesheet parser (which skips at-rules) reads.
-            let expanded = if stylesheet_str.contains("@media") {
-                css::media::expand_for_viewport(stylesheet_str)
-            } else {
-                stylesheet_str.to_string()
-            };
             let cached = style_resolution::STYLESHEET_CACHE.with(|cache| {
                 let mut cache_guard = cache.borrow_mut();
-                if let Some(c) = cache_guard.get(&expanded) {
+                if let Some(c) = cache_guard.get(stylesheet_str) {
                     c
                 } else {
-                    let keyframes = css::parse_keyframes(&expanded);
-                    let cached_val = std::rc::Rc::new(style_resolution::CachedStyles::new(&expanded, keyframes));
-                    cache_guard.insert(expanded, cached_val.clone());
+                    let keyframes = css::parse_keyframes(stylesheet_str);
+                    let cached_val = std::rc::Rc::new(style_resolution::CachedStyles::new(stylesheet_str, keyframes));
+                    cache_guard.insert(stylesheet_str.to_string(), cached_val.clone());
                     cached_val
                 }
             });
+            // The `@media` blocks matching the viewport this view is built for.
+            let (width, height) = crate::screen::size();
+            let media = cached.sheet.media_matches(width, height);
 
             if builder.node_metadata.get(root).is_some() && builder.keys.get(root).is_none() {
                 builder.keys.insert(root, 0);
@@ -278,6 +274,7 @@ impl Ui {
                     default_style,
                     message_validator,
                     &cached.sheet,
+                    &media,
                     &builder.node_metadata,
                     &builder.keys,
                     &builder.pointer,

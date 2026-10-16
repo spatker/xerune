@@ -16,7 +16,7 @@
 # css/CSS2/normal-flow                  36    34   635     5%     75
 # css/CSS2/positioning                  14    14   472     3%     34
 # css/CSS2/selectors                    56    55   469    11%     20
-# css/CSS2/syntax                      135   135   122    53%     18
+# css/CSS2/syntax                      136   136   121    53%     18
 # css/CSS2/text                        146   143   233    39%     30
 # css/CSS2/values                        8     8    16    33%      1
 # css/CSS2/visudet                       4     1    20    17%     14
@@ -40,7 +40,7 @@
 # css/css-variables                     16    16   164     9%      2
 # css/mediaqueries                       0     0    47     0%     11
 # css/selectors                         32    27    58    36%    135
-# total                               1197   931  7248    14%   1979
+# total                               1198   932  7247    14%   1979
 FAIL css/CSS2/abspos/abspos-containing-block-initial-004a.xht
 FAIL css/CSS2/abspos/abspos-containing-block-initial-004b.xht
 FAIL css/CSS2/abspos/abspos-containing-block-initial-004c.xht
@@ -3435,7 +3435,6 @@ FAIL css/CSS2/syntax/counters-007.xht
 FAIL css/CSS2/syntax/counters-008.xht
 FAIL css/CSS2/syntax/counters-009.xht
 FAIL css/CSS2/syntax/eof-002.xht
-FAIL css/CSS2/syntax/eof-004.xht
 FAIL css/CSS2/syntax/eof-005.xht
 FAIL css/CSS2/syntax/eof-006.xht
 FAIL css/CSS2/syntax/escaped-ident-001.xht

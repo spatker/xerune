@@ -8,6 +8,7 @@
 //! syntax never matches, while the other parts still apply, and an empty
 //! query matches everything.
 
+use alloc::string::String;
 use alloc::vec::Vec;
 
 /// A single parsed media feature condition, e.g. `(min-width: 600px)`.
@@ -68,6 +69,8 @@ pub struct Query {
     /// Some part used an unknown feature, media type or bad syntax, so it
     /// never matches.
     pub unsupported: bool,
+    /// The query as written, for messages.
+    pub text: String,
 }
 
 impl Query {
@@ -80,7 +83,7 @@ impl Query {
 /// Parses a media query text such as `screen and (min-width: 600px), (orientation: landscape)`.
 pub fn parse_query(text: &str) -> Query {
     let text = text.trim();
-    let mut query = Query { groups: Vec::new(), unsupported: false };
+    let mut query = Query { groups: Vec::new(), unsupported: false, text: String::from(text) };
     if text.is_empty() {
         query.groups.push(Group { negated: false, features: Vec::new() });
         return query;
@@ -229,114 +232,6 @@ fn is_and_keyword(bytes: &[u8], i: usize) -> bool {
     i == 0 || matches!(bytes[i - 1], b' ' | b'\t' | b'\n' | b'\r')
 }
 
-/// A segment of a stylesheet: plain rules or a `@media { ... }` block.
-#[derive(Debug)]
-pub enum Segment<'a> {
-    /// Ordinary CSS text (other at-rules like `@keyframes` stay untouched).
-    Base(&'a str),
-    /// `@media <query> { <inner> }`.
-    Media {
-        /// Raw query text, e.g. `screen and (min-width: 600px)`.
-        query: &'a str,
-        /// Block body (may itself contain nested `@media` blocks).
-        inner: &'a str,
-    },
-}
-
-/// Splits stylesheet text into base/media segments at the top level.
-/// `/* ... */` comments are skipped so a `@media` inside a comment is ignored.
-/// The `Base` segments preserve comments; the stylesheet parser skips them.
-pub fn split_segments(css: &str) -> Vec<Segment<'_>> {
-    let mut out = Vec::new();
-    let bytes = css.as_bytes();
-    let mut base_start = 0usize;
-    let mut i = 0usize;
-
-    while i < bytes.len() {
-        // Skip comments.
-        if bytes[i] == b'/' && i + 1 < bytes.len() && bytes[i + 1] == b'*' {
-            if let Some(end) = css[i + 2..].find("*/") {
-                i += 2 + end + 2;
-            } else {
-                i = bytes.len();
-            }
-            continue;
-        }
-
-        if bytes[i] == b'@' && is_media_at_rule(bytes, i) {
-            if i > base_start {
-                let seg = &css[base_start..i];
-                if !seg.trim().is_empty() {
-                    out.push(Segment::Base(seg));
-                }
-            }
-
-            let open = match css[i..].find('{') {
-                Some(off) => i + off,
-                None => break, // unterminated — leave the rest as base
-            };
-            let query = css[i + 6..open].trim();
-
-            let close = match find_matching_brace(css, open) {
-                Some(pos) => pos,
-                None => break,
-            };
-            let inner = &css[open + 1..close];
-
-            out.push(Segment::Media { query, inner });
-
-            i = close + 1;
-            base_start = i;
-            continue;
-        }
-        i += 1;
-    }
-
-    if base_start < css.len() {
-        let seg = &css[base_start..];
-        if !seg.trim().is_empty() {
-            out.push(Segment::Base(seg));
-        }
-    }
-    out
-}
-
-/// True when bytes starting at `i` are `@media` followed by a separator.
-fn is_media_at_rule(bytes: &[u8], i: usize) -> bool {
-    const NAME: &[u8] = b"media";
-    if i + 1 + NAME.len() > bytes.len() {
-        return false;
-    }
-    if !bytes[i + 1..i + 1 + NAME.len()].eq_ignore_ascii_case(NAME) {
-        return false;
-    }
-    // `@media` must be followed by whitespace or directly by the block/query.
-    match bytes.get(i + 1 + NAME.len()) {
-        None => true,
-        Some(&c) => matches!(c, b' ' | b'\t' | b'\n' | b'\r' | b'{' | b'('),
-    }
-}
-
-fn find_matching_brace(css: &str, open: usize) -> Option<usize> {
-    let bytes = css.as_bytes();
-    let mut depth = 0usize;
-    let mut i = open;
-    while i < bytes.len() {
-        match bytes[i] {
-            b'{' => depth += 1,
-            b'}' => {
-                depth -= 1;
-                if depth == 0 {
-                    return Some(i);
-                }
-            }
-            _ => {}
-        }
-        i += 1;
-    }
-    None
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -385,11 +280,5 @@ mod tests {
         assert!(q.unsupported && q.eval(800.0, 600.0));
         // An empty query matches everything.
         assert!(parse_query("").eval(800.0, 600.0));
-    }
-
-    #[test]
-    fn a_media_rule_in_a_comment_is_not_a_block() {
-        let segs = split_segments("/* @media (min-width: 1px) { z { } } */ x { }");
-        assert!(matches!(&segs[..], [Segment::Base(_)]));
     }
 }

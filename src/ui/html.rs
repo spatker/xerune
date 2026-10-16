@@ -98,6 +98,35 @@ mod tests {
         assert!(ui.body.is_some());
     }
 
+    /// A runtime stylesheet is parsed once; its `@media` blocks are
+    /// evaluated for the viewport of each build, and cascade with the rest
+    /// by specificity. (The only lib test that sets the global viewport.)
+    #[test]
+    fn media_blocks_apply_to_the_viewport_of_each_build() {
+        let html = "<style>p { color: #000000 } @media (min-width: 500px) { p { color: #ff0000 } body p { color: #00ff00 } } body p { color: #0000ff }</style><p>a</p>";
+        let color = |width: f32| {
+            crate::screen::set_viewport(width, 300.0);
+            let ui = super::super::Ui::new(html, &NoText, ContainerStyle::default(), &|_| true).unwrap();
+            ui.render_data.values().find_map(|d| match &d.kind {
+                RenderKind::Text(_) => Some((d.style.color.r, d.style.color.g, d.style.color.b)),
+                _ => None,
+            }).unwrap()
+        };
+        assert_eq!(color(800.0), (0, 0, 255), "`body p` after the block wins over the block's");
+        assert_eq!(color(400.0), (0, 0, 255));
+        let html_block_last = "<style>body p { color: #0000ff } @media (min-width: 500px) { body p { color: #00ff00 } }</style><p>a</p>";
+        let color = |width: f32| {
+            crate::screen::set_viewport(width, 300.0);
+            let ui = super::super::Ui::new(html_block_last, &NoText, ContainerStyle::default(), &|_| true).unwrap();
+            ui.render_data.values().find_map(|d| match &d.kind {
+                RenderKind::Text(_) => Some(d.style.color.g),
+                _ => None,
+            }).unwrap()
+        };
+        assert_eq!(color(800.0), 255);
+        assert_eq!(color(400.0), 0);
+    }
+
     /// `:hover` in runtime stylesheets applies to the pointer's elements,
     /// found by their keys: `<html>` is the root (key 0), then each element
     /// mixes in its index.

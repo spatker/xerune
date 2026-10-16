@@ -1,12 +1,14 @@
 //! Stylesheets: style rules and their declarations.
 //!
-//! At-rules are skipped (`@media` is split out first, see
-//! [`crate::media`]), as are nested rules.
+//! `@media` blocks are read, so that each rule knows the queries it is
+//! under; other at-rules (`@keyframes` is read separately) and nested
+//! rules are skipped.
 
 use alloc::borrow::Cow;
 use alloc::rc::Rc;
 use alloc::string::String;
 use alloc::vec::Vec;
+use crate::media::Query;
 use crate::selector::{parse_selector_list, Selector};
 use crate::text::find_outside_comments;
 
@@ -29,6 +31,9 @@ pub struct Rule {
     pub selector: Selector,
     /// The declarations, in source order.
     pub declarations: Rc<[Declaration]>,
+    /// The `@media` blocks the rule is in, as an index into
+    /// [`StyleSheet::media`]; `None` outside any.
+    pub media: Option<usize>,
 }
 
 /// A parsed stylesheet.
@@ -45,14 +50,39 @@ pub struct StyleSheet {
     /// The selectors of the rules dropped because they are invalid (or
     /// use something xerune doesn't support), for warnings.
     pub dropped: Vec<String>,
+    /// Each `@media` block's queries: its own and those of the blocks it is
+    /// nested in, which must all match for its rules to apply.
+    pub media: Vec<Vec<Query>>,
 }
 
 impl StyleSheet {
-    /// Parses `css`. Rules with an invalid selector list, at-rules and
-    /// rules without declarations are dropped.
+    /// Parses `css`. Rules with an invalid selector list, at-rules other
+    /// than `@media` and rules without declarations are dropped.
     pub fn parse(css: &str) -> Self {
-        let mut rules = Vec::new();
-        let mut dropped = Vec::new();
+        let mut sheet = StyleSheet::default();
+        sheet.parse_block(css, &mut Vec::new());
+        // Stable, so equal specificities keep source order.
+        sheet.rules.sort_by_key(|rule| rule.selector.specificity());
+        let rules = &sheet.rules;
+        let uses = |state| rules.iter().any(|rule| rule.selector.uses_state(state));
+        sheet.uses_hover = uses(crate::selector::State::Hover);
+        sheet.uses_active = uses(crate::selector::State::Active);
+        sheet.has_important = rules.iter().any(|rule| rule.declarations.iter().any(|d| d.important));
+        sheet
+    }
+
+    /// Which of [`Self::media`] match a `width` x `height` viewport.
+    pub fn media_matches(&self, width: f32, height: f32) -> Vec<bool> {
+        self.media.iter().map(|queries| queries.iter().all(|q| q.eval(width, height))).collect()
+    }
+
+    /// Reads the rules of `css`, which is inside the `@media` blocks whose
+    /// queries are `queries`.
+    fn parse_block(&mut self, css: &str, queries: &mut Vec<Query>) {
+        let media = (!queries.is_empty()).then(|| {
+            self.media.push(queries.clone());
+            self.media.len() - 1
+        });
         let mut rest = css;
         loop {
             rest = skip_cdo_cdc(rest);
@@ -70,32 +100,33 @@ impl StyleSheet {
                 // up to the end of its block.
                 if !at_rule {
                     let brace = find_outside_comments(rest, b"{").unwrap_or(rest.len());
-                    dropped.push(String::from(crate::text::strip_comments(&rest[..brace]).trim()));
+                    self.dropped.push(String::from(crate::text::strip_comments(&rest[..brace]).trim()));
                 }
                 rest = if at_rule { &rest[open + 1..] } else { &rest[block_end(rest, open)..] };
                 continue;
             }
             let end = block_end(rest, open);
-            if !at_rule {
-                let body = rest[open + 1..end].strip_suffix('}').unwrap_or(&rest[open + 1..end]);
+            let body = rest[open + 1..end].strip_suffix('}').unwrap_or(&rest[open + 1..end]);
+            if at_rule {
+                let name_end = prelude[1..].find(|c: char| !(c.is_alphanumeric() || c == '-' || c == '_')).map_or(prelude.len(), |i| i + 1);
+                if prelude[1..name_end].eq_ignore_ascii_case("media") {
+                    queries.push(crate::media::parse_query(&prelude[name_end..]));
+                    self.parse_block(body, queries);
+                    queries.pop();
+                }
+            } else {
                 match parse_selector_list(prelude) {
                     Some(selectors) => {
                         let declarations: Rc<[Declaration]> = parse_declarations(body).into();
                         if !declarations.is_empty() {
-                            rules.extend(selectors.into_iter().map(|selector| Rule { selector, declarations: declarations.clone() }));
+                            self.rules.extend(selectors.into_iter().map(|selector| Rule { selector, declarations: declarations.clone(), media }));
                         }
                     }
-                    None => dropped.push(String::from(prelude)),
+                    None => self.dropped.push(String::from(prelude)),
                 }
             }
             rest = &rest[end..];
         }
-        // Stable, so equal specificities keep source order.
-        rules.sort_by_key(|rule| rule.selector.specificity());
-        let has_important = rules.iter().any(|rule| rule.declarations.iter().any(|d| d.important));
-        let uses = |state| rules.iter().any(|rule| rule.selector.uses_state(state));
-        let (uses_hover, uses_active) = (uses(crate::selector::State::Hover), uses(crate::selector::State::Active));
-        StyleSheet { rules, has_important, uses_hover, uses_active, dropped }
     }
 }
 
@@ -259,12 +290,25 @@ mod tests {
     }
 
     #[test]
-    fn nested_rules_and_at_rules_are_skipped() {
+    fn nested_rules_and_other_at_rules_are_skipped() {
         let sheet = StyleSheet::parse(
-            "@import 'x.css'; <!-- p { a: 1; & b { c: 2 } d: 3 } --> @media (min-width: 1px) { q { e: 4 } } /* r { } */ s { f: 5 }",
+            "@import 'x.css'; <!-- p { a: 1; & b { c: 2 } d: 3 } --> @supports (x: y) { q { e: 4 } } /* r { } */ s { f: 5 }",
         );
         let rules: Vec<_> = sheet.rules.iter().map(|r| pairs(&r.declarations)).collect();
         assert_eq!(rules, vec![vec![("a", "1", false), ("d", "3", false)], vec![("f", "5", false)]]);
+    }
+
+    #[test]
+    fn media_blocks_condition_their_rules() {
+        let sheet = StyleSheet::parse(
+            "a { x: 1 } /* @media (min-width: 1px) { z { x: 0 } } */ @MEDIA (min-width: 500px) { b { x: 2 } @media (orientation: portrait) { c { x: 3 } } d { x: 4 } } e { x: 5 }",
+        );
+        let media: Vec<_> = sheet.rules.iter().map(|r| (r.declarations[0].value.as_str(), r.media)).collect();
+        assert_eq!(media, [("1", None), ("2", Some(0)), ("3", Some(1)), ("4", Some(0)), ("5", None)]);
+        assert_eq!(sheet.media[1].len(), 2, "nested blocks keep both queries");
+        assert_eq!(sheet.media_matches(800.0, 480.0), [true, false]);
+        assert_eq!(sheet.media_matches(600.0, 900.0), [true, true]);
+        assert_eq!(sheet.media_matches(400.0, 900.0), [false, false]);
     }
 
     #[test]

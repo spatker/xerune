@@ -286,7 +286,7 @@ A single template adapts to any screen size using standard CSS building blocks, 
 @media (orientation: landscape) { .toolbar { height: 48px; } }
 ```
 
-For compiled templates the queries are parsed **at macro time**: each rule inside an `@media` block is inlined into the generated build code behind a `xerune::css::media::matches_query(&[...])` predicate built from static feature constants — matching costs two atomic reads plus a tiny slice scan, no runtime CSS parsing.
+For compiled templates the queries are parsed **at macro time**: each rule inside an `@media` block is inlined into the generated build code behind a `xerune::css::media::matches_query(&[...])` predicate built from static feature constants — matching costs two atomic reads plus a tiny slice scan, no runtime CSS parsing. Runtime stylesheets are parsed once and cached; each build only evaluates their `@media` blocks against the viewport.
 
 ### Viewport Units
 

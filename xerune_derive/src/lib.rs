@@ -1170,28 +1170,6 @@ struct GuardedRule {
     guard: Option<proc_macro2::TokenStream>,
 }
 
-/// Splits stylesheet text into `(query, css)` regions; `query == None` marks
-/// top-level rules. Nested `@media` blocks are flattened by AND-ing their
-/// queries.
-fn split_media_css(css: &str) -> Vec<(Option<String>, String)> {
-    use xerune_css::media::Segment;
-    let mut out = Vec::new();
-    for segment in xerune_css::media::split_segments(css) {
-        match segment {
-            Segment::Base(text) => out.push((None, text.to_string())),
-            Segment::Media { query, inner } => {
-                for (sub_query, sub_css) in split_media_css(inner) {
-                    match sub_query {
-                        None => out.push((Some(query.to_string()), sub_css)),
-                        Some(sq) => out.push((Some(format!("{} and {}", query, sq)), sub_css)),
-                    }
-                }
-            }
-        }
-    }
-    out
-}
-
 /// Result of compiling an `@media` query text to a runtime guard.
 enum MediaGuard {
     /// Query always matches (`all`, `screen`, or empty) — no guard emitted.
@@ -1201,14 +1179,12 @@ enum MediaGuard {
 }
 
 /// Compiles an `@media` query into a guard evaluated against
-/// `xerune::screen`'s viewport when the view is built, and whether part of
-/// it can never match (an unknown feature or bad syntax).
-fn compile_media_guard(text: &str) -> (MediaGuard, bool) {
+/// `xerune::screen`'s viewport when the view is built.
+fn compile_media_guard(query: &xerune_css::media::Query) -> MediaGuard {
     use xerune_css::media::Feature;
-    let query = xerune_css::media::parse_query(text);
     // A part with only a media type matches every viewport.
     if query.groups.iter().any(|g| !g.negated && g.features.is_empty()) {
-        return (MediaGuard::Always, query.unsupported);
+        return MediaGuard::Always;
     }
     let groups = query.groups.iter().map(|group| {
         let negated = group.negated;
@@ -1222,7 +1198,7 @@ fn compile_media_guard(text: &str) -> (MediaGuard, bool) {
         });
         quote! { ::xerune::__private::FeatureGroup { negated: #negated, features: &[#(#features),*] } }
     });
-    (MediaGuard::Guard(quote! { ::xerune::__private::matches_query(&[#(#groups),*]) }), query.unsupported)
+    MediaGuard::Guard(quote! { ::xerune::__private::matches_query(&[#(#groups),*]) })
 }
 
 fn compile_dom_node<'a>(
@@ -1947,37 +1923,28 @@ fn expand_template(input: &DeriveInput, template: &TemplateRef) -> proc_macro2::
     record_template_owners(&dom.document);
     NEXT_SITE.with(|site| site.set(0));
 
-    // The stylesheet parser skips at-rules, so split `@media` blocks out first:
-    // each region's rules get a runtime viewport guard.
-    let media_pieces = split_media_css(&css_content);
-    let mut rules: Vec<GuardedRule> = Vec::new();
-    let mut keyframes_css = String::new();
-    for (query, text) in &media_pieces {
-        keyframes_css.push_str(text);
-        keyframes_css.push('\n');
-        let sheet = xerune_css::sheet::StyleSheet::parse(text);
-        for selector in &sheet.dropped {
-            eprintln!("xerune: CSS rule '{}' is ignored: its selector is invalid or uses something unsupported", selector);
-        }
-        let guard = match query {
-            None => None,
-            Some(q) => {
-                let (guard, unsupported) = compile_media_guard(q);
-                if unsupported {
-                    eprintln!("xerune: @media query '{}' uses unsupported/unknown features; those parts never apply", q);
-                }
-                match guard {
-                    MediaGuard::Always => None,
-                    MediaGuard::Guard(t) => Some(t),
-                }
-            }
-        };
-        rules.extend(sheet.rules.into_iter().map(|rule| GuardedRule { rule, guard: guard.clone() }));
+    // Each rule of an `@media` block applies under a runtime viewport guard
+    // of its block's queries (all of them, for nested blocks).
+    let sheet = xerune_css::sheet::StyleSheet::parse(&css_content);
+    for selector in &sheet.dropped {
+        eprintln!("xerune: CSS rule '{}' is ignored: its selector is invalid or uses something unsupported", selector);
     }
-    // Cascade order across regions: an `@media` rule doesn't beat a more
-    // specific rule outside it. The sort is stable, so the regions' source
-    // order decides between equal specificities.
-    rules.sort_by_key(|r| r.rule.selector.specificity());
+    let guards: Vec<Option<proc_macro2::TokenStream>> = sheet.media.iter().map(|queries| {
+        let guards: Vec<_> = queries.iter().filter_map(|query| {
+            if query.unsupported {
+                eprintln!("xerune: @media query '{}' uses unsupported/unknown features; those parts never apply", query.text);
+            }
+            match compile_media_guard(query) {
+                MediaGuard::Always => None,
+                MediaGuard::Guard(guard) => Some(guard),
+            }
+        }).collect();
+        (!guards.is_empty()).then(|| quote! { #(#guards)&&* })
+    }).collect();
+    let rules: Vec<GuardedRule> = sheet.rules.into_iter()
+        .map(|rule| GuardedRule { guard: rule.media.and_then(|m| guards[m].clone()), rule })
+        .collect();
+    let keyframes_css = css_content.clone();
 
     // Collect data-on-click action strings
     let mut raw_actions = Vec::new();

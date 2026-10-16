@@ -233,6 +233,7 @@ pub(crate) fn resolve_styles(
     parent_style: ContainerStyle,
     message_validator: &impl Fn(&str) -> bool,
     stylesheet: &xerune_css::sheet::StyleSheet,
+    media: &[bool],
     node_metadata: &NodeMap<NodeMetadata>,
     keys: &NodeMap<u64>,
     pointer: &super::builder::PointerState,
@@ -303,7 +304,7 @@ pub(crate) fn resolve_styles(
         pointer,
     };
     let matched_rules = stylesheet.rules.iter().enumerate()
-        .filter_map(|(index, rule)| rule.selector.matches(&el_wrapper).then_some(index))
+        .filter_map(|(index, rule)| (rule.media.is_none_or(|m| media[m]) && rule.selector.matches(&el_wrapper)).then_some(index))
         .collect();
     let cache_key = StyleCacheKey {
         tag: meta.tag.clone(),
@@ -448,6 +449,7 @@ pub(crate) fn resolve_styles(
             current_style.clone(),
             message_validator,
             stylesheet,
+            media,
             node_metadata,
             keys,
             pointer,
