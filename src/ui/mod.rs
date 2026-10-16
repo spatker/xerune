@@ -895,16 +895,19 @@ fn traverse_layout(
     let rect = Rect { x, y, width, height };
 
     if let Some(data) = render_data.get(&root) {
+        if data.style().display == crate::style::Display::None {
+            return commands.len();
+        }
+        // Boxes painted from their CSS. A checkbox's native look ignores
+        // its background and border, as in Chromium.
         let maybe_style = match data {
-            RenderData::Container(style) => Some(style),
-            RenderData::Text(_, style) => Some(style),
+            RenderData::Container(style) | RenderData::Text(_, style) => Some(style),
+            RenderData::Slider(_, style) | RenderData::Progress(_, _, style) => Some(style),
+            RenderData::Checkbox(_, style) if style.appearance_none => Some(style),
             _ => None,
         };
 
         if let Some(style) = maybe_style {
-            if style.display == crate::style::Display::None {
-                return commands.len();
-            }
             overflow = style.overflow;
 
             if let Some(ref bs) = style.box_shadow {

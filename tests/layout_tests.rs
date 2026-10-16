@@ -1434,6 +1434,91 @@ mod controls {
         assert_eq!(thumbs, [at(0.5), at(0.5), at(0.3), at(0.5), at(0.0), at(0.333), at(1.0)]);
     }
 
+    #[derive(XeruneTemplate)]
+    #[template(source = r#"<style>
+        body { margin: 0px; }
+        .switch { appearance: none; width: 40px; height: 20px; margin: 0px; border-radius: 10px;
+                  background-color: #cccccc; border: 2px solid #999999; }
+        .switch:checked { background-color: #22c55e; }
+        .switch.loud:checked { border-color: #000000; }
+        progress, input[type=range] { appearance: none; margin: 0px; }
+    </style>
+    <body>
+        <input type="checkbox" class="switch {% if loud %}loud{% endif %}" {% if on %}checked{% endif %}>
+        <div><progress value="0.25"></progress></div>
+        <div><input type="range" value="0"></div>
+    </body>"#)]
+    struct Unstyled {
+        on: bool,
+        loud: bool,
+    }
+    impl Model for Unstyled {
+        type Message = String;
+        fn update(&mut self, _msg: String, _context: &mut Context) {}
+    }
+
+    /// `appearance: none` makes a checkbox a plain CSS box, styled per
+    /// state with `:checked` (here following `{% if on %}checked{% endif %}`).
+    #[test]
+    fn checkbox_without_appearance_is_its_css_box() {
+        // Checkboxes are border-box, as in Chromium's html.css.
+        let switch = Rect::new(0.0, 0.0, 40.0, 20.0);
+        let off = commands(Unstyled { on: false, loud: true });
+        assert_eq!(rect_at(&off, switch), (Some(rgb(0xcccccc)), border(2.0, 0x999999), 10.0));
+        assert!(!off.iter().any(|c| matches!(c, DrawCommand::DrawCheckMark { .. })));
+        let on = commands(Unstyled { on: true, loud: false });
+        assert_eq!(rect_at(&on, switch), (Some(rgb(0x22c55e)), border(2.0, 0x999999), 10.0));
+        let loud = commands(Unstyled { on: true, loud: true });
+        assert_eq!(rect_at(&loud, switch), (Some(rgb(0x22c55e)), border(2.0, 0x000000), 10.0));
+    }
+
+    /// Chromium's fallbacks: html.css's grey bar with a green value, and a
+    /// range with only its thumb.
+    #[test]
+    fn progress_and_range_without_appearance() {
+        let commands = commands(Unstyled { on: false, loud: false });
+        let bar = commands.iter().position(|c| matches!(c, DrawCommand::DrawRect { color: Some(c), .. } if *c == rgb(0x808080))).unwrap();
+        let DrawCommand::DrawRect { rect, .. } = commands[bar] else { unreachable!() };
+        assert_eq!((rect.width, rect.height), (160.0, 16.0));
+        assert_eq!(commands[bar + 1], DrawCommand::DrawRect { rect: Rect { width: 40.0, ..rect }, color: Some(rgb(0x008000)), gradient: None, border_radius: 0.0, border: Borders::NONE });
+        let rounded: Vec<f32> = commands.iter().filter_map(|c| match c {
+            DrawCommand::DrawRect { border_radius, .. } if *border_radius > 0.0 => Some(*border_radius),
+            _ => None,
+        }).collect();
+        // The switch, then the range's thumb alone.
+        assert_eq!(rounded, [10.0, 8.0]);
+    }
+
+    /// Runtime stylesheets know `:checked` too.
+    #[test]
+    fn runtime_css_matches_checked() {
+        struct Checked(bool);
+        impl Model for Checked {
+            type Message = String;
+            fn update(&mut self, _msg: String, _context: &mut Context) {}
+        }
+        impl ui::TemplateLayout for Checked {
+            fn stylesheet(&self) -> &'static str {
+                "body { margin: 0px; } input { appearance: none; width: 20px; height: 20px; margin: 0px; background-color: red; } input:checked { background-color: blue; }"
+            }
+            fn build_ui(
+                &self,
+                builder: &mut ui::UiBuilder,
+                _measurer: &impl TextMeasurer,
+                _default_style: &style::ContainerStyle,
+                _message_validator: &impl Fn(&str) -> bool,
+            ) -> taffy::NodeId {
+                let body = builder.create_element("body", &[]);
+                let checkbox = builder.create_checkbox(self.0, &[("type", "checkbox")]);
+                builder.append_child(body, checkbox);
+                body
+            }
+        }
+        let rect = Rect::new(0.0, 0.0, 20.0, 20.0);
+        assert_eq!(rect_at(&commands(Checked(false)), rect).0, Some(rgb(0xff0000)));
+        assert_eq!(rect_at(&commands(Checked(true)), rect).0, Some(rgb(0x0000ff)));
+    }
+
     /// Runtime stylesheets (no compiled template) must not reset an
     /// `<input>`'s size to its type's defaults after CSS set it.
     #[test]

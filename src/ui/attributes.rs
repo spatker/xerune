@@ -56,6 +56,10 @@ impl simplecss::Element for ElementWrapper {
         if let NodeData::Element { attrs: ref attrs, .. } = self.0.data {
             for attr in attrs.borrow().iter() {
                 if attr.name.local.as_ref() == local_name {
+                    // `checked="false"` is unchecked, as in `parse_attributes_generic`.
+                    if local_name == "checked" && attr.value.as_ref() == "false" {
+                        return false;
+                    }
                     return operator.matches(attr.value.as_ref());
                 }
             }

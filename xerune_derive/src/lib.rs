@@ -825,6 +825,9 @@ fn generate_attr_string_code(nodes: &[Node<'_>], local_vars: &HashSet<String>) -
 struct MacroElementWrapper {
     handle: Handle,
     active_classes: HashSet<String>,
+    /// Whether a `checked="{{ ... }}"` is taken as checked in this
+    /// matching pass (a literal `checked` speaks for itself).
+    checked: bool,
 }
 
 /// Classes an element always has: literal names outside any `{% if %}`.
@@ -890,6 +893,7 @@ impl simplecss::Element for MacroElementWrapper {
         Some(MacroElementWrapper {
             active_classes: get_static_classes(&parent),
             handle: parent,
+            checked: false,
         })
     }
 
@@ -904,6 +908,7 @@ impl simplecss::Element for MacroElementWrapper {
                     return Some(MacroElementWrapper {
                         active_classes: get_static_classes(sibling),
                         handle: sibling.clone(),
+                        checked: false,
                     });
                 }
             }
@@ -925,6 +930,14 @@ impl simplecss::Element for MacroElementWrapper {
             // attribute is template source: `{% if on %}on{% endif %}`
             // contains the word `on` whether or not the class is applied.
             return self.active_classes.iter().any(|cls| operator.matches(cls));
+        }
+        if local_name == "checked" {
+            // `:checked` became `[checked]`. `checked="false"` is unchecked.
+            return match attribute_value(&self.handle, "checked") {
+                Some(v) if is_dynamic(&v) => self.checked && operator.matches(""),
+                Some(v) => v != "false" && operator.matches(&v),
+                None => false,
+            };
         }
         if let NodeData::Element { ref attrs, .. } = self.handle.data {
             for attr in attrs.borrow().iter() {
@@ -954,6 +967,17 @@ impl simplecss::Element for MacroElementWrapper {
             _ => false,
         }
     }
+}
+
+fn attribute_value(handle: &Handle, name: &str) -> Option<String> {
+    match &handle.data {
+        NodeData::Element { attrs, .. } => attrs.borrow().iter().find(|a| a.name.local.as_ref() == name).map(|a| a.value.to_string()),
+        _ => None,
+    }
+}
+
+fn is_dynamic(value: &str) -> bool {
+    value.contains("{{") || value.contains("{%")
 }
 
 fn get_classes_and_conditions(
@@ -1512,32 +1536,50 @@ fn compile_dom_node<'a>(
                 }
             }
 
+            // A `checked="{{ ... }}"` (what `{% if c %}checked{% endif %}`
+            // becomes) is checked at runtime unless it is "false", like
+            // `parse_attributes_generic` reads it; `:checked` rules apply
+            // under that condition.
+            let dynamic_checked = attrs.borrow().iter().position(|a| a.name.local.as_ref() == "checked" && is_dynamic(a.value.as_ref()));
+            let checked_condition = dynamic_checked.map(|_| "_dyn_checked".to_string());
+
             let mut matched_rules = Vec::new();
             for rs in rulesets {
                 for rule in &rs.sheet.rules {
                     let mut wrapper = MacroElementWrapper {
                         handle: handle.clone(),
                         active_classes: static_classes.clone(),
+                        checked: false,
                     };
+                    let mut push = |condition: Option<String>| matched_rules.push(MatchedRule {
+                        declarations: rule.declarations.iter().map(|d| (d.name.to_string(), d.value.to_string())).collect(),
+                        condition,
+                        media_guard: rs.guard.clone(),
+                    });
 
                     if rule.selector.matches(&wrapper) {
-                        matched_rules.push(MatchedRule {
-                            declarations: rule.declarations.iter().map(|d| (d.name.to_string(), d.value.to_string())).collect(),
-                            condition: None,
-                            media_guard: rs.guard.clone(),
-                        });
-                    } else {
-                        for (cls, cond) in &conditional_classes {
-                            let mut active = static_classes.clone();
-                            active.insert(cls.clone());
-                            wrapper.active_classes = active;
+                        push(None);
+                        continue;
+                    }
+                    for (cls, cond) in &conditional_classes {
+                        let mut active = static_classes.clone();
+                        active.insert(cls.clone());
+                        wrapper.active_classes = active;
+                        wrapper.checked = false;
+                        if rule.selector.matches(&wrapper) {
+                            push(Some(cond.clone()));
+                        } else if let Some(checked) = &checked_condition {
+                            wrapper.checked = true;
                             if rule.selector.matches(&wrapper) {
-                                matched_rules.push(MatchedRule {
-                                    declarations: rule.declarations.iter().map(|d| (d.name.to_string(), d.value.to_string())).collect(),
-                                    condition: Some(cond.clone()),
-                                    media_guard: rs.guard.clone(),
-                                });
+                                push(Some(format!("({cond}) && ({checked})")));
                             }
+                        }
+                    }
+                    if let Some(checked) = &checked_condition {
+                        wrapper.active_classes = static_classes.clone();
+                        wrapper.checked = true;
+                        if rule.selector.matches(&wrapper) {
+                            push(Some(checked.clone()));
                         }
                     }
                 }
@@ -1594,6 +1636,13 @@ fn compile_dom_node<'a>(
                 } else {
                     static_attrs.push(quote! { (std::borrow::Cow::Borrowed(#key), std::borrow::Cow::Borrowed(#val)) });
                 }
+            }
+
+            if let Some(idx) = dynamic_checked {
+                let var_name = syn::Ident::new(&format!("_dyn_attr_{}", idx), proc_macro2::Span::call_site());
+                dynamic_vars.push(quote! {
+                    let _dyn_checked: bool = #var_name != "false";
+                });
             }
 
             // A literal input `type` picks the widget defaults up front, so
@@ -1980,7 +2029,9 @@ fn expand_template(input: &DeriveInput, template: &TemplateRef) -> proc_macro2::
     for (query, text) in &media_pieces {
         keyframes_css.push_str(text);
         keyframes_css.push('\n');
-        let sheet_text: &'static str = Box::leak(protect_slashes(text).into_boxed_str());
+        // `:checked` is matched as `[checked]`, as in
+        // `xerune::css::rewrite_for_simplecss`.
+        let sheet_text: &'static str = Box::leak(protect_slashes(text).replace(":checked", "[checked]").into_boxed_str());
         let sheet = simplecss::StyleSheet::parse(sheet_text);
         let guard = match query {
             None => None,

@@ -46,7 +46,9 @@ pub(crate) fn rewrite_for_simplecss(css: &str) -> String {
         }
     }
     out.push_str(rest);
-    let css = out.replace(":last-child", ".last-child");
+    // An element is `[checked]` while it is checked (see the `Element`
+    // impls), which is what `:checked` means for checkboxes.
+    let css = out.replace(":last-child", ".last-child").replace(":checked", "[checked]");
 
     let mut out = String::with_capacity(css.len());
     let mut rest = css.as_str();
@@ -294,6 +296,9 @@ fn apply_resolved_declaration(prop: &str, val: &str, current_style: &mut Contain
             if let Some(c) = parse_hex_color(val) {
                 current_style.color = c;
             }
+        }
+        "appearance" | "-webkit-appearance" | "-moz-appearance" => {
+            current_style.appearance_none = val == "none";
         }
         "accent-color" => {
             if val == "auto" {

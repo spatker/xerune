@@ -410,6 +410,9 @@ pub struct ContainerStyle {
     pub color_scheme_dark: bool,
     /// `accent-color` of form controls (inherited); `None` is `auto`.
     pub accent_color: Option<Color>,
+    /// `appearance: none`: a form control is drawn as a plain CSS box
+    /// instead of its native look.
+    pub appearance_none: bool,
 }
 
 impl Default for ContainerStyle {
@@ -467,6 +470,7 @@ impl Default for ContainerStyle {
             animation_play_state: Arc::from("running"),
             color_scheme_dark: false,
             accent_color: None,
+            appearance_none: false,
         }
     }
 }

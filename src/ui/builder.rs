@@ -377,6 +377,9 @@ impl<'a> simplecss::Element for TaffyElementWrapper<'a> {
     }
 
     fn attribute_matches(&self, local_name: &str, operator: simplecss::AttributeOperator<'_>) -> bool {
+        if let ("checked", Some(checked)) = (local_name, self.meta.checked) {
+            return checked && operator.matches("");
+        }
         if local_name == "class" {
             if let Some(ref class) = self.meta.class {
                 return operator.matches(class);
