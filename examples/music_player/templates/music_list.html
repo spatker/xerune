@@ -31,7 +31,7 @@
     }
 </style>
 
-<div class="view list-view" style="left: {{ list_x }}px;{% if transition_progress == 1.0 %} display: none;{% endif %}">
+<div class="view list-view" data-on-transitionend="list_slid">
     <div class="list-head">
         <div class="heading">
             <span class="list-title">Library</span>

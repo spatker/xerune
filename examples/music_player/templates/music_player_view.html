@@ -38,7 +38,7 @@
     }
 </style>
 
-<div class="view player-view" style="left: {{ player_x }}px;{% if transition_progress == 0.0 %} display: none;{% endif %}">
+<div class="view player-view" data-on-transitionend="player_slid">
     <div class="art-col">
         <div data-on-click="back" class="back"><div class="ico-tri-left"></div><span>Library</span></div>
         <!-- FIXME: wrapper only because <img> ignores box-shadow

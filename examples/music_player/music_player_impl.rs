@@ -32,10 +32,6 @@ pub struct Track {
     pub accent: String,
 }
 
-fn default_width() -> f32 {
-    800.0
-}
-
 fn default_accent() -> String {
     "#a78bfa".to_string()
 }
@@ -72,20 +68,25 @@ pub struct MusicPlayerModel {
     pub is_playing: bool,
     pub elapsed_seconds: u64,
     pub visualizer_data: Vec<f32>,
-    pub transition_progress: f32,
     pub hovered_track: String,
     pub active_list_index: usize,
     pub current_track: Track,
     pub elapsed_time: String,
     pub total_time: String,
     pub progress: f32,
-    pub list_x: f32,
-    pub player_x: f32,
-    /// Viewport width; the list and player views slide by this much.
-    #[serde(default = "default_width")]
-    pub width: f32,
     #[serde(default)]
     pub tick_count: u64,
+    /// Whether the list and the player view are in the view. The screen's
+    /// own one always is; the other stays until it has slid out
+    /// (`data-on-transitionend`), so it isn't laid out off screen.
+    #[serde(default = "default_true")]
+    pub list_shown: bool,
+    #[serde(default)]
+    pub player_shown: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 impl MusicPlayerModel {
@@ -123,17 +124,15 @@ impl MusicPlayerModel {
             is_playing: false,
             elapsed_seconds: 0,
             visualizer_data: vec![10.0; 30], // 30 bars
-            transition_progress: 0.0,
             hovered_track: String::new(),
             active_list_index: 0,
             current_track: current_track.clone(),
             elapsed_time: "0:00".to_string(),
             total_time: if current_track.id.is_empty() { "0:00".to_string() } else { current_track.duration.clone() },
             progress: 0.0,
-            list_x: 0.0,
-            player_x: default_width(),
-            width: default_width(),
             tick_count: 0,
+            list_shown: true,
+            player_shown: false,
         }
     }
 
@@ -150,12 +149,6 @@ impl MusicPlayerModel {
         self.visualizer_data.iter().step_by(7).take(3).map(|v| (4.0 + v * 0.24) as u32).collect()
     }
 
-    /// Whether the list/player slide is still moving.
-    fn is_sliding(&self) -> bool {
-        let target = if self.current_track_index.is_some() { 1.0 } else { 0.0 };
-        (self.transition_progress - target).abs() > 0.001
-    }
-
     /// Whether the stopped visualizer's bars are still falling.
     fn is_decaying(&self) -> bool {
         self.visualizer_data.iter().any(|&val| val > 2.05)
@@ -168,6 +161,10 @@ impl MusicPlayerModel {
     }
 
     fn update_derived_fields(&mut self) {
+        match self.current_track_index {
+            Some(_) => self.player_shown = true,
+            None => self.list_shown = true,
+        }
         if self.tracks.is_empty() { return; }
         let dummy_track = self.tracks[0].clone();
         let current = match self.current_track_index {
@@ -177,15 +174,10 @@ impl MusicPlayerModel {
         };
         self.current_track = current.clone();
         let duration = current.duration_seconds();
-        
-        let p = self.transition_progress;
-        let t = p * p * (3.0 - 2.0 * p);
-        
+
         self.elapsed_time = Self::format_time(self.elapsed_seconds);
         self.total_time = current.duration.clone();
         self.progress = if duration > 0 { self.elapsed_seconds as f32 / duration as f32 } else { 0.0 };
-        self.list_x = -t * self.width;
-        self.player_x = self.width - (t * self.width);
     }
 }
 
@@ -198,8 +190,11 @@ pub enum Msg {
     PlayPause,
     Next,
     Prev,
-    /// Visualizer and slide step.
+    /// Visualizer step.
     Tick,
+    /// The list (player) view finished sliding.
+    ListSlid,
+    PlayerSlid,
     /// A second of the track played.
     Second,
     #[xerune(prefix = "hover_track:")]
@@ -212,14 +207,9 @@ pub enum Msg {
 impl Model for MusicPlayerModel {
     type Message = Msg;
 
-    fn on_resize(&mut self, width: f32, _height: f32, _context: &mut xerune::Context<Msg>) {
-        self.width = width;
-        self.update_derived_fields();
-    }
-
     fn subscriptions(&self) -> xerune::Subscriptions<Msg> {
         let mut subscriptions = xerune::Subscriptions::none();
-        if self.is_playing || self.is_sliding() || self.is_decaying() {
+        if self.is_playing || self.is_decaying() {
             subscriptions = subscriptions.every(core::time::Duration::from_millis(33), Msg::Tick);
         }
         if self.is_playing {
@@ -329,14 +319,6 @@ impl Model for MusicPlayerModel {
              },
              Msg::Tick => {
                   self.tick_count = self.tick_count.wrapping_add(1);
-                  // Transition animation
-                  let target = if self.current_track_index.is_some() { 1.0 } else { 0.0 };
-                  if self.transition_progress < target {
-                      self.transition_progress = (self.transition_progress + 0.1).min(1.0);
-                  } else if self.transition_progress > target {
-                      self.transition_progress = (self.transition_progress - 0.1).max(0.0);
-                  }
-
                   // Update visualizer simulation using LCG Rng
                   if self.is_playing {
                       let mut rng = LcgRng::new(self.tick_count);
@@ -352,6 +334,8 @@ impl Model for MusicPlayerModel {
                  }
 
              }
+             Msg::ListSlid => self.list_shown &= self.current_track_index.is_none(),
+             Msg::PlayerSlid => self.player_shown &= self.current_track_index.is_some(),
              Msg::Second => {
                  if let Some(idx) = self.current_track_index {
                      let duration = self.tracks[idx].duration_seconds();
@@ -381,5 +365,40 @@ mod tests {
         assert_eq!(Msg::from_str("prev"), Ok(Msg::Prev));
         assert_eq!(Msg::from_str("select_track:song1"), Ok(Msg::SelectTrack("song1".to_string())));
         assert_eq!(Msg::from_str("hover_track:song1"), Ok(Msg::HoverTrack("song1".to_string())));
+    }
+
+    struct Measurer;
+    impl xerune::TextMeasurer for Measurer {
+        fn measure_text(&self, _: &str, _: f32, _: u16) -> (f32, f32) {
+            (10.0, 10.0)
+        }
+    }
+
+    /// The view that slid out leaves the view once its transition ends,
+    /// and comes back to slide in.
+    #[test]
+    fn the_hidden_view_leaves_after_sliding_out() {
+        let mut runtime = xerune::Runtime::new(MusicPlayerModel::new(None), Measurer);
+        let clock = xerune::runtime::ManualClock::new();
+        runtime.set_clock(clock.clone());
+        runtime.set_size(800.0, 480.0);
+        let shown = |r: &xerune::Runtime<MusicPlayerModel, Measurer>| (r.model().list_shown, r.model().player_shown);
+        assert_eq!(shown(&runtime), (true, false));
+
+        runtime.handle_messages(["select_track:1".to_string()]);
+        assert_eq!(shown(&runtime), (true, true), "both while they slide");
+        for _ in 0..30 {
+            clock.advance(core::time::Duration::from_millis(16));
+            runtime.poll();
+        }
+        assert_eq!(shown(&runtime), (false, true));
+
+        runtime.handle_messages(["back".to_string()]);
+        assert_eq!(shown(&runtime), (true, true));
+        for _ in 0..30 {
+            clock.advance(core::time::Duration::from_millis(16));
+            runtime.poll();
+        }
+        assert_eq!(shown(&runtime), (true, false));
     }
 }

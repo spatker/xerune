@@ -14,6 +14,19 @@
         top: 0px;
         width: 100vw;
         height: 100vh;
+        /* Nothing of the view off screen (the art's glow) shows on the other. */
+        overflow: hidden;
+        left: 0%;
+        transition: left 0.33s ease-in-out;
+    }
+    /* The list slides out to the left as the player slides in, and back.
+       A view enters from its side while the other is still there (not when
+       the app starts), and leaves the view once it has slid out. */
+    .app.open .list-view { left: -100%; }
+    .app:not(.open) .player-view { left: 100%; }
+    @starting-style {
+        .app.has-player .list-view { left: -100%; }
+        .app.has-list .player-view { left: 100%; }
     }
 
     .cover { border-radius: 10px; flex-shrink: 0; }
@@ -31,7 +44,7 @@
     .ico-tri-right { width: 14px; height: 16px;
                      background: conic-gradient(from 240deg at 100% 50%, #f4f1fa 0deg 60deg, transparent 60deg); }
 </style>
-<div class="app" style="background: radial-gradient(circle at 15% 0%, {{ current_track.glow() }} 0%, #110e1a 55%, #0a0810 100%);">
-    {% include "music_list.html" %}
-    {% include "music_player_view.html" %}
+<div class="app {% if let Some(_) = current_track_index %}open{% endif %} {% if list_shown %}has-list{% endif %} {% if player_shown %}has-player{% endif %}" style="background: radial-gradient(circle at 15% 0%, {{ current_track.glow() }} 0%, #110e1a 55%, #0a0810 100%);">
+    {% if list_shown %}{% include "music_list.html" %}{% endif %}
+    {% if player_shown %}{% include "music_player_view.html" %}{% endif %}
 </div>
