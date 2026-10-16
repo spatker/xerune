@@ -317,64 +317,52 @@ pub struct KeyframesAnimation {
 }
 
 pub fn parse_duration_sec(val: &str) -> f32 {
-    let val = val.trim().to_lowercase();
-    if let Some(stripped) = val.strip_suffix("ms") {
-        stripped.parse::<f32>().unwrap_or(0.0) / 1000.0
-    } else if let Some(stripped) = val.strip_suffix("s") {
-        stripped.parse::<f32>().unwrap_or(0.0)
-    } else {
-        val.parse::<f32>().unwrap_or(0.0)
-    }
+    parse_time(val).unwrap_or(0.0)
 }
 
+/// A CSS time (`1.5s`, `200ms`) in seconds; `None` if `val` isn't one.
+fn parse_time(val: &str) -> Option<f32> {
+    let val = val.trim().to_ascii_lowercase();
+    let (number, scale) = match val.strip_suffix("ms") {
+        Some(number) => (number, 0.001),
+        None => (val.strip_suffix('s')?, 1.0),
+    };
+    let numeric = !number.is_empty() && number.bytes().all(|b| b.is_ascii_digit() || matches!(b, b'.' | b'-' | b'+'));
+    numeric.then(|| number.parse::<f32>().ok()).flatten().map(|n| n * scale)
+}
+
+/// Applies an `animation` shorthand. Only its first animation is used
+/// (several, comma-separated, aren't supported).
 pub fn parse_animation_shorthand(val: &str, current_style: &mut ContainerStyle) {
-    let parts: Vec<&str> = val.split_whitespace().collect();
+    let first = xerune_css::text::split_top_level(val, b',').into_iter().next().unwrap_or("");
+    let first = first.replace(['\t', '\n', '\r'], " ");
     let mut durations_found = 0;
-    
-    for part in parts {
-        let part_lower = part.to_lowercase();
-        if part_lower.ends_with("s") || part_lower.ends_with("ms") {
-            let duration = parse_duration_sec(part);
+    for part in xerune_css::text::split_top_level(&first, b' ').into_iter().filter(|p| !p.is_empty()) {
+        let part_lower = part.to_ascii_lowercase();
+        if let Some(time) = parse_time(part) {
             if durations_found == 0 {
-                current_style.animation_duration = duration;
+                current_style.animation_duration = time;
             } else if durations_found == 1 {
-                current_style.animation_delay = duration;
+                current_style.animation_delay = time;
             }
             durations_found += 1;
-            continue;
-        }
-        
-        if part_lower == "infinite" {
+        } else if part_lower == "infinite" {
             current_style.animation_iteration_count = AnimationIterationCount::Infinite;
-            continue;
-        }
-        
-        if ["linear", "ease", "ease-in", "ease-out", "ease-in-out"].contains(&part_lower.as_str()) || part_lower.starts_with("cubic-bezier(") {
+        } else if Easing::parse(part).is_some() {
             current_style.animation_timing_function = Arc::from(part);
-            continue;
-        }
-        
-        if ["normal", "reverse", "alternate", "alternate-reverse"].contains(&part_lower.as_str()) {
+        } else if ["normal", "reverse", "alternate", "alternate-reverse"].contains(&part_lower.as_str()) {
             current_style.animation_direction = Arc::from(part_lower);
-            continue;
-        }
-        
-        if ["none", "forwards", "backwards", "both"].contains(&part_lower.as_str()) {
+        } else if ["forwards", "backwards", "both"].contains(&part_lower.as_str()) {
             current_style.animation_fill_mode = Arc::from(part_lower);
-            continue;
-        }
-        
-        if ["running", "paused"].contains(&part_lower.as_str()) {
+        } else if ["running", "paused"].contains(&part_lower.as_str()) {
             current_style.animation_play_state = Arc::from(part_lower);
-            continue;
+        } else if let Ok(count) = part_lower.parse::<f32>() {
+            current_style.animation_iteration_count = AnimationIterationCount::Count(count);
+        } else if part_lower == "none" {
+            current_style.animation_name = None;
+        } else {
+            current_style.animation_name = Some(Arc::from(part));
         }
-        
-        if let Ok(num) = part_lower.parse::<f32>() {
-            current_style.animation_iteration_count = AnimationIterationCount::Count(num);
-            continue;
-        }
-        
-        current_style.animation_name = Some(Arc::from(part));
     }
 }
 

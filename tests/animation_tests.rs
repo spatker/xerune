@@ -174,3 +174,29 @@ fn generated_boxes_keep_their_animations() {
     let (_, (r, _, b)) = boxes(&runtime)[0];
     assert!((191..=192).contains(&r) && b == 0, "750 ms in: {r} {b}");
 }
+
+#[derive(XeruneTemplate)]
+#[template(source = r#"<style>
+  body { margin: 0; }
+  @keyframes dots { from { background-color: #000000; } to { background-color: #ff0000; } }
+  div { width: 10px; height: 10px; }
+  .a { animation: dots 1s cubic-bezier(0, 0, 1, 1); }
+  .b { animation: 1s steps(2, start) dots; }
+</style>
+<main><div class="a"></div><div class="b"></div></main>"#)]
+struct Shorthand;
+
+impl Model for Shorthand {
+    type Message = Msg;
+    fn update(&mut self, _msg: Msg, _context: &mut Context) {}
+}
+
+/// In the `animation` shorthand, a name ending in "s" is a name, and a
+/// timing function with spaces between its arguments is one value.
+#[test]
+fn the_shorthand_reads_names_and_functions() {
+    let mut runtime = start(Shorthand);
+    runtime.tick_at_ms(250);
+    let reds: Vec<u8> = boxes(&runtime).into_iter().map(|(_, c)| c.0).collect();
+    assert!((63..=64).contains(&reds[0]) && (127..=128).contains(&reds[1]), "{reds:?}");
+}
