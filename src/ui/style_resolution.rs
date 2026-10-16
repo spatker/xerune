@@ -236,6 +236,7 @@ pub(crate) fn resolve_styles(
     node_metadata: &NodeMap<NodeMetadata>,
     keys: &NodeMap<u64>,
     pointer: &super::builder::PointerState,
+    hover_handlers: &mut NodeMap<super::HoverHandlers>,
     base_styles: &mut NodeMap<(Style, ContainerStyle)>,
     style_cache: &mut HashMap<StyleCacheKey, (Style, ContainerStyle)>,
 ) {
@@ -450,11 +451,15 @@ pub(crate) fn resolve_styles(
             node_metadata,
             keys,
             pointer,
+            hover_handlers,
             base_styles,
             style_cache,
         );
     }
 
+    if !parsed.hover.is_empty() {
+        hover_handlers.insert(node, parsed.hover.clone());
+    }
     finish_node(node, tag, &parent_style, &mut layout_style, &mut current_style, &parsed, taffy, render_data, interactions, base_styles);
 }
 

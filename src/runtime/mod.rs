@@ -90,6 +90,8 @@ pub struct Runtime<M, R> {
     pressed: bool,
     /// The elements under the pointer the current view was built with.
     pointer_state: crate::ui::PointerState,
+    /// Counts views built, to tell whether a message rebuilt it.
+    builds: u32,
 }
 
 impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
@@ -132,6 +134,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
              pointer: None,
              pressed: false,
              pointer_state: crate::ui::PointerState::default(),
+             builds: 0,
          }
     }
 
@@ -296,17 +299,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
                         self.focused_id = None;
                     }
                     
-                    let updated = match interaction {
-                        Some(Interaction::Message(message)) => match message.downcast_ref::<M::Message>() {
-                            Some(message) => self.process_message(message.clone()),
-                            None => {
-                                log::error!("a data-on-click message is not of the model's message type");
-                                false
-                            }
-                        },
-                        Some(Interaction::Text(text)) => self.process_message_str(&text),
-                        None => false,
-                    };
+                    let updated = interaction.is_some_and(|interaction| self.dispatch(interaction));
                     if restyled && !updated {
                         self.rebuild();
                     }
@@ -520,6 +513,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
     }
 
     fn build_view(&mut self) {
+        self.builds = self.builds.wrapping_add(1);
         if let Some((w, h)) = self.viewport_px {
             crate::screen::set_viewport(w, h);
         }
@@ -542,34 +536,69 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
         self.restore_scroll();
     }
 
-    /// The pointer is at (`x`, `y`), pressed or not: restyles the view if
-    /// that changes what `:hover` / `:active` apply to. Returns true if so.
-    fn move_pointer(&mut self, x: f32, y: f32, pressed: bool) -> bool {
-        self.pointer = Some((x, y));
-        self.pressed = pressed;
-        if self.update_pointer_state() {
-            self.rebuild();
-            true
-        } else {
-            false
+    /// Sends an element's message (`data-on-click`, `data-on-hover`) to the
+    /// model. Returns true if the view changed.
+    fn dispatch(&mut self, interaction: Interaction) -> bool {
+        match interaction {
+            Interaction::Message(message) => match message.downcast_ref::<M::Message>() {
+                Some(message) => self.process_message(message.clone()),
+                None => {
+                    log::error!("an element's message is not of the model's message type");
+                    false
+                }
+            },
+            Interaction::Text(text) => self.process_message_str(&text),
         }
     }
 
-    /// Finds the elements under the pointer in the current view, for the
-    /// states its rules use. Returns true if they changed.
+    /// The pointer is at (`x`, `y`), pressed or not. Sends the
+    /// `data-on-hover-out` messages of the elements it left, then the
+    /// `data-on-hover` ones of those it entered, and restyles the view if
+    /// what `:hover` / `:active` apply to changed. Returns true if the view
+    /// changed.
+    fn move_pointer(&mut self, x: f32, y: f32, pressed: bool) -> bool {
+        self.pointer = Some((x, y));
+        self.pressed = pressed;
+        let before = self.pointer_state.hovered.clone();
+        let restyle = self.update_pointer_state();
+        let handler = |runtime: &Self, key: u64, enter: bool| {
+            let (node, _) = runtime.ui.keys.iter().find(|&(_, &k)| k == key)?;
+            let handlers = runtime.ui.hover_handlers.get(node)?;
+            if enter { handlers.enter.clone() } else { handlers.leave.clone() }
+        };
+        let hovered = &self.pointer_state.hovered;
+        let messages: Vec<Interaction> = before.iter().filter(|key| !hovered.contains(key)).filter_map(|&key| handler(self, key, false))
+            .chain(hovered.iter().rev().filter(|key| !before.contains(key)).filter_map(|&key| handler(self, key, true)))
+            .collect();
+        let builds = self.builds;
+        let mut changed = false;
+        for message in messages {
+            changed |= self.dispatch(message);
+        }
+        if restyle && self.builds == builds {
+            self.rebuild();
+            changed = true;
+        }
+        changed
+    }
+
+    /// Finds the elements under the pointer in the current view. Returns
+    /// true if that changes what its `:hover` / `:active` rules apply to.
     fn update_pointer_state(&mut self) -> bool {
-        let (hover, active) = (self.ui.uses_hover, self.ui.uses_active);
+        let tracks_hover = self.ui.uses_hover || self.ui.hover_handlers.iter().next().is_some();
+        let active = self.ui.uses_active && self.pressed;
         let chain = match self.pointer {
-            Some((x, y)) if hover || (active && self.pressed) => self.ui.pointer_chain(x, y),
+            Some((x, y)) if tracks_hover || active => self.ui.pointer_chain(x, y),
             _ => Vec::new(),
         };
         let state = crate::ui::PointerState {
-            active: if active && self.pressed { chain.clone() } else { Vec::new() },
-            hovered: if hover { chain } else { Vec::new() },
+            active: if active { chain.clone() } else { Vec::new() },
+            hovered: if tracks_hover { chain } else { Vec::new() },
         };
-        let changed = state != self.pointer_state;
+        let restyle = (self.ui.uses_hover && state.hovered != self.pointer_state.hovered)
+            || (self.ui.uses_active && state.active != self.pointer_state.active);
         self.pointer_state = state;
-        changed
+        restyle
     }
 
     /// Renders the current layout tree state into `target`, drawing only what

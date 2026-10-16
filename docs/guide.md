@@ -68,6 +68,8 @@ Templates are precompiled at compile time via `#[derive(XeruneTemplate)]` and bi
 {% endfor %}
 ```
 
+`data-on-hover` and `data-on-hover-out` take messages the same way and send them when the pointer enters and leaves the element (entering a child doesn't leave its parent). To only restyle what is under the pointer, `:hover` in CSS needs no messages.
+
 A message is named after its variant in snake_case: `add` for `Add`,
 `toggle:` followed by the argument for `Toggle(usize)` (`#[xerune(rename =
 "...")]` and `#[xerune(prefix = "...")]` change that). The template builds

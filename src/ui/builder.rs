@@ -24,6 +24,7 @@ pub struct UiBuilder {
     pub keys: NodeMap<u64>,
     /// The elements under the pointer, for `:hover` and `:active`.
     pub pointer: PointerState,
+    pub hover_handlers: NodeMap<super::HoverHandlers>,
 }
 
 /// The keys of the elements the pointer is over and presses: the element
@@ -88,6 +89,7 @@ impl UiBuilder {
             element_ids: Vec::new(),
             keys: NodeMap::with_capacity(capacity),
             pointer: PointerState::default(),
+            hover_handlers: NodeMap::new(),
         }
     }
 
@@ -354,6 +356,9 @@ impl UiBuilder {
     /// Resolves `el`'s final style after its children have been appended.
     #[inline(never)]
     pub fn finish_element(&mut self, mut el: ElementStyle, node: NodeId, parent_style: &crate::style::ContainerStyle) {
+        if !el.parsed.hover.is_empty() {
+            self.hover_handlers.insert(node, core::mem::take(&mut el.parsed.hover));
+        }
         super::style_resolution::finalize_node_style(
             node,
             el.tag,
@@ -495,6 +500,34 @@ impl ElementStyle {
         match message.parse::<M>() {
             Ok(message) => self.on_click(message),
             Err(_) => crate::diag::warn_once("data-on-click is not a message of the model", message),
+        }
+    }
+
+    /// The pointer entering the element sends `message` (a compiled
+    /// `data-on-hover`).
+    pub fn on_hover<M: 'static>(&mut self, message: M) {
+        self.parsed.hover.enter = Some(Interaction::Message(Rc::new(message)));
+    }
+
+    /// [`Self::on_hover`] with a message parsed as `M`.
+    pub fn on_hover_text<M: core::str::FromStr + 'static>(&mut self, message: &str) {
+        match message.parse::<M>() {
+            Ok(message) => self.on_hover(message),
+            Err(_) => crate::diag::warn_once("data-on-hover is not a message of the model", message),
+        }
+    }
+
+    /// The pointer leaving the element sends `message` (a compiled
+    /// `data-on-hover-out`).
+    pub fn on_hover_out<M: 'static>(&mut self, message: M) {
+        self.parsed.hover.leave = Some(Interaction::Message(Rc::new(message)));
+    }
+
+    /// [`Self::on_hover_out`] with a message parsed as `M`.
+    pub fn on_hover_out_text<M: core::str::FromStr + 'static>(&mut self, message: &str) {
+        match message.parse::<M>() {
+            Ok(message) => self.on_hover_out(message),
+            Err(_) => crate::diag::warn_once("data-on-hover-out is not a message of the model", message),
         }
     }
 

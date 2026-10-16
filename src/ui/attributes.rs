@@ -21,6 +21,8 @@ pub struct ParsedAttributes {
     pub progress_max: f32,
     pub checkbox_checked: bool,
     pub interaction_id: Option<Interaction>,
+    /// `data-on-hover` and `data-on-hover-out`.
+    pub hover: super::HoverHandlers,
     pub image_src: String,
     pub canvas_id: String,
     pub element_id: Option<String>,
@@ -40,6 +42,7 @@ impl ParsedAttributes {
             progress_max: 1.0,
             checkbox_checked: false,
             interaction_id: None,
+            hover: super::HoverHandlers::default(),
             image_src: String::new(),
             canvas_id: String::new(),
             element_id: None,
@@ -131,6 +134,17 @@ pub fn parse_attributes_generic<'a>(
                      log::warn!("Invalid message in data-on-click: {}", value);
                  }
                  parsed.interaction_id = Some(Interaction::Text(value.to_string()));
+             }
+             "data-on-hover" | "data-on-hover-out" => {
+                 if !message_validator(value) {
+                     log::warn!("Invalid message in {}: {}", name, value);
+                 }
+                 let handler = Some(Interaction::Text(value.to_string()));
+                 if name == "data-on-hover" {
+                     parsed.hover.enter = handler;
+                 } else {
+                     parsed.hover.leave = handler;
+                 }
              }
              _ => {
                  log::debug!("Ignoring attribute: {} on tag: {}", name, tag);

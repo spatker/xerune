@@ -89,6 +89,23 @@ pub trait TemplateLayout {
     }
 }
 
+/// The messages an element sends when the pointer enters it
+/// (`data-on-hover`) and leaves it (`data-on-hover-out`). Entering a child
+/// doesn't leave its parent: the parent is still hovered.
+#[derive(Debug, Clone, Default)]
+pub struct HoverHandlers {
+    /// Sent when the element becomes hovered.
+    pub enter: Option<Interaction>,
+    /// Sent when it stops being hovered.
+    pub leave: Option<Interaction>,
+}
+
+impl HoverHandlers {
+    fn is_empty(&self) -> bool {
+        self.enter.is_none() && self.leave.is_none()
+    }
+}
+
 /// The core layout engine containing the taffy tree and metadata maps.
 pub struct Ui {
     /// The taffy layout tree.
@@ -124,6 +141,8 @@ pub struct Ui {
     pub keys: NodeMap<u64>,
     /// Whether any rule uses `:hover`, so that moving the pointer restyles.
     pub uses_hover: bool,
+    /// The `data-on-hover` / `data-on-hover-out` messages of elements.
+    pub hover_handlers: NodeMap<HoverHandlers>,
     /// Whether any rule uses `:active`.
     pub uses_active: bool,
 }
@@ -262,6 +281,7 @@ impl Ui {
                     &builder.node_metadata,
                     &builder.keys,
                     &builder.pointer,
+                    &mut builder.hover_handlers,
                     &mut base_styles,
                     &mut *style_cache,
                 );
@@ -297,6 +317,7 @@ impl Ui {
             keys: builder.keys,
             uses_hover,
             uses_active,
+            hover_handlers: builder.hover_handlers,
         })
     }
 
