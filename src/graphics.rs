@@ -462,34 +462,12 @@ pub enum DrawCommand {
         /// Corner radius to clip image edges.
         border_radius: f32,
     },
-    /// Draw a custom style checkbox.
-    DrawCheckbox {
-        /// Bounding box.
+    /// Draw the check mark of a checked checkbox: a stroke scaled to `rect`,
+    /// as Chromium paints it.
+    DrawCheckMark {
+        /// The checkbox's box.
         rect: Rect,
-        /// Flag if the checkbox is checked.
-        checked: bool,
-        /// Theme color.
-        color: Color,
-    },
-    /// Draw a slider control.
-    DrawSlider {
-        /// Bounding box.
-        rect: Rect,
-        /// Normalized slider value (0.0 to 1.0).
-        value: f32,
-        /// Theme color.
-        color: Color,
-    },
-
-    /// Draw a progress bar control.
-    DrawProgress {
-        /// Bounding box.
-        rect: Rect,
-        /// Current value.
-        value: f32,
-        /// Maximum limit value.
-        max: f32,
-        /// Theme color.
+        /// Stroke color.
         color: Color,
     },
     /// Render custom canvas pixel data.
@@ -529,9 +507,7 @@ impl DrawCommand {
             DrawCommand::DrawRect { rect, .. } => Some(apply_pad(*rect)),
             DrawCommand::DrawText { rect, .. } => Some(apply_pad(*rect)),
             DrawCommand::DrawImage { rect, .. } => Some(apply_pad(*rect)),
-            DrawCommand::DrawCheckbox { rect, .. } => Some(apply_pad(*rect)),
-            DrawCommand::DrawSlider { rect, .. } => Some(apply_pad(*rect)),
-            DrawCommand::DrawProgress { rect, .. } => Some(apply_pad(*rect)),
+            DrawCommand::DrawCheckMark { rect, .. } => Some(apply_pad(*rect)),
             DrawCommand::DrawCanvas { rect, .. } => Some(apply_pad(*rect)),
         }
     }

@@ -32,6 +32,15 @@ pub fn input_defaults_key(input_type: &str) -> Option<&'static str> {
     }
 }
 
+/// The [`get_default_style`] key of an element: an `<input>` by its `type`,
+/// so CSS applied on top of the defaults isn't overwritten by them later.
+pub fn element_defaults_key<'a>(tag: &'a str, input_type: Option<&str>) -> &'a str {
+    match input_type.and_then(input_defaults_key) {
+        Some(key) if tag == "input" => key,
+        _ => tag,
+    }
+}
+
 /// A structure bundling taffy layout Style, ContainerStyle and ElementType.
 pub struct StyleBundle {
     /// The Taffy layout style mapping.
@@ -167,11 +176,6 @@ pub fn get_default_style(tag: &str, parent_style: &ContainerStyle) -> StyleBundl
         "strong" | "b" => {
              bundle.container_style.weight = 1; // Bold
         }
-        "checkbox" => {
-            bundle.element_type = ElementType::Checkbox;
-            bundle.taffy_style.size = Size { width: length(20.0), height: length(20.0) };
-            bundle.taffy_style.margin = taffy::geometry::Rect { left: length(5.0), right: length(5.0), top: length(0.0), bottom: length(0.0) };
-        }
         "table" | "tbody" | "thead" | "tfoot" => {
              bundle.taffy_style.padding = taffy::geometry::Rect {
                 left: length(2.0), right: length(2.0),
@@ -211,9 +215,12 @@ pub fn get_default_style(tag: &str, parent_style: &ContainerStyle) -> StyleBundl
             bundle.container_style.border_radius = 4.0;
             bundle.container_style.border = crate::style::Borders::all(crate::style::BorderSide::solid(1.0, crate::Color::from_rgba8(180, 180, 180, 255)));
         }
+        // Sizes and margins of form controls are Chromium's (html.css and
+        // the controls' intrinsic sizes).
         "progress" => {
              bundle.element_type = ElementType::Progress;
-             bundle.taffy_style.size = Size { width: length(150.0), height: length(20.0) };
+             bundle.taffy_style.size = Size { width: length(10.0 * em), height: length(em) };
+             bundle.container_style.box_sizing = crate::style::BoxSizing::BorderBox;
         }
         "input_text" => {
             bundle.element_type = ElementType::TextInput;
@@ -231,17 +238,22 @@ pub fn get_default_style(tag: &str, parent_style: &ContainerStyle) -> StyleBundl
             bundle.container_style.border_radius = 4.0;
             bundle.container_style.border = crate::style::Borders::all(crate::style::BorderSide::solid(1.0, crate::Color::from_rgba8(200, 200, 200, 255)));
         }
-        "input_checkbox" => {
+        "input_checkbox" | "checkbox" => {
             bundle.element_type = ElementType::Checkbox;
-            bundle.taffy_style.size = Size { width: length(20.0), height: length(20.0) };
+            bundle.taffy_style.size = Size { width: length(13.0), height: length(13.0) };
             bundle.taffy_style.margin = taffy::geometry::Rect {
-                left: length(5.0), right: length(5.0),
-                top: length(0.0), bottom: length(0.0)
+                left: length(4.0), right: length(3.0),
+                top: length(3.0), bottom: length(3.0)
             };
+            bundle.container_style.box_sizing = crate::style::BoxSizing::BorderBox;
         }
         "input_range" => {
             bundle.element_type = ElementType::Slider;
-            bundle.taffy_style.size = Size { width: length(100.0), height: length(20.0) };
+            bundle.taffy_style.size = Size { width: length(129.0), height: length(16.0) };
+            bundle.taffy_style.margin = taffy::geometry::Rect {
+                left: length(2.0), right: length(2.0),
+                top: length(2.0), bottom: length(2.0)
+            };
         }
         "canvas" => {
             bundle.element_type = ElementType::Canvas;

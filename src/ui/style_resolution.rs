@@ -36,6 +36,8 @@ pub struct StyleCacheKey {
     pub parent_weight: u16,
     /// Parent foreground color in u32 format.
     pub parent_color_u32: u32,
+    /// Parent `accent-color` (inherited, like `color`).
+    pub parent_accent: Option<u32>,
     /// Viewport size (rounded px) the resolved `vw`/`vh` lengths were computed against.
     pub viewport: (u32, u32),
 }
@@ -279,7 +281,11 @@ pub(crate) fn resolve_styles(
     }
 
     let tag = &meta.tag;
-    let element_type = defaults::get_default_style(tag, &ContainerStyle::default()).element_type;
+    let input_type = meta.other_attrs.iter().flatten().chain(meta.attrs.iter())
+        .find(|(k, _)| k == "type")
+        .map(|(_, v)| v.as_str());
+    let defaults_key = defaults::element_defaults_key(tag, input_type);
+    let element_type = defaults::get_default_style(defaults_key, &ContainerStyle::default()).element_type;
     let mut parsed = super::attributes::ParsedAttributes::new(element_type);
 
     if let Some(checked) = meta.checked {
@@ -325,6 +331,7 @@ pub(crate) fn resolve_styles(
         parent_font_size_bits: parent_style.font_size.to_bits(),
         parent_weight: parent_style.weight,
         parent_color_u32,
+        parent_accent: parent_style.accent_color.map(|c| u32::from_be_bytes([c.r, c.g, c.b, c.a])),
         viewport: (vw.round() as u32, vh.round() as u32),
     };
 
@@ -339,7 +346,7 @@ pub(crate) fn resolve_styles(
             let (hits, misses) = stats.get();
             stats.set((hits, misses + 1));
         });
-        let defaults = defaults::get_default_style(tag, &parent_style);
+        let defaults = defaults::get_default_style(defaults_key, &parent_style);
         let mut l_style = defaults.taffy_style;
         let mut c_style = defaults.container_style;
 

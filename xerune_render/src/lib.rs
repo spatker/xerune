@@ -14,7 +14,7 @@ use xerune::alloc_prelude::*;
 use xerune::text::{LineMetrics, ShapedGlyph, ShapedText};
 
 use blitter::{pack_color, blend_solid_rect, blend_pixel, blend_glyph_span, div_255, calc_pixel_index};
-use rounded_rect::{draw_rounded_rect, draw_rounded_border, draw_border_sides, draw_box_shadow};
+use rounded_rect::{draw_rounded_rect, draw_rounded_border, draw_border_sides, draw_box_shadow, draw_check_mark};
 
 #[cfg(feature = "profile")]
 macro_rules! profile {
@@ -1267,179 +1267,21 @@ impl Frame<'_> {
                         );
                     }
                 }
-                DrawCommand::DrawCheckbox { rect, checked, color } => {
-                    profile!("render_checkbox");
+                DrawCommand::DrawCheckMark { rect, color } => {
+                    profile!("render_check_mark");
                     let local_rect = self.translate_rect(rect);
                     let clip = self.get_clip_rect();
-                    draw_rounded_border(
+                    draw_check_mark(
                         self.buffer,
                         self.width,
                         self.height,
                         self.physical_width,
-                        floor_i32(local_rect.x),
-                        floor_i32(local_rect.y),
-                        local_rect.width as i32,
-                        local_rect.height as i32,
-                        0.0,
-                        1.0,
+                        local_rect,
                         *color,
                         self.swap_rb,
                         clip,
                         self.rotation,
                     );
-                    if *checked {
-                        let inset = 4;
-                        let inner_x = floor_i32(local_rect.x) + inset;
-                        let inner_y = floor_i32(local_rect.y) + inset;
-                        let inner_w = local_rect.width as i32 - inset * 2;
-                        let inner_h = local_rect.height as i32 - inset * 2;
-                        let packed = pack_color(*color, self.swap_rb);
-                        blend_solid_rect(
-                            self.buffer,
-                            self.width,
-                            self.height,
-                            self.physical_width,
-                            inner_x,
-                            inner_y,
-                            inner_w,
-                            inner_h,
-                            packed,
-                            clip,
-                            self.rotation,
-                        );
-                    }
-                }
-                DrawCommand::DrawSlider { rect, value, color } => {
-                    profile!("render_slider");
-                    let local_rect = self.translate_rect(rect);
-                    let clip = self.get_clip_rect();
-
-                    let track_h = 6.0;
-                    let track_y = local_rect.y + (local_rect.height - track_h) / 2.0;
-                    let bg_color = xerune::Color::new(60, 60, 60, 255);
-                    draw_rounded_rect(
-                        self.buffer,
-                        self.width,
-                        self.height,
-                        self.physical_width,
-                        floor_i32(local_rect.x),
-                        track_y as i32,
-                        local_rect.width as i32,
-                        track_h as i32,
-                        track_h / 2.0,
-                        Some(bg_color),
-                        None,
-                        self.swap_rb,
-                        clip,
-                        self.rotation,
-                    );
-
-                    if *value > 0.0 {
-                        let active_w = local_rect.width * value;
-                        draw_rounded_rect(
-                            self.buffer,
-                            self.width,
-                            self.height,
-                            self.physical_width,
-                            floor_i32(local_rect.x),
-                            track_y as i32,
-                            active_w as i32,
-                            track_h as i32,
-                            track_h / 2.0,
-                            Some(*color),
-                            None,
-                            self.swap_rb,
-                            clip,
-                            self.rotation,
-                        );
-                    }
-
-                    let thumb_r = 10.0;
-                    let thumb_x = local_rect.x + local_rect.width * value;
-                    let thumb_y = local_rect.y + local_rect.height / 2.0;
-                    
-                    let thumb_left = (thumb_x - thumb_r) as i32;
-                    let thumb_top = (thumb_y - thumb_r) as i32;
-                    let thumb_size = (thumb_r * 2.0) as i32;
-
-                    draw_rounded_rect(
-                        self.buffer,
-                        self.width,
-                        self.height,
-                        self.physical_width,
-                        thumb_left,
-                        thumb_top,
-                        thumb_size,
-                        thumb_size,
-                        thumb_r,
-                        Some(xerune::Color::WHITE),
-                        None,
-                        self.swap_rb,
-                        clip,
-                        self.rotation,
-                    );
-
-                    let shadow_color = xerune::Color::new(0, 0, 0, 50);
-                    draw_rounded_border(
-                        self.buffer,
-                        self.width,
-                        self.height,
-                        self.physical_width,
-                        thumb_left,
-                        thumb_top,
-                        thumb_size,
-                        thumb_size,
-                        thumb_r,
-                        2.0,
-                        shadow_color,
-                        self.swap_rb,
-                        clip,
-                        self.rotation,
-                    );
-                }
-                DrawCommand::DrawProgress { rect, value, max, color } => {
-                    profile!("render_progress");
-                    let local_rect = self.translate_rect(rect);
-                    let clip = self.get_clip_rect();
-
-                    let bg_color = xerune::Color::new(200, 200, 200, 255);
-                    draw_rounded_rect(
-                        self.buffer,
-                        self.width,
-                        self.height,
-                        self.physical_width,
-                        floor_i32(local_rect.x),
-                        floor_i32(local_rect.y),
-                        local_rect.width as i32,
-                        local_rect.height as i32,
-                        local_rect.height / 2.0,
-                        Some(bg_color),
-                        None,
-                        self.swap_rb,
-                        clip,
-                        self.rotation,
-                    );
-
-                    let progress = (value / max).clamp(0.0, 1.0);
-                    if progress > 0.0 {
-                        let active_w = local_rect.width * progress;
-                        draw_rounded_rect(
-                            self.buffer,
-                            self.width,
-                            self.height,
-                            self.physical_width,
-                            floor_i32(local_rect.x),
-                            floor_i32(local_rect.y),
-                            active_w as i32,
-                            local_rect.height as i32,
-                            local_rect.height / 2.0,
-                            Some(*color),
-                            None,
-                            self.swap_rb,
-                            clip,
-                            self.rotation,
-                        );
-                    }
                 }
                 DrawCommand::DrawCanvas { id, rect, border_radius } => {
                     profile!("render_canvas");
@@ -1833,7 +1675,24 @@ mod tests {
             DrawCommand::DrawRect { rect: Rect::new(20.0, 15.0, 40.0, 30.0), color: None, gradient: gradient(90.0), border_radius: 9.0, border: Borders::NONE },
             DrawCommand::PopClip,
             rect(2.5, 40.25, 50.0, 5.5, xerune::Color::new(20, 200, 120, 160)),
+            DrawCommand::DrawCheckMark { rect: Rect::new(44.5, 4.0, 15.0, 15.0), color: xerune::Color::WHITE },
         ]
+    }
+
+    /// Pixels of a checked 13x13 checkbox in a Chromium screenshot: white on
+    /// the stroke, untouched accent beside it.
+    #[test]
+    fn check_mark_matches_chromium() {
+        let accent = xerune::Color::new(0, 0x75, 0xff, 255);
+        let commands = [rect(0.0, 0.0, 13.0, 13.0, accent), DrawCommand::DrawCheckMark { rect: Rect::new(0.0, 0.0, 13.0, 13.0), color: xerune::Color::WHITE }];
+        let buffer = draw(13, 13, 0, &commands, Rect::new(0.0, 0.0, 13.0, 13.0));
+        let at = |x: usize, y: usize| buffer[y * 13 + x] & 0xffffff;
+        for (x, y) in [(3, 7), (4, 7), (9, 3), (5, 8)] {
+            assert!(at(x, y) & 0xff0000 >= 0xe00000, "({x}, {y}) is {:06x}, not white", at(x, y));
+        }
+        for (x, y) in [(2, 2), (9, 9), (1, 6), (11, 2)] {
+            assert_eq!(at(x, y), 0x0075ff, "({x}, {y})");
+        }
     }
 
     #[test]

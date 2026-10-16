@@ -408,6 +408,8 @@ pub struct ContainerStyle {
     pub animation_play_state: Arc<str>,
     /// `color-scheme: dark`: the default canvas color is dark instead of white.
     pub color_scheme_dark: bool,
+    /// `accent-color` of form controls (inherited); `None` is `auto`.
+    pub accent_color: Option<Color>,
 }
 
 impl Default for ContainerStyle {
@@ -464,6 +466,7 @@ impl Default for ContainerStyle {
             animation_fill_mode: Arc::from("none"),
             animation_play_state: Arc::from("running"),
             color_scheme_dark: false,
+            accent_color: None,
         }
     }
 }

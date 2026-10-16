@@ -32,15 +32,15 @@
 # css/css-flexbox                      257   216   526    33%    189
 # css/css-images                        27     4   170    14%    199
 # css/css-overflow                      31    17   114    21%    278
-# css/css-position                       4     3    80     5%     66
+# css/css-position                       5     3    79     6%     66
 # css/css-sizing                        29    21   356     8%    146
 # css/css-text                         128    38   776    14%    213
-# css/css-ui                             8     0   118     6%     65
+# css/css-ui                             9     1   117     7%     65
 # css/css-values                        19    11   133    12%     59
 # css/css-variables                     15    15   165     8%      2
 # css/mediaqueries                       0     0    47     0%     11
 # css/selectors                         12     8    78    13%    135
-# total                               1124   863  7321    13%   1979
+# total                               1126   864  7319    13%   1979
 FAIL css/CSS2/abspos/abspos-containing-block-initial-004a.xht
 FAIL css/CSS2/abspos/abspos-containing-block-initial-004b.xht
 FAIL css/CSS2/abspos/abspos-containing-block-initial-004c.xht
@@ -5622,7 +5622,6 @@ FAIL css/css-position/position-absolute-in-inline-004.html
 FAIL css/css-position/position-absolute-in-inline-005.html
 FAIL css/css-position/position-absolute-in-inline-006.html
 FAIL css/css-position/position-absolute-in-inline-margin-top.html
-FAIL css/css-position/position-absolute-large-negative-inset.html
 FAIL css/css-position/position-absolute-replaced-intrinsic-size.tentative.html
 FAIL css/css-position/position-absolute-replaced-no-intrinsic-size.tentative.html
 FAIL css/css-position/position-absolute-root-element-flex.html
@@ -6822,7 +6821,6 @@ FAIL css/css-text/writing-system/writing-system-font-001.html
 FAIL css/css-text/writing-system/writing-system-text-transform-001.html
 FAIL css/css-text/zwnj-renders-invisible.html
 FAIL css/css-ui/accent-color-parent-currentcolor.html
-FAIL css/css-ui/accent-color-visited.html
 FAIL css/css-ui/appearance-auto-001.html
 FAIL css/css-ui/appearance-auto-input-non-widget-001.html
 FAIL css/css-ui/appearance-button-001.html

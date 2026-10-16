@@ -1,6 +1,7 @@
 pub(crate) mod node_map;
 pub(crate) mod metadata;
 pub(crate) mod builder;
+mod controls;
 pub mod attributes;
 /// Module containing stylesheet layout mapping resolver methods.
 pub mod style_resolution;
@@ -946,28 +947,12 @@ fn traverse_layout(
                     border_radius: style.border_radius,
                 });
             },
-            RenderData::Checkbox(checked, style) => {
-                commands.push(DrawCommand::DrawCheckbox {
-                    rect,
-                    checked: *checked,
-                    color: style.color,
-                });
-            },
-            RenderData::Slider(value, style) => {
-                 commands.push(DrawCommand::DrawSlider {
-                    rect,
-                    value: *value,
-                    color: style.color,
-                });
-            },
+            RenderData::Checkbox(checked, style) => controls::checkbox(commands, rect, *checked, style),
+            RenderData::Slider(fraction, style) => controls::slider(commands, controls::content_box(rect, style), *fraction, style),
             RenderData::Progress(value, max, style) => {
-                 commands.push(DrawCommand::DrawProgress {
-                    rect,
-                    value: *value,
-                    max: *max,
-                    color: style.color,
-                });
-            },
+                let fraction = if *max > 0.0 { value / max } else { 0.0 };
+                controls::progress(commands, controls::content_box(rect, style), fraction, style);
+            }
             RenderData::Canvas(id, style) => {
                 let b = style.border.widths();
                 let canvas_rect = if style.border.is_visible() {

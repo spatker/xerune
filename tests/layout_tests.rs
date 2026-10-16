@@ -1298,6 +1298,135 @@ mod damage {
     }
 }
 
+mod controls {
+    //! Form controls are drawn like Chromium draws them (geometry and colors
+    //! measured from its screenshots), tinted by `accent-color`.
+    use std::collections::HashMap;
+    use xerune::style::{BorderSide, Borders};
+    use xerune::*;
+
+    struct NoText;
+    impl TextMeasurer for NoText {
+        fn measure_text(&self, _text: &str, _font_size: f32, _weight: u16) -> (f32, f32) {
+            (0.0, 16.0)
+        }
+    }
+
+    #[derive(XeruneTemplate)]
+    #[template(source = r#"<style>
+        body { margin: 0px; }
+        .row { display: flex; align-items: flex-start; }
+        .red { accent-color: #e11d48; }
+        .big { width: 30px; height: 30px; }
+    </style>
+    <body>
+        <div class="row"><input type="checkbox"><input type="checkbox" checked></div>
+        <div class="row red"><input type="checkbox" checked><input type="range" value="0"><progress value="0.25"></progress></div>
+        <div class="row"><input type="checkbox" class="big" checked></div>
+    </body>"#)]
+    struct Controls;
+    impl Model for Controls {
+        type Message = String;
+        fn update(&mut self, _msg: String, _context: &mut Context) {}
+    }
+
+    fn commands<M: Model + ui::TemplateLayout + 'static>(model: M) -> Vec<DrawCommand> {
+        let mut rt = Runtime::new(model, NoText);
+        crate::set_size(&mut rt, 400.0, 300.0);
+        rt.ui.build_commands(&HashMap::new(), None)
+    }
+
+    fn rgb(hex: u32) -> Color {
+        Color::new((hex >> 16) as u8, (hex >> 8) as u8, hex as u8, 255)
+    }
+
+    /// The `DrawRect` drawn at `rect`, as (fill, border, radius).
+    fn rect_at(commands: &[DrawCommand], rect: Rect) -> (Option<Color>, Borders, f32) {
+        commands
+            .iter()
+            .find_map(|c| match c {
+                DrawCommand::DrawRect { rect: r, color, border, border_radius, .. } if *r == rect => Some((*color, *border, *border_radius)),
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("no rect at {rect:?} in {commands:#?}"))
+    }
+
+    fn border(width: f32, hex: u32) -> Borders {
+        Borders::all(BorderSide::solid(width, rgb(hex)))
+    }
+
+    #[test]
+    fn unchecked_checkbox_is_a_white_box_with_a_grey_border() {
+        // 13x13 with margins 3px 3px 3px 4px.
+        let commands = commands(Controls);
+        assert_eq!(rect_at(&commands, Rect::new(4.0, 3.0, 13.0, 13.0)), (Some(Color::WHITE), border(1.0, 0x767676), 2.0));
+    }
+
+    #[test]
+    fn checked_checkbox_is_filled_with_the_accent_and_checked() {
+        let commands = commands(Controls);
+        let rect = Rect::new(24.0, 3.0, 13.0, 13.0);
+        assert_eq!(rect_at(&commands, rect), (Some(rgb(0x0075ff)), Borders::NONE, 2.0));
+        assert!(commands.contains(&DrawCommand::DrawCheckMark { rect, color: Color::WHITE }));
+    }
+
+    #[test]
+    fn accent_color_is_inherited_by_every_control() {
+        let commands = commands(Controls);
+        let red = Some(rgb(0xe11d48));
+        // Second row, 19px down.
+        assert_eq!(rect_at(&commands, Rect::new(4.0, 22.0, 13.0, 13.0)).0, red);
+        // The range's thumb: 129x16 at (22, 21), the track inset by 1px,
+        // the thumb at its start.
+        assert_eq!(rect_at(&commands, Rect::new(23.0, 21.0, 16.0, 16.0)), (red, Borders::NONE, 8.0));
+        // The progress bar's value is the accent with a border halfway to
+        // #757575, clipped to a quarter of the 160x16 bar's 8px track.
+        let track = Rect::new(153.0, 23.0, 160.0, 8.0);
+        assert_eq!(rect_at(&commands, track), (Some(rgb(0xefefef)), border(1.0, 0xb2b2b2), 4.0));
+        let value = commands.iter().position(|c| *c == DrawCommand::Clip { rect: Rect { width: 40.0, ..track } }).unwrap();
+        assert_eq!(
+            commands[value + 1],
+            DrawCommand::DrawRect { rect: track, color: red, gradient: None, border_radius: 4.0, border: border(1.0, 0xab495f) }
+        );
+    }
+
+    #[test]
+    fn css_sizes_the_controls() {
+        let commands = commands(Controls);
+        assert_eq!(rect_at(&commands, Rect::new(4.0, 42.0, 30.0, 30.0)).0, Some(rgb(0x0075ff)));
+    }
+
+    /// Runtime stylesheets (no compiled template) must not reset an
+    /// `<input>`'s size to its type's defaults after CSS set it.
+    #[test]
+    fn runtime_css_sizes_inputs() {
+        struct Runtime;
+        impl Model for Runtime {
+            type Message = String;
+            fn update(&mut self, _msg: String, _context: &mut Context) {}
+        }
+        impl ui::TemplateLayout for Runtime {
+            fn stylesheet(&self) -> &'static str {
+                "body { margin: 0px; } input { width: 30px; height: 20px; margin: 0px; }"
+            }
+            fn build_ui(
+                &self,
+                builder: &mut ui::UiBuilder,
+                _measurer: &impl TextMeasurer,
+                _default_style: &style::ContainerStyle,
+                _message_validator: &impl Fn(&str) -> bool,
+            ) -> taffy::NodeId {
+                let body = builder.create_element("body", &[]);
+                let checkbox = builder.create_checkbox(false, &[("type", "checkbox")]);
+                builder.append_child(body, checkbox);
+                body
+            }
+        }
+        let commands = commands(Runtime);
+        assert_eq!(rect_at(&commands, Rect::new(0.0, 0.0, 30.0, 20.0)).0, Some(Color::WHITE));
+    }
+}
+
 mod known_gaps {
     //! Things the engine gets wrong today. Each test describes the correct
     //! (browser) behavior and is ignored with a FIXME until it is fixed:

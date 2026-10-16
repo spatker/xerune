@@ -377,7 +377,8 @@ pub(crate) fn dom_to_taffy(
                 return None;
             }
             
-            let defaults = defaults::get_default_style(tag, &current_style); 
+            let input_type = attrs.borrow().iter().find(|a| a.name.local.as_ref() == "type").map(|a| a.value.to_string());
+            let defaults = defaults::get_default_style(defaults::element_defaults_key(tag, input_type.as_deref()), &current_style);
             let mut layout_style = defaults.taffy_style;
             current_style = defaults.container_style;
             

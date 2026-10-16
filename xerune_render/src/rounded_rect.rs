@@ -804,3 +804,92 @@ pub fn draw_border_sides(
         }
     }
 }
+
+/// Distance from `(px, py)` to the segment `a`-`b`.
+fn segment_distance(px: f32, py: f32, a: (f32, f32), b: (f32, f32)) -> f32 {
+    let (dx, dy) = (b.0 - a.0, b.1 - a.1);
+    let len2 = dx * dx + dy * dy;
+    let t = if len2 > 0.0 { (((px - a.0) * dx + (py - a.1) * dy) / len2).clamp(0.0, 1.0) } else { 0.0 };
+    let (ex, ey) = (px - (a.0 + t * dx), py - (a.1 + t * dy));
+    (ex * ex + ey * ey).sqrt()
+}
+
+/// The outline of the polyline `a`-`b`-`c` stroked `half` wide on each
+/// side, with butt ends and a miter join (Skia's defaults).
+fn stroke_outline(a: (f32, f32), b: (f32, f32), c: (f32, f32), half: f32) -> [(f32, f32); 6] {
+    let normal = |p: (f32, f32), q: (f32, f32)| {
+        let (dx, dy) = (q.0 - p.0, q.1 - p.1);
+        let len = (dx * dx + dy * dy).sqrt().max(f32::EPSILON);
+        (-dy / len, dx / len)
+    };
+    let (n1, n2) = (normal(a, b), normal(b, c));
+    // The miter point is `half` from both offset lines.
+    let k = half / (1.0 + n1.0 * n2.0 + n1.1 * n2.1).max(0.25);
+    let miter = ((n1.0 + n2.0) * k, (n1.1 + n2.1) * k);
+    [
+        (a.0 + n1.0 * half, a.1 + n1.1 * half),
+        (b.0 + miter.0, b.1 + miter.1),
+        (c.0 + n2.0 * half, c.1 + n2.1 * half),
+        (c.0 - n2.0 * half, c.1 - n2.1 * half),
+        (b.0 - miter.0, b.1 - miter.1),
+        (a.0 - n1.0 * half, a.1 - n1.1 * half),
+    ]
+}
+
+/// The check mark of a checked checkbox, scaled to the box: Chromium's path
+/// (20% in, down to 40%/70%, up to 80%/20%) stroked 16% of the height wide,
+/// anti-aliased by the distance to the stroke's outline.
+pub fn draw_check_mark(
+    buffer: &mut [u32],
+    logical_w: u32,
+    logical_h: u32,
+    physical_w: u32,
+    rect: xerune::Rect,
+    color: xerune::Color,
+    swap_rb: bool,
+    clip_rect: Option<xerune::Rect>,
+    rotation: u32,
+) {
+    let (x, y, w, h) = (rect.x, rect.y, rect.width, rect.height);
+    let outline = stroke_outline((x + 0.2 * w, y + 0.5 * h), (x + 0.4 * w, y + 0.7 * h), (x + 0.8 * w, y + 0.2 * h), 0.08 * h);
+
+    let (clip_x1, clip_y1, clip_x2, clip_y2) = match clip_rect {
+        Some(cr) => (cr.x.max(0.0) as i32, cr.y.max(0.0) as i32, (cr.x + cr.width).min(logical_w as f32) as i32, (cr.y + cr.height).min(logical_h as f32) as i32),
+        None => (0, 0, logical_w as i32, logical_h as i32),
+    };
+    let (mut min_x, mut min_y, mut max_x, mut max_y) = (f32::MAX, f32::MAX, f32::MIN, f32::MIN);
+    for &(px, py) in &outline {
+        min_x = min_x.min(px);
+        min_y = min_y.min(py);
+        max_x = max_x.max(px);
+        max_y = max_y.max(py);
+    }
+    let x1 = ((min_x - 1.0).floor() as i32).max(clip_x1);
+    let y1 = ((min_y - 1.0).floor() as i32).max(clip_y1);
+    let x2 = ((max_x + 1.0).ceil() as i32).min(clip_x2);
+    let y2 = ((max_y + 1.0).ceil() as i32).min(clip_y2);
+
+    for py in y1..y2 {
+        for px in x1..x2 {
+            let (cx, cy) = (px as f32 + 0.5, py as f32 + 0.5);
+            let mut distance = f32::MAX;
+            let mut inside = false;
+            for i in 0..outline.len() {
+                let (a, b) = (outline[i], outline[(i + 1) % outline.len()]);
+                distance = distance.min(segment_distance(cx, cy, a, b));
+                if (a.1 > cy) != (b.1 > cy) && cx < a.0 + (cy - a.1) * (b.0 - a.0) / (b.1 - a.1) {
+                    inside = !inside;
+                }
+            }
+            let coverage = if inside { 0.5 + distance } else { 0.5 - distance }.clamp(0.0, 1.0);
+            if coverage > 0.0 {
+                let alpha = (color.a as f32 * coverage + 0.5) as u8;
+                let src = pack_color(xerune::Color { a: alpha, ..color }, swap_rb);
+                let idx = calc_pixel_index(px, py, rotation, physical_w, logical_w, logical_h);
+                if let Some(dst) = buffer.get_mut(idx) {
+                    blend_pixel(dst, src);
+                }
+            }
+        }
+    }
+}

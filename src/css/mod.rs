@@ -295,6 +295,13 @@ fn apply_resolved_declaration(prop: &str, val: &str, current_style: &mut Contain
                 current_style.color = c;
             }
         }
+        "accent-color" => {
+            if val == "auto" {
+                current_style.accent_color = None;
+            } else if let Some(c) = parse_hex_color(val) {
+                current_style.accent_color = Some(c);
+            }
+        }
         "background-color" => {
             if let Some(c) = parse_hex_color(val) {
                 current_style.background_color = Some(c);

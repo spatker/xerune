@@ -220,7 +220,7 @@ CSS is resolved at **compile time**: selectors are matched against the template 
 
 - Box: `width`, `height`, `min-/max-width`, `min-/max-height`, logical sizes (`inline-size`, `block-size` and their `min-`/`max-` forms), `margin*`, `padding*`, `box-sizing`
 - Layout: `display` (`block`, `inline-block`, `inline`, `flex`, `none`), `flex`, `flex-direction`, `flex-wrap`, `flex-flow`, `flex-grow`, `flex-shrink`, `flex-basis`, `justify-content`, `align-items`, `align-self`, `align-content`, `gap`, `row-gap`, `column-gap`, `order`, `position` (`static`, `relative`, `absolute`), `top`/`right`/`bottom`/`left`, `float`, `overflow`, `direction`, `writing-mode`
-- Visual: `color`, `background`, `background-color`, `background-image`, `border*` (width, color, style, per side), `border-radius`, `box-shadow`
+- Visual: `color`, `background`, `background-color`, `background-image`, `border*` (width, color, style, per side), `border-radius`, `box-shadow`, `accent-color`
 - Gradients: `linear-gradient`, `radial-gradient`, `conic-gradient` and the `repeating-` radial/conic forms, with any CSS color, hard stops (`red 0deg 90deg`) and `from <angle>` / `at <position>`. Stop positions take `%` (and angles for conic); `px` stops are not supported. Conic gradients plus `border-radius: 50%` make rings, arcs and dials without a canvas — see the vehicle tab of `examples/showcase`.
 - Text: `font-size`, `font-weight`, `font` (size, weight and `/line-height`), `line-height`, `text-align`, `white-space` (`normal`, `nowrap`, `pre`, `pre-wrap`, `pre-line`), `overflow-wrap` / `word-wrap` (`break-word`, `anywhere`), `word-break` (`break-all`), `text-overflow` (`ellipsis`, with `overflow` other than `visible`)
 - Animation: `animation` and all `animation-*` longhands, with `@keyframes`
@@ -233,7 +233,9 @@ Not supported, among others: `font-family` (fonts are compiled bitmap fonts), `o
 
 As in browsers, `box-sizing` defaults to `content-box`: `width: 800px; padding: 10px` takes up 820px. Add `* { box-sizing: border-box; }` if you prefer the other model.
 
-Unsupported **tags** fall back to a generic inline-block box (with a one-time warning). Elements with dedicated behaviour: `div`, `p`, `pre`, `span`, `h1`–`h6`, `ul`/`li`, `table`/`tr`/`td`/`th` (+ `thead`/`tbody`/`tfoot`), `strong`/`b`, `img`, `button`, `input` (`type="checkbox"` / text), `progress`, `canvas`, `br`.
+**Form controls.** `<input type="checkbox">`, `<input type="range">` and `<progress>` look like Chromium's: the same default sizes (13×13, 129×16 and 10em×1em) and margins, a grey-bordered white checkbox that turns into an accent-colored one with a white check mark, and rounded light-grey tracks filled with the accent color. `accent-color` (inherited, like in browsers) recolors them; `width`/`height` resize them as in Chromium (the range's track and thumb keep their size, a progress track is half the control's height).
+
+Unsupported **tags** fall back to a generic inline-block box (with a one-time warning). Elements with dedicated behaviour: `div`, `p`, `pre`, `span`, `h1`–`h6`, `ul`/`li`, `table`/`tr`/`td`/`th` (+ `thead`/`tbody`/`tfoot`), `strong`/`b`, `img`, `button`, `input` (`type="checkbox"`, `"range"`, text), `progress`, `canvas`, `br`.
 
 ---
 
