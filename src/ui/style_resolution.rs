@@ -292,7 +292,7 @@ pub(crate) fn resolve_styles(
         parsed.checkbox_checked = checked;
     }
     if let Some(slider_value) = meta.slider_value {
-        parsed.slider_value = slider_value;
+        parsed.slider_value = Some(slider_value);
     }
     if let Some(progress_value) = meta.progress_value {
         parsed.progress_value = progress_value;

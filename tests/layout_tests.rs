@@ -1396,6 +1396,44 @@ mod controls {
         assert_eq!(rect_at(&commands, Rect::new(4.0, 42.0, 30.0, 30.0)).0, Some(rgb(0x0075ff)));
     }
 
+    #[derive(XeruneTemplate)]
+    #[template(source = r#"<style>
+        body { margin: 0px; }
+        .column { display: flex; flex-direction: column; align-items: flex-start; }
+    </style>
+    <body><div class="column">
+        <input type="range" min="0" max="10" value="5">
+        <input type="range">
+        <input type="range" value="30">
+        <input type="range" max="10" step="5" value="7">
+        <input type="range" min="10" max="0" value="3">
+        <input type="range" step="any" value="33.3">
+        <input type="range" value="150">
+    </div></body>"#)]
+    struct Ranges;
+    impl Model for Ranges {
+        type Message = String;
+        fn update(&mut self, _msg: String, _context: &mut Context) {}
+    }
+
+    /// A range's value is placed between `min` and `max` (default 0..100)
+    /// after HTML's sanitization: it defaults to the middle, is clamped,
+    /// and snaps to `step` (default 1).
+    #[test]
+    fn range_value_follows_min_max_and_step() {
+        let commands = commands(Ranges);
+        let thumbs: Vec<f32> = commands
+            .iter()
+            .filter_map(|c| match c {
+                DrawCommand::DrawRect { rect, border_radius, .. } if *border_radius == 8.0 => Some(rect.x),
+                _ => None,
+            })
+            .collect();
+        // Each 129px range's thumb travels along the 127px track minus itself.
+        let at = |fraction: f32| 3.0 + fraction * 111.0;
+        assert_eq!(thumbs, [at(0.5), at(0.5), at(0.3), at(0.5), at(0.0), at(0.333), at(1.0)]);
+    }
+
     /// Runtime stylesheets (no compiled template) must not reset an
     /// `<input>`'s size to its type's defaults after CSS set it.
     #[test]

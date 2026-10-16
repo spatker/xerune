@@ -159,7 +159,12 @@ pub(crate) fn preprocess_dom(handle: &DomHandle) {
 
 pub struct ParsedAttributes {
     pub element_type: defaults::ElementType,
-    pub slider_value: f32,
+    /// A range's `value`; `None` is the middle of `min`..`max`.
+    pub slider_value: Option<f32>,
+    pub slider_min: f32,
+    pub slider_max: f32,
+    /// A range's `step`; `None` is `step="any"`.
+    pub slider_step: Option<f32>,
     pub progress_value: f32,
     pub progress_max: f32,
     pub checkbox_checked: bool,
@@ -174,7 +179,10 @@ impl ParsedAttributes {
     pub fn new(element_type: defaults::ElementType) -> Self {
         Self {
             element_type,
-            slider_value: 0.0,
+            slider_value: None,
+            slider_min: 0.0,
+            slider_max: 100.0,
+            slider_step: Some(1.0),
             progress_value: 0.0,
             progress_max: 1.0,
             checkbox_checked: false,
@@ -222,15 +230,28 @@ pub fn parse_attributes_generic<'a>(
             },
             "value" => {
                 if let Ok(v) = value.parse::<f32>() {
-                    parsed.slider_value = v.clamp(0.0, 1.0);
-                    parsed.progress_value = v; 
+                    parsed.slider_value = Some(v);
+                    parsed.progress_value = v;
                 }
                 parsed.text_input_text = Some(value.to_string());
             },
             "max" => {
                 if let Ok(v) = value.parse::<f32>() {
                     parsed.progress_max = v;
+                    parsed.slider_max = v;
                 }
+            },
+            "min" => {
+                if let Ok(v) = value.parse::<f32>() {
+                    parsed.slider_min = v;
+                }
+            },
+            "step" => {
+                parsed.slider_step = match value.parse::<f32>() {
+                    Ok(v) if v > 0.0 => Some(v),
+                    _ if value.eq_ignore_ascii_case("any") => None,
+                    _ => Some(1.0),
+                };
             },
             "checked" => {
                 if value == "false" {
@@ -302,6 +323,22 @@ pub(crate) fn parse_attributes(
     );
 }
 
+/// Where a range's value sits between its `min` and `max`, from 0 to 1,
+/// after HTML's value sanitization: the value defaults to the middle, is
+/// clamped to the range and snapped to a `step` from `min`.
+fn range_fraction(parsed: &ParsedAttributes) -> f32 {
+    let min = parsed.slider_min;
+    let max = parsed.slider_max.max(min);
+    let mut value = parsed.slider_value.unwrap_or(min + (max - min) / 2.0).clamp(min, max);
+    if let Some(step) = parsed.slider_step {
+        value = min + crate::graphics::floor((value - min) / step + 0.5) * step;
+        if value > max {
+            value -= step;
+        }
+    }
+    if max > min { (value - min) / (max - min) } else { 0.0 }
+}
+
 pub(crate) fn process_element_type(
     id: NodeId,
     parsed: &ParsedAttributes,
@@ -316,7 +353,7 @@ pub(crate) fn process_element_type(
             render_data.insert(id, RenderData::Checkbox(parsed.checkbox_checked, current_style));
         },
         defaults::ElementType::Slider => {
-            render_data.insert(id, RenderData::Slider(parsed.slider_value, current_style));
+            render_data.insert(id, RenderData::Slider(range_fraction(parsed), current_style));
         },
         defaults::ElementType::Progress => {
             render_data.insert(id, RenderData::Progress(parsed.progress_value, parsed.progress_max, current_style));
