@@ -4,8 +4,8 @@
 # WPT 8002c6c6f4, Chromium 154.0.8037.97 Arch Linux
 #
 # suite                               pass  (aa)  fail  pass%   skip
-# css/CSS2/abspos                        0     0    23     0%      5
-# css/CSS2/backgrounds                  19    19   312     6%      8
+# css/CSS2/abspos                        2     0    21     9%      5
+# css/CSS2/backgrounds                  20    20   311     6%      8
 # css/CSS2/borders                      22    22   481     4%      3
 # css/CSS2/box                           0     0     9     0%      0
 # css/CSS2/box-display                  14    14    68    17%     38
@@ -22,12 +22,12 @@
 # css/CSS2/visudet                       4     1    20    17%     14
 # css/CSS2/visuren                       2     2    24     8%      8
 # css/css-align                          0     0    57     0%      5
-# css/css-backgrounds                   53    17   458    10%    136
+# css/css-backgrounds                   51    15   460    10%    136
 # css/css-borders                        1     0    57     2%     16
 # css/css-box                            0     0     2     0%     65
 # css/css-cascade                        7     5    24    23%     19
 # css/css-color                         45    44   236    16%     25
-# css/css-conditional                   14     0   117    11%     34
+# css/css-conditional                   15     1   116    11%     34
 # css/css-display                        3     3    39     7%     38
 # css/css-flexbox                      263   222   520    34%    189
 # css/css-images                        27     4   170    14%    199
@@ -40,13 +40,11 @@
 # css/css-variables                     15    15   165     8%      2
 # css/mediaqueries                       0     0    47     0%     11
 # css/selectors                         12     8    78    13%    135
-# total                               1137   875  7308    13%   1979
+# total                               1139   875  7306    13%   1979
 FAIL css/CSS2/abspos/abspos-containing-block-initial-004a.xht
 FAIL css/CSS2/abspos/abspos-containing-block-initial-004b.xht
 FAIL css/CSS2/abspos/abspos-containing-block-initial-004c.xht
 FAIL css/CSS2/abspos/abspos-containing-block-initial-004d.xht
-FAIL css/CSS2/abspos/abspos-containing-block-initial-004e.xht
-FAIL css/CSS2/abspos/abspos-containing-block-initial-004f.xht
 FAIL css/CSS2/abspos/abspos-containing-block-initial-005a.xht
 FAIL css/CSS2/abspos/abspos-containing-block-initial-005b.xht
 FAIL css/CSS2/abspos/abspos-containing-block-initial-005c.xht
@@ -183,7 +181,6 @@ FAIL css/CSS2/backgrounds/background-attachment-applies-to-015.xht
 FAIL css/CSS2/backgrounds/background-bg-pos-204.xht
 FAIL css/CSS2/backgrounds/background-bg-pos-206.xht
 FAIL css/CSS2/backgrounds/background-bg-pos-208.xht
-FAIL css/CSS2/backgrounds/background-body-001.xht
 FAIL css/CSS2/backgrounds/background-color-129.xht
 FAIL css/CSS2/backgrounds/background-color-174.xht
 FAIL css/CSS2/backgrounds/background-color-175.xht
@@ -3882,7 +3879,6 @@ FAIL css/css-backgrounds/background-clip/clip-border-area-inset.html
 FAIL css/css-backgrounds/background-clip/clip-border-area-missing-border.html
 FAIL css/css-backgrounds/background-clip/clip-border-area-multiple-backgrounds.html
 FAIL css/css-backgrounds/background-clip/clip-border-area-on-body-not-propagated-to-root.html
-FAIL css/css-backgrounds/background-clip/clip-border-area-on-body-propagated-to-root.html
 FAIL css/css-backgrounds/background-clip/clip-border-area-rounded.html
 FAIL css/css-backgrounds/background-clip/clip-border-area-solid.html
 FAIL css/css-backgrounds/background-clip/clip-border-area-text.html
@@ -3923,6 +3919,9 @@ FAIL css/css-backgrounds/background-clip-padding-box-with-border-radius-003.html
 FAIL css/css-backgrounds/background-clip-padding-box-with-border-radius.html
 FAIL css/css-backgrounds/background-clip_padding-box.html
 FAIL css/css-backgrounds/background-color-body-propagation-001.html
+FAIL css/css-backgrounds/background-color-body-propagation-007.html
+FAIL css/css-backgrounds/background-color-body-propagation-008.html
+FAIL css/css-backgrounds/background-color-body-propagation-009.html
 FAIL css/css-backgrounds/background-color-clip.html
 FAIL css/css-backgrounds/background-gradient-interpolation-003.html
 FAIL css/css-backgrounds/background-gradient-subpixel-fills-area.html
@@ -4646,7 +4645,6 @@ FAIL css/css-conditional/at-media-content-001.html
 FAIL css/css-conditional/at-media-content-002.html
 FAIL css/css-conditional/at-media-content-004.html
 FAIL css/css-conditional/at-media-whitespace-optional-001.html
-FAIL css/css-conditional/at-media-whitespace-optional-002.html
 FAIL css/css-conditional/at-supports-001.html
 FAIL css/css-conditional/at-supports-002.html
 FAIL css/css-conditional/at-supports-003.html

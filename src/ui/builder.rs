@@ -86,6 +86,7 @@ impl UiBuilder {
     pub fn create_element_cow(&mut self, tag: Cow<'static, str>, attrs: &mut [(Cow<'static, str>, Cow<'static, str>)]) -> NodeId {
         let id = self.taffy.new_leaf(Style::default()).unwrap();
         let (class, id_val, style, other_attrs) = Self::parse_attrs_cow(attrs);
+        self.note_root_element(&tag, id);
         let metadata = NodeMetadata::new(tag, class, id_val, style, other_attrs);
         self.node_metadata.insert(id, metadata);
         id
@@ -179,6 +180,7 @@ impl UiBuilder {
     pub fn create_element(&mut self, tag: &str, attrs: &[(&str, &str)]) -> NodeId {
         let id = self.taffy.new_leaf(Style::default()).unwrap();
         let (class, id_val, style, other_attrs) = Self::parse_attrs(attrs);
+        self.note_root_element(tag, id);
         let metadata = NodeMetadata::new(std::borrow::Cow::Owned(tag.to_string()), class, id_val, style, other_attrs);
         self.node_metadata.insert(id, metadata);
         id
@@ -278,12 +280,17 @@ impl UiBuilder {
         if let Some((_, id)) = attrs.iter().find(|(name, _)| name == "id") {
             self.element_ids.push((Cow::Owned(id.clone().into_owned()), node));
         }
-        match el.tag {
+        self.note_root_element(el.tag, node);
+        node
+    }
+
+    /// Remembers the first `<html>` and `<body>`, for the canvas background.
+    fn note_root_element(&mut self, tag: &str, node: NodeId) {
+        match tag {
             "html" if self.html.is_none() => self.html = Some(node),
             "body" if self.body.is_none() => self.body = Some(node),
             _ => {}
         }
-        node
     }
 
     /// Resolves `el`'s final style after its children have been appended.

@@ -537,7 +537,11 @@ impl Ui {
     /// emitted at all.
     pub fn build_commands(&self, _canvases: &HashMap<String, Canvas>, focused_id: Option<&str>) -> Vec<DrawCommand> {
         let source = [self.html, self.body].into_iter().flatten().find_map(|node| match self.render_data.get(&node) {
-            Some(RenderData::Container(style)) if style.background_color.is_some() || style.background_gradient.is_some() => {
+            // Only a rendered element's background moves to the canvas.
+            Some(RenderData::Container(style))
+                if style.display != crate::style::Display::None
+                    && (style.background_color.is_some() || style.background_gradient.is_some()) =>
+            {
                 Some((node, style))
             }
             _ => None,
