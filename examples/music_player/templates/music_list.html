@@ -47,7 +47,7 @@
 
     <div class="track-list">
         {% for track in tracks %}
-        <div data-on-click="select_track:{{ track.id }}" data-on-hover="hover_track:{{ track.id }}"
+        <div id="track-{{ track.id }}" data-on-click="select_track:{{ track.id }}" data-on-hover="hover_track:{{ track.id }}"
             data-on-hover-out="unhover_track"
             class="track {% if track.id == hovered_track %}hovered{% elif loop.index0 == active_list_index %}active{% endif %}">
             {% if is_playing && loop.index0 == active_list_index %}

@@ -280,13 +280,13 @@ impl Model for MusicPlayerModel {
                              self.update(Msg::Back, context);
                          } else if self.active_list_index > 0 {
                              self.active_list_index -= 1;
-                             context.scroll_into_view(&format!("select_track:{}", self.tracks[self.active_list_index].id));
+                             context.scroll_into_view(&format!("track-{}", self.tracks[self.active_list_index].id));
                          }
                      }
                      "Down" | "KEY_DOWN" | "ArrowDown" => {
                          if self.current_track_index.is_none() && self.active_list_index + 1 < self.tracks.len() {
                              self.active_list_index += 1;
-                             context.scroll_into_view(&format!("select_track:{}", self.tracks[self.active_list_index].id));
+                             context.scroll_into_view(&format!("track-{}", self.tracks[self.active_list_index].id));
                          }
                      }
                      "PlayPause" | "KEY_PLAYPAUSE" | "MediaPlayPause" | "Enter" | "Return" | "NumpadEnter" | "Space" => {

@@ -3,8 +3,8 @@ use xerune::{Model, XeruneMessage, XeruneTemplate};
 #[derive(XeruneTemplate, serde::Serialize, serde::Deserialize)]
 #[template(path = "examples/todo/templates/todo_list.html")]
 pub struct TodoList {
-    items: Vec<TodoItem>,
-    active_item: usize,
+    pub(crate) items: Vec<TodoItem>,
+    pub(crate) active_item: usize,
     new_item_title: String,
 }
 
@@ -110,13 +110,13 @@ impl Model for TodoList {
                     "ArrowUp" => {
                         if self.active_item > 0 {
                             self.active_item -= 1;
-                            context.scroll_into_view(&format!("toggle:{}", self.active_item));
+                            context.scroll_into_view(&format!("item-{}", self.active_item));
                         }
                     }
                     "ArrowDown" => {
                         if self.items.len() > 0 && self.active_item + 1 < self.items.len() {
                             self.active_item += 1;
-                            context.scroll_into_view(&format!("toggle:{}", self.active_item));
+                            context.scroll_into_view(&format!("item-{}", self.active_item));
                         }
                     }
                     "Enter" => {

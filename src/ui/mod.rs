@@ -91,6 +91,8 @@ pub struct Ui {
     pub text_lines: NodeMap<Vec<crate::text::Line>>,
     /// The shaped "…" of text nodes with `text-overflow: ellipsis`.
     pub ellipses: NodeMap<Arc<crate::text::ShapedText>>,
+    /// Elements with an `id` attribute, for [`Ui::scroll_into_view`].
+    pub element_ids: Vec<(Cow<'static, str>, NodeId)>,
 }
 
 impl Ui {
@@ -150,7 +152,19 @@ impl Ui {
         });
 
         let (paragraphs, ellipses) = shape_texts(&render_data, measurer);
+        let element_ids = node_to_handle
+            .iter()
+            .filter_map(|(node, handle)| match &handle.data {
+                markup5ever_rcdom::NodeData::Element { attrs, .. } => attrs
+                    .borrow()
+                    .iter()
+                    .find(|a| a.name.local.as_ref() == "id")
+                    .map(|a| (Cow::Owned(a.value.to_string()), node)),
+                _ => None,
+            })
+            .collect();
         Ok(Self {
+            element_ids,
             taffy,
             render_data,
             interactions,
@@ -323,7 +337,10 @@ impl Ui {
             shape_texts(&builder.render_data, measurer)
         };
 
+        let mut element_ids = builder.element_ids;
+        element_ids.extend(builder.node_metadata.iter().filter_map(|(node, meta)| Some((meta.id.clone()?, node))));
         Ok(Self {
+            element_ids,
             taffy: builder.taffy,
             render_data: builder.render_data,
             interactions: builder.interactions,
@@ -408,10 +425,10 @@ impl Ui {
         }
     }
 
-    /// Adjusts the scroll offset of scrollable parent ancestors to make the element with
-    /// the specified interaction message visible.
-    pub fn scroll_into_view(&mut self, interaction_id: &str) {
-        let node_opt = self.interactions.iter().find(|(_, v)| *v == interaction_id).map(|(k, _)| k);
+    /// Scrolls the nearest scrollable ancestor of the element with `id` so
+    /// the element is visible.
+    pub fn scroll_into_view(&mut self, id: &str) {
+        let node_opt = self.element_ids.iter().find(|(element, _)| element == id).map(|(_, node)| *node);
         if let Some(node) = node_opt {
              let mut current = node;
              while let Some(parent) = self.taffy.parent(current) {

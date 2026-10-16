@@ -18,6 +18,8 @@ pub struct UiBuilder {
     /// The first `<html>` and `<body>` built, for the canvas background.
     pub html: Option<NodeId>,
     pub body: Option<NodeId>,
+    /// Elements with an `id` attribute.
+    pub element_ids: Vec<(Cow<'static, str>, NodeId)>,
 }
 
 
@@ -37,6 +39,7 @@ impl UiBuilder {
             keyframes: HashMap::new(),
             html: None,
             body: None,
+            element_ids: Vec::new(),
         }
     }
 
@@ -272,6 +275,9 @@ impl UiBuilder {
         super::attributes::parse_attribute_slice(el.tag, attrs, &mut el.style, &mut el.layout, &mut el.parsed, message_validator);
         let node = self.taffy.new_leaf(el.layout.clone()).unwrap();
         self.append_child(parent, node);
+        if let Some((_, id)) = attrs.iter().find(|(name, _)| name == "id") {
+            self.element_ids.push((Cow::Owned(id.clone().into_owned()), node));
+        }
         match el.tag {
             "html" if self.html.is_none() => self.html = Some(node),
             "body" if self.body.is_none() => self.body = Some(node),

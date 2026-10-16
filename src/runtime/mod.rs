@@ -583,9 +583,9 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
         let _ = self.ui.compute_layout(size);
     }
     
-    /// Adjusts the scroll position of parent scroll elements to reveal a target interaction ID.
-    pub fn scroll_into_view(&mut self, interaction_id: &str) {
-        self.ui.scroll_into_view(interaction_id);
+    /// Scrolls the element with this `id` attribute into view in its nearest scrollable ancestor.
+    pub fn scroll_into_view(&mut self, id: &str) {
+        self.ui.scroll_into_view(id);
         self.scroll_offsets = self.ui.scroll_offsets.clone();
     }
 

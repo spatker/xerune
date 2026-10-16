@@ -1102,6 +1102,24 @@ mod showcase_impl;
 #[allow(dead_code)]
 mod todo_impl;
 
+/// Moving the todo selection past the visible rows scrolls the list to the
+/// selected row, found by its `id="item-N"`.
+#[test]
+fn scroll_into_view_reveals_the_element_with_the_id() {
+    let mut runtime = Runtime::new(todo_impl::TodoList::default(), roboto());
+    set_size(&mut runtime, 800.0, 480.0);
+    let rows = runtime.model().items.len();
+    let list_scroll = |runtime: &Runtime<todo_impl::TodoList, xerune_render::Fonts>| {
+        runtime.ui.scroll_offsets.values().map(|(_, y)| *y).fold(0.0f32, f32::max)
+    };
+    assert_eq!(list_scroll(&runtime), 0.0);
+    for _ in 1..rows {
+        runtime.handle_event(InputEvent::KeyDown("ArrowDown".into()));
+    }
+    assert_eq!(runtime.model().active_item, rows - 1);
+    assert!(list_scroll(&runtime) > 0.0, "the last row must be scrolled into view");
+}
+
 /// Frames drawn only where the commands changed must look exactly like a
 /// full repaint, through real interaction sequences of the examples.
 mod damage {

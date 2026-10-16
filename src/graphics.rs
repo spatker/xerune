@@ -300,7 +300,7 @@ impl Canvas {
 
 /// Commands representing context actions to execute on the runtime.
 pub(crate) enum ContextCommand {
-    /// Scroll the viewport to ensure a specific interaction element is visible.
+    /// Scroll the element with this `id` into view.
     ScrollIntoView(String),
     /// Clear an active timer by message name.
     ClearTimer(String),
@@ -341,9 +341,11 @@ impl Context {
         crate::screen::breakpoint()
     }
 
-    /// Schedule a command to scroll the viewport to show a specific interactive element.
-    pub fn scroll_into_view(&mut self, interaction_id: &str) {
-        self.commands.push(ContextCommand::ScrollIntoView(interaction_id.to_string()));
+    /// Scrolls the element with this `id` attribute into view (in its nearest
+    /// scrollable ancestor) once the view is rebuilt, like the DOM's
+    /// `element.scrollIntoView()`.
+    pub fn scroll_into_view(&mut self, id: &str) {
+        self.commands.push(ContextCommand::ScrollIntoView(id.to_string()));
     }
 
     /// Clear an active recurring or timeout timer by message string.
