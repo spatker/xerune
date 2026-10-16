@@ -179,10 +179,5 @@ fn parse_keyframe_blocks(content: &str) -> Vec<Keyframe> {
 }
 
 fn parse_declarations(content: &str) -> Vec<(String, String)> {
-    let mut decls = Vec::new();
-    let tokenizer = simplecss::DeclarationTokenizer::from(content);
-    for decl in tokenizer {
-        decls.push((decl.name.to_lowercase(), decl.value.to_string()));
-    }
-    decls
+    xerune_css::sheet::parse_declarations(content).into_iter().map(|d| (d.name, d.value)).collect()
 }

@@ -772,6 +772,39 @@ fn templates_place_flex_items_in_order() {
     assert_eq!(colors, [(0, 0, 255), (255, 0, 0), (0, 255, 0)]);
 }
 
+#[derive(XeruneTemplate)]
+#[template(source = r#"<style>
+  .row { display: flex; }
+  .row > div { width: 10px; height: 10px; background: rgb(0, 0, 0); }
+  .row > div:nth-child(2n) { background: rgb(0, 255, 0); }
+  .row > :last-child:not(.a) { background: #0000ff; }
+  .loop > div:first-child, .loop > div:nth-child(2) { background: #ff0000; }
+</style>
+<div class="row"><div class="a"></div><div class="b"></div><div class="c"></div></div>
+<div class="row loop">{% for i in 0..2 %}<div></div>{% endfor %}</div>"#)]
+struct SelectorModel;
+
+impl Model for SelectorModel {
+    type Message = MockMsg;
+    fn update(&mut self, _msg: Self::Message, _context: &mut Context) {}
+}
+
+/// Templates match structural selectors where the structure is in the
+/// template, and not inside a loop, whose iterations are only known at
+/// runtime.
+#[test]
+fn templates_match_structural_selectors_outside_loops() {
+    let mut runtime = Runtime::new(SelectorModel, MockMeasurer);
+    crate::set_size(&mut runtime, 800.0, 600.0);
+    let mut boxes: Vec<_> = runtime.ui.build_commands(&std::collections::HashMap::new(), None).iter().filter_map(|c| match c {
+        DrawCommand::DrawRect { color: Some(c), rect, .. } if rect.width == 10.0 => Some(((rect.y, rect.x), (c.r, c.g, c.b))),
+        _ => None,
+    }).collect();
+    boxes.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+    let colors: Vec<_> = boxes.iter().map(|b| b.1).collect();
+    assert_eq!(colors, [(0, 0, 0), (0, 255, 0), (0, 0, 255), (0, 0, 0), (0, 0, 0)]);
+}
+
 mod canvas {
     //! The canvas background: browsers paint `<html>`'s background (else
     //! `<body>`'s, else white) behind every frame.

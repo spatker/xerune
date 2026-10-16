@@ -14,7 +14,7 @@ the working notes.
 |---|---|
 | `src/` | `xerune` lib: runtime, UI tree, CSS, backends |
 | `xerune_derive/` | `XeruneTemplate` / `XeruneMessage` macros. One big `lib.rs`: template parser, CSS splitting, codegen of `build_ui` |
-| `xerune_css/` | CSS text handling both of them use (`no_std`): comment/string-aware scanning, `::before`/part rules rewritten for `simplecss`, slash protection. Change CSS reading here, not in either crate |
+| `xerune_css/` | The CSS parser both of them use (`no_std`): stylesheets and declarations (`sheet`), selectors with specificity and matching over an `Element` trait (`selector`), `@media` queries, comment/string-aware scanning. Change CSS reading here, not in either crate |
 | `xerune_render/` | Software rasterizer (blits, rounded rects, gradients, glyphs). Has a `no_std` mode |
 | `studio/` | WASM inspector (`wasm-pack build --target web`, `features = ["browser"]`) |
 | `wpt_runner/` | WPT reftests vs Chromium screenshots; scope in `suites.txt`, known failures in `expectations.txt` (`docs/guide.md` §10) |
@@ -39,7 +39,7 @@ Modules:
 - `ui/`: `builder` (tree building), `attributes`, `style_resolution` (+ style cache), `metadata` (`NodeMetadata`), `node_map`.
 - `style.rs`: `ContainerStyle` and CSS enums. `graphics.rs`: `Color`, `Canvas`, `Context`, `DrawCommand`, `TextMeasurer`, `Renderer`, `Surface` (pixels, stride, rotation, origin: a band or the whole screen), `Damage`.
 - `xerune_render`: `SoftwareRenderer` (owns glyph/image caches) and `Fonts` (TTF via fontdue or bitmap fonts; the runtime's `TextMeasurer`).
-- `css/`: values/properties parser, gradients (linear/radial/conic), `@keyframes`, `media` (`@media` split/match; `simplecss` drops at-rules).
+- `css/`: values/properties parser, gradients (linear/radial/conic), `@keyframes`, `media` (`@media` split/match; the stylesheet parser skips at-rules).
 - `screen.rs`: global viewport (two atomics) + `Breakpoint`. `Runtime::set_size` → `Model::on_resize` → rebuild.
 - `backend/`: `winit_impl` (desktop), `linuxfb_impl`, `drm_impl`, `input/evdev`, `browser_impl`, `snapshot`, `common_loop`.
 - `text.rs`: `ShapedText` (glyphs, advances, UAX #14 break segments via `unicode-linebreak`), line breaking, `GlyphRun`. Shaping is `TextMeasurer::shape` (fontdue advances in `xerune_render::Fonts`, cached per font set); layout measures text leaves with a taffy measure function (`Ui::compute_layout`).
@@ -124,7 +124,7 @@ not gcc-arm or `cargo check`: it links against the boards' glibc 2.39):
 ## Known weak spots
 
 - Text: inline elements (`<b>`, `<span>`) are separate flex items, not one inline formatting context (`known_gaps::text_flows_around_inline_elements`). No OpenType shaping: fontdue ignores GPOS kerning (`known_gaps::gpos_kerning_narrows_lines`) and font features (`proportional-nums`; the calculator's right-aligned tabular digits shift as in Chromium), no complex scripts or bidi; `harfrust` is the planned shaper behind `TextMeasurer::shape`. Thai/Lao/Khmer/Myanmar break only at spaces.
-- `:first-child` / `+` selectors don't see through `{% for %}` / `{% if %}`.
+- Sibling and structural selectors (`+`, `~`, `:nth-child`, `:last-child`) don't see through `{% for %}` / `{% if %}` in templates, so they never match inside a loop body.
 - `data-on-hover` / `data-on-hover-out` are not implemented (`known_gaps::hover_sends_the_elements_hover_messages`); the music player's rows rely on them.
 - Images: PNG only.
 - Borders: per-side width/color/style, but every style is drawn solid (no

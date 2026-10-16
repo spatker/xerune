@@ -245,7 +245,7 @@ pub enum Segment<'a> {
 
 /// Splits stylesheet text into base/media segments at the top level.
 /// `/* ... */` comments are skipped so a `@media` inside a comment is ignored.
-/// The `Base` segments preserve comments; `simplecss` strips them downstream.
+/// The `Base` segments preserve comments; the stylesheet parser skips them.
 pub fn split_segments(css: &str) -> Vec<Segment<'_>> {
     let mut out = Vec::new();
     let bytes = css.as_bytes();

@@ -21,5 +21,4 @@ askama_parser = "0.14.0"
 html5ever = "0.36.1"
 markup5ever = "0.36.1"
 markup5ever_rcdom = "0.36.0"
-simplecss = "0.2.2"
 xerune_css = { version = "=0.1.0", path = "../xerune_css" }

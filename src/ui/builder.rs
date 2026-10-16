@@ -461,4 +461,14 @@ impl ElementStyle {
     pub fn apply(&mut self, declarations: &[(&str, &str)]) {
         crate::css::apply_declarations(declarations, &mut self.style, &mut self.layout);
     }
+
+    /// Applies CSS declarations for the element's pseudo-element `part`
+    /// (`::before`, a slider's thumb), kept as written until it is built.
+    pub fn apply_part(&mut self, part: crate::style::ControlPart, declarations: &[(&str, &str)]) {
+        self.style.part_declarations.extend(declarations.iter().map(|&(name, value)| crate::style::PartDeclaration {
+            part,
+            name: name.into(),
+            value: value.into(),
+        }));
+    }
 }

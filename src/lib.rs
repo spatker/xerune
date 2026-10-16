@@ -99,7 +99,7 @@ pub use xerune_derive::{XeruneTemplate, XeruneMessage};
 pub mod __private {
     pub use crate::css::media::{matches_query, Feature, FeatureGroup};
     pub use crate::css::parse_keyframes;
-    pub use crate::style::ContainerStyle;
+    pub use crate::style::{ContainerStyle, ControlPart};
     pub use crate::ui::{ElementStyle, TemplateLayout, ToDisplayString, UiBuilder};
     pub use taffy::NodeId;
 

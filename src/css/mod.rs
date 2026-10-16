@@ -16,7 +16,6 @@ use taffy::prelude::*;
 use taffy::style::Style;
 use crate::alloc_prelude::*;
 
-use xerune_css::SLASH;
 
 struct FastLayoutStyle {
     left: f32,
@@ -211,11 +210,6 @@ fn border_side<'a>(border: &'a mut crate::style::Borders, prop: &str) -> Option<
 
 /// Applies a single CSS key-value declaration to the given styling structures.
 pub fn apply_declaration(prop: &str, val: &str, current_style: &mut ContainerStyle, taffy_style: &mut Style) {
-    // Kept as written: resolved for the part when the control is built.
-    if let Some((part, name)) = crate::style::ControlPart::from_declaration(prop) {
-        current_style.part_declarations.push(crate::style::PartDeclaration { part, name: name.to_string(), value: val.to_string() });
-        return;
-    }
     // `line-height: 1.5em` stays relative: it is resolved where it is used.
     if prop != "line-height" {
         // In `font-size` itself, `em` is the parent's font size.
@@ -303,7 +297,7 @@ fn apply_resolved_declaration(prop: &str, val: &str, current_style: &mut Contain
             current_style.line_height = crate::style::LineHeight::Normal;
             let parts: Vec<&str> = val.split_whitespace().collect();
             for part in parts {
-                let subparts: Vec<&str> = part.split(['/', SLASH]).collect();
+                let subparts: Vec<&str> = part.split('/').collect();
                 if let Some(size) = parse_px(subparts[0]) {
                     current_style.font_size = size;
                     if let Some(lh) = subparts.get(1).and_then(|v| parse_line_height(v)) {

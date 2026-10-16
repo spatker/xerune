@@ -9,6 +9,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::cell::RefCell;
 use askama_parser::Span;
+use xerune_css::selector::PseudoElement;
 
 // ---------------------------------------------------------------------------
 // Diagnostics
@@ -828,6 +829,38 @@ struct MacroElementWrapper {
     /// Whether a `checked="{{ ... }}"` is taken as checked in this
     /// matching pass (a literal `checked` speaks for itself).
     checked: bool,
+    /// Stands for elements only known at runtime: a `{% for %}`/`{% if %}`
+    /// wrapper, or what comes before or after a loop's or branch's body.
+    opaque: bool,
+}
+
+impl MacroElementWrapper {
+    fn new(handle: Handle) -> Self {
+        let opaque = is_template_element(&handle);
+        MacroElementWrapper { active_classes: get_static_classes(&handle), handle, checked: false, opaque }
+    }
+
+    /// The element sibling `step` (-1 or 1) nodes away. Inside a loop's or
+    /// branch's body, past its first or last element is whatever the
+    /// template runs into, unknown until runtime.
+    fn sibling(&self, step: isize) -> Option<Self> {
+        let parent_weak = self.handle.parent.take();
+        let parent = parent_weak.as_ref().and_then(|weak| weak.upgrade());
+        self.handle.parent.set(parent_weak);
+        let parent = parent?;
+        let siblings = parent.children.borrow();
+        let index = siblings.iter().position(|child| std::rc::Rc::ptr_eq(child, &self.handle))?;
+        let element = |sibling: &Handle| matches!(sibling.data, NodeData::Element { .. }).then(|| MacroElementWrapper::new(sibling.clone()));
+        let found = if step < 0 {
+            siblings[..index].iter().rev().find_map(element)
+        } else {
+            siblings[index + 1..].iter().find_map(element)
+        };
+        found.or_else(|| {
+            let owner = TEMPLATE_OWNERS.with(|m| m.borrow().get(&(std::rc::Rc::as_ptr(&parent) as usize)).cloned())?;
+            Some(MacroElementWrapper::new(owner))
+        })
+    }
 }
 
 /// Classes an element always has: literal names outside any `{% if %}`.
@@ -880,92 +913,70 @@ fn is_template_element(handle: &Handle) -> bool {
     matches!(&handle.data, NodeData::Element { name, .. } if name.local.as_ref() == "template")
 }
 
-impl simplecss::Element for MacroElementWrapper {
+impl xerune_css::selector::Element for MacroElementWrapper {
     // The nearest real element, skipping the `<template>` wrappers that stand
-    // in for `{% for %}`/`{% if %}`. Sibling-based selectors (`+`,
-    // `:first-child`) still see the wrappers and so never match across them:
-    // which iteration/branch comes first is only known at runtime.
-    fn parent_element(&self) -> Option<Self> {
+    // in for `{% for %}`/`{% if %}`. Siblings still see the wrappers, which
+    // are opaque: which iteration or branch comes first is only known at
+    // runtime.
+    fn parent(&self) -> Option<Self> {
         let mut parent = dom_parent(&self.handle)?;
         while is_template_element(&parent) {
             parent = dom_parent(&parent)?;
         }
-        Some(MacroElementWrapper {
-            active_classes: get_static_classes(&parent),
-            handle: parent,
-            checked: false,
-        })
+        matches!(parent.data, NodeData::Element { .. }).then(|| MacroElementWrapper::new(parent))
     }
 
-    fn prev_sibling_element(&self) -> Option<Self> {
-        let parent = self.parent_element()?;
-        let siblings = parent.handle.children.borrow();
-        let index = siblings.iter().position(|child| std::rc::Rc::ptr_eq(child, &self.handle))?;
-        if index > 0 {
-            for i in (0..index).rev() {
-                let sibling = &siblings[i];
-                if matches!(sibling.data, NodeData::Element { .. }) {
-                    return Some(MacroElementWrapper {
-                        active_classes: get_static_classes(sibling),
-                        handle: sibling.clone(),
-                        checked: false,
-                    });
-                }
-            }
-        }
-        None
+    fn prev_sibling(&self) -> Option<Self> {
+        self.sibling(-1)
     }
 
-    fn has_local_name(&self, name: &str) -> bool {
-        if let NodeData::Element { name: ref element_name, .. } = self.handle.data {
-            element_name.local.as_ref() == name
-        } else {
-            false
+    fn next_sibling(&self) -> Option<Self> {
+        self.sibling(1)
+    }
+
+    fn tag(&self) -> &str {
+        match &self.handle.data {
+            NodeData::Element { name, .. } => name.local.as_ref(),
+            _ => "",
         }
     }
 
-    fn attribute_matches(&self, local_name: &str, operator: simplecss::AttributeOperator<'_>) -> bool {
-        if local_name == "class" {
+    fn attribute(&self, name: &str) -> Option<std::borrow::Cow<'_, str>> {
+        let value = attribute_value(&self.handle, name)?;
+        Some(std::borrow::Cow::Owned(match name {
             // Only the classes active in this matching pass count. The raw
             // attribute is template source: `{% if on %}on{% endif %}`
             // contains the word `on` whether or not the class is applied.
-            return self.active_classes.iter().any(|cls| operator.matches(cls));
-        }
-        if local_name == "checked" {
-            // `:checked` became `[checked]`. `checked="false"` is unchecked.
-            return match attribute_value(&self.handle, "checked") {
-                Some(v) if is_dynamic(&v) => self.checked && operator.matches(""),
-                Some(v) => v != "false" && operator.matches(&v),
-                None => false,
-            };
-        }
-        if let NodeData::Element { ref attrs, .. } = self.handle.data {
-            for attr in attrs.borrow().iter() {
-                if attr.name.local.as_ref() == local_name {
-                    return operator.matches(attr.value.as_ref());
-                }
-            }
-        }
-        false
+            "class" => self.active_classes.iter().cloned().collect::<Vec<_>>().join(" "),
+            "checked" if is_dynamic(&value) => return self.checked.then(|| std::borrow::Cow::Borrowed("")),
+            _ => value,
+        }))
     }
 
-    fn pseudo_class_matches(&self, class: simplecss::PseudoClass<'_>) -> bool {
-        match class {
-            simplecss::PseudoClass::FirstChild => {
-                if let Some(parent) = self.parent_element() {
-                    let siblings = parent.handle.children.borrow();
-                    for child in siblings.iter() {
-                        if matches!(child.data, NodeData::Element { .. }) {
-                            return std::rc::Rc::ptr_eq(child, &self.handle);
-                        }
-                    }
-                    false
-                } else {
-                    true
-                }
-            }
+    fn has_class(&self, class: &str) -> bool {
+        self.active_classes.contains(class)
+    }
+
+    fn is_empty(&self) -> bool {
+        self.handle.children.borrow().iter().all(|child| match &child.data {
+            NodeData::Text { contents } => contents.borrow().trim().is_empty(),
+            NodeData::Comment { .. } => true,
             _ => false,
+        })
+    }
+
+    fn state(&self, state: xerune_css::selector::State) -> bool {
+        // `checked="false"` is unchecked, as `parse_attributes_generic`
+        // reads it.
+        state == xerune_css::selector::State::Checked && match attribute_value(&self.handle, "checked") {
+            Some(v) if is_dynamic(&v) => self.checked,
+            Some(v) => v != "false",
+            None => false,
         }
+    }
+
+    fn is_opaque(&self) -> bool {
+        self.opaque
     }
 }
 
@@ -1044,6 +1055,8 @@ fn get_classes_and_conditions(
 }
 
 struct MatchedRule {
+    /// The pseudo-element the declarations are for, if any.
+    part: Option<xerune_css::ControlPart>,
     declarations: Vec<(String, String)>,
     condition: Option<String>,
     /// Guard expression (`xerune::css::media::matches_query(...)`) when the
@@ -1053,7 +1066,7 @@ struct MatchedRule {
 
 /// A parsed stylesheet region together with the `@media` guard it appeared under.
 struct MediaRuleSet {
-    sheet: simplecss::StyleSheet<'static>,
+    sheet: xerune_css::sheet::StyleSheet,
     /// Some(expr) => wrap rule application in `if expr`; None => always.
     guard: Option<proc_macro2::TokenStream>,
 }
@@ -1291,20 +1304,19 @@ fn compile_dom_node<'a>(
             let mut matched_rules = Vec::new();
             for rs in rulesets {
                 for rule in &rs.sheet.rules {
-                    let mut wrapper = MacroElementWrapper {
-                        handle: handle.clone(),
-                        active_classes: static_classes.clone(),
-                        checked: false,
-                    };
+                    let mut wrapper = MacroElementWrapper::new(handle.clone());
+                    wrapper.active_classes = static_classes.clone();
                     // Only form controls have parts (`*::-moz-range-thumb`).
+                    let part = match rule.selector.pseudo_element() {
+                        None => None,
+                        Some(PseudoElement::Part(part)) if has_parts || !part.of_form_control() => Some(part),
+                        Some(_) => continue,
+                    };
                     let declarations: Vec<(String, String)> = rule.declarations.iter()
-                        .filter(|d| has_parts || !xerune_css::ControlPart::from_declaration(d.name).is_some_and(|(part, _)| part.of_form_control()))
-                        .map(|d| (d.name.to_string(), d.value.to_string()))
+                        .map(|d| (d.name.clone(), d.value.clone()))
                         .collect();
-                    if declarations.is_empty() {
-                        continue;
-                    }
                     let mut push = |condition: Option<String>| matched_rules.push(MatchedRule {
+                        part,
                         declarations: declarations.clone(),
                         condition,
                         media_guard: rs.guard.clone(),
@@ -1341,8 +1353,12 @@ fn compile_dom_node<'a>(
             let mut rule_applications = Vec::new();
             for rule in matched_rules {
                 let (names, values): (Vec<_>, Vec<_>) = rule.declarations.into_iter().unzip();
-                let mut body = quote! {
-                    el.apply(&[#((#names, #values)),*]);
+                let mut body = match rule.part {
+                    None => quote! { el.apply(&[#((#names, #values)),*]); },
+                    Some(part) => {
+                        let part = syn::Ident::new(&format!("{part:?}"), proc_macro2::Span::call_site());
+                        quote! { el.apply_part(::xerune::__private::ControlPart::#part, &[#((#names, #values)),*]); }
+                    }
                 };
                 if let Some(cond) = rule.condition {
                     let cond_tokens: proc_macro2::TokenStream = cond.parse().unwrap();
@@ -1774,7 +1790,7 @@ fn expand_template(input: &DeriveInput, template: &TemplateRef) -> proc_macro2::
         .unwrap();
     record_template_owners(&dom.document);
 
-    // simplecss silently drops at-rules, so split `@media` blocks out first:
+    // The stylesheet parser skips at-rules, so split `@media` blocks out first:
     // each region keeps its parsed rules plus a runtime viewport guard.
     let media_pieces = split_media_css(&css_content);
     let mut rulesets: Vec<MediaRuleSet> = Vec::new();
@@ -1782,10 +1798,7 @@ fn expand_template(input: &DeriveInput, template: &TemplateRef) -> proc_macro2::
     for (query, text) in &media_pieces {
         keyframes_css.push_str(text);
         keyframes_css.push('\n');
-        // Part rules become prefixed declarations and `:checked` is
-        // matched as `[checked]`, as in `xerune::css::rewrite_for_simplecss`.
-        let sheet_text: &'static str = Box::leak(xerune_css::protect_slashes(&xerune_css::rewrite_part_rules(text)).replace(":checked", "[checked]").into_boxed_str());
-        let sheet = simplecss::StyleSheet::parse(sheet_text);
+        let sheet = xerune_css::sheet::StyleSheet::parse(text);
         let guard = match query {
             None => None,
             Some(q) => {

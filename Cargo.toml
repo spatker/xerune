@@ -31,7 +31,6 @@ default = ["std", "winit"]
 std = [
     "taffy/std",
     "dep:csscolorparser",
-    "simplecss/std",
     "dep:png",
     "http",
 ]
@@ -72,8 +71,6 @@ drm = { version = "0.12", optional = true }
 drm-fourcc = { version = "2.2", optional = true }
 evdev = { version = "0.12", optional = true }
 libc = { version = "0.2", optional = true }
-# Also without std: @keyframes declarations are tokenized with it.
-simplecss = { version = "0.2.2", default-features = false }
 bytemuck = { version = "1.14", default-features = false }
 png = { version = "0.17", optional = true }
 # UAX #14 line break opportunities (no_std).
