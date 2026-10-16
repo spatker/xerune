@@ -22,8 +22,8 @@
 # css/CSS2/visudet                       4     1    20    17%     14
 # css/CSS2/visuren                       2     2    24     8%      8
 # css/css-align                          0     0    57     0%      5
-# css/css-backgrounds                   53    17   458    10%    136
-# css/css-borders                        2     1    56     3%     16
+# css/css-backgrounds                   54    17   457    11%    136
+# css/css-borders                        3     2    55     5%     16
 # css/css-box                            0     0     2     0%     65
 # css/css-cascade                        6     4    25    19%     19
 # css/css-color                         45    44   236    16%     25
@@ -40,7 +40,7 @@
 # css/css-variables                     16    16   164     9%      2
 # css/mediaqueries                       0     0    47     0%     11
 # css/selectors                         32    27    58    36%    135
-# total                               1201   935  7244    14%   1979
+# total                               1203   936  7242    14%   1979
 FAIL css/CSS2/abspos/abspos-containing-block-initial-004a.xht
 FAIL css/CSS2/abspos/abspos-containing-block-initial-004b.xht
 FAIL css/CSS2/abspos/abspos-containing-block-initial-004c.xht
@@ -4247,7 +4247,6 @@ FAIL css/css-backgrounds/box-shadow-body.html
 FAIL css/css-backgrounds/box-shadow-border-radius-001.html
 FAIL css/css-backgrounds/box-shadow-calc.html
 FAIL css/css-backgrounds/box-shadow-currentcolor.html
-FAIL css/css-backgrounds/box-shadow-inset-without-border-radius.html
 FAIL css/css-backgrounds/box-shadow-invalid-001.html
 FAIL css/css-backgrounds/box-shadow-multiple-001.html
 FAIL css/css-backgrounds/box-shadow-outset-without-border-radius-001.html
@@ -4293,7 +4292,6 @@ FAIL css/css-borders/border-shape/border-shape-geometry-box.html
 FAIL css/css-borders/border-shape/border-shape-half-border-box-default.html
 FAIL css/css-borders/border-shape/border-shape-ignore-radius.html
 FAIL css/css-borders/border-shape/border-shape-inner-outer.html
-FAIL css/css-borders/border-shape/border-shape-inset-shadow-negative-spread.html
 FAIL css/css-borders/border-shape/border-shape-inset-shadow.html
 FAIL css/css-borders/border-shape/border-shape-outline-auto-forms.html
 FAIL css/css-borders/border-shape/border-shape-outline-double-path.html

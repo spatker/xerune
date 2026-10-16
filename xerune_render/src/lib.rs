@@ -1695,6 +1695,25 @@ mod tests {
         }
     }
 
+    /// `box-shadow: inset 0 0 0 3px` is a 3px ring inside the box, as in
+    /// Chromium.
+    #[test]
+    fn inset_spread_shadow_is_a_ring_inside() {
+        let ring = xerune::Color::new(255, 0, 0, 255);
+        let commands = [
+            rect(0.0, 0.0, 20.0, 20.0, xerune::Color::new(0, 0, 255, 255)),
+            DrawCommand::DrawBoxShadow { rect: Rect::new(0.0, 0.0, 20.0, 20.0), border_radius: 0.0, offset_x: 0.0, offset_y: 0.0, blur_radius: 0.0, spread_radius: 3.0, color: ring, inset: true },
+        ];
+        let buffer = draw(20, 20, 0, &commands, Rect::new(0.0, 0.0, 20.0, 20.0));
+        let at = |x: usize, y: usize| buffer[y * 20 + x] & 0xffffff;
+        for (x, y) in [(0, 0), (2, 10), (17, 10), (10, 19), (10, 0)] {
+            assert_eq!(at(x, y), 0xff0000, "({x}, {y}) is in the ring");
+        }
+        for (x, y) in [(3, 3), (10, 10), (16, 16)] {
+            assert_eq!(at(x, y), 0x0000ff, "({x}, {y}) is inside it");
+        }
+    }
+
     #[test]
     fn dirty_culling_preserves_clip_stack() {
         let commands = [

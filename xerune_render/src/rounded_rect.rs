@@ -529,11 +529,15 @@ pub fn draw_box_shadow(
     let orig_rw = rect_w as f32;
     let orig_rh = rect_h as f32;
 
-    let sx = rect_x as f32 + offset_x - spread_radius;
-    let sy = rect_y as f32 + offset_y - spread_radius;
-    let sw = rect_w as f32 + spread_radius * 2.0;
-    let sh = rect_h as f32 + spread_radius * 2.0;
-    let s_radius = (radius + spread_radius).max(0.0);
+    // The shadow's shape: the box moved by the offset, grown by the spread
+    // for an outer shadow and shrunk by it for an inset one, which shades
+    // the element outside that shape.
+    let spread = if inset { -spread_radius } else { spread_radius };
+    let sx = rect_x as f32 + offset_x - spread;
+    let sy = rect_y as f32 + offset_y - spread;
+    let sw = (rect_w as f32 + spread * 2.0).max(0.0);
+    let sh = (rect_h as f32 + spread * 2.0).max(0.0);
+    let s_radius = (radius + spread).max(0.0);
 
     let blur = blur_radius.max(0.0);
     let expand = blur * 1.5;
@@ -626,24 +630,16 @@ pub fn draw_box_shadow(
                 -d_left.min(d_right).min(d_top).min(d_bottom)
             };
 
-            let alpha_factor = if !inset {
-                if blur <= 0.5 {
-                    if dist_from_edge <= 0.0 { 1.0 } else { 0.0 }
-                } else {
-                    let u = (dist_from_edge / blur).clamp(-1.0, 1.0);
-                    let t = 0.5 - 0.5 * u;
-                    t * t * (3.0 - 2.0 * t)
-                }
+            // How much of the shape covers the pixel; an inset shadow is
+            // what it leaves.
+            let in_shape = if blur <= 0.5 {
+                if dist_from_edge <= 0.0 { 1.0 } else { 0.0 }
             } else {
-                let d_inside = -dist_from_edge;
-                if blur <= 0.5 {
-                    if d_inside <= spread_radius { 1.0 } else { 0.0 }
-                } else {
-                    let u = ((d_inside - spread_radius) / blur).clamp(-1.0, 1.0);
-                    let t = 0.5 - 0.5 * u;
-                    t * t * (3.0 - 2.0 * t)
-                }
+                let u = (dist_from_edge / blur).clamp(-1.0, 1.0);
+                let t = 0.5 - 0.5 * u;
+                t * t * (3.0 - 2.0 * t)
             };
+            let alpha_factor = if inset { 1.0 - in_shape } else { in_shape };
 
             if alpha_factor > 0.0 {
                 let final_a = (base_a * alpha_factor).round() as u32;
