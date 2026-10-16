@@ -971,6 +971,60 @@ fn hover_sends_the_elements_hover_messages() {
     assert_eq!(runtime.model().received, [HoverMsg::Enter(3), HoverMsg::Leave]);
 }
 
+#[derive(XeruneTemplate)]
+#[template(source = r#"<div>{% for item in items %}<p data-key="{{ item }}">{{ item }}</p>{% endfor %}</div>"#)]
+struct KeyedModel {
+    items: Vec<&'static str>,
+}
+
+#[derive(XeruneTemplate)]
+#[template(source = r#"<div>{% for item in items %}<p>{{ item }}</p>{% endfor %}</div>"#)]
+struct IndexedModel {
+    items: Vec<&'static str>,
+}
+
+impl Model for KeyedModel {
+    type Message = MockMsg;
+    fn update(&mut self, _msg: Self::Message, _context: &mut Context) {}
+}
+
+impl Model for IndexedModel {
+    type Message = MockMsg;
+    fn update(&mut self, _msg: Self::Message, _context: &mut Context) {}
+}
+
+/// The key of each paragraph, by its text.
+fn paragraph_keys(ui: &ui::Ui) -> Vec<(String, u64)> {
+    let mut keys: Vec<(String, u64)> = ui.keys.iter().filter_map(|(node, &key)| {
+        let children = ui.taffy.children(node).ok()?;
+        let [child] = children[..] else { return None };
+        match &ui.render_data.get(child)?.kind {
+            RenderKind::Text(text) => Some((text.clone(), key)),
+            _ => None,
+        }
+    }).collect();
+    keys.sort();
+    keys
+}
+
+/// In a loop, `data-key` keys an element by its value, so items keep their
+/// key when one is inserted before them; without it the index decides.
+#[test]
+fn data_key_keeps_keys_when_items_are_inserted() {
+    let build = |keyed: bool, items: Vec<&'static str>| {
+        let ui = if keyed {
+            ui::Ui::new_compiled(&KeyedModel { items }, &MockMeasurer, ContainerStyle::default(), &|_| true)
+        } else {
+            ui::Ui::new_compiled(&IndexedModel { items }, &MockMeasurer, ContainerStyle::default(), &|_| true)
+        };
+        paragraph_keys(&ui.unwrap())
+    };
+    let (before, after) = (build(true, vec!["a", "b"]), build(true, vec!["z", "a", "b"]));
+    assert_eq!(before, after[..2], "a and b keep their keys");
+    let (before, after) = (build(false, vec!["a", "b"]), build(false, vec!["z", "a", "b"]));
+    assert_ne!(before, after[..2], "by index, a and b shift");
+}
+
 mod canvas {
     //! The canvas background: browsers paint `<html>`'s background (else
     //! `<body>`'s, else white) behind every frame.

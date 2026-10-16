@@ -1292,11 +1292,11 @@ fn compile_dom_node<'a>(
                         return quote! {
                             {
                                 let parent = parent;
+                                // A `data-key` element of the body is keyed
+                                // by its key here instead of the index.
+                                let __loop_key = ::xerune::__private::element_key(__parent_key, #site);
                                 for (mut _loop_item_index, #var_tokens) in #iter_tokens.enumerate() {
-                                    let __parent_key = ::xerune::__private::element_key(
-                                        ::xerune::__private::element_key(__parent_key, #site),
-                                        _loop_item_index as u64,
-                                    );
+                                    let __parent_key = ::xerune::__private::element_key(__loop_key, _loop_item_index as u64);
                                     #(#children_code)*
                                 }
                             }
@@ -1543,8 +1543,28 @@ fn compile_dom_node<'a>(
             let child_compilation = compile_children(&get_node_children(handle), rules, local_vars, dynamic_exprs, dynamic_loops, dynamic_ifs);
 
             let site = next_site();
+            // `data-key` names the element among its siblings, so it keeps
+            // its key when items before it come and go.
+            let key = match attrs.borrow().iter().find(|a| a.name.local.as_ref() == "data-key") {
+                Some(attr) => {
+                    let value = attr.value.to_string();
+                    let syntax = Syntax::default();
+                    let ast = Ast::from_str(&value, None, &syntax).unwrap_or_else(|e| fail(format_args!(
+                        "failed to parse template syntax in attribute `data-key=\"{value}\"` of <{tag}>: {}",
+                        e.message.as_deref().unwrap_or("syntax error")
+                    )));
+                    let text = generate_attr_string_code(ast.nodes(), local_vars);
+                    quote! {
+                        ::xerune::__private::element_key(
+                            ::xerune::__private::element_key(__loop_key, ::xerune::model::hash_bytes(#text.as_bytes())),
+                            #site,
+                        )
+                    }
+                }
+                None => quote! { ::xerune::__private::element_key(__parent_key, #site) },
+            };
             quote! {
-                let __key = ::xerune::__private::element_key(__parent_key, #site);
+                let __key = #key;
                 let __pointer = builder.pointer_level(__key, __parent_pointer);
                 let (el, node) = {
                     #(#dynamic_vars)*
@@ -1564,6 +1584,7 @@ fn compile_dom_node<'a>(
                     let parent = node;
                     let parent_style = &el.style;
                     let __parent_key = __key;
+                    let __loop_key = __key;
                     let __parent_pointer = __pointer;
                     #(#child_compilation)*
                 }
@@ -2096,6 +2117,7 @@ fn expand_template(input: &DeriveInput, template: &TemplateRef) -> proc_macro2::
                 let parent = builder.begin_root(default_style);
                 let parent_style = default_style.clone();
                 let __parent_key: u64 = 0;
+                let __loop_key: u64 = 0;
                 let __parent_pointer = ::xerune::__private::PointerLevel::NONE;
                 {
                     let parent = parent;

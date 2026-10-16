@@ -68,6 +68,8 @@ Templates are precompiled at compile time via `#[derive(XeruneTemplate)]` and bi
 {% endfor %}
 ```
 
+**Element identity.** Every update rebuilds the view, and xerune finds "the same element" in the new build by a key made from its place in the template and, in a `{% for %}`, the iteration's index. State that outlives a rebuild, like which element is hovered, follows that key. When items are inserted, removed or reordered, give each item a `data-key` that identifies it (`<li data-key="{{ item.id }}">`), so it keeps its identity instead of its position; keys must differ among the loop's items.
+
 `data-on-hover` and `data-on-hover-out` take messages the same way and send them when the pointer enters and leaves the element (entering a child doesn't leave its parent). To only restyle what is under the pointer, `:hover` in CSS needs no messages.
 
 A message is named after its variant in snake_case: `add` for `Add`,

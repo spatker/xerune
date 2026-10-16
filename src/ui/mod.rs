@@ -558,7 +558,8 @@ impl Ui {
 }
 
 /// Gives the elements built at runtime under `node` (whose key is `key`)
-/// their key: their parent's mixed with their index among its elements.
+/// their key: their parent's mixed with their index among its elements, or
+/// with their `data-key`.
 /// Template elements have theirs already.
 #[cfg(feature = "std")]
 fn assign_keys(taffy: &TaffyTree, node: NodeId, key: u64, metadata: &NodeMap<NodeMetadata>, keys: &mut NodeMap<u64>) {
@@ -569,7 +570,11 @@ fn assign_keys(taffy: &TaffyTree, node: NodeId, key: u64, metadata: &NodeMap<Nod
             Some(&child_key) => child_key,
             None if metadata.get(child).is_some_and(|m| m.tag != "#text") => {
                 index += 1;
-                let child_key = builder::element_key(key, index);
+                let data_key = metadata.get(child).and_then(|m| m.attrs.iter().find(|(k, _)| k == "data-key"));
+                let child_key = match data_key {
+                    Some((_, value)) => builder::element_key(key, crate::model::hash_bytes(value.as_bytes()) ^ (1 << 63)),
+                    None => builder::element_key(key, index),
+                };
                 keys.insert(child, child_key);
                 child_key
             }
