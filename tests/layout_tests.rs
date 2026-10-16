@@ -866,6 +866,34 @@ fn important_declarations_come_last() {
     assert_eq!(colors, [(255, 0, 0), (0, 0, 255)]);
 }
 
+#[derive(XeruneTemplate)]
+#[template(source = r#"<div>{% for i in 0..2 %}{% for j in 0..2 %}<p>{{ i }}{{ j }}</p>{% endfor %}{% endfor %}<p>x</p></div>"#)]
+struct KeysModel;
+
+impl Model for KeysModel {
+    type Message = MockMsg;
+    fn update(&mut self, _msg: Self::Message, _context: &mut Context) {}
+}
+
+/// Every element has a key, distinct within the view (also in nested loops
+/// with no element between them) and the same in every rebuild.
+#[test]
+fn element_keys_are_unique_and_stable() {
+    let keys = || {
+        let ui = ui::Ui::new_compiled(&KeysModel, &MockMeasurer, ContainerStyle::default(), &|_| true).unwrap();
+        let mut keys: Vec<(u64, u64)> = ui.keys.iter().map(|(node, &key)| (u64::from(node), key)).collect();
+        keys.sort();
+        keys.into_iter().map(|(_, key)| key).collect::<Vec<_>>()
+    };
+    let first = keys();
+    assert_eq!(first.len(), 8, "html, body, the div and five paragraphs");
+    let mut unique = first.clone();
+    unique.sort();
+    unique.dedup();
+    assert_eq!(unique.len(), first.len());
+    assert_eq!(keys(), first);
+}
+
 mod canvas {
     //! The canvas background: browsers paint `<html>`'s background (else
     //! `<body>`'s, else white) behind every frame.

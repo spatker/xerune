@@ -114,6 +114,9 @@ pub struct Ui {
     pub ellipses: NodeMap<Arc<crate::text::ShapedText>>,
     /// Elements with an `id` attribute, for [`Ui::scroll_into_view`].
     pub element_ids: Vec<(Cow<'static, str>, NodeId)>,
+    /// Each element's key, the same for the same element in every rebuild
+    /// (see [`builder::element_key`]).
+    pub keys: NodeMap<u64>,
 }
 
 impl Ui {
@@ -201,6 +204,7 @@ impl Ui {
                 }
             });
 
+            assign_keys(&builder.taffy, root, 0, &builder.node_metadata, &mut builder.keys);
             let mut style_cache = cached.style_cache.borrow_mut();
             
             {
@@ -245,6 +249,7 @@ impl Ui {
             paragraphs,
             text_lines: NodeMap::new(),
             ellipses,
+            keys: builder.keys,
         })
     }
 
@@ -481,6 +486,28 @@ impl Ui {
              return Some((None, clicked_node));
          }
          None
+    }
+}
+
+/// Gives the elements built at runtime under `node` (whose key is `key`)
+/// their key: their parent's mixed with their index among its elements.
+/// Template elements have theirs already.
+#[cfg(feature = "std")]
+fn assign_keys(taffy: &TaffyTree, node: NodeId, key: u64, metadata: &NodeMap<NodeMetadata>, keys: &mut NodeMap<u64>) {
+    let Ok(children) = taffy.children(node) else { return };
+    let mut index = 0;
+    for child in children {
+        let child_key = match keys.get(child) {
+            Some(&child_key) => child_key,
+            None if metadata.get(child).is_some_and(|m| m.tag != "#text") => {
+                index += 1;
+                let child_key = builder::element_key(key, index);
+                keys.insert(child, child_key);
+                child_key
+            }
+            None => continue,
+        };
+        assign_keys(taffy, child, child_key, metadata, keys);
     }
 }
 

@@ -20,6 +20,23 @@ pub struct UiBuilder {
     pub body: Option<NodeId>,
     /// Elements with an `id` attribute.
     pub element_ids: Vec<(Cow<'static, str>, NodeId)>,
+    /// Each element's [`element_key`].
+    pub keys: NodeMap<u64>,
+}
+
+/// The key of an element: the same element of the view gets the same key
+/// in every rebuild, so state that outlives a rebuild (the pointer's
+/// `:hover`) can find it again. A template element's key mixes its
+/// parent's with its place in the template (`site`) and, in a
+/// `{% for %}`, the iteration; an element built at runtime mixes in its
+/// index among its parent's elements.
+#[inline]
+pub fn element_key(parent: u64, site: u64) -> u64 {
+    // splitmix64's finalizer: adjacent sites and indices spread apart.
+    let mut x = parent ^ site.wrapping_add(0x9e37_79b9_7f4a_7c15).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    x = (x ^ (x >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    x = (x ^ (x >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+    x ^ (x >> 31)
 }
 
 
@@ -40,6 +57,7 @@ impl UiBuilder {
             html: None,
             body: None,
             element_ids: Vec::new(),
+            keys: NodeMap::with_capacity(capacity),
         }
     }
 
@@ -273,9 +291,11 @@ impl UiBuilder {
         parent: NodeId,
         attrs: &[(Cow<'static, str>, Cow<'_, str>)],
         message_validator: &dyn Fn(&str) -> bool,
+        key: u64,
     ) -> NodeId {
         super::attributes::parse_attribute_slice(el.tag, attrs, &mut el.style, &mut el.layout, &mut el.parsed, message_validator);
         let node = self.taffy.new_leaf(el.layout.clone()).unwrap();
+        self.keys.insert(node, key);
         self.append_child(parent, node);
         if let Some((_, id)) = attrs.iter().find(|(name, _)| name == "id") {
             self.element_ids.push((Cow::Owned(id.clone().into_owned()), node));

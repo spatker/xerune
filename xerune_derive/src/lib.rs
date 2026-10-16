@@ -73,6 +73,17 @@ impl SourceMap {
 thread_local! {
     /// The include-expanded template being compiled, and its source map.
     static CURRENT_TEMPLATE: RefCell<Option<(&'static str, SourceMap)>> = const { RefCell::new(None) };
+    /// The next element or loop's place in the template, for element keys.
+    static NEXT_SITE: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// A number for the next element or loop of the template being compiled,
+/// which its elements' keys mix in (`xerune::__private::element_key`).
+fn next_site() -> u64 {
+    NEXT_SITE.with(|site| {
+        site.set(site.get() + 1);
+        site.get()
+    })
 }
 
 /// Abort template compilation with `msg`, without a source location.
@@ -1190,10 +1201,15 @@ fn compile_dom_node<'a>(
                         let var_tokens: proc_macro2::TokenStream = var_str.parse().unwrap();
                         let iter_tokens: proc_macro2::TokenStream = iter_str.parse().unwrap();
 
+                        let site = next_site();
                         return quote! {
                             {
                                 let parent = parent;
                                 for (mut _loop_item_index, #var_tokens) in #iter_tokens.enumerate() {
+                                    let __parent_key = ::xerune::__private::element_key(
+                                        ::xerune::__private::element_key(__parent_key, #site),
+                                        _loop_item_index as u64,
+                                    );
                                     #(#children_code)*
                                 }
                             }
@@ -1439,7 +1455,9 @@ fn compile_dom_node<'a>(
 
             let child_compilation = compile_children(&get_node_children(handle), rules, local_vars, dynamic_exprs, dynamic_loops, dynamic_ifs);
 
+            let site = next_site();
             quote! {
+                let __key = ::xerune::__private::element_key(__parent_key, #site);
                 let (el, node) = {
                     #(#dynamic_vars)*
                     let attrs_slice: &[(std::borrow::Cow<'static, str>, std::borrow::Cow<'_, str>)] = &[
@@ -1450,13 +1468,14 @@ fn compile_dom_node<'a>(
                     // Match and apply CSS rules
                     #(#rule_applications)*
                     #click
-                    let node = builder.begin_element(&mut el, parent, attrs_slice, message_validator);
+                    let node = builder.begin_element(&mut el, parent, attrs_slice, message_validator, __key);
                     #(#important_applications)*
                     (el, node)
                 };
                 {
                     let parent = node;
                     let parent_style = &el.style;
+                    let __parent_key = __key;
                     #(#child_compilation)*
                 }
                 builder.finish_element(el, node, &parent_style);
@@ -1803,6 +1822,7 @@ fn expand_template(input: &DeriveInput, template: &TemplateRef) -> proc_macro2::
         .read_from(&mut preprocessed_html.as_bytes())
         .unwrap();
     record_template_owners(&dom.document);
+    NEXT_SITE.with(|site| site.set(0));
 
     // The stylesheet parser skips at-rules, so split `@media` blocks out first:
     // each region's rules get a runtime viewport guard.
@@ -1967,6 +1987,7 @@ fn expand_template(input: &DeriveInput, template: &TemplateRef) -> proc_macro2::
                 #keyframes_init
                 let parent = builder.begin_root(default_style);
                 let parent_style = default_style.clone();
+                let __parent_key: u64 = 0;
                 {
                     let parent = parent;
                     let parent_style = parent_style;

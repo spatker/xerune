@@ -101,6 +101,7 @@ pub mod __private {
     pub use crate::css::parse_keyframes;
     pub use crate::style::{ContainerStyle, ControlPart};
     pub use crate::ui::{ElementStyle, TemplateLayout, ToDisplayString, UiBuilder};
+    pub use crate::ui::builder::element_key;
     pub use taffy::NodeId;
 
     /// A `data-on-click` argument as the message field's type `T`: the
