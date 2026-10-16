@@ -1687,6 +1687,92 @@ mod controls {
         let commands = commands(Runtime);
         assert_eq!(rect_at(&commands, Rect::new(0.0, 0.0, 30.0, 20.0)).0, Some(Color::WHITE));
     }
+
+    const SWITCH_CSS: &str = "
+        body { margin: 0px; }
+        div { display: flex; }
+        .switch { appearance: none; position: relative; width: 40px; height: 22px; margin: 0px; background-color: #1e293b; }
+        .switch::before { content: ''; position: absolute; left: 3px; top: 3px; width: 16px; height: 16px; background-color: #e2e8f0; }
+        .switch:checked::before { left: 21px; }
+        p { margin: 0px; }
+        p:before { content: \"A\"; color: #ff0000; }
+        p::after { content: 'Z'; color: #0000ff; }
+    ";
+
+    #[derive(XeruneTemplate)]
+    #[template(source = r#"<style>
+        body { margin: 0px; }
+        div { display: flex; }
+        .switch { appearance: none; position: relative; width: 40px; height: 22px; margin: 0px; background-color: #1e293b; }
+        .switch::before { content: ''; position: absolute; left: 3px; top: 3px; width: 16px; height: 16px; background-color: #e2e8f0; }
+        .switch:checked::before { left: 21px; }
+        p { margin: 0px; }
+        p:before { content: "A"; color: #ff0000; }
+        p::after { content: 'Z'; color: #0000ff; }
+    </style>
+    <body>
+        <div><input type="checkbox" class="switch" {% if on %}checked{% endif %}></div>
+        <p>mid</p>
+    </body>"#)]
+    struct Switch {
+        on: bool,
+    }
+    impl Model for Switch {
+        type Message = String;
+        fn update(&mut self, _msg: String, _context: &mut Context) {}
+    }
+
+    /// A toggle switch: a checkbox whose knob is its `::before`, moved by
+    /// `:checked`; `::before` / `::after` text goes around the element's.
+    fn check_switch(off: &[DrawCommand], on: &[DrawCommand]) {
+        let knob = Some(rgb(0xe2e8f0));
+        assert_eq!(rect_at(off, Rect::new(0.0, 0.0, 40.0, 22.0)).0, Some(rgb(0x1e293b)));
+        assert_eq!(rect_at(off, Rect::new(3.0, 3.0, 16.0, 16.0)).0, knob);
+        assert_eq!(rect_at(on, Rect::new(21.0, 3.0, 16.0, 16.0)).0, knob);
+        let texts: Vec<(&str, Color)> = on.iter().filter_map(|c| match c {
+            DrawCommand::DrawText { text, color, .. } => Some((text.as_str(), *color)),
+            _ => None,
+        }).collect();
+        assert_eq!(texts, [("A", rgb(0xff0000)), ("mid", rgb(0x000000)), ("Z", rgb(0x0000ff))]);
+    }
+
+    #[test]
+    fn before_and_after_generate_boxes() {
+        check_switch(&commands(Switch { on: false }), &commands(Switch { on: true }));
+    }
+
+    #[test]
+    fn runtime_css_generates_before_and_after() {
+        struct RuntimeSwitch(bool);
+        impl Model for RuntimeSwitch {
+            type Message = String;
+            fn update(&mut self, _msg: String, _context: &mut Context) {}
+        }
+        impl ui::TemplateLayout for RuntimeSwitch {
+            fn stylesheet(&self) -> &'static str {
+                SWITCH_CSS
+            }
+            fn build_ui(
+                &self,
+                builder: &mut ui::UiBuilder,
+                _measurer: &impl TextMeasurer,
+                _default_style: &style::ContainerStyle,
+                _message_validator: &impl Fn(&str) -> bool,
+            ) -> taffy::NodeId {
+                let body = builder.create_element("body", &[]);
+                let row = builder.create_element("div", &[]);
+                let switch = builder.create_checkbox(self.0, &[("type", "checkbox"), ("class", "switch")]);
+                builder.append_child(row, switch);
+                builder.append_child(body, row);
+                let p = builder.create_element("p", &[]);
+                let text = builder.create_text("mid", &[]);
+                builder.append_child(p, text);
+                builder.append_child(body, p);
+                body
+            }
+        }
+        check_switch(&commands(RuntimeSwitch(false)), &commands(RuntimeSwitch(true)));
+    }
 }
 
 mod known_gaps {

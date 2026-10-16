@@ -361,7 +361,8 @@ pub(crate) fn resolve_styles(
                         decl.name
                     };
                     // Only form controls have parts (`*::-moz-range-thumb`).
-                    let part_of_other = name.starts_with("-xerune-") && !matches!(&**tag, "input" | "progress");
+                    let part_of_other = !matches!(&**tag, "input" | "progress")
+                        && crate::style::ControlPart::from_declaration(name).is_some_and(|(part, _)| part.of_form_control());
                     if !part_of_other && css::sets_font_size(name) == font_pass {
                         css::apply_declaration(name, decl.value, &mut c_style, &mut l_style);
                     }
@@ -681,8 +682,11 @@ pub(crate) fn resolve_styles(
         );
     }
 
+    let (before, after) = super::pseudo::generate(node, parsed.element_type, &current_style, taffy, render_data, interactions, base_styles);
+    let children: Vec<NodeId> = before.into_iter().chain(meta.children.iter().copied()).chain(after).collect();
+
     if current_style.display.is_flex() {
-        let mut chs = meta.children.clone();
+        let mut chs = children.clone();
         let original = chs.clone();
         chs.sort_by_key(|child_id| {
             render_data.get(child_id).map(|data| data.style().order).unwrap_or(0)
@@ -695,7 +699,7 @@ pub(crate) fn resolve_styles(
     if current_style.display == Display::None {
         layout_style.display = taffy::style::Display::None;
     } else if !current_style.display.is_flex() {
-        apply_block_display(taffy, tag, &current_style, &mut layout_style, &meta.children, render_data);
+        apply_block_display(taffy, tag, &current_style, &mut layout_style, &children, render_data);
     }
 
     layout_style.border = current_style.border.widths().map(length);

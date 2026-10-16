@@ -81,16 +81,36 @@ fn strip_comments(css: &str) -> String {
     out
 }
 
-/// Rules for form control parts (`progress::-webkit-progress-value
-/// { background: red }`), which simplecss can't parse, become rules for the
-/// control with prefixed declarations (`progress { -xerune-value-background:
-/// red }`, see [`crate::style::ControlPart`]). Selectors of other
+/// `prelude` with CSS 2's `:before` / `:after` spelled `::before` / `::after`.
+#[cfg(feature = "std")]
+fn legacy_pseudo_elements(prelude: String) -> String {
+    let mut out = String::with_capacity(prelude.len() + 2);
+    let mut rest = prelude.as_str();
+    while let Some(pos) = rest.find(':') {
+        out.push_str(&rest[..=pos]);
+        let after = &rest[pos + 1..];
+        let name_end = after.find(|c: char| !(c.is_ascii_alphanumeric() || c == '-' || c == '_')).unwrap_or(after.len());
+        let name = &after[..name_end];
+        if !out[..out.len() - 1].ends_with(':') && (name.eq_ignore_ascii_case("before") || name.eq_ignore_ascii_case("after")) {
+            out.push(':');
+        }
+        rest = after;
+    }
+    out.push_str(rest);
+    out
+}
+
+/// Rules for `::before` / `::after` and form control parts
+/// (`progress::-webkit-progress-value { background: red }`), which simplecss
+/// can't parse, become rules for the element with prefixed declarations
+/// (`progress { -xerune-value-background: red }`, see
+/// [`crate::style::ControlPart`]). Selectors of other
 /// pseudo-elements, or with anything after the part, are dropped. Mirrored
 /// in `xerune_derive`.
 #[cfg(feature = "std")]
 pub(crate) fn rewrite_part_rules(css: &str) -> std::borrow::Cow<'_, str> {
     use crate::style::ControlPart;
-    if !css.contains("::") {
+    if !css.contains("::") && !css.contains(":before") && !css.contains(":after") {
         return std::borrow::Cow::Borrowed(css);
     }
     let mut out = String::with_capacity(css.len());
@@ -112,7 +132,7 @@ pub(crate) fn rewrite_part_rules(css: &str) -> std::borrow::Cow<'_, str> {
                 }
             }
         }
-        let prelude = strip_comments(&rest[..open]);
+        let prelude = legacy_pseudo_elements(strip_comments(&rest[..open]));
         if prelude.trim_start().starts_with('@') || !prelude.contains("::") {
             out.push_str(&rest[..end]);
         } else {
@@ -1119,7 +1139,10 @@ mod tests {
         // Unknown pseudo-elements and parts with pseudo-classes are dropped;
         // at-rules, comments and values with `;` or `:` survive.
         assert_eq!(rewrite_for_simplecss(".r::-webkit-slider-thumb:hover { color: red }"), "");
-        assert_eq!(rewrite_for_simplecss("p::before { content: 'x' } i { }"), " i { }");
+        assert_eq!(rewrite_for_simplecss("p::first-line { color: red } i { }"), " i { }");
+        // `::before` / `::after`, also as CSS 2's `:before`.
+        assert_eq!(rewrite_for_simplecss("p::before { content: 'x' }"), "p {-xerune-before-content: 'x' ;}");
+        assert_eq!(rewrite_for_simplecss("a:hover:after,b:before{top:0}"), "a:hover {-xerune-after-top:0;}b {-xerune-before-top:0;}");
         assert_eq!(
             rewrite_for_simplecss("@keyframes k { 0% { left: 0 } } /* x::y { */ b::-moz-range-track { background: url(data:a;b) }"),
             "@keyframes k { 0% { left: 0 } }b {-xerune-track-background: url(data:a;b) ;}"

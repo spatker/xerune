@@ -16,8 +16,8 @@
 # css/CSS2/normal-flow                  36    34   635     5%     75
 # css/CSS2/positioning                  14    14   472     3%     34
 # css/CSS2/selectors                    48    47   477     9%     20
-# css/CSS2/syntax                      107   107   150    42%     18
-# css/CSS2/text                        145   142   234    38%     30
+# css/CSS2/syntax                      110   110   147    43%     18
+# css/CSS2/text                        146   143   233    39%     30
 # css/CSS2/values                        8     8    16    33%      1
 # css/CSS2/visudet                       4     1    20    17%     14
 # css/CSS2/visuren                       2     2    24     8%      8
@@ -29,18 +29,18 @@
 # css/css-color                         45    44   236    16%     25
 # css/css-conditional                   14     0   117    11%     34
 # css/css-display                        3     3    39     7%     38
-# css/css-flexbox                      257   216   526    33%    189
+# css/css-flexbox                      263   222   520    34%    189
 # css/css-images                        27     4   170    14%    199
 # css/css-overflow                      31    17   114    21%    278
 # css/css-position                       5     3    79     6%     66
 # css/css-sizing                        29    21   356     8%    146
 # css/css-text                         128    38   776    14%    213
-# css/css-ui                             9     1   117     7%     65
+# css/css-ui                            10     2   116     8%     65
 # css/css-values                        19    11   133    12%     59
 # css/css-variables                     15    15   165     8%      2
 # css/mediaqueries                       0     0    47     0%     11
 # css/selectors                         12     8    78    13%    135
-# total                               1126   864  7319    13%   1979
+# total                               1137   875  7308    13%   1979
 FAIL css/CSS2/abspos/abspos-containing-block-initial-004a.xht
 FAIL css/CSS2/abspos/abspos-containing-block-initial-004b.xht
 FAIL css/CSS2/abspos/abspos-containing-block-initial-004c.xht
@@ -3470,7 +3470,6 @@ FAIL css/CSS2/syntax/escaped-ident-spaces-004.xht
 FAIL css/CSS2/syntax/escaped-ident-spaces-005.xht
 FAIL css/CSS2/syntax/escaped-ident-spaces-006.xht
 FAIL css/CSS2/syntax/escaped-ident-spaces-007.xht
-FAIL css/CSS2/syntax/escaped-newline-001.xht
 FAIL css/CSS2/syntax/escaped-url-001.xht
 FAIL css/CSS2/syntax/escapes-000.xht
 FAIL css/CSS2/syntax/escapes-002.xht
@@ -3499,9 +3498,7 @@ FAIL css/CSS2/syntax/matching-brackets-001.xht
 FAIL css/CSS2/syntax/matching-brackets-002.xht
 FAIL css/CSS2/syntax/matching-brackets-003.xht
 FAIL css/CSS2/syntax/quoted-string-001.xht
-FAIL css/CSS2/syntax/quoted-string-002.xht
 FAIL css/CSS2/syntax/quoted-string-003.xht
-FAIL css/CSS2/syntax/quoted-string-004.xht
 FAIL css/CSS2/syntax/scientific-notation-001.xht
 FAIL css/CSS2/syntax/sgml-comments-000.xht
 FAIL css/CSS2/syntax/sgml-comments-001.xht
@@ -3518,7 +3515,6 @@ FAIL css/CSS2/syntax/uri-018.xht
 FAIL css/CSS2/text/bidi-flag-emoji-02.html
 FAIL css/CSS2/text/bidi-flag-emoji.html
 FAIL css/CSS2/text/bidi-span-001.html
-FAIL css/CSS2/text/bidi-span-002.html
 FAIL css/CSS2/text/bidi-span-003.html
 FAIL css/CSS2/text/letter-spacing-007.xht
 FAIL css/CSS2/text/letter-spacing-008.xht
@@ -5133,9 +5129,6 @@ FAIL css/css-flexbox/flexbox-sizing-horiz-002.xhtml
 FAIL css/css-flexbox/flexbox-sizing-vert-002.xhtml
 FAIL css/css-flexbox/flexbox-table-fixup-001.xhtml
 FAIL css/css-flexbox/flexbox-with-multi-column-property.html
-FAIL css/css-flexbox/flexbox-with-pseudo-elements-001.html
-FAIL css/css-flexbox/flexbox-with-pseudo-elements-002.html
-FAIL css/css-flexbox/flexbox-with-pseudo-elements-003.html
 FAIL css/css-flexbox/flexbox-writing-mode-002.html
 FAIL css/css-flexbox/flexbox-writing-mode-003.html
 FAIL css/css-flexbox/flexbox-writing-mode-004.html
@@ -5169,9 +5162,6 @@ FAIL css/css-flexbox/flexbox_flex-0-0-N-unitless-basis.html
 FAIL css/css-flexbox/flexbox_flex-0-1-1-unitless-basis.html
 FAIL css/css-flexbox/flexbox_flex-0-1-N-unitless-basis.html
 FAIL css/css-flexbox/flexbox_flex-formatting-interop.html
-FAIL css/css-flexbox/flexbox_generated-flex.html
-FAIL css/css-flexbox/flexbox_generated-nested-flex.html
-FAIL css/css-flexbox/flexbox_generated.html
 FAIL css/css-flexbox/flexbox_inline-float.html
 FAIL css/css-flexbox/flexbox_inline.html
 FAIL css/css-flexbox/flexbox_item-clear.html
@@ -6899,7 +6889,6 @@ FAIL css/css-ui/outline-style-014.html
 FAIL css/css-ui/outline-style-inherit.html
 FAIL css/css-ui/outline-with-padding-001.html
 FAIL css/css-ui/resize-child-will-change-transform.html
-FAIL css/css-ui/resize-generated-content.html
 FAIL css/css-ui/subpixel-outline-width.tentative.html
 FAIL css/css-ui/text-overflow-001.html
 FAIL css/css-ui/text-overflow-002.html

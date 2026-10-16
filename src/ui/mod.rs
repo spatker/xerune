@@ -2,6 +2,7 @@ pub(crate) mod node_map;
 pub(crate) mod metadata;
 pub(crate) mod builder;
 mod controls;
+mod pseudo;
 pub mod attributes;
 /// Module containing stylesheet layout mapping resolver methods.
 pub mod style_resolution;

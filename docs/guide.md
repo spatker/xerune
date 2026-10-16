@@ -214,7 +214,7 @@ pub struct MyModel {
 
 CSS is resolved at **compile time**: selectors are matched against the template and each element gets the declarations that apply to it, guarded by any `{% if %}` conditions on its classes. Unsupported properties are ignored with a one-time warning at runtime.
 
-**Selectors:** type (`p`), class (`.card`), id (`#title`), attribute (`[type=checkbox]`), universal (`*`), descendant (`.list p`), child (`.list > p`), adjacent sibling (`h1 + p`), `:first-child`, `:checked`, and `@media` queries (see below). Descendant and child selectors see through `{% for %}` / `{% if %}`. Sibling selectors and `:first-child` do not: which iteration or branch comes first is only known at runtime, so they never match across a loop or conditional. No `:hover` / `:focus` / `:nth-child`.
+**Selectors:** type (`p`), class (`.card`), id (`#title`), attribute (`[type=checkbox]`), universal (`*`), descendant (`.list p`), child (`.list > p`), adjacent sibling (`h1 + p`), `:first-child`, `:checked`, the `::before` / `::after` pseudo-elements (also spelled `:before` / `:after`), and `@media` queries (see below). Descendant and child selectors see through `{% for %}` / `{% if %}`. Sibling selectors and `:first-child` do not: which iteration or branch comes first is only known at runtime, so they never match across a loop or conditional. No `:hover` / `:focus` / `:nth-child`.
 
 **Properties:**
 
@@ -249,7 +249,20 @@ progress::-webkit-progress-bar { background: #e2e8f0; border-radius: 5px; }
 progress::-webkit-progress-value { background: linear-gradient(90deg, #22d3ee, #a78bfa); border-radius: 5px; }
 ```
 
-A text input shows its `placeholder` while its value is empty, in Chromium's #757575 unless `::placeholder` (or `::-webkit-input-placeholder`) sets `color`, `font-size` or `font-weight`. Part selectors with pseudo-classes (`::-webkit-slider-thumb:hover`) and other pseudo-elements (`::before`) are ignored.
+A text input shows its `placeholder` while its value is empty, in Chromium's #757575 unless `::placeholder` (or `::-webkit-input-placeholder`) sets `color`, `font-size` or `font-weight`. Part selectors with pseudo-classes (`::-webkit-slider-thumb:hover`) and other pseudo-elements (`::first-line`, `::marker`) are ignored.
+
+**Generated content.** `::before` and `::after` with a `content` string (`""` for an empty box) add a box as the element's first or last child, inheriting from the element and styled by the rule like any `<span>`; `content: none`, `normal` or a non-string value (`attr()`, counters, `url()`) adds nothing. They work on elements whose content is their children and on checkboxes (like in Chromium), not on images, canvases, text inputs, ranges or progress bars. A toggle switch is a checkbox with its knob as `::before`:
+
+```css
+.switch { appearance: none; position: relative; width: 40px; height: 22px; margin: 0; border-radius: 11px; background: #1e293b; }
+.switch:checked { background: #0ea5e9; }
+.switch::before { content: ""; position: absolute; left: 3px; top: 3px; width: 16px; height: 16px; border-radius: 8px; background: #e2e8f0; }
+.switch:checked::before { left: 21px; }
+```
+
+```html
+<input type="checkbox" class="switch" {% if wifi %}checked{% endif %}>
+```
 
 Unsupported **tags** fall back to a generic inline-block box (with a one-time warning). Elements with dedicated behaviour: `div`, `p`, `pre`, `span`, `h1`–`h6`, `ul`/`li`, `table`/`tr`/`td`/`th` (+ `thead`/`tbody`/`tfoot`), `strong`/`b`, `img`, `button`, `input` (`type="checkbox"`, `"range"`, text), `progress`, `canvas`, `br`.
 

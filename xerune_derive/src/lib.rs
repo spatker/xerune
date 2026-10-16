@@ -1061,13 +1061,15 @@ struct MediaRuleSet {
 /// The declaration prefix of a form control part's pseudo-element (without
 /// `::`). Mirrors `xerune::style::ControlPart`.
 fn part_prefix(pseudo_element: &str) -> Option<&'static str> {
-    const PARTS: [(&str, &[&str]); 6] = [
+    const PARTS: [(&str, &[&str]); 8] = [
         ("-xerune-bar-", &["-webkit-progress-bar"]),
         ("-xerune-value-", &["-webkit-progress-value", "-moz-progress-bar"]),
         ("-xerune-track-", &["-webkit-slider-runnable-track", "-moz-range-track"]),
         ("-xerune-thumb-", &["-webkit-slider-thumb", "-moz-range-thumb"]),
         ("-xerune-fill-", &["-moz-range-progress"]),
         ("-xerune-placeholder-", &["placeholder", "-webkit-input-placeholder", "-moz-placeholder"]),
+        ("-xerune-before-", &["before"]),
+        ("-xerune-after-", &["after"]),
     ];
     PARTS.iter().find(|(_, names)| names.iter().any(|n| n.eq_ignore_ascii_case(pseudo_element))).map(|(prefix, _)| *prefix)
 }
@@ -1130,14 +1132,32 @@ fn strip_comments(css: &str) -> String {
     out
 }
 
-/// Rules for form control parts (`progress::-webkit-progress-value
-/// { background: red }`), which simplecss can't parse, become rules for the
-/// control with prefixed declarations (`progress { -xerune-value-background:
+/// `prelude` with CSS 2's `:before` / `:after` spelled `::before` / `::after`.
+fn legacy_pseudo_elements(prelude: String) -> String {
+    let mut out = String::with_capacity(prelude.len() + 2);
+    let mut rest = prelude.as_str();
+    while let Some(pos) = rest.find(':') {
+        out.push_str(&rest[..=pos]);
+        let after = &rest[pos + 1..];
+        let name_end = after.find(|c: char| !(c.is_ascii_alphanumeric() || c == '-' || c == '_')).unwrap_or(after.len());
+        let name = &after[..name_end];
+        if !out[..out.len() - 1].ends_with(':') && (name.eq_ignore_ascii_case("before") || name.eq_ignore_ascii_case("after")) {
+            out.push(':');
+        }
+        rest = after;
+    }
+    out.push_str(rest);
+    out
+}
+
+/// Rules for `::before` / `::after` and form control parts
+/// (`progress::-webkit-progress-value { background: red }`), which simplecss
+/// can't parse, become rules for the element with prefixed declarations (`progress { -xerune-value-background:
 /// red }`, see `xerune::style::ControlPart`). Selectors of other
 /// pseudo-elements, or with anything after the part, are dropped. Mirrors
 /// `xerune::css::rewrite_part_rules`.
 fn rewrite_part_rules(css: &str) -> String {
-    if !css.contains("::") {
+    if !css.contains("::") && !css.contains(":before") && !css.contains(":after") {
         return css.to_string();
     }
     let mut out = String::with_capacity(css.len());
@@ -1159,7 +1179,7 @@ fn rewrite_part_rules(css: &str) -> String {
                 }
             }
         }
-        let prelude = strip_comments(&rest[..open]);
+        let prelude = legacy_pseudo_elements(strip_comments(&rest[..open]));
         if prelude.trim_start().starts_with('@') || !prelude.contains("::") {
             out.push_str(&rest[..end]);
         } else {
@@ -1705,7 +1725,7 @@ fn compile_dom_node<'a>(
                     };
                     // Only form controls have parts (`*::-moz-range-thumb`).
                     let declarations: Vec<(String, String)> = rule.declarations.iter()
-                        .filter(|d| has_parts || !d.name.starts_with("-xerune-"))
+                        .filter(|d| has_parts || !d.name.starts_with("-xerune-") || d.name.starts_with("-xerune-before-") || d.name.starts_with("-xerune-after-"))
                         .map(|d| (d.name.to_string(), d.value.to_string()))
                         .collect();
                     if declarations.is_empty() {

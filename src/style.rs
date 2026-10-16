@@ -302,8 +302,9 @@ pub struct BoxShadow {
     pub inset: bool,
 }
 
-/// A pseudo-element of a form control, styled with the selectors pages use
-/// for Chromium and Firefox (`::-webkit-slider-thumb`, `::-moz-range-thumb`).
+/// A pseudo-element: `::before` / `::after`, or a part of a form control,
+/// styled with the selectors pages use for Chromium and Firefox
+/// (`::-webkit-slider-thumb`, `::-moz-range-thumb`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum ControlPart {
@@ -319,16 +320,22 @@ pub enum ControlPart {
     SliderFill,
     /// A text input's `::placeholder`.
     Placeholder,
+    /// `::before`: a box generated as the element's first child.
+    Before,
+    /// `::after`: a box generated as the element's last child.
+    After,
 }
 
 impl ControlPart {
-    const PARTS: [(ControlPart, &'static str, &'static [&'static str]); 6] = [
+    const PARTS: [(ControlPart, &'static str, &'static [&'static str]); 8] = [
         (ControlPart::ProgressBar, "-xerune-bar-", &["-webkit-progress-bar"]),
         (ControlPart::ProgressValue, "-xerune-value-", &["-webkit-progress-value", "-moz-progress-bar"]),
         (ControlPart::SliderTrack, "-xerune-track-", &["-webkit-slider-runnable-track", "-moz-range-track"]),
         (ControlPart::SliderThumb, "-xerune-thumb-", &["-webkit-slider-thumb", "-moz-range-thumb"]),
         (ControlPart::SliderFill, "-xerune-fill-", &["-moz-range-progress"]),
         (ControlPart::Placeholder, "-xerune-placeholder-", &["placeholder", "-webkit-input-placeholder", "-moz-placeholder"]),
+        (ControlPart::Before, "-xerune-before-", &["before"]),
+        (ControlPart::After, "-xerune-after-", &["after"]),
     ];
 
     /// The part a pseudo-element name (without `::`) selects.
@@ -340,6 +347,11 @@ impl ControlPart {
     /// (`-xerune-thumb-background`), since simplecss can't parse `::`.
     pub fn declaration_prefix(self) -> &'static str {
         Self::PARTS.iter().find(|(part, _, _)| *part == self).map_or("", |(_, prefix, _)| prefix)
+    }
+
+    /// Whether this is a part of a form control, not a generated box.
+    pub fn of_form_control(self) -> bool {
+        !matches!(self, ControlPart::Before | ControlPart::After)
     }
 
     /// The part and property of a prefixed declaration name.
