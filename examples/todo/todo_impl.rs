@@ -69,7 +69,7 @@ pub enum TodoMsg {
 impl Model for TodoList {
     type Message = TodoMsg;
 
-    fn update(&mut self, msg: Self::Message, context: &mut xerune::Context) {
+    fn update(&mut self, msg: Self::Message, context: &mut xerune::Context<Self::Message>) {
         match msg {
             TodoMsg::Toggle(index) => {
                 if index < self.items.len() {

@@ -26,7 +26,7 @@ pub struct TextBench {
 
 impl Model for TextBench {
     type Message = String;
-    fn update(&mut self, _msg: String, _context: &mut Context) {}
+    fn update(&mut self, _msg: String, _context: &mut Context<Self::Message>) {}
 }
 
 const BODIES: [&str; 4] = [

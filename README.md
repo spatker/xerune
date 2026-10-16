@@ -32,7 +32,7 @@ Xerune is built around the **Model-View-Update (MVU)** pattern:
 - **View (`Model::view`)**: Takes the model and outputs declarative UI templates.
 - **Update (`Model::update`)**: Mutates the model state based on `Message` intents.
 - **UI Layout & Style Engine (`src/ui/`)**: Resolves HTML elements and CSS properties onto a Taffy Flexbox tree and generates `DrawCommand`s.
-- **Runtime (`src/runtime/`)**: Manages the main execution tick, message queues, and animation intervals.
+- **Runtime (`src/runtime/`)**: Runs updates, timers, subscriptions and frames (`Runtime::poll`), and animations.
 
 ## Dependencies
 
@@ -72,7 +72,7 @@ pub enum TodoMsg {
 impl Model for TodoList {
     type Message = TodoMsg;
 
-    fn update(&mut self, msg: Self::Message, _ctx: &mut Context) {
+    fn update(&mut self, msg: Self::Message, _ctx: &mut Context<Self::Message>) {
         match msg {
             TodoMsg::Toggle(index) => {
                 if let Some(item) = self.items.get_mut(index) {

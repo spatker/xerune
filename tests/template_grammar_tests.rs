@@ -24,7 +24,7 @@ struct GrammarModel {
 
 impl Model for GrammarModel {
     type Message = Msg;
-    fn update(&mut self, _msg: Self::Message, _context: &mut Context) {}
+    fn update(&mut self, _msg: Self::Message, _context: &mut Context<Self::Message>) {}
 }
 
 struct MockMeasurer;

@@ -2,8 +2,7 @@
 //!
 //! ```ignore
 //! let fonts = xerune_render::Fonts::ttf(REGULAR_TTF, Some(BOLD_TTF))?;
-//! let mut runtime = Runtime::new(MyModel::default(), fonts.clone());
-//! runtime.set_interval("tick".into(), 1000);
+//! let runtime = Runtime::new(MyModel::default(), fonts.clone());
 //! App::new(runtime)
 //!     .title("Thermostat")
 //!     .size(800, 480)
@@ -103,7 +102,7 @@ impl BackendKind {
 
 /// An app ready to run: its [`Runtime`], window title and size, and what to
 /// do once it is running.
-pub struct App<M, TM> {
+pub struct App<M: Model, TM> {
     runtime: Runtime<M, TM>,
     title: String,
     size: (u32, u32),
@@ -115,7 +114,7 @@ where
     M: Model + TemplateLayout + 'static,
     TM: TextMeasurer + 'static,
 {
-    /// An app around `runtime` (with its model, fonts, timers and image
+    /// An app around `runtime` (with its model, fonts and image
     /// loader set up), titled "Xerune", 800x480.
     pub fn new(runtime: Runtime<M, TM>) -> Self {
         Self { runtime, title: "Xerune".into(), size: (800, 480), on_start: None }
@@ -131,6 +130,13 @@ where
     /// sets one. Displays use their mode's size.
     pub fn size(mut self, width: u32, height: u32) -> Self {
         self.size = (width, height);
+        self
+    }
+
+    /// The frame rate while something animates (see
+    /// [`Runtime::set_target_fps`]); `XERUNE_TARGET_FPS` overrides it.
+    pub fn target_fps(mut self, fps: u32) -> Self {
+        self.runtime.set_target_fps(fps);
         self
     }
 

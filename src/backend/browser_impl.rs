@@ -48,9 +48,8 @@ macro_rules! export_browser_app {
             }
 
             #[wasm_bindgen::prelude::wasm_bindgen]
-            pub fn tick(&mut self, now_ms: f64) -> bool {
-                let res = self.runtime.tick_at_ms(now_ms as u64);
-                res.needs_redraw
+            pub fn poll(&mut self) -> bool {
+                self.runtime.poll().redraw
             }
 
             #[wasm_bindgen::prelude::wasm_bindgen]

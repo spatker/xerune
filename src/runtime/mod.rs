@@ -6,13 +6,18 @@ pub mod animation;
 pub mod time;
 mod diff;
 
-pub use timer::{Timer, TickResult};
+pub use timer::{Poll, Subscriptions, TimerId, Wake};
+pub use time::{Clock, SystemClock};
+#[cfg(feature = "std")]
+pub use time::ManualClock;
 pub use animation::ActiveAnimation;
 
 use core::str::FromStr;
 use taffy::prelude::*;
 use crate::alloc_prelude::*;
 use crate::runtime::time::Instant;
+use crate::runtime::timer::{Interval, Timer};
+use core::time::Duration;
 
 #[cfg(feature = "profile")]
 use coarse_prof::profile;
@@ -55,7 +60,7 @@ pub struct TouchState {
 }
 
 /// The Elm/MVU runtime engine coordinating state updates, layout, input events, and rendering.
-pub struct Runtime<M, R> {
+pub struct Runtime<M: Model, R> {
     model: M,
     measurer: R,
     /// The current resolved UI structure mapping. Internal.
@@ -66,24 +71,29 @@ pub struct Runtime<M, R> {
     cached_size: Size<AvailableSpace>,
     viewport_px: Option<(f32, f32)>,
     last_fingerprint: Option<u64>,
-    context: Context,
+    context: Context<M::Message>,
     last_commands: Vec<DrawCommand>,
     /// The next frame must be drawn completely: nothing is drawn yet, the
     /// viewport changed, or images arrived whose commands look unchanged.
     full_repaint: bool,
     /// Focused input ID if any text inputs are currently active.
     pub focused_id: Option<String>,
-    /// Expected frames per second target.
-    pub target_fps: u32,
-    pub(crate) timers: Vec<Timer>,
-    next_timer_id: usize,
+    /// Where all times come from.
+    clock: Box<dyn Clock>,
+    /// Frames per second while something animates, as set by
+    /// [`Self::set_target_fps`]; `XERUNE_TARGET_FPS` overrides it.
+    target_fps: u32,
+    target_fps_override: Option<u32>,
+    /// Timers started with `Context::after`, not yet fired.
+    timers: Vec<Timer<M::Message>>,
+    /// What the model last asked for in `Model::subscriptions`, and when
+    /// each of its `every` is due next.
+    subscriptions: Subscriptions<M::Message>,
+    intervals: Vec<Interval>,
+    /// While frames run: when the previous one was and the next is due.
+    frame_clock: Option<(Instant, Instant)>,
     /// Running keyframe animations, by element key.
     pub(crate) active_animations: HashMap<u64, ActiveAnimation>,
-    last_tick_time: Instant,
-    /// `(now_ms, instant)` from the first `tick_at_ms` call: host millisecond
-    /// timestamps are measured relative to it, keeping that clock continuous
-    /// with `last_tick_time` whatever the host's time origin is.
-    ms_clock_anchor: Option<(u64, Instant)>,
     pub(crate) touch_state: Option<TouchState>,
     images: ImageStore,
     /// Where the pointer was last seen, and whether it is pressed.
@@ -110,8 +120,12 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
          let mut context = Context::new();
          Runtime::<M, R>::sync_canvases(&ui, &mut context);
          let initial_fingerprint = model.view_fingerprint();
+         #[cfg(all(feature = "std", not(target_arch = "wasm32")))]
+         let target_fps_override = std::env::var("XERUNE_TARGET_FPS").ok().and_then(|v| v.trim().parse().ok()).filter(|&fps: &u32| fps > 0);
+         #[cfg(not(all(feature = "std", not(target_arch = "wasm32"))))]
+         let target_fps_override = None;
 
-         Self {
+         let mut runtime = Self {
              model,
              measurer,
              ui,
@@ -124,19 +138,66 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
              last_commands: Vec::new(),
              full_repaint: true,
              focused_id: None,
+             clock: Box::new(SystemClock),
              target_fps: 60,
+             target_fps_override,
              timers: Vec::new(),
-             next_timer_id: 1,
+             subscriptions: Subscriptions::none(),
+             intervals: Vec::new(),
+             frame_clock: None,
              active_animations: HashMap::new(),
-             last_tick_time: Instant::now(),
-             ms_clock_anchor: None,
              touch_state: None,
              images,
              pointer: None,
              pressed: false,
              pointer_state: crate::ui::PointerState::default(),
              builds: 0,
-         }
+         };
+         runtime.update_subscriptions();
+         runtime
+    }
+
+    /// Reads the time from `clock` from now on, e.g. a `no_std` board's
+    /// millisecond counter (`|| Instant::from_millis(millis())`) or a
+    /// [`ManualClock`] in tests. Meant to be set before the app runs:
+    /// subscriptions start over from the new clock's current time, and
+    /// timers and animations carry on from it.
+    pub fn set_clock(&mut self, clock: impl Clock) {
+        let (old, new) = (self.now(), clock.now());
+        self.clock = Box::new(clock);
+        for timer in &mut self.timers {
+            timer.deadline = new + timer.deadline.saturating_duration_since(old);
+        }
+        self.intervals.clear();
+        self.update_subscriptions();
+        for active in self.active_animations.values_mut() {
+            active.updated = new;
+        }
+        self.frame_clock = None;
+    }
+
+    /// The current time on the runtime's clock.
+    pub fn now(&self) -> Instant {
+        self.clock.now()
+    }
+
+    /// How often frames come while something animates (CSS animations and
+    /// transitions, a model's frame subscription), like raylib's
+    /// `SetTargetFPS`. Lower it to leave the CPU to more important work;
+    /// animations take the same time in fewer steps. 60 by default; the
+    /// `XERUNE_TARGET_FPS` environment variable overrides it, to tune a
+    /// device without rebuilding.
+    pub fn set_target_fps(&mut self, fps: u32) {
+        self.target_fps = fps.max(1);
+    }
+
+    /// The frame rate in effect (see [`Self::set_target_fps`]).
+    pub fn target_fps(&self) -> u32 {
+        self.target_fps_override.unwrap_or(self.target_fps)
+    }
+
+    fn frame_interval(&self) -> Duration {
+        Duration::from_nanos(1_000_000_000 / self.target_fps() as u64)
     }
 
     /// Get a reference to the inner model.
@@ -150,18 +211,13 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
     }
 
     /// Get a reference to the inner context.
-    pub fn context(&self) -> &Context {
+    pub fn context(&self) -> &Context<M::Message> {
         &self.context
     }
 
     /// Get a mutable reference to the inner context.
-    pub fn context_mut(&mut self) -> &mut Context {
+    pub fn context_mut(&mut self) -> &mut Context<M::Message> {
         &mut self.context
-    }
-
-    /// Get a reference to active timers in the runtime.
-    pub fn timers(&self) -> &[Timer] {
-        &self.timers
     }
 
     /// Images referenced by the current view and their load state.
@@ -245,7 +301,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
         }
     }
 
-    fn sync_canvases(ui: &Ui, context: &mut Context) {
+    fn sync_canvases(ui: &Ui, context: &mut Context<M::Message>) {
         for (node_id, data) in &ui.render_data {
             if let RenderKind::Canvas(id) = &data.kind {
                 if !context.canvases.contains_key(id) {
@@ -457,6 +513,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
     }
 
     fn sync_view_inner(&mut self, allow_skip: bool) -> bool {
+        self.update_timers();
         let fingerprint = self.model.view_fingerprint();
         // Skipping is only possible when the model explicitly supports
         // fingerprinting and its view-relevant state is unchanged since the
@@ -481,9 +538,6 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
                 crate::graphics::ContextCommand::ScrollIntoView(id) => {
                     self.scroll_into_view(&id);
                     dirty = true;
-                }
-                crate::graphics::ContextCommand::ClearTimer(msg) => {
-                    self.clear_timers(&msg);
                 }
             }
         }
@@ -565,7 +619,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
         if cfg!(target_arch = "wasm32") || (self.ui.keyframes.is_empty() && self.active_animations.is_empty()) {
             return false;
         }
-        let start = now.unwrap_or_else(|| self.clock_now());
+        let start = now.unwrap_or_else(|| self.now());
         let mut declared = HashSet::new();
         for (node, data) in &self.ui.render_data {
             let (Some(name), Some(&key)) = (&data.style.animation_name, self.ui.keys.get(node)) else { continue };
@@ -756,148 +810,108 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
         self.scroll_offsets = self.ui.scroll_offsets.clone();
     }
 
-    /// Clears any active recurring or timeout timers matching the message string.
-    pub fn clear_interval(&mut self, message: &str) {
-        self.clear_timers(message);
-    }
-
-    /// Clears any active recurring or timeout timers matching the message string.
-    pub fn clear_timeout(&mut self, message: &str) {
-        self.clear_timers(message);
-    }
-
-    /// Also drops matching timers requested through [`Context`] that the next
-    /// tick hasn't registered yet, so set-then-clear never resurrects one.
-    fn clear_timers(&mut self, message: &str) {
-        self.timers.retain(|t| t.message != message);
-        self.context.pending_timers.retain(|t| t.message != message);
-    }
-
-    /// Registers a recurring interval timer.
-    pub fn set_interval(&mut self, message: String, millis: u32) {
-        self.add_timer(message, millis, true);
-    }
-
-    /// Registers a one-shot timeout timer.
-    pub fn set_timeout(&mut self, message: String, millis: u32) {
-        self.add_timer(message, millis, false);
-    }
-
-    fn add_timer(&mut self, message: String, millis: u32, is_recurring: bool) {
-        let interval = core::time::Duration::from_millis(millis as u64);
-        let id = self.next_timer_id;
-        self.next_timer_id += 1;
-        self.timers.push(Timer {
-            id,
-            message,
-            interval,
-            next_trigger: self.clock_now() + interval,
-            is_recurring,
-        });
-    }
-
-    /// The current time on the clock that drives `tick*`: the latest tick when
-    /// the host supplies timestamps (`tick_at_ms`, or no `std` clock),
-    /// otherwise real time.
-    fn clock_now(&self) -> Instant {
-        #[cfg(all(feature = "std", not(target_arch = "wasm32")))]
-        if self.ms_clock_anchor.is_none() {
-            return Instant::now();
+    /// Starts the timers `update` asked for, from the current time, and
+    /// stops those it cancelled; then follows the model's subscriptions.
+    fn update_timers(&mut self) {
+        let now = self.now();
+        let cancelled = core::mem::take(&mut self.context.cancelled_timers);
+        self.timers.retain(|t| !cancelled.contains(&t.id));
+        for pending in self.context.pending_timers.drain(..) {
+            self.timers.push(Timer { id: pending.id, deadline: now + pending.delay, message: pending.message });
         }
-        self.last_tick_time
+        self.update_subscriptions();
     }
 
-    /// Evaluates current animations and timers, updating state if necessary.
-    /// Requires std monotonic time features.
-    #[cfg(feature = "std")]
-    pub fn tick(&mut self) -> TickResult {
-        self.tick_with_time(Instant::now())
+    /// Asks the model for its subscriptions. An `every` it asked for before
+    /// (the n-th of its interval) keeps its phase; a new one starts now.
+    fn update_subscriptions(&mut self) {
+        let now = self.now();
+        let subscriptions = self.model.subscriptions();
+        let mut old = core::mem::take(&mut self.intervals);
+        self.intervals = subscriptions.every.iter().map(|&(interval, _)| match old.iter().position(|i| i.interval == interval) {
+            Some(i) => old.remove(i),
+            None => Interval { interval, next: now + interval },
+        }).collect();
+        self.subscriptions = subscriptions;
     }
 
-    /// Evaluates animations and timers using the specified millisecond elapsed time duration.
-    pub fn tick_at_ms(&mut self, now_ms: u64) -> TickResult {
-        if self.ms_clock_anchor.is_none() {
-            // Animations declared before the host's clock started (while the
-            // view was set up) start at its first timestamp.
-            for active in self.active_animations.values_mut() {
-                active.updated = self.last_tick_time;
-            }
-        }
-        let (anchor_ms, anchor) = *self.ms_clock_anchor.get_or_insert((now_ms, self.last_tick_time));
-        let now = anchor + core::time::Duration::from_millis(now_ms.saturating_sub(anchor_ms));
-        self.tick_with_time(now)
+    /// Whether something wants frames: a running CSS animation or the
+    /// model's frame subscription.
+    fn wants_frames(&self) -> bool {
+        self.subscriptions.frames.is_some() || self.active_animations.values().any(ActiveAnimation::is_running)
     }
 
-    /// Registers timers requested since the last tick. Deadlines are computed
-    /// here, from the tick's clock, so timers work the same whichever clock
-    /// drives the runtime (`tick`, `tick_at_ms`, or `tick_with_time`).
-    fn drain_pending_timers(&mut self, now: Instant) {
-        let new_timers = core::mem::take(&mut self.context.pending_timers);
-        for mut timer in new_timers {
-            timer.next_trigger = now + timer.interval;
-            if !timer.is_recurring {
-                if self.timers.iter().any(|t| !t.is_recurring && t.message == timer.message) {
-                    continue;
-                }
-            }
-            timer.id = self.next_timer_id;
-            self.next_timer_id += 1;
-            self.timers.push(timer);
-        }
-    }
-
-    /// Evaluates animations and timers using the specified Instant time.
-    pub fn tick_with_time(&mut self, now: Instant) -> TickResult {
-        let mut needs_redraw = false;
+    /// Does the work that is due: applies loaded images, sends the model
+    /// the messages of due timers and subscriptions, and on a frame (at the
+    /// target frame rate) its frame message and the animations' next
+    /// step. Everything due is handled together, with one rebuild. Returns
+    /// whether to render, and when to poll again: input wakes the backend
+    /// earlier, and it renders and polls again after handling it.
+    pub fn poll(&mut self) -> Poll {
+        let now = self.now();
+        let mut redraw = false;
 
         // Finished background image loads: rebuild so sizes/layout reflect the new images,
         // and repaint everything, since an image's command can stay the same while its
         // placeholder turns into pixels.
         if self.images.poll() {
             self.full_repaint = true;
-            needs_redraw |= self.sync_view_inner(false);
+            redraw |= self.sync_view_inner(false);
         }
 
-        self.drain_pending_timers(now);
-
-        let mut triggered_messages = Vec::new();
-        for timer in &mut self.timers {
-            if now >= timer.next_trigger {
-                triggered_messages.push(timer.message.clone());
-                if timer.is_recurring {
-                    timer.next_trigger = (timer.next_trigger + timer.interval).max(now);
+        let mut messages = Vec::new();
+        let mut due: Vec<usize> = (0..self.timers.len()).filter(|&i| self.timers[i].deadline <= now).collect();
+        due.sort_by_key(|&i| self.timers[i].deadline);
+        let mut fired: Vec<_> = due.iter().map(|&i| self.timers[i].clone()).collect();
+        self.timers.retain(|t| t.deadline > now);
+        messages.extend(fired.drain(..).map(|t| t.message));
+        for (interval, (_, message)) in self.intervals.iter_mut().zip(&self.subscriptions.every) {
+            if interval.next <= now {
+                messages.push(message.clone());
+                interval.next += interval.interval;
+                if interval.next <= now {
+                    interval.next = now + interval.interval;
                 }
             }
         }
-        
-        self.timers.retain(|timer| !(!timer.is_recurring && now >= timer.next_trigger));
 
-        if !triggered_messages.is_empty() {
-            needs_redraw |= self.handle_messages(triggered_messages);
-            self.drain_pending_timers(now);
-        }
-
-        self.last_tick_time = now;
-        needs_redraw |= self.animate(Some(now));
-
-        let target_frame_duration = core::time::Duration::from_nanos((1_000_000_000.0 / self.target_fps as f64) as u64);
-        
-        let mut min_sleep = if self.active_animations.values().any(ActiveAnimation::is_running) {
-            target_frame_duration
-        } else {
-            core::time::Duration::from_secs(3600 * 24)
+        let frame = match self.frame_clock {
+            Some((previous, next)) if now >= next && self.wants_frames() => {
+                let mut next = next + self.frame_interval();
+                if next <= now {
+                    // Too late for that frame too: drop it rather than catch up.
+                    next = now + self.frame_interval();
+                }
+                self.frame_clock = Some((now, next));
+                if let Some(message) = &self.subscriptions.frames {
+                    messages.push(message(now.saturating_duration_since(previous).as_secs_f32()));
+                }
+                true
+            }
+            _ => false,
         };
 
-        for timer in &self.timers {
-            let remaining = timer.next_trigger.saturating_duration_since(now);
-            if remaining < min_sleep {
-                min_sleep = remaining;
+        if !messages.is_empty() {
+            for message in messages {
+                profile!("update");
+                self.model.update(message, &mut self.context);
             }
+            redraw |= self.sync_view_inner(true);
+        }
+        if frame {
+            redraw |= self.animate(Some(now));
         }
 
-        TickResult {
-            needs_redraw,
-            next_tick_in: min_sleep,
-        }
+        let wake = if self.wants_frames() {
+            let interval = self.frame_interval();
+            let (_, next) = *self.frame_clock.get_or_insert((now, now + interval));
+            Wake::Frame(next)
+        } else {
+            self.frame_clock = None;
+            let next_timer = self.timers.iter().map(|t| t.deadline);
+            let next_interval = self.intervals.iter().map(|i| i.next);
+            next_timer.chain(next_interval).min().map_or(Wake::Idle, Wake::At)
+        };
+        Poll { redraw, wake }
     }
 }

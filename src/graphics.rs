@@ -304,25 +304,29 @@ impl Canvas {
 pub(crate) enum ContextCommand {
     /// Scroll the element with this `id` into view.
     ScrollIntoView(String),
-    /// Clear an active timer by message name.
-    ClearTimer(String),
 }
 
-/// The context containing canvases and commands passed to Model updates.
-pub struct Context {
+/// What [`crate::Model::update`] can ask of the runtime besides changing the
+/// model: canvases to draw into, scrolling, and timers that send the model
+/// its own messages (`M`) later.
+pub struct Context<M> {
     /// Map of canvas IDs to their respective Canvas pixel buffers.
     pub canvases: HashMap<String, Canvas>,
     pub(crate) commands: Vec<ContextCommand>,
-    pub(crate) pending_timers: Vec<crate::runtime::Timer>,
+    pub(crate) pending_timers: Vec<crate::runtime::timer::PendingTimer<M>>,
+    pub(crate) cancelled_timers: Vec<crate::runtime::TimerId>,
+    next_timer_id: u64,
 }
 
-impl Context {
+impl<M> Context<M> {
     /// Create a new, empty context.
     pub fn new() -> Self {
         Self {
             canvases: HashMap::new(),
             commands: Vec::new(),
             pending_timers: Vec::new(),
+            cancelled_timers: Vec::new(),
+            next_timer_id: 1,
         }
     }
     
@@ -350,44 +354,23 @@ impl Context {
         self.commands.push(ContextCommand::ScrollIntoView(id.to_string()));
     }
 
-    /// Clear an active recurring or timeout timer by message string.
-    pub fn clear_interval(&mut self, message: &str) {
-        self.commands.push(ContextCommand::ClearTimer(message.to_string()));
+    /// Sends `message` to the model once, `delay` from now. For messages
+    /// that repeat, see [`crate::Model::subscriptions`].
+    pub fn after(&mut self, delay: core::time::Duration, message: M) -> crate::runtime::TimerId {
+        let id = crate::runtime::TimerId(self.next_timer_id);
+        self.next_timer_id += 1;
+        self.pending_timers.push(crate::runtime::timer::PendingTimer { id, delay, message });
+        id
     }
 
-    /// Clear an active timeout timer by message string.
-    pub fn clear_timeout(&mut self, message: &str) {
-        self.commands.push(ContextCommand::ClearTimer(message.to_string()));
-    }
-
-    /// Set an interval timer that regularly triggers a message at the specified milliseconds.
-    pub fn set_interval(&mut self, message: String, millis: u32) {
-        let duration = core::time::Duration::from_millis(millis as u64);
-        self.pending_timers.push(crate::runtime::Timer {
-            id: 0,
-            message,
-            interval: duration,
-            // Set by the runtime when it registers the timer at the next tick.
-            next_trigger: crate::runtime::time::Instant::now(),
-            is_recurring: true,
-        });
-    }
-
-    /// Set a one-shot timeout timer that triggers a message after the specified milliseconds.
-    pub fn set_timeout(&mut self, message: String, millis: u32) {
-        let duration = core::time::Duration::from_millis(millis as u64);
-        self.pending_timers.push(crate::runtime::Timer {
-            id: 0,
-            message,
-            interval: duration,
-            // Set by the runtime when it registers the timer at the next tick.
-            next_trigger: crate::runtime::time::Instant::now(),
-            is_recurring: false,
-        });
+    /// Stops a timer started with [`Self::after`] that hasn't fired yet.
+    pub fn cancel(&mut self, timer: crate::runtime::TimerId) {
+        self.pending_timers.retain(|t| t.id != timer);
+        self.cancelled_timers.push(timer);
     }
 }
 
-impl Default for Context {
+impl<M> Default for Context<M> {
     fn default() -> Self {
         Self::new()
     }

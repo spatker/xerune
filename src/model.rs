@@ -23,7 +23,7 @@ pub trait Model {
     }
 
     /// Mutates the application state in response to an incoming message.
-    fn update(&mut self, msg: Self::Message, context: &mut Context);
+    fn update(&mut self, msg: Self::Message, context: &mut Context<Self::Message>);
 
     /// Called when the rendering viewport changes size (window resize, display
     /// mode switch) and once with the initial size when the backend first
@@ -32,7 +32,14 @@ pub trait Model {
     /// Models that adapt their layout structure to screen size should store
     /// the new dimensions here; plain CSS adaptation via `@media` and `vw`/`vh`
     /// units does not require overriding this method.
-    fn on_resize(&mut self, _width: f32, _height: f32, _context: &mut Context) {}
+    fn on_resize(&mut self, _width: f32, _height: f32, _context: &mut Context<Self::Message>) {}
+
+    /// The messages the model gets as time passes: intervals and frames.
+    /// Asked again after every `update`, so it can depend on the model's
+    /// state (e.g. frames only while a game runs). None by default.
+    fn subscriptions(&self) -> crate::runtime::Subscriptions<Self::Message> {
+        crate::runtime::Subscriptions::none()
+    }
 
     /// Optional content fingerprint used to skip redundant view rebuilds.
     ///

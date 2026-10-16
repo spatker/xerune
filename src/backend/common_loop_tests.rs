@@ -18,7 +18,7 @@ struct TestModel {
 impl Model for TestModel {
     type Message = String;
 
-    fn update(&mut self, _: String, _: &mut Context) {
+    fn update(&mut self, _: String, _: &mut Context<Self::Message>) {
         self.events.send(Event::Updated).unwrap();
     }
 }
@@ -115,7 +115,7 @@ impl TestLoop {
             proxy_tx.send(proxy).unwrap();
             let model = TestModel { events: events_tx.clone(), animate };
             let mut runtime = Runtime::new(model, Measurer);
-            runtime.target_fps = 25;
+            runtime.set_target_fps(25);
             let presenter = Presenter { events: events_tx, stop: thread_stop };
             let surface = SurfaceInfo {
                 logical_w: 1, logical_h: 1, disp_w: 1, disp_h: 1, rotation: 0,

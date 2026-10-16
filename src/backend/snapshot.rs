@@ -26,9 +26,8 @@ use std::time::Duration;
 
 use super::{Backend, BackendError, EventProxy, SendError};
 use crate::{Model, Runtime, TextMeasurer};
+use crate::runtime::Clock;
 
-/// Frame step used when advancing the simulated clock.
-const FRAME: Duration = Duration::from_millis(16);
 /// Upper bound on waiting for images (local or remote) before rendering anyway.
 const IMAGE_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -100,6 +99,8 @@ impl SnapshotBackend {
         R: crate::Renderer,
     {
         let (width, height) = self.size.unwrap_or((width, height));
+        let clock = crate::runtime::ManualClock::new();
+        runtime.set_clock(clock.clone());
         runtime.set_size(width as f32, height as f32);
 
         for message in &self.messages {
@@ -113,14 +114,17 @@ impl SnapshotBackend {
             runtime.handle_event(crate::InputEvent::Hover { x, y });
         }
 
-        // tick_at_ms anchors to the runtime's own clock on the first call, so
-        // the real time spent starting up doesn't leak into animations.
-        let mut elapsed = Duration::ZERO;
-        runtime.tick_at_ms(0);
-        while elapsed < self.time {
-            elapsed = (elapsed + FRAME).min(self.time);
-            runtime.tick_at_ms(elapsed.as_millis() as u64);
+        // Poll whenever the runtime has work, on a clock that moves only
+        // here, so timers fire and frames come as they would live.
+        let end = clock.now() + self.time;
+        loop {
+            match runtime.poll().wake.deadline() {
+                Some(at) if at <= end => clock.advance_to(at),
+                _ => break,
+            }
         }
+        clock.advance_to(end);
+        runtime.poll();
 
         runtime.wait_for_images(IMAGE_TIMEOUT);
 

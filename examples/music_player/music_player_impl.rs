@@ -71,8 +71,6 @@ pub struct MusicPlayerModel {
     pub current_track_index: Option<usize>,
     pub is_playing: bool,
     pub elapsed_seconds: u64,
-    #[serde(skip, default = "xerune::runtime::time::Instant::now")]
-    pub last_tick: xerune::runtime::time::Instant,
     pub visualizer_data: Vec<f32>,
     pub transition_progress: f32,
     pub hovered_track: String,
@@ -124,7 +122,6 @@ impl MusicPlayerModel {
             current_track_index: None,
             is_playing: false,
             elapsed_seconds: 0,
-            last_tick: xerune::runtime::time::Instant::now(),
             visualizer_data: vec![10.0; 30], // 30 bars
             transition_progress: 0.0,
             hovered_track: String::new(),
@@ -153,8 +150,15 @@ impl MusicPlayerModel {
         self.visualizer_data.iter().step_by(7).take(3).map(|v| (4.0 + v * 0.24) as u32).collect()
     }
 
-    fn ensure_ticking(&self, context: &mut xerune::Context) {
-        context.set_timeout("tick".to_string(), 33);
+    /// Whether the list/player slide is still moving.
+    fn is_sliding(&self) -> bool {
+        let target = if self.current_track_index.is_some() { 1.0 } else { 0.0 };
+        (self.transition_progress - target).abs() > 0.001
+    }
+
+    /// Whether the stopped visualizer's bars are still falling.
+    fn is_decaying(&self) -> bool {
+        self.visualizer_data.iter().any(|&val| val > 2.05)
     }
 
     fn format_time(seconds: u64) -> String {
@@ -194,7 +198,10 @@ pub enum Msg {
     PlayPause,
     Next,
     Prev,
+    /// Visualizer and slide step.
     Tick,
+    /// A second of the track played.
+    Second,
     #[xerune(prefix = "hover_track:")]
     HoverTrack(String),
     UnhoverTrack,
@@ -205,12 +212,23 @@ pub enum Msg {
 impl Model for MusicPlayerModel {
     type Message = Msg;
 
-    fn on_resize(&mut self, width: f32, _height: f32, _context: &mut xerune::Context) {
+    fn on_resize(&mut self, width: f32, _height: f32, _context: &mut xerune::Context<Msg>) {
         self.width = width;
         self.update_derived_fields();
     }
 
-    fn update(&mut self, msg: Self::Message, context: &mut xerune::Context) {
+    fn subscriptions(&self) -> xerune::Subscriptions<Msg> {
+        let mut subscriptions = xerune::Subscriptions::none();
+        if self.is_playing || self.is_sliding() || self.is_decaying() {
+            subscriptions = subscriptions.every(core::time::Duration::from_millis(33), Msg::Tick);
+        }
+        if self.is_playing {
+            subscriptions = subscriptions.every(core::time::Duration::from_secs(1), Msg::Second);
+        }
+        subscriptions
+    }
+
+    fn update(&mut self, msg: Self::Message, context: &mut xerune::Context<Msg>) {
          if self.tracks.is_empty() { return; }
          match msg {
              Msg::SelectTrack(id_str) => {
@@ -219,19 +237,15 @@ impl Model for MusicPlayerModel {
                      self.active_list_index = index;
                      self.is_playing = true;
                      self.elapsed_seconds = 0;
-                     self.last_tick = xerune::runtime::time::Instant::now();
-                     self.ensure_ticking(context);
                  }
              },
              Msg::Back => {
                  self.current_track_index = None;
-                 self.ensure_ticking(context);
              },
              Msg::Stop => {
                  self.is_playing = false;
                  self.elapsed_seconds = 0;
                  self.current_track_index = None;
-                 self.ensure_ticking(context);
              },
              Msg::PlayPause => {
                  if self.current_track_index.is_none() && !self.tracks.is_empty() {
@@ -239,8 +253,6 @@ impl Model for MusicPlayerModel {
                  }
                  self.is_playing = !self.is_playing;
                  if self.is_playing {
-                     self.last_tick = xerune::runtime::time::Instant::now();
-                     self.ensure_ticking(context);
                  }
              },
              Msg::Next => {
@@ -252,8 +264,6 @@ impl Model for MusicPlayerModel {
                  self.active_list_index = next_idx;
                  self.is_playing = true;
                  self.elapsed_seconds = 0;
-                 self.last_tick = xerune::runtime::time::Instant::now();
-                 self.ensure_ticking(context);
              },
              Msg::Prev => {
                  let prev_idx = match self.current_track_index {
@@ -264,8 +274,6 @@ impl Model for MusicPlayerModel {
                  self.active_list_index = prev_idx;
                  self.is_playing = true;
                  self.elapsed_seconds = 0;
-                 self.last_tick = xerune::runtime::time::Instant::now();
-                 self.ensure_ticking(context);
              },
              Msg::HoverTrack(id_str) => {
                  self.hovered_track = id_str;
@@ -328,7 +336,6 @@ impl Model for MusicPlayerModel {
                   } else if self.transition_progress > target {
                       self.transition_progress = (self.transition_progress - 0.1).max(0.0);
                   }
-                  let is_animating = (self.transition_progress - target).abs() > 0.001;
 
                   // Update visualizer simulation using LCG Rng
                   if self.is_playing {
@@ -344,26 +351,16 @@ impl Model for MusicPlayerModel {
                      }
                  }
 
-                 if self.is_playing {
-                     if self.last_tick.elapsed() >= core::time::Duration::from_secs(1) {
-                         if let Some(idx) = self.current_track_index {
-                             let duration = self.tracks[idx].duration_seconds();
-                             if self.elapsed_seconds < duration {
-                                 self.elapsed_seconds += 1;
-                                 self.last_tick = xerune::runtime::time::Instant::now();
-                             } else {
-                                 self.update(Msg::Next, context); 
-                             }
-                         }
+             }
+             Msg::Second => {
+                 if let Some(idx) = self.current_track_index {
+                     let duration = self.tracks[idx].duration_seconds();
+                     if self.elapsed_seconds < duration {
+                         self.elapsed_seconds += 1;
+                     } else {
+                         self.update(Msg::Next, context);
                      }
                  }
-
-                  let is_decaying = self.visualizer_data.iter().any(|&val| val > 2.05);
-
-                  // Schedule next tick if music is playing, view is animating, or visualizer is decaying
-                  if self.is_playing || is_animating || is_decaying {
-                      self.ensure_ticking(context);
-                  }
              }
          }
          self.update_derived_fields();

@@ -82,8 +82,6 @@ pub struct BreakoutModel {
     pub blocks: Vec<Block>,
     pub particles: Vec<Particle>,
     pub keys_held: HashSet<String>,
-    #[serde(skip, default = "xerune::runtime::time::Instant::now")]
-    pub last_tick: xerune::runtime::time::Instant,
     pub game_over: bool,
     pub won: bool,
     pub score: u32,
@@ -131,7 +129,6 @@ impl BreakoutModel {
             blocks,
             particles: Vec::new(),
             keys_held: HashSet::new(),
-            last_tick: xerune::runtime::time::Instant::now(),
             game_over: false,
             won: false,
             score: 0,
@@ -173,7 +170,8 @@ pub struct Life {
 
 #[derive(Debug, Clone, PartialEq, XeruneMessage)]
 pub enum Msg {
-    Tick,
+    /// Seconds since the previous frame.
+    Frame(f32),
     #[xerune(prefix = "keydown:")]
     KeyDown(String),
     #[xerune(prefix = "keyup:")]
@@ -183,24 +181,22 @@ pub enum Msg {
 impl Model for BreakoutModel {
     type Message = Msg;
 
-    fn on_resize(&mut self, width: f32, height: f32, _context: &mut xerune::Context) {
+    fn on_resize(&mut self, width: f32, height: f32, _context: &mut xerune::Context<Msg>) {
         if width != self.game_width || height != self.game_height {
             // The board is laid out for the screen; start over on a new size.
             *self = BreakoutModel::new(width, height);
         }
     }
 
-    fn update(&mut self, msg: Self::Message, context: &mut xerune::Context) {
-        match msg {
-            Msg::Tick => {
-                let now = xerune::runtime::time::Instant::now();
-                let dt = now.duration_since(self.last_tick).as_secs_f32().min(0.1);
-                self.last_tick = now;
+    fn subscriptions(&self) -> xerune::Subscriptions<Msg> {
+        let playing = !self.game_over && !self.won;
+        if playing { xerune::Subscriptions::none().frames(Msg::Frame) } else { xerune::Subscriptions::none() }
+    }
 
-                if self.game_over || self.won {
-                    context.clear_interval("tick");
-                    return;
-                }
+    fn update(&mut self, msg: Self::Message, _context: &mut xerune::Context<Msg>) {
+        match msg {
+            Msg::Frame(dt) => {
+                let dt = dt.min(0.1);
                 let (width, _height) = (self.game_width, self.game_height);
 
                 // --- Paddle Movement ---
@@ -333,16 +329,11 @@ impl Model for BreakoutModel {
                     particle.life -= 1.5 * dt;
                 }
                 self.particles.retain(|p| p.life > 0.0);
-
-                if !self.game_over && !self.won {
-                    context.set_timeout("tick".to_string(), 16);
-                }
             },
             Msg::KeyDown(key) => {
                 if self.game_over || self.won {
                     if matches!(key.as_str(), "KEY_PLAYPAUSE" | "KEY_UP" | "Space" | "Enter" | "KEY_NEXTSONG" | "KEY_PREVIOUSSONG") {
                         *self = BreakoutModel::new(self.game_width, self.game_height);
-                        context.set_timeout("tick".to_string(), 16);
                         return;
                     }
                 }

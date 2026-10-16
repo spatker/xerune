@@ -259,7 +259,7 @@ impl ShowcaseModel {
         }
     }
 
-    fn step_monitor(&mut self, rng: &mut LcgRng, context: &mut xerune::Context) {
+    fn step_monitor(&mut self, rng: &mut LcgRng, context: &mut xerune::Context<ShowcaseMsg>) {
         // One heartbeat every `beat` ticks, derived from the heart rate.
         let beat = (60_000.0 / self.heart_rate_bpm as f32 / TICK_MS as f32).round() as u64;
         let phase = self.tick_count % beat.max(1);
@@ -359,11 +359,15 @@ fn stroke_trace(pixmap: &mut PixmapMut, samples: &[f32], base: f32, scale: f32, 
 impl Model for ShowcaseModel {
     type Message = ShowcaseMsg;
 
-    fn on_resize(&mut self, width: f32, height: f32, _context: &mut xerune::Context) {
+    fn subscriptions(&self) -> xerune::Subscriptions<ShowcaseMsg> {
+        xerune::Subscriptions::none().every(core::time::Duration::from_millis(TICK_MS as u64), ShowcaseMsg::Tick)
+    }
+
+    fn on_resize(&mut self, width: f32, height: f32, _context: &mut xerune::Context<ShowcaseMsg>) {
         self.portrait = height > width;
     }
 
-    fn update(&mut self, msg: Self::Message, context: &mut xerune::Context) {
+    fn update(&mut self, msg: Self::Message, context: &mut xerune::Context<ShowcaseMsg>) {
         match msg {
             ShowcaseMsg::SelectTab(idx) => self.active_tab = idx.clamp(1, 4),
             ShowcaseMsg::IncrementProgress => self.cpu = (self.cpu + 15.0).min(97.0),

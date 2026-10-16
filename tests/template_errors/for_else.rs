@@ -17,7 +17,7 @@ struct Page {
 
 impl Model for Page {
     type Message = Msg;
-    fn update(&mut self, _msg: Msg, _context: &mut Context) {}
+    fn update(&mut self, _msg: Msg, _context: &mut Context<Self::Message>) {}
 }
 
 fn main() {}

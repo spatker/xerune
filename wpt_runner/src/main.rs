@@ -32,7 +32,7 @@ struct RawHtmlModel {
 
 impl Model for RawHtmlModel {
     type Message = String;
-    fn update(&mut self, _: String, _: &mut Context) {}
+    fn update(&mut self, _: String, _: &mut Context<Self::Message>) {}
 }
 
 impl xerune::TemplateLayout for RawHtmlModel {

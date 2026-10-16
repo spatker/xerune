@@ -29,10 +29,9 @@ State is strictly isolated inside the `Model` trait:
 - **Message**: A user-defined enum containing actions.
 - **Context**: Access layer passed to `update` for drawing custom canvases or firing viewport commands.
 
-A tick occurs when:
-1. Input events arrive from OS backends.
-2. Hit-testing matches display coordinates to an interactive element containing an `onclick` attribute.
-3. The event is dispatched to the user's `update` function.
+`update` runs when:
+1. Input events arrive from OS backends, and hit-testing matches them to an element with a `data-on-click` (or hover) message.
+2. `Runtime::poll` finds timers (`Context::after`), intervals or frames (`Model::subscriptions`) due. Everything due in one poll is handled together, with one rebuild; the returned `Wake` tells the backend when to poll again (the next frame at `target_fps` while something animates, the next timer, or only after input).
 
 After `update`, the runtime rebuilds the view — unless the model opts into **fingerprint gating** (`Model::view_fingerprint` returns `Some(..)`): if the fingerprint is unchanged since the last rebuild and no viewport change occurred, the costly DOM/style/layout rebuild is skipped. Canvas dirty flags and viewport changes always bypass the skip.
 

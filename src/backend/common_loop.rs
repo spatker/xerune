@@ -36,7 +36,7 @@ where
 
     runtime.set_size(w as f32, h as f32);
 
-    // Background image loads unpark this thread; the next `tick()` applies them.
+    // Background image loads unpark this thread; the next `poll()` applies them.
     let loop_thread = std::thread::current();
     runtime.set_image_waker(move || loop_thread.unpark());
 
@@ -44,8 +44,6 @@ where
     let mut local_buffer = vec![0xFF222222u32; (surface.disp_w * surface.disp_h) as usize];
 
     loop {
-        let frame_start = Instant::now();
-
         presenter.prepare_frame()?;
 
         let mut dirty = force_redraw;
@@ -68,9 +66,9 @@ where
             dirty |= runtime.handle_messages(messages);
         }
 
-        // Update runtime state
-        let tick_res = runtime.tick();
-        dirty |= tick_res.needs_redraw;
+        // Timers, subscriptions, frames.
+        let poll = runtime.poll();
+        dirty |= poll.redraw;
 
         // Render and present
         if dirty {
@@ -91,12 +89,16 @@ where
 
         // Input and proxy messages both unpark this thread. A wake sent before
         // parking is retained, so events arriving during rendering are not lost.
-        // Also pace dirty frames, and never sleep with a full message batch.
+        // The runtime paces frames; never sleep with a full message batch.
         if !batch_full {
-            if let Some(sleep_dur) = tick_res.next_tick_in.checked_sub(frame_start.elapsed()) {
-                if !sleep_dur.is_zero() {
-                    std::thread::park_timeout(sleep_dur);
+            match poll.wake.deadline() {
+                Some(at) => {
+                    let sleep = at.saturating_duration_since(Instant::now());
+                    if !sleep.is_zero() {
+                        std::thread::park_timeout(sleep);
+                    }
                 }
+                None => std::thread::park(),
             }
         }
     }

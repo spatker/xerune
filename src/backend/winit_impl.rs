@@ -54,7 +54,7 @@ impl Backend for WinitBackend {
             .map_err(|e| BackendError::Init(e.to_string()))?;
         let proxy = event_loop.create_proxy();
         {
-            // Background image loads wake the loop; `tick()` then applies them.
+            // Background image loads wake the loop; `poll()` then applies them.
             let wake_proxy = std::sync::Mutex::new(proxy.clone());
             runtime.set_image_waker(move || {
                 if let Ok(p) = wake_proxy.lock() {
@@ -80,28 +80,31 @@ impl Backend for WinitBackend {
         let window_clone = window.clone();
         let mut mouse_x = 0.0;
         let mut mouse_y = 0.0;
-        let mut next_trigger = std::time::Instant::now();
+        // When to poll the runtime next; `None`: only after input.
+        let mut next_trigger = Some(std::time::Instant::now());
         let mut app_buffer: Vec<u32> = Vec::new();
 
         event_loop.run(move |event, target| {
             match event {
                 Event::AboutToWait => {
-                    let now = std::time::Instant::now();
-                    if now >= next_trigger {
-                        let res = runtime.tick();
-                        if res.needs_redraw {
+                    if next_trigger.is_none_or(|at| std::time::Instant::now() >= at) {
+                        let poll = runtime.poll();
+                        if poll.redraw {
                             window_clone.request_redraw();
                         }
-                        next_trigger = std::time::Instant::now() + res.next_tick_in;
+                        next_trigger = poll.wake.deadline();
                     }
-                    target.set_control_flow(ControlFlow::WaitUntil(next_trigger));
+                    target.set_control_flow(match next_trigger {
+                        Some(at) => ControlFlow::WaitUntil(at),
+                        None => ControlFlow::Wait,
+                    });
                 }
                 Event::UserEvent(msg) => {
                     if msg == crate::runtime::WAKE_MESSAGE {
-                        // Run `tick()` in the upcoming AboutToWait.
-                        next_trigger = std::time::Instant::now();
+                        // Poll in the upcoming AboutToWait.
+                        next_trigger = Some(std::time::Instant::now());
                     } else if runtime.handle_event(InputEvent::Message(msg)) {
-                        next_trigger = std::time::Instant::now();
+                        next_trigger = Some(std::time::Instant::now());
                         window_clone.request_redraw();
                     }
                 },
@@ -159,14 +162,14 @@ impl Backend for WinitBackend {
                             mouse_x = position.x as f32;
                             mouse_y = position.y as f32;
                             if runtime.handle_event(InputEvent::Hover { x: mouse_x, y: mouse_y }) {
-                                next_trigger = std::time::Instant::now();
+                                next_trigger = Some(std::time::Instant::now());
                                 window_clone.request_redraw();
                             }
                         },
                         WindowEvent::MouseInput { state, button: MouseButton::Left, .. } => {
                             if state == ElementState::Pressed {
                                  if runtime.handle_event(InputEvent::Click { x: mouse_x, y: mouse_y }) {
-                                    next_trigger = std::time::Instant::now();
+                                    next_trigger = Some(std::time::Instant::now());
                                     window_clone.request_redraw();
                                  }
                             }
@@ -177,7 +180,7 @@ impl Backend for WinitBackend {
                                 MouseScrollDelta::PixelDelta(pos) => (pos.x as f32, pos.y as f32),
                             };
                             if runtime.handle_event(InputEvent::Scroll { x: mouse_x, y: mouse_y, delta_x: dx, delta_y: dy }) {
-                                next_trigger = std::time::Instant::now();
+                                next_trigger = Some(std::time::Instant::now());
                                 window_clone.request_redraw();
                             }
                         },
@@ -192,7 +195,7 @@ impl Backend for WinitBackend {
                                 winit::event::TouchPhase::Cancelled => InputEvent::TouchCancel { id, x, y },
                             };
                             if runtime.handle_event(input_event) {
-                                next_trigger = std::time::Instant::now();
+                                next_trigger = Some(std::time::Instant::now());
                                 window_clone.request_redraw();
                             }
                         },
@@ -222,7 +225,7 @@ impl Backend for WinitBackend {
                             }
 
                             if redraw {
-                                next_trigger = std::time::Instant::now();
+                                next_trigger = Some(std::time::Instant::now());
                                 window_clone.request_redraw();
                             }
                         },

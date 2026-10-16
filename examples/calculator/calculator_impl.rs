@@ -145,7 +145,7 @@ pub enum Msg {
 impl Model for CalculatorModel {
     type Message = Msg;
 
-    fn update(&mut self, msg: Self::Message, _context: &mut xerune::Context) {
+    fn update(&mut self, msg: Self::Message, _context: &mut xerune::Context<Self::Message>) {
         match msg {
             Msg::Digit(d) => {
                 if self.new_input {

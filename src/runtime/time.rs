@@ -91,3 +91,78 @@ impl core::ops::Sub<Instant> for Instant {
         self.duration_since(rhs)
     }
 }
+
+/// Where the runtime reads the time from. Timer deadlines, animation and
+/// transition start times and frame times are all read from it, so they
+/// stay consistent whatever drives the runtime.
+pub trait Clock: Send + 'static {
+    /// The current time.
+    fn now(&self) -> Instant;
+}
+
+/// The platform's monotonic clock: [`Instant::now`] (`std`, or `Date.now()`
+/// in the browser). Without `std` it always reads zero, so `no_std` hosts
+/// install their own with [`crate::Runtime::set_clock`].
+#[derive(Clone, Copy, Debug, Default)]
+pub struct SystemClock;
+
+impl Clock for SystemClock {
+    fn now(&self) -> Instant {
+        Instant::now()
+    }
+}
+
+/// A clock given as a function, e.g. a `no_std` host's millisecond counter:
+/// `runtime.set_clock(|| Instant::from_millis(board_millis()))`.
+impl<F: Fn() -> Instant + Send + 'static> Clock for F {
+    fn now(&self) -> Instant {
+        self()
+    }
+}
+
+/// A clock that only moves when told to, for tests and headless snapshots.
+/// Clones share the same time.
+#[cfg(feature = "std")]
+#[derive(Clone, Debug)]
+pub struct ManualClock {
+    start: Instant,
+    elapsed_nanos: std::sync::Arc<std::sync::atomic::AtomicU64>,
+}
+
+#[cfg(feature = "std")]
+impl ManualClock {
+    /// A clock standing at the current time.
+    pub fn new() -> Self {
+        Self { start: Instant::now(), elapsed_nanos: Default::default() }
+    }
+
+    /// Moves the clock on by `by`.
+    pub fn advance(&self, by: core::time::Duration) {
+        self.elapsed_nanos.fetch_add(by.as_nanos() as u64, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// Moves the clock on to `time`, if that is later.
+    pub fn advance_to(&self, time: Instant) {
+        let target = time.saturating_duration_since(self.start).as_nanos() as u64;
+        self.elapsed_nanos.fetch_max(target, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// How far the clock has been moved on.
+    pub fn elapsed(&self) -> core::time::Duration {
+        core::time::Duration::from_nanos(self.elapsed_nanos.load(std::sync::atomic::Ordering::Relaxed))
+    }
+}
+
+#[cfg(feature = "std")]
+impl Default for ManualClock {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(feature = "std")]
+impl Clock for ManualClock {
+    fn now(&self) -> Instant {
+        self.start + self.elapsed()
+    }
+}

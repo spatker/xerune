@@ -17,7 +17,7 @@ the working notes.
 | `xerune_css/` | The CSS parser both of them use (`no_std`): stylesheets and declarations (`sheet`), selectors with specificity and matching over an `Element` trait (`selector`), `@media` blocks and queries, comment/string-aware scanning. Change CSS reading here, not in either crate |
 | `xerune_render/` | Software rasterizer (blits, rounded rects, gradients, glyphs). Has a `no_std` mode |
 | `studio/` | WASM inspector (`wasm-pack build --target web`, `features = ["browser"]`) |
-| `wpt_runner/` | WPT reftests vs Chromium screenshots; scope in `suites.txt`, known failures in `expectations.txt` (`docs/guide.md` §10) |
+| `wpt_runner/` | WPT reftests vs Chromium screenshots; scope in `suites.txt`, known failures in `expectations.txt` (`docs/guide.md` §11) |
 | `examples/<name>/` | `main.rs` (runtime + `xerune::App`) + `<name>_impl.rs` (model; also used by tests, benches, studio) + `templates/*.html`; `examples/support/` loads the bundled fonts |
 | `tests/` | Integration tests; HTML fixtures in `tests/*.html`, `tests/canvas/`, `tests/gaps/`; trybuild cases in `tests/template_errors/` |
 | `tools/` | Measurement scripts: ARM instruction counts under qemu, Chromium line breaks (`tools/README.md`) |
@@ -25,7 +25,7 @@ the working notes.
 
 ## Pipeline
 
-1. Input (`backend/` → `InputEvent`) → `Runtime` → `Model::update(msg, &mut Context)`.
+1. Input (`backend/` → `InputEvent`) → `Runtime` → `Model::update(msg, &mut Context<Msg>)`.
 2. Rebuild unless `Model::view_fingerprint` returns the same `Some(..)` and the
    viewport didn't change. Rebuild = generated `build_ui` → `UiBuilder` →
    style resolution → fresh Taffy tree.
@@ -35,7 +35,7 @@ the working notes.
 
 Modules:
 - `model.rs`: `Model`, `InputEvent`, `hash_bytes` (FNV, for fingerprints).
-- `runtime/`: tick loop, message queue, timers, animations, fingerprint gating.
+- `runtime/`: `poll` (timers, subscriptions, frames at `target_fps`, returns `Wake`), `Clock`, animations, fingerprint gating.
 - `ui/`: `builder` (tree building), `attributes`, `style_resolution` (+ style cache), `metadata` (`NodeMetadata`), `node_map`.
 - `style.rs`: `ContainerStyle` and CSS enums. `graphics.rs`: `Color`, `Canvas`, `Context`, `DrawCommand`, `TextMeasurer`, `Renderer`, `Surface` (pixels, stride, rotation, origin: a band or the whole screen), `Damage`.
 - `xerune_render`: `SoftwareRenderer` (owns glyph/image caches) and `Fonts` (TTF via fontdue or bitmap fonts; the runtime's `TextMeasurer`).
@@ -82,8 +82,8 @@ interactions of the example UIs; `tools/arm-insns.sh` counts its ARM
 instructions under qemu-arm (no board needed). See `tools/README.md`.
 WPT: `WPT_DIR=~/data/code/js/wpt cargo run --release -p wpt_runner [-- FILTER] [--images] [--update]`
 (user's checkout path). Commit the `--update`d `expectations.txt` with each engine fix.
-`animation` and `breakout` read `Instant::now()`, so their snapshots aren't
-deterministic.
+Snapshots run on a `ManualClock`, so timed examples (`animation`, `breakout`)
+are deterministic too.
 
 CI (`.github/workflows/ci.yml`, rustc 1.85.1): workspace tests + examples,
 the armv7 zigbuild below (with `drm,linuxfb,evdev`), the studio for wasm32,

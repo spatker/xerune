@@ -16,7 +16,7 @@ struct FpModel {
 impl Model for FpModel {
     type Message = FpMsg;
 
-    fn update(&mut self, msg: Self::Message, _context: &mut Context) {
+    fn update(&mut self, msg: Self::Message, _context: &mut Context<Self::Message>) {
         match msg {
             FpMsg::IncVisible => self.visible_counter += 1,
             FpMsg::IncHidden => self.hidden_counter += 1,
@@ -110,7 +110,7 @@ struct NoFpModel {
 
 impl Model for NoFpModel {
     type Message = FpMsg;
-    fn update(&mut self, msg: Self::Message, _context: &mut Context) {
+    fn update(&mut self, msg: Self::Message, _context: &mut Context<Self::Message>) {
         match msg {
             FpMsg::IncVisible | FpMsg::IncHidden => self.hidden += 1,
         }

@@ -47,8 +47,9 @@ pub struct Item {
 #[template(path = "examples/animation/templates/animation.html")]
 pub struct AnimationModel {
     pub items: Vec<Item>,
-    #[serde(skip, default = "xerune::runtime::time::Instant::now")]
-    pub last_frame: xerune::runtime::time::Instant,
+    /// Seconds counted towards the next `fps` reading.
+    #[serde(default)]
+    pub fps_window: f32,
     pub frame_count: u32,
     pub fps: u32,
     pub render_time: Option<f32>,
@@ -82,7 +83,7 @@ impl AnimationModel {
         
         Self {
             items,
-            last_frame: xerune::runtime::time::Instant::now(),
+            fps_window: 0.0,
             frame_count: 0,
             fps: 0,
             render_time: None,
@@ -97,26 +98,33 @@ impl AnimationModel {
 pub enum AnimationMsg {
     #[xerune(prefix = "render_time_ms:")]
     RenderTime(f32),
-    Tick,
+    /// Seconds since the previous frame.
+    Frame(f32),
 }
 
 impl Model for AnimationModel {
     type Message = AnimationMsg;
 
-    fn on_resize(&mut self, width: f32, height: f32, _context: &mut xerune::Context) {
+    fn subscriptions(&self) -> xerune::Subscriptions<AnimationMsg> {
+        xerune::Subscriptions::none().frames(AnimationMsg::Frame)
+    }
+
+    fn on_resize(&mut self, width: f32, height: f32, _context: &mut xerune::Context<AnimationMsg>) {
         self.bounds = (width, height);
     }
 
-    fn update(&mut self, msg: Self::Message, _context: &mut xerune::Context) {
+    fn update(&mut self, msg: Self::Message, _context: &mut xerune::Context<AnimationMsg>) {
         match msg {
             AnimationMsg::RenderTime(ms) => {
                 self.render_time = Some(ms);
                 self.render_time_ms = format!("{:.2}", ms);
             },
-            AnimationMsg::Tick => {
+            AnimationMsg::Frame(dt) => {
+                // Velocities are in pixels per 60 Hz frame.
+                let steps = dt * 60.0;
                 for item in &mut self.items {
-                    item.x += item.vx;
-                    item.y += item.vy;
+                    item.x += item.vx * steps;
+                    item.y += item.vy * steps;
                     
                     let (w, h) = self.bounds;
                     if item.x < 0.0 { item.vx = item.vx.abs(); }
@@ -126,12 +134,11 @@ impl Model for AnimationModel {
                 }
                 
                 self.frame_count += 1;
-                let now = xerune::runtime::time::Instant::now();
-                let elapsed = now.duration_since(self.last_frame);
-                if elapsed.as_secs() >= 1 {
+                self.fps_window += dt;
+                if self.fps_window >= 1.0 {
                     self.fps = self.frame_count;
                     self.frame_count = 0;
-                    self.last_frame = now;
+                    self.fps_window -= 1.0;
                     
                     #[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm")))]
                     {

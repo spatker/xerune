@@ -36,8 +36,8 @@ impl Default for ResponsiveModel {
 
 impl Model for ResponsiveModel {
     type Message = RespMsg;
-    fn update(&mut self, _msg: Self::Message, _context: &mut Context) {}
-    fn on_resize(&mut self, width: f32, height: f32, _context: &mut Context) {
+    fn update(&mut self, _msg: Self::Message, _context: &mut Context<Self::Message>) {}
+    fn on_resize(&mut self, width: f32, height: f32, _context: &mut Context<Self::Message>) {
         self.resizes.push((width, height));
     }
 }
@@ -79,7 +79,7 @@ struct DynResponsiveModel;
 
 impl Model for DynResponsiveModel {
     type Message = RespMsg;
-    fn update(&mut self, _msg: Self::Message, _context: &mut Context) {}
+    fn update(&mut self, _msg: Self::Message, _context: &mut Context<Self::Message>) {}
 }
 
 impl TemplateLayout for DynResponsiveModel {

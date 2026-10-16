@@ -35,7 +35,7 @@ pub enum TodoMsg {
 impl Model for TodoList {
     type Message = TodoMsg;
 
-    fn update(&mut self, msg: Self::Message, _ctx: &mut Context) {
+    fn update(&mut self, msg: Self::Message, _ctx: &mut Context<Self::Message>) {
         match msg {
             TodoMsg::Toggle(index) => {
                 if let Some(item) = self.items.get_mut(index) {
@@ -170,7 +170,7 @@ Custom canvas allows you to directly manipulate raw pixel colors:
 ```rust
 // 1. Declare <canvas id="my_canvas"> in HTML template
 // 2. Access and draw onto the canvas inside update loop:
-fn update(&mut self, msg: Self::Message, ctx: &mut Context) {
+fn update(&mut self, msg: Self::Message, ctx: &mut Context<Self::Message>) {
     if let Some(canvas) = ctx.get_canvas_mut("my_canvas", 200, 200) {
         // Clear canvas with white color
         canvas.data.fill(255);
@@ -302,7 +302,7 @@ Backends report viewport changes automatically. On a real size change the runtim
 
 ```rust
 impl Model for MyModel {
-    fn on_resize(&mut self, width: f32, height: f32, _ctx: &mut Context) {
+    fn on_resize(&mut self, width: f32, height: f32, _ctx: &mut Context<Self::Message>) {
         self.width = width as u32;
         self.height = height as u32;
     }
@@ -371,7 +371,57 @@ See `examples/animation_css` for a gallery.
 
 ---
 
-## 7. Headless Snapshots
+## 7. Timers, Intervals and Frames
+
+Models never read a clock: time reaches them as their own messages, through
+`update`.
+
+- **One-shot timers** come from `Context::after`, which returns a `TimerId` for
+  `Context::cancel`:
+
+  ```rust
+  Msg::Saved => {
+      self.toast = true;
+      self.toast_timer = Some(ctx.after(Duration::from_secs(3), Msg::HideToast));
+  }
+  ```
+
+- **Intervals and frames** are subscriptions. The runtime asks for them again
+  after every `update`, so they follow the model's state and nothing has to be
+  started or stopped:
+
+  ```rust
+  fn subscriptions(&self) -> Subscriptions<Msg> {
+      let subscriptions = Subscriptions::none().every(Duration::from_secs(1), Msg::Clock);
+      // Msg::Frame(f32): seconds since the previous frame.
+      if self.playing { subscriptions.frames(Msg::Frame) } else { subscriptions }
+  }
+  ```
+
+  An `every` keeps its phase while the model keeps asking for it (the n-th
+  `every` of an interval is the same one).
+
+**Frame rate.** Frames come at the target frame rate (60 by default) while
+anything animates: CSS animations and transitions, or a frame subscription.
+`Runtime::set_target_fps` / `App::target_fps` set it, like raylib's
+`SetTargetFPS`, and `XERUNE_TARGET_FPS` overrides it, to dial the UI down on a
+board where other work matters more. Animations take the same time in fewer
+steps. A frame that comes too late is dropped, not caught up on. When nothing
+animates and no timer is due, the backend sleeps until input arrives.
+
+**Backends and hosts** drive the runtime with `Runtime::poll()`. It handles
+everything that is due (loaded images, timers, intervals, the frame message
+and the animations' next step) with one rebuild, and returns `Poll { redraw,
+wake }`. `wake` says when to call it again: `Wake::Frame(t)` while something
+animates, `Wake::At(t)` for the next timer, or `Wake::Idle`. While frames run,
+a timer due between two frames is handled with the next one. The runtime reads
+the time from its `Clock`: the system clock by default; `no_std` hosts install
+their own (`runtime.set_clock(|| Instant::from_millis(board_millis()))`), and
+tests use a `ManualClock` they move themselves.
+
+---
+
+## 8. Headless Snapshots
 
 Any app can render a single frame to a PNG instead of opening a window, which makes the UI easy to check from tests, CI or an AI agent. Every built-in backend honours these variables, so no code changes are needed:
 
@@ -397,7 +447,7 @@ The frame goes through the app's own renderer, so fonts and drawing match the re
 
 ---
 
-## 8. Running on Embedded Linux (fbdev / DRM)
+## 9. Running on Embedded Linux (fbdev / DRM)
 
 Configure `Cargo.toml` features to enable embedded backends:
 ```toml
@@ -416,7 +466,7 @@ framebuffer by itself. Touch input is mapped to the rotated UI.
 
 ---
 
-## 9. WebAssembly & Browser Deployment
+## 10. WebAssembly & Browser Deployment
 
 Xerune applications can compile to WebAssembly to run directly in web browsers or inside **Xerune Studio** (a web-based live inspector).
 
@@ -438,7 +488,7 @@ python3 -m http.server 8000
 
 ---
 
-## 10. WPT Reftests
+## 11. WPT Reftests
 
 `wpt_runner` checks Xerune against the [web-platform-tests](https://github.com/web-platform-tests/wpt) reftests of the CSS features it implements. Each test is rendered by Xerune and compared pixel for pixel with Chromium's screenshot of the test's reference.
 

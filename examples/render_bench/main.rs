@@ -106,7 +106,7 @@ impl Bench {
         runtime.set_size(width as f32, height as f32);
         runtime.sync_view();
         runtime.wait_for_images(Duration::from_secs(10));
-        runtime.tick();
+        runtime.poll();
 
         let mut buffer = vec![0u32; (width * height) as usize];
         let mut renderer = SoftwareRenderer::new(self.fonts.clone());

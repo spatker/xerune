@@ -1,4 +1,4 @@
-//! CSS keyframe animations, driven by a simulated clock (`tick_at_ms`).
+//! CSS keyframe animations, driven by a simulated clock (`ManualClock`).
 //! Expected values follow CSS Animations 1: each property interpolates
 //! between the nearest keyframes that set it, and the timing function
 //! applies per keyframe segment.
@@ -29,12 +29,42 @@ fn boxes<M: Model + ui::TemplateLayout>(runtime: &Runtime<M, Measurer>) -> Vec<(
     boxes.into_iter().map(|(_, x, c)| (x, c)).collect()
 }
 
+/// A runtime on a clock that only moves when the test says so.
+struct Sim<M: Model> {
+    runtime: Runtime<M, Measurer>,
+    clock: runtime::ManualClock,
+}
+
+impl<M: Model + ui::TemplateLayout> Sim<M> {
+    /// Moves the clock to `ms` after the start and polls.
+    fn at(&mut self, ms: u64) {
+        self.clock.advance(std::time::Duration::from_millis(ms).saturating_sub(self.clock.elapsed()));
+        self.runtime.poll();
+    }
+}
+
+impl<M: Model> std::ops::Deref for Sim<M> {
+    type Target = Runtime<M, Measurer>;
+    fn deref(&self) -> &Self::Target {
+        &self.runtime
+    }
+}
+
+impl<M: Model> std::ops::DerefMut for Sim<M> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.runtime
+    }
+}
+
 /// A runtime laid out at 400x300, with its clock started at 0 ms.
-fn start<M: Model + ui::TemplateLayout>(model: M) -> Runtime<M, Measurer> {
+fn start<M: Model + ui::TemplateLayout>(model: M) -> Sim<M> {
     let mut runtime = Runtime::new(model, Measurer);
+    let clock = runtime::ManualClock::new();
+    runtime.set_clock(clock.clone());
     runtime.set_size(400.0, 300.0);
-    runtime.tick_at_ms(0);
-    runtime
+    let mut sim = Sim { runtime, clock };
+    sim.at(0);
+    sim
 }
 
 /// Within half a pixel: layout places boxes at whole pixels.
@@ -60,13 +90,13 @@ struct Keyframes;
 
 impl Model for Keyframes {
     type Message = Msg;
-    fn update(&mut self, _msg: Msg, _context: &mut Context) {}
+    fn update(&mut self, _msg: Msg, _context: &mut Context<Self::Message>) {}
 }
 
 #[test]
 fn colors_interpolate_over_the_duration() {
     let mut runtime = start(Keyframes);
-    runtime.tick_at_ms(500);
+    runtime.at(500);
     let (_, (r, g, b)) = boxes(&runtime)[0];
     assert!((127..=128).contains(&r) && g == 0 && b == 0, "{r} {g} {b}");
 }
@@ -76,7 +106,7 @@ fn colors_interpolate_over_the_duration() {
 #[test]
 fn each_property_uses_the_keyframes_that_set_it() {
     let mut runtime = start(Keyframes);
-    runtime.tick_at_ms(250);
+    runtime.at(250);
     let (x, _) = boxes(&runtime)[1];
     assert!(close(x, 25.0), "left at 25% is {x}");
 }
@@ -87,7 +117,7 @@ fn each_property_uses_the_keyframes_that_set_it() {
 #[test]
 fn the_timing_function_applies_per_segment() {
     let mut runtime = start(Keyframes);
-    runtime.tick_at_ms(250);
+    runtime.at(250);
     let (x, _) = boxes(&runtime)[2];
     let ease_in_half = 0.3153;
     assert!(close(x, 50.0 * ease_in_half), "left at 25% is {x}");
@@ -98,7 +128,7 @@ fn the_timing_function_applies_per_segment() {
 #[test]
 fn keyframes_can_set_their_timing_function() {
     let mut runtime = start(Keyframes);
-    runtime.tick_at_ms(300);
+    runtime.at(300);
     let (x, _) = boxes(&runtime)[3];
     assert!(close(x, 25.0), "steps(4) at 30% is {x}");
 }
@@ -116,7 +146,7 @@ struct List {
 
 impl Model for List {
     type Message = Msg;
-    fn update(&mut self, msg: Msg, _context: &mut Context) {
+    fn update(&mut self, msg: Msg, _context: &mut Context<Self::Message>) {
         if msg == Msg::Insert {
             self.items.insert(0, "new");
         }
@@ -124,11 +154,11 @@ impl Model for List {
 }
 
 /// A rebuild in the middle of an animation shows the animated style right
-/// away, not the element's own style until the next tick.
+/// away, not the element's own style until the next frame.
 #[test]
 fn a_rebuild_keeps_running_animations_applied() {
     let mut runtime = start(List { items: vec!["a"] });
-    runtime.tick_at_ms(500);
+    runtime.at(500);
     runtime.handle_event(InputEvent::Message("touch".into()));
     let (_, (r, _, b)) = boxes(&runtime)[0];
     assert!((127..=128).contains(&r) && b == 0, "after the rebuild: {r} {b}");
@@ -140,9 +170,9 @@ fn a_rebuild_keeps_running_animations_applied() {
 #[test]
 fn animations_follow_their_element() {
     let mut runtime = start(List { items: vec!["a"] });
-    runtime.tick_at_ms(500);
+    runtime.at(500);
     runtime.handle_event(InputEvent::Message("insert".into()));
-    runtime.tick_at_ms(750);
+    runtime.at(750);
     let colors: Vec<_> = boxes(&runtime).into_iter().map(|(_, c)| c.0).collect();
     assert_eq!(colors.len(), 2);
     assert!((63..=64).contains(&colors[0]), "the new item is 250 ms in: {colors:?}");
@@ -161,7 +191,7 @@ struct Knob;
 
 impl Model for Knob {
     type Message = Msg;
-    fn update(&mut self, _msg: Msg, _context: &mut Context) {}
+    fn update(&mut self, _msg: Msg, _context: &mut Context<Self::Message>) {}
 }
 
 /// `::before` boxes have keys of their own (from their element's), so
@@ -169,9 +199,9 @@ impl Model for Knob {
 #[test]
 fn generated_boxes_keep_their_animations() {
     let mut runtime = start(Knob);
-    runtime.tick_at_ms(500);
+    runtime.at(500);
     runtime.handle_event(InputEvent::Message("touch".into()));
-    runtime.tick_at_ms(750);
+    runtime.at(750);
     let (_, (r, _, b)) = boxes(&runtime)[0];
     assert!((191..=192).contains(&r) && b == 0, "750 ms in: {r} {b}");
 }
@@ -189,7 +219,7 @@ struct Shorthand;
 
 impl Model for Shorthand {
     type Message = Msg;
-    fn update(&mut self, _msg: Msg, _context: &mut Context) {}
+    fn update(&mut self, _msg: Msg, _context: &mut Context<Self::Message>) {}
 }
 
 /// In the `animation` shorthand, a name ending in "s" is a name, and a
@@ -197,7 +227,7 @@ impl Model for Shorthand {
 #[test]
 fn the_shorthand_reads_names_and_functions() {
     let mut runtime = start(Shorthand);
-    runtime.tick_at_ms(250);
+    runtime.at(250);
     let reds: Vec<u8> = boxes(&runtime).into_iter().map(|(_, c)| c.0).collect();
     assert!((63..=64).contains(&reds[0]) && (127..=128).contains(&reds[1]), "{reds:?}");
 }
@@ -216,25 +246,25 @@ struct Toggle {
 
 impl Model for Toggle {
     type Message = Msg;
-    fn update(&mut self, msg: Msg, _context: &mut Context) {
+    fn update(&mut self, msg: Msg, _context: &mut Context<Self::Message>) {
         if msg == Msg::Touch {
             self.on = true;
         }
     }
 }
 
-/// An animation starts when its element gets it, not at the last tick:
-/// backends don't tick while nothing animates, so after an idle spell the
-/// first tick must not count the idle time. (Real time: the runtime's own
+/// An animation starts when its element gets it, not at the last frame:
+/// backends don't poll while nothing animates, so after an idle spell the
+/// first frame must not count the idle time. (Real time: the runtime's own
 /// clock.)
 #[test]
 fn animations_start_when_declared_not_at_the_last_tick() {
     let mut runtime = Runtime::new(Toggle { on: false }, Measurer);
     runtime.set_size(400.0, 300.0);
-    runtime.tick();
+    runtime.poll();
     std::thread::sleep(std::time::Duration::from_millis(300));
     runtime.handle_event(InputEvent::Message("touch".into()));
-    runtime.tick();
+    runtime.poll();
     let (_, (r, _, _)) = boxes(&runtime)[0];
     assert!(r < 40, "the animation is barely started, not 300 ms in: red {r}");
 }

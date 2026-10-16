@@ -33,7 +33,7 @@ enum MockMsg {
 
 impl Model for MockModel {
     type Message = MockMsg;
-    fn update(&mut self, _msg: Self::Message, _context: &mut Context) {}
+    fn update(&mut self, _msg: Self::Message, _context: &mut Context<Self::Message>) {}
 }
 
 impl TemplateLayout for MockModel {
@@ -114,7 +114,7 @@ fn test_scroll_persistence() {
 struct SelectorMockModel;
 impl Model for SelectorMockModel {
     type Message = MockMsg;
-    fn update(&mut self, _msg: Self::Message, _context: &mut Context) {}
+    fn update(&mut self, _msg: Self::Message, _context: &mut Context<Self::Message>) {}
 }
 
 impl TemplateLayout for SelectorMockModel {
@@ -214,7 +214,7 @@ struct TestMacroModel {
 
 impl Model for TestMacroModel {
     type Message = MockMsg;
-    fn update(&mut self, _msg: Self::Message, _context: &mut Context) {}
+    fn update(&mut self, _msg: Self::Message, _context: &mut Context<Self::Message>) {}
 }
 
 #[test]
@@ -303,7 +303,7 @@ impl TestTodoModel {
 
 impl Model for TestTodoModel {
     type Message = TestTodoMsg;
-    fn update(&mut self, _msg: Self::Message, _context: &mut Context) {}
+    fn update(&mut self, _msg: Self::Message, _context: &mut Context<Self::Message>) {}
 }
 
 #[test]
@@ -432,7 +432,7 @@ fn test_touch_scrolling_and_clicking() {
     }
     impl Model for TouchMockModel {
         type Message = TouchMockMsg;
-        fn update(&mut self, _msg: Self::Message, _context: &mut Context) {}
+        fn update(&mut self, _msg: Self::Message, _context: &mut Context<Self::Message>) {}
     }
     impl TemplateLayout for TouchMockModel {
         fn stylesheet(&self) -> &'static str { "" }
@@ -538,29 +538,6 @@ fn borders_are_per_side() {
 }
 
 #[test]
-fn test_timer_cancellation() {
-    let model = MockModel;
-    let measurer = MockMeasurer;
-    let mut runtime = Runtime::new(model, measurer);
-
-    runtime.set_interval("tick".to_string(), 100);
-    assert_eq!(runtime.timers().len(), 1, "Should have 1 registered timer");
-
-    runtime.clear_interval("tick");
-    assert_eq!(runtime.timers().len(), 0, "Timer should be cleared by clear_interval");
-
-    // Test cancellation via context command
-    let mut context = Context::new();
-    context.set_interval("tick".to_string(), 100);
-    context.clear_interval("tick");
-    
-    runtime.model_mut().update(MockMsg::Tick, &mut context);
-    runtime.sync_view();
-
-    assert_eq!(runtime.timers().len(), 0, "Timer should be cleared when processing context commands");
-}
-
-#[test]
 fn test_dirty_rect_rasterization_culling() {
     use std::collections::HashMap;
     use xerune_render::SoftwareRenderer;
@@ -642,7 +619,7 @@ struct HtmlRootModel;
 
 impl Model for HtmlRootModel {
     type Message = MockMsg;
-    fn update(&mut self, _msg: Self::Message, _context: &mut Context) {}
+    fn update(&mut self, _msg: Self::Message, _context: &mut Context<Self::Message>) {}
 }
 
 #[test]
@@ -670,7 +647,7 @@ struct FontRelativeModel;
 
 impl Model for FontRelativeModel {
     type Message = MockMsg;
-    fn update(&mut self, _msg: Self::Message, _context: &mut Context) {}
+    fn update(&mut self, _msg: Self::Message, _context: &mut Context<Self::Message>) {}
 }
 
 #[test]
@@ -696,7 +673,7 @@ struct InlineFlexModel;
 
 impl Model for InlineFlexModel {
     type Message = MockMsg;
-    fn update(&mut self, _msg: Self::Message, _context: &mut Context) {}
+    fn update(&mut self, _msg: Self::Message, _context: &mut Context<Self::Message>) {}
 }
 
 #[test]
@@ -725,7 +702,7 @@ struct ZIndexModel;
 
 impl Model for ZIndexModel {
     type Message = MockMsg;
-    fn update(&mut self, _msg: Self::Message, _context: &mut Context) {}
+    fn update(&mut self, _msg: Self::Message, _context: &mut Context<Self::Message>) {}
 }
 
 #[test]
@@ -755,7 +732,7 @@ struct FlexOrderModel;
 
 impl Model for FlexOrderModel {
     type Message = MockMsg;
-    fn update(&mut self, _msg: Self::Message, _context: &mut Context) {}
+    fn update(&mut self, _msg: Self::Message, _context: &mut Context<Self::Message>) {}
 }
 
 /// Compiled templates place flex items in `order` too.
@@ -786,7 +763,7 @@ struct SelectorModel;
 
 impl Model for SelectorModel {
     type Message = MockMsg;
-    fn update(&mut self, _msg: Self::Message, _context: &mut Context) {}
+    fn update(&mut self, _msg: Self::Message, _context: &mut Context<Self::Message>) {}
 }
 
 /// Templates match structural selectors where the structure is in the
@@ -816,7 +793,7 @@ struct MediaCascadeModel;
 
 impl Model for MediaCascadeModel {
     type Message = MockMsg;
-    fn update(&mut self, _msg: Self::Message, _context: &mut Context) {}
+    fn update(&mut self, _msg: Self::Message, _context: &mut Context<Self::Message>) {}
 }
 
 /// A rule in a matching `@media` block takes part in the cascade like any
@@ -848,7 +825,7 @@ struct ImportantModel;
 
 impl Model for ImportantModel {
     type Message = MockMsg;
-    fn update(&mut self, _msg: Self::Message, _context: &mut Context) {}
+    fn update(&mut self, _msg: Self::Message, _context: &mut Context<Self::Message>) {}
 }
 
 /// `!important` declarations beat the `style` attribute, unless it is
@@ -872,7 +849,7 @@ struct KeysModel;
 
 impl Model for KeysModel {
     type Message = MockMsg;
-    fn update(&mut self, _msg: Self::Message, _context: &mut Context) {}
+    fn update(&mut self, _msg: Self::Message, _context: &mut Context<Self::Message>) {}
 }
 
 /// Every element has a key, distinct within the view (also in nested loops
@@ -908,7 +885,7 @@ struct PointerModel;
 
 impl Model for PointerModel {
     type Message = MockMsg;
-    fn update(&mut self, _msg: Self::Message, _context: &mut Context) {}
+    fn update(&mut self, _msg: Self::Message, _context: &mut Context<Self::Message>) {}
 }
 
 /// `:hover` follows the pointer (the element under it and its ancestors),
@@ -955,7 +932,7 @@ struct HoverModel {
 
 impl Model for HoverModel {
     type Message = HoverMsg;
-    fn update(&mut self, msg: HoverMsg, _context: &mut Context) {
+    fn update(&mut self, msg: HoverMsg, _context: &mut Context<Self::Message>) {
         self.received.push(msg);
     }
 }
@@ -985,12 +962,12 @@ struct IndexedModel {
 
 impl Model for KeyedModel {
     type Message = MockMsg;
-    fn update(&mut self, _msg: Self::Message, _context: &mut Context) {}
+    fn update(&mut self, _msg: Self::Message, _context: &mut Context<Self::Message>) {}
 }
 
 impl Model for IndexedModel {
     type Message = MockMsg;
-    fn update(&mut self, _msg: Self::Message, _context: &mut Context) {}
+    fn update(&mut self, _msg: Self::Message, _context: &mut Context<Self::Message>) {}
 }
 
 /// The key of each paragraph, by its text.
@@ -1039,7 +1016,7 @@ mod canvas {
             struct $name;
             impl Model for $name {
                 type Message = String;
-                fn update(&mut self, _msg: String, _context: &mut Context) {}
+                fn update(&mut self, _msg: String, _context: &mut Context<Self::Message>) {}
             }
         };
     }
@@ -1167,7 +1144,7 @@ mod text_layout {
     struct LineHeights;
     impl Model for LineHeights {
         type Message = String;
-        fn update(&mut self, _msg: String, _context: &mut Context) {}
+        fn update(&mut self, _msg: String, _context: &mut Context<Self::Message>) {}
     }
 
     fn line_y(commands: &[DrawCommand], text: &str) -> f32 {
@@ -1185,7 +1162,7 @@ mod text_layout {
     struct Reference;
     impl Model for Reference {
         type Message = String;
-        fn update(&mut self, _msg: String, _context: &mut Context) {}
+        fn update(&mut self, _msg: String, _context: &mut Context<Self::Message>) {}
     }
 
     /// Line breaks of a reference page must match Chromium's with the same
@@ -1251,7 +1228,7 @@ mod text_layout {
     }
     impl Model for MixedRun {
         type Message = String;
-        fn update(&mut self, _msg: String, _context: &mut Context) {}
+        fn update(&mut self, _msg: String, _context: &mut Context<Self::Message>) {}
     }
 
     #[test]
@@ -1276,7 +1253,7 @@ mod text_layout {
     struct WhiteSpaces;
     impl Model for WhiteSpaces {
         type Message = String;
-        fn update(&mut self, _msg: String, _context: &mut Context) {}
+        fn update(&mut self, _msg: String, _context: &mut Context<Self::Message>) {}
     }
 
     #[test]
@@ -1321,7 +1298,7 @@ mod text_layout {
     struct Ellipsis;
     impl Model for Ellipsis {
         type Message = String;
-        fn update(&mut self, _msg: String, _context: &mut Context) {}
+        fn update(&mut self, _msg: String, _context: &mut Context<Self::Message>) {}
     }
 
     #[test]
@@ -1409,7 +1386,7 @@ struct ClickModel {
 
 impl Model for ClickModel {
     type Message = ClickMsg;
-    fn update(&mut self, msg: ClickMsg, _context: &mut Context) {
+    fn update(&mut self, msg: ClickMsg, _context: &mut Context<Self::Message>) {
         self.received.push(msg);
     }
 }
@@ -1607,7 +1584,7 @@ mod controls {
     struct Controls;
     impl Model for Controls {
         type Message = String;
-        fn update(&mut self, _msg: String, _context: &mut Context) {}
+        fn update(&mut self, _msg: String, _context: &mut Context<Self::Message>) {}
     }
 
     fn commands<M: Model + ui::TemplateLayout + 'static>(model: M) -> Vec<DrawCommand> {
@@ -1693,7 +1670,7 @@ mod controls {
     struct Ranges;
     impl Model for Ranges {
         type Message = String;
-        fn update(&mut self, _msg: String, _context: &mut Context) {}
+        fn update(&mut self, _msg: String, _context: &mut Context<Self::Message>) {}
     }
 
     /// A range's value is placed between `min` and `max` (default 0..100)
@@ -1734,7 +1711,7 @@ mod controls {
     }
     impl Model for Unstyled {
         type Message = String;
-        fn update(&mut self, _msg: String, _context: &mut Context) {}
+        fn update(&mut self, _msg: String, _context: &mut Context<Self::Message>) {}
     }
 
     /// `appearance: none` makes a checkbox a plain CSS box, styled per
@@ -1775,7 +1752,7 @@ mod controls {
         struct Checked(bool);
         impl Model for Checked {
             type Message = String;
-            fn update(&mut self, _msg: String, _context: &mut Context) {}
+            fn update(&mut self, _msg: String, _context: &mut Context<Self::Message>) {}
         }
         impl ui::TemplateLayout for Checked {
             fn stylesheet(&self) -> &'static str {
@@ -1835,7 +1812,7 @@ mod controls {
     struct Parts;
     impl Model for Parts {
         type Message = String;
-        fn update(&mut self, _msg: String, _context: &mut Context) {}
+        fn update(&mut self, _msg: String, _context: &mut Context<Self::Message>) {}
     }
 
     /// Typical web CSS for range and progress parts, laid out as in
@@ -1873,7 +1850,7 @@ mod controls {
         struct RuntimeParts;
         impl Model for RuntimeParts {
             type Message = String;
-            fn update(&mut self, _msg: String, _context: &mut Context) {}
+            fn update(&mut self, _msg: String, _context: &mut Context<Self::Message>) {}
         }
         impl ui::TemplateLayout for RuntimeParts {
             fn stylesheet(&self) -> &'static str {
@@ -1916,7 +1893,7 @@ mod controls {
     }
     impl Model for Placeholders {
         type Message = String;
-        fn update(&mut self, _msg: String, _context: &mut Context) {}
+        fn update(&mut self, _msg: String, _context: &mut Context<Self::Message>) {}
     }
 
     fn text(commands: &[DrawCommand], wanted: &str) -> Option<(Color, f32)> {
@@ -1945,7 +1922,7 @@ mod controls {
         struct Runtime;
         impl Model for Runtime {
             type Message = String;
-            fn update(&mut self, _msg: String, _context: &mut Context) {}
+            fn update(&mut self, _msg: String, _context: &mut Context<Self::Message>) {}
         }
         impl ui::TemplateLayout for Runtime {
             fn stylesheet(&self) -> &'static str {
@@ -1999,7 +1976,7 @@ mod controls {
     }
     impl Model for Switch {
         type Message = String;
-        fn update(&mut self, _msg: String, _context: &mut Context) {}
+        fn update(&mut self, _msg: String, _context: &mut Context<Self::Message>) {}
     }
 
     /// A toggle switch: a checkbox whose knob is its `::before`, moved by
@@ -2026,7 +2003,7 @@ mod controls {
         struct RuntimeSwitch(bool);
         impl Model for RuntimeSwitch {
             type Message = String;
-            fn update(&mut self, _msg: String, _context: &mut Context) {}
+            fn update(&mut self, _msg: String, _context: &mut Context<Self::Message>) {}
         }
         impl ui::TemplateLayout for RuntimeSwitch {
             fn stylesheet(&self) -> &'static str {
@@ -2078,7 +2055,7 @@ mod known_gaps {
             struct $name;
             impl Model for $name {
                 type Message = String;
-                fn update(&mut self, _msg: String, _context: &mut Context) {}
+                fn update(&mut self, _msg: String, _context: &mut Context<Self::Message>) {}
             }
         };
     }

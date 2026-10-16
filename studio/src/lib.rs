@@ -52,9 +52,8 @@ impl TodoApp {
     }
 
     #[wasm_bindgen]
-    pub fn tick(&mut self, now_ms: f64) -> bool {
-        let res = self.runtime.tick_at_ms(now_ms as u64);
-        res.needs_redraw
+    pub fn poll(&mut self) -> bool {
+        self.runtime.poll().redraw
     }
 
     #[wasm_bindgen]
@@ -109,9 +108,8 @@ impl CalculatorApp {
     }
 
     #[wasm_bindgen]
-    pub fn tick(&mut self, now_ms: f64) -> bool {
-        let res = self.runtime.tick_at_ms(now_ms as u64);
-        res.needs_redraw
+    pub fn poll(&mut self) -> bool {
+        self.runtime.poll().redraw
     }
 
     #[wasm_bindgen]
@@ -162,8 +160,7 @@ impl MusicPlayerApp {
         }
 
         let measurer = xerune::backend::browser_impl::DummyTextMeasurer;
-        let mut runtime = xerune::runtime::Runtime::new(model, measurer);
-        runtime.set_interval("tick".to_string(), 33);
+        let runtime = xerune::runtime::Runtime::new(model, measurer);
         Self { runtime }
     }
 
@@ -173,41 +170,8 @@ impl MusicPlayerApp {
     }
 
     #[wasm_bindgen]
-    pub fn tick(&mut self, now_ms: f64) -> bool {
-        let old_model = self.runtime.model().clone();
-        let res = self.runtime.tick_at_ms(now_ms as u64);
-        let model_changed = self.runtime.model() != &old_model;
-        if res.needs_redraw && model_changed {
-            let m = self.runtime.model();
-            if m.is_playing != old_model.is_playing {
-                log::info!("is_playing changed");
-            }
-            if m.elapsed_seconds != old_model.elapsed_seconds {
-                log::info!("elapsed_seconds changed");
-            }
-            if m.transition_progress != old_model.transition_progress {
-                log::info!("transition_progress changed: {} -> {}", old_model.transition_progress, m.transition_progress);
-            }
-            if m.visualizer_data != old_model.visualizer_data {
-                log::info!("visualizer_data changed");
-            }
-            if m.list_x != old_model.list_x {
-                log::info!("list_x changed: {} -> {}", old_model.list_x, m.list_x);
-            }
-            if m.player_x != old_model.player_x {
-                log::info!("player_x changed: {} -> {}", old_model.player_x, m.player_x);
-            }
-            if m.current_track_index != old_model.current_track_index {
-                log::info!("current_track_index changed");
-            }
-            if m.hovered_track != old_model.hovered_track {
-                log::info!("hovered_track changed");
-            }
-            if m.active_list_index != old_model.active_list_index {
-                log::info!("active_list_index changed");
-            }
-        }
-        res.needs_redraw && model_changed
+    pub fn poll(&mut self) -> bool {
+        self.runtime.poll().redraw
     }
 
     #[wasm_bindgen]
@@ -252,8 +216,7 @@ impl AnimationApp {
         };
         
         let measurer = xerune::backend::browser_impl::DummyTextMeasurer;
-        let mut runtime = xerune::runtime::Runtime::new(model, measurer);
-        runtime.set_interval("tick".to_string(), 16);
+        let runtime = xerune::runtime::Runtime::new(model, measurer);
         Self { runtime }
     }
 
@@ -263,9 +226,8 @@ impl AnimationApp {
     }
 
     #[wasm_bindgen]
-    pub fn tick(&mut self, now_ms: f64) -> bool {
-        let res = self.runtime.tick_at_ms(now_ms as u64);
-        res.needs_redraw
+    pub fn poll(&mut self) -> bool {
+        self.runtime.poll().redraw
     }
 
     #[wasm_bindgen]
@@ -320,9 +282,8 @@ impl AnimationCssApp {
     }
 
     #[wasm_bindgen]
-    pub fn tick(&mut self, now_ms: f64) -> bool {
-        let res = self.runtime.tick_at_ms(now_ms as u64);
-        res.needs_redraw
+    pub fn poll(&mut self) -> bool {
+        self.runtime.poll().redraw
     }
 
     #[wasm_bindgen]
@@ -367,8 +328,7 @@ impl ShowcaseApp {
         };
         
         let measurer = xerune::backend::browser_impl::DummyTextMeasurer;
-        let mut runtime = xerune::runtime::Runtime::new(model, measurer);
-        runtime.set_interval("tick".to_string(), showcase_impl::TICK_MS);
+        let runtime = xerune::runtime::Runtime::new(model, measurer);
         Self { runtime }
     }
 
@@ -378,9 +338,8 @@ impl ShowcaseApp {
     }
 
     #[wasm_bindgen]
-    pub fn tick(&mut self, now_ms: f64) -> bool {
-        let res = self.runtime.tick_at_ms(now_ms as u64);
-        res.needs_redraw
+    pub fn poll(&mut self) -> bool {
+        self.runtime.poll().redraw
     }
 
     #[wasm_bindgen]
@@ -425,8 +384,7 @@ impl BreakoutApp {
         };
         
         let measurer = xerune::backend::browser_impl::DummyTextMeasurer;
-        let mut runtime = xerune::runtime::Runtime::new(model, measurer);
-        runtime.set_interval("tick".to_string(), 16);
+        let runtime = xerune::runtime::Runtime::new(model, measurer);
         Self { runtime }
     }
 
@@ -436,9 +394,8 @@ impl BreakoutApp {
     }
 
     #[wasm_bindgen]
-    pub fn tick(&mut self, now_ms: f64) -> bool {
-        let res = self.runtime.tick_at_ms(now_ms as u64);
-        res.needs_redraw
+    pub fn poll(&mut self) -> bool {
+        self.runtime.poll().redraw
     }
 
     #[wasm_bindgen]
