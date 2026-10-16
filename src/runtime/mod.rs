@@ -5,6 +5,7 @@ pub mod animation;
 /// Platform-independent monotonic time wrappers.
 pub mod time;
 mod diff;
+mod transition;
 
 pub use timer::{Poll, Subscriptions, TimerId, Wake};
 pub use time::{Clock, SystemClock};
@@ -94,6 +95,8 @@ pub struct Runtime<M: Model, R> {
     frame_clock: Option<(Instant, Instant)>,
     /// Running keyframe animations, by element key.
     pub(crate) active_animations: HashMap<u64, ActiveAnimation>,
+    /// Running transitions, by element key and property.
+    transitions: transition::TransitionStore,
     pub(crate) touch_state: Option<TouchState>,
     images: ImageStore,
     /// Where the pointer was last seen, and whether it is pressed.
@@ -146,6 +149,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
              intervals: Vec::new(),
              frame_clock: None,
              active_animations: HashMap::new(),
+             transitions: HashMap::new(),
              touch_state: None,
              images,
              pointer: None,
@@ -572,11 +576,13 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
         if let Some((w, h)) = self.viewport_px {
             crate::screen::set_viewport(w, h);
         }
-        self.ui = {
+        let ui = {
             profile!("ui_new_compiled");
             let validator = |s: &str| M::Message::from_str(s).is_ok();
             Ui::new_compiled_with_pointer(&self.model, &self.measurer, self.default_style.clone(), &validator, self.pointer_state.clone()).unwrap()
         };
+        // Kept until the transitions have compared the views.
+        let old = core::mem::replace(&mut self.ui, ui);
 
         self.images.sync(self.ui.render_data.values().filter_map(|d| match &d.kind {
             RenderKind::Image(src) => Some(src.as_str()),
@@ -589,7 +595,25 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
         }
         Runtime::<M, R>::sync_canvases(&self.ui, &mut self.context);
         self.restore_scroll();
+        self.update_transitions(&old);
         self.animate(None);
+    }
+
+    /// Starts and stops transitions where the new view's styles differ from
+    /// what `old`, the view it replaces, showed. As with animations, the
+    /// studio leaves them to the browser.
+    fn update_transitions(&mut self, old: &Ui) {
+        if cfg!(target_arch = "wasm32") {
+            return;
+        }
+        let now = self.now();
+        let (animations, keyframes) = (&self.active_animations, &self.ui.keyframes);
+        let animated = |key: u64, property| {
+            animations.get(&key).and_then(|active| keyframes.get(&*active.name)).is_some_and(|k| {
+                k.keyframes.iter().flat_map(|frame| &frame.declarations).any(|(p, _)| *p == property)
+            })
+        };
+        transition::update_transitions(&mut self.transitions, &self.ui, old, now, animated);
     }
 
     /// Sends an element's message (`data-on-click`, `data-on-hover`) to the
@@ -607,7 +631,8 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
         }
     }
 
-    /// Moves the view's keyframe animations on to `now` and applies them.
+    /// Moves the view's keyframe animations and transitions on to `now` and
+    /// applies them (transitions over animations, as in the cascade).
     /// Animations are kept by element key: one starts when an element
     /// declares an animation (or another name), at the clock's current
     /// time, and goes on through rebuilds. Called without a time after a
@@ -616,7 +641,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
     fn animate(&mut self, now: Option<Instant>) -> bool {
         // In the browser (the studio), the page shows the template as HTML
         // and the browser runs its animations; nothing draws these styles.
-        if cfg!(target_arch = "wasm32") || (self.ui.keyframes.is_empty() && self.active_animations.is_empty()) {
+        if cfg!(target_arch = "wasm32") || (self.ui.keyframes.is_empty() && self.active_animations.is_empty() && self.transitions.is_empty()) {
             return false;
         }
         let start = now.unwrap_or_else(|| self.now());
@@ -659,6 +684,10 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
             if let Some(data) = self.ui.render_data.get_mut(active.node_id) {
                 data.style = style;
             }
+            applied = true;
+        }
+        if !self.transitions.is_empty() {
+            layout_affected |= transition::apply_transitions(&mut self.transitions, &mut self.ui, start);
             applied = true;
         }
         if layout_affected {
@@ -834,10 +863,10 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
         self.subscriptions = subscriptions;
     }
 
-    /// Whether something wants frames: a running CSS animation or the
-    /// model's frame subscription.
+    /// Whether something wants frames: a running CSS animation or
+    /// transition, or the model's frame subscription.
     fn wants_frames(&self) -> bool {
-        self.subscriptions.frames.is_some() || self.active_animations.values().any(ActiveAnimation::is_running)
+        self.subscriptions.frames.is_some() || !self.transitions.is_empty() || self.active_animations.values().any(ActiveAnimation::is_running)
     }
 
     /// Does the work that is due: applies loaded images, sends the model
@@ -874,7 +903,9 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
             }
         }
 
-        let frame = match self.frame_clock {
+        // Frames that just started (from input, or the last poll's updates)
+        // come at once.
+        let frame = match self.frame_clock.or(Some((now, now))) {
             Some((previous, next)) if now >= next && self.wants_frames() => {
                 let mut next = next + self.frame_interval();
                 if next <= now {

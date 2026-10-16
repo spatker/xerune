@@ -35,11 +35,11 @@ the working notes.
 
 Modules:
 - `model.rs`: `Model`, `InputEvent`, `hash_bytes` (FNV, for fingerprints).
-- `runtime/`: `poll` (timers, subscriptions, frames at `target_fps`, returns `Wake`), `Clock`, animations, fingerprint gating.
+- `runtime/`: `poll` (timers, subscriptions, frames at `target_fps`, returns `Wake`), `Clock`, keyframe animations (by key), transitions (by key + property, `runtime/transition.rs`), fingerprint gating.
 - `ui/`: `builder` (tree building), `attributes`, `style_resolution` (+ style cache), `metadata` (`NodeMetadata`), `node_map`.
 - `style.rs`: `ContainerStyle` and CSS enums. `graphics.rs`: `Color`, `Canvas`, `Context`, `DrawCommand`, `TextMeasurer`, `Renderer`, `Surface` (pixels, stride, rotation, origin: a band or the whole screen), `Damage`.
 - `xerune_render`: `SoftwareRenderer` (owns glyph/image caches) and `Fonts` (TTF via fontdue or bitmap fonts; the runtime's `TextMeasurer`).
-- `css/`: values/properties parser, gradients (linear/radial/conic), `@keyframes`, `media` (`@media` evaluation; `xerune_css::sheet` records which blocks each rule is in).
+- `css/`: values/properties parser, gradients (linear/radial/conic), `@keyframes`, `transition`, `media` (`@media` evaluation; `xerune_css::sheet` records which blocks each rule is in).
 - `screen.rs`: global viewport (two atomics) + `Breakpoint`. `Runtime::set_size` → `Model::on_resize` → rebuild.
 - `backend/`: `winit_impl` (desktop), `linuxfb_impl`, `drm_impl`, `input/evdev`, `browser_impl`, `snapshot`, `common_loop`.
 - `text.rs`: `ShapedText` (glyphs, advances, UAX #14 break segments via `unicode-linebreak`), line breaking, `GlyphRun`. Shaping is `TextMeasurer::shape` (fontdue advances in `xerune_render::Fonts`, cached per font set); layout measures text leaves with a taffy measure function (`Ui::compute_layout`).

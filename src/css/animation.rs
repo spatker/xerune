@@ -286,6 +286,16 @@ impl Value {
     /// interpolated (`auto` and a length, a color and a gradient) flip
     /// halfway, as discrete CSS values do.
     pub fn interpolate(&self, to: &Value, t: f32) -> Value {
+        self.interpolate_continuous(to, t).unwrap_or_else(|| if t < 0.5 { self.clone() } else { to.clone() })
+    }
+
+    /// Whether the way from `self` to `to` is continuous, not a flip
+    /// (CSS: the values are interpolable).
+    pub fn interpolates_with(&self, to: &Value) -> bool {
+        self.interpolate_continuous(to, 0.0).is_some()
+    }
+
+    fn interpolate_continuous(&self, to: &Value, t: f32) -> Option<Value> {
         let mix = |a: f32, b: f32| a + (b - a) * t;
         let compact = |a: CompactLength, b: CompactLength| {
             (a.tag() == b.tag() && (a.tag() == CompactLength::LENGTH_TAG || a.tag() == CompactLength::PERCENT_TAG))
@@ -296,7 +306,7 @@ impl Value {
                 let c = |a: u8, b: u8| (mix(a as f32, b as f32) + 0.5).clamp(0.0, 255.0) as u8;
                 Some(Value::Color(Color { r: c(a.r, b.r), g: c(a.g, b.g), b: c(a.b, b.b), a: c(a.a, b.a) }))
             }
-            (Value::Gradient(a), Value::Gradient(b)) => Some(Value::Gradient(super::interpolate_gradient(a, b, t))),
+            (Value::Gradient(a), Value::Gradient(b)) if super::gradient::gradients_interpolate(a, b) => Some(Value::Gradient(super::interpolate_gradient(a, b, t))),
             (Value::Px(a), Value::Px(b)) => Some(Value::Px(mix(*a, *b))),
             (Value::Dimension(a), Value::Dimension(b)) => compact(a.into_raw(), b.into_raw())
                 .map(|(px, v)| Value::Dimension(if px { Dimension::length(v) } else { Dimension::percent(v) })),
@@ -306,7 +316,7 @@ impl Value {
                 .map(|(px, v)| Value::Length(if px { LengthPercentage::length(v) } else { LengthPercentage::percent(v) })),
             _ => None,
         };
-        interpolated.unwrap_or_else(|| if t < 0.5 { self.clone() } else { to.clone() })
+        interpolated
     }
 }
 

@@ -147,22 +147,23 @@ fn frames_come_at_the_target_frame_rate_with_their_delta_time() {
     let (mut runtime, clock) = start();
     runtime.set_target_fps(20);
     send(&mut runtime, "start");
-    let Wake::Frame(first) = runtime.poll().wake else { panic!("frames run") };
-    assert_eq!(first, clock.now() + Duration::from_millis(50));
+    let Wake::Frame(second) = runtime.poll().wake else { panic!("frames run") };
+    assert_eq!(runtime.model().frames, [0.0], "the first frame comes at once");
+    assert_eq!(second, clock.now() + Duration::from_millis(50));
 
     clock.advance(Duration::from_millis(20));
     runtime.poll();
-    assert!(runtime.model().frames.is_empty(), "no frame before its time");
+    assert_eq!(runtime.model().frames.len(), 1, "no frame before its time");
     clock.advance(Duration::from_millis(30));
     runtime.poll();
     clock.advance(Duration::from_millis(50));
     runtime.poll();
-    assert_eq!(runtime.model().frames, [0.05, 0.05]);
+    assert_eq!(runtime.model().frames, [0.0, 0.05, 0.05]);
 
     // A frame that comes late is not caught up on.
     clock.advance(Duration::from_millis(170));
     runtime.poll();
-    assert_eq!(runtime.model().frames.len(), 3);
+    assert_eq!(runtime.model().frames.len(), 4);
     let Wake::Frame(next) = runtime.poll().wake else { panic!("frames run") };
     assert_eq!(next, clock.now() + Duration::from_millis(50));
 

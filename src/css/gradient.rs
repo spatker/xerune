@@ -25,6 +25,17 @@ pub fn parse_gradient(val: &str) -> Option<Gradient> {
 /// Blend two gradients for keyframe animation. Gradients of the same kind
 /// with the same number of stops interpolate their angle, center, stop
 /// colors and positions; anything else switches at the halfway point.
+/// Whether [`interpolate_gradient`] blends `a` and `b` continuously: the
+/// same kind and shape, with as many stops. Others flip halfway.
+pub fn gradients_interpolate(a: &Gradient, b: &Gradient) -> bool {
+    match (a, b) {
+        (Gradient::Linear(x), Gradient::Linear(y)) => x.stops.len() == y.stops.len(),
+        (Gradient::Radial(x), Gradient::Radial(y)) => x.stops.len() == y.stops.len() && x.shape == y.shape && x.extent == y.extent,
+        (Gradient::Conic(x), Gradient::Conic(y)) => x.stops.len() == y.stops.len(),
+        _ => false,
+    }
+}
+
 pub fn interpolate_gradient(a: &Gradient, b: &Gradient, t: f32) -> Gradient {
     let lerp = |x: f32, y: f32| x + (y - x) * t;
     let lerp_pt = |p: (f32, f32), q: (f32, f32)| (lerp(p.0, q.0), lerp(p.1, q.1));

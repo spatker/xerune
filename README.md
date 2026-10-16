@@ -15,7 +15,7 @@ Xerune is a lightweight, CPU-only native HTML/CSS rendering engine and UI framew
 - **No GPU required**: High-performance CPU-only rendering.
 - **Embedded hardware-ready**: Dedicated backends for Linux Framebuffer (`/dev/fb0`) and DRM/KMS with double buffering.
 - **Input integration**: Built-in support for mouse, keyboard, and `evdev` touch input bounds calibration.
-- **CSS Stylesheets & Keyframe Animations**: Parse inline styles, global styles, classes, IDs, gradients, borders, font weights, and keyframe animations.
+- **CSS Stylesheets, Animations & Transitions**: Parse inline styles, global styles, classes, IDs, gradients, borders, font weights, keyframe animations and transitions.
 - **Responsive Layout**: `@media` queries (width/height/orientation), `vw`/`vh`/`vmin`/`vmax` viewport units, automatic `Model::on_resize` notification, and breakpoint helpers — compiled into cheap static guards for embedded targets.
 - **Fingerprint Gating**: Opt-in `Model::view_fingerprint` lets the runtime skip full view rebuilds when a message changes no rendered state.
 - **Canvas APIs**: Support for custom user-drawn Canvas pixel buffers.

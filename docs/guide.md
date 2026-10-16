@@ -336,7 +336,7 @@ The default implementation returns `None` (no fingerprinting) and keeps the alwa
 
 ---
 
-## 6. Keyframe Animations
+## 6. Keyframe Animations and Transitions
 
 Animations are declared directly in CSS style blocks:
 
@@ -368,6 +368,30 @@ Animatable properties: `color`, `background-color`, `border-color`, `border-widt
 ```
 
 See `examples/animation_css` for a gallery.
+
+### Transitions
+
+`transition` (and `transition-property`, `-duration`, `-delay`,
+`-timing-function`, `-behavior`) works as in CSS Transitions 1, on the same
+properties (`margin`, `padding`, `inset` and `border` stand for their
+longhands; `all` for all of them):
+
+```css
+.knob { position: absolute; left: 3px; transition: left 0.18s ease-out; }
+.on .knob { left: 21px; }
+.btn { background-color: #141c2e; transition: background-color 0.15s; }
+.btn:hover { background-color: #1c2740; }
+```
+
+When a rebuild (a message, `:hover`, `:active`) changes such a property, it
+moves from the value on screen to the new one. A transition sent back partway
+returns in the time it took to get there. Elements that appear or disappear
+don't transition, and values that can't be interpolated (a color and a
+gradient, `auto` and a length) change at once, or halfway with
+`transition-behavior: allow-discrete`. Transitions run on frames without
+rebuilding the view: paint-only properties just repaint, layout properties
+re-run layout. As with keyframes, the browser studio leaves them to the
+browser.
 
 ---
 
