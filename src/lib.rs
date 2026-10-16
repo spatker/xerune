@@ -100,7 +100,7 @@ pub mod __private {
     pub use crate::css::media::{matches_query, Feature, FeatureGroup};
     pub use crate::css::parse_keyframes;
     pub use crate::style::{ContainerStyle, ControlPart};
-    pub use crate::ui::{ElementStyle, TemplateLayout, ToDisplayString, UiBuilder};
+    pub use crate::ui::{ElementStyle, PointerLevel, TemplateLayout, ToDisplayString, UiBuilder};
     pub use crate::ui::builder::element_key;
     pub use taffy::NodeId;
 

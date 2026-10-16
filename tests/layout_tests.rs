@@ -894,6 +894,50 @@ fn element_keys_are_unique_and_stable() {
     assert_eq!(keys(), first);
 }
 
+#[derive(XeruneTemplate)]
+#[template(source = r#"<style>
+  body { margin: 0; }
+  .row { display: flex; width: 100px; height: 10px; }
+  .row > div { width: 10px; height: 10px; background: #000000; }
+  .row > .a:hover { background: #ff0000; }
+  .row:hover > .b { background: #00ff00; }
+  .row > .c:active { background: #0000ff; }
+</style>
+<div class="row"><div class="a"></div><div class="b"></div><div class="c"></div></div>"#)]
+struct PointerModel;
+
+impl Model for PointerModel {
+    type Message = MockMsg;
+    fn update(&mut self, _msg: Self::Message, _context: &mut Context) {}
+}
+
+/// `:hover` follows the pointer (the element under it and its ancestors),
+/// `:active` the pressed element while a touch lasts.
+#[test]
+fn hover_and_active_follow_the_pointer() {
+    let mut runtime = Runtime::new(PointerModel, MockMeasurer);
+    crate::set_size(&mut runtime, 800.0, 600.0);
+    let colors = |runtime: &mut Runtime<PointerModel, MockMeasurer>| {
+        let mut boxes: Vec<_> = runtime.ui.build_commands(&std::collections::HashMap::new(), None).iter().filter_map(|c| match c {
+            DrawCommand::DrawRect { color: Some(c), rect, .. } if rect.width == 10.0 => Some((rect.x, (c.r, c.g, c.b))),
+            _ => None,
+        }).collect();
+        boxes.sort_by(|a, b| a.0.total_cmp(&b.0));
+        boxes.into_iter().map(|b| b.1).collect::<Vec<_>>()
+    };
+    const BLACK: (u8, u8, u8) = (0, 0, 0);
+    assert_eq!(colors(&mut runtime), [BLACK; 3]);
+    assert!(runtime.handle_event(InputEvent::Hover { x: 5.0, y: 5.0 }));
+    assert_eq!(colors(&mut runtime), [(255, 0, 0), (0, 255, 0), BLACK]);
+    assert!(!runtime.handle_event(InputEvent::Hover { x: 6.0, y: 5.0 }), "same elements, no restyle");
+    assert!(runtime.handle_event(InputEvent::Hover { x: 500.0, y: 500.0 }));
+    assert_eq!(colors(&mut runtime), [BLACK; 3]);
+    assert!(runtime.handle_event(InputEvent::TouchStart { id: 1, x: 25.0, y: 5.0 }));
+    assert_eq!(colors(&mut runtime), [BLACK, (0, 255, 0), (0, 0, 255)]);
+    runtime.handle_event(InputEvent::TouchEnd { id: 1, x: 25.0, y: 5.0 });
+    assert_eq!(colors(&mut runtime), [BLACK, (0, 255, 0), BLACK], "hover stays after a tap");
+}
+
 mod canvas {
     //! The canvas background: browsers paint `<html>`'s background (else
     //! `<body>`'s, else white) behind every frame.

@@ -73,7 +73,9 @@ pub fn extract_styles(handle: &Handle, css: &mut String) {
 
 #[cfg(test)]
 mod tests {
+    use crate::alloc_prelude::*;
     use crate::style::{ContainerStyle, RenderKind};
+    use html5ever::tendril::TendrilSink;
 
     struct NoText;
     impl crate::TextMeasurer for NoText {
@@ -94,5 +96,29 @@ mod tests {
         texts.sort();
         assert_eq!(texts, [("hi", 255), ("x", 255)]);
         assert!(ui.body.is_some());
+    }
+
+    /// `:hover` in runtime stylesheets applies to the pointer's elements,
+    /// found by their keys: `<html>` is the root (key 0), then each element
+    /// mixes in its index.
+    #[test]
+    fn hover_rules_apply_to_the_elements_under_the_pointer() {
+        use crate::ui::builder::element_key;
+        let html = "<style>p { color: #000000 } body:hover p { color: #ff0000 } body p:hover { color: #00ff00 }</style><p>a</p><p>b</p>";
+        let dom = html5ever::parse_document(markup5ever_rcdom::RcDom::default(), Default::default()).from_utf8().read_from(&mut html.as_bytes()).unwrap();
+        let mut css = String::new();
+        super::extract_styles(&dom.document, &mut css);
+        let mut builder = super::super::UiBuilder::new();
+        let root = super::build_document(&dom.document, &mut builder).unwrap();
+        let body = element_key(0, 1);
+        builder.pointer.hovered = vec![element_key(body, 2), body, 0];
+        let ui = super::super::Ui::from_builder(builder, root, &css, &NoText, ContainerStyle::default(), &|_| true).unwrap();
+        let mut texts: Vec<_> = ui.render_data.values().filter_map(|d| match &d.kind {
+            RenderKind::Text(text) => Some((text.as_str(), (d.style.color.r, d.style.color.g))),
+            _ => None,
+        }).collect();
+        texts.sort();
+        assert_eq!(texts, [("a", (255, 0)), ("b", (0, 255))]);
+        assert!(ui.uses_hover && !ui.uses_active);
     }
 }

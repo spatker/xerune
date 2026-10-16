@@ -11,7 +11,7 @@ pub mod style_resolution;
 
 pub use node_map::{NodeMap, NodeMapIter, NodeMapValues};
 pub use metadata::NodeMetadata;
-pub use builder::{ElementStyle, UiBuilder};
+pub use builder::{ElementStyle, PointerLevel, PointerState, UiBuilder};
 #[cfg(feature = "std")]
 pub use style_resolution::{cache_config, stylesheet_cache_len};
 
@@ -82,6 +82,11 @@ pub trait TemplateLayout {
         default_style: &ContainerStyle,
         message_validator: &impl Fn(&str) -> bool,
     ) -> NodeId;
+    /// Whether the template's rules use `:hover` and `:active`.
+    #[doc(hidden)]
+    fn uses_pointer(&self) -> (bool, bool) {
+        (false, false)
+    }
 }
 
 /// The core layout engine containing the taffy tree and metadata maps.
@@ -117,6 +122,10 @@ pub struct Ui {
     /// Each element's key, the same for the same element in every rebuild
     /// (see [`builder::element_key`]).
     pub keys: NodeMap<u64>,
+    /// Whether any rule uses `:hover`, so that moving the pointer restyles.
+    pub uses_hover: bool,
+    /// Whether any rule uses `:active`.
+    pub uses_active: bool,
 }
 
 impl Ui {
@@ -151,13 +160,39 @@ impl Ui {
         default_style: ContainerStyle,
         message_validator: &impl Fn(&str) -> bool,
     ) -> Result<Self, TaffyError> {
+        Self::new_compiled_with_pointer(model, measurer, default_style, message_validator, PointerState::default())
+    }
+
+    /// [`Self::new_compiled`] with the elements under the pointer, which
+    /// `:hover` and `:active` rules apply to.
+    pub fn new_compiled_with_pointer(
+        model: &impl TemplateLayout,
+        measurer: &impl TextMeasurer,
+        default_style: ContainerStyle,
+        message_validator: &impl Fn(&str) -> bool,
+        pointer: PointerState,
+    ) -> Result<Self, TaffyError> {
         profile!("ui_new_compiled");
         let mut builder = UiBuilder::new();
+        builder.pointer = pointer;
         let root = {
             profile!("build_ui");
             model.build_ui(&mut builder, measurer, &default_style, message_validator)
         };
-        Self::from_builder(builder, root, model.stylesheet(), measurer, default_style, message_validator)
+        let mut ui = Self::from_builder(builder, root, model.stylesheet(), measurer, default_style, message_validator)?;
+        let (hover, active) = model.uses_pointer();
+        ui.uses_hover |= hover;
+        ui.uses_active |= active;
+        Ok(ui)
+    }
+
+    /// The keys of the element at (`x`, `y`) and its ancestors, nearest
+    /// first: what the pointer there hovers.
+    pub fn pointer_chain(&self, x: f32, y: f32) -> Vec<u64> {
+        let Some(node) = hit_test_recursive(&self.taffy, self.root, &self.scroll_offsets, &self.render_data, x, y, 0.0, 0.0) else {
+            return Vec::new();
+        };
+        core::iter::successors(Some(node), |&n| self.taffy.parent(n)).filter_map(|n| self.keys.get(n).copied()).collect()
     }
 
     /// Styles the tree built with `builder` (template styles plus
@@ -183,6 +218,8 @@ impl Ui {
         #[cfg(not(feature = "std"))]
         let keyframes = builder.keyframes;
 
+        #[cfg_attr(not(feature = "std"), allow(unused_mut))]
+        let (mut uses_hover, mut uses_active) = (false, false);
         #[cfg(feature = "std")]
         if !stylesheet_str.is_empty() || builder.node_metadata.iter().next().is_some() {
             // Resolve `@media` blocks against the current viewport first; the
@@ -204,7 +241,11 @@ impl Ui {
                 }
             });
 
-            assign_keys(&builder.taffy, root, 0, &builder.node_metadata, &mut builder.keys);
+            if builder.node_metadata.get(root).is_some() && builder.keys.get(root).is_none() {
+                builder.keys.insert(root, 0);
+            }
+            let root_key = builder.keys.get(root).copied().unwrap_or(0);
+            assign_keys(&builder.taffy, root, root_key, &builder.node_metadata, &mut builder.keys);
             let mut style_cache = cached.style_cache.borrow_mut();
             
             {
@@ -219,11 +260,15 @@ impl Ui {
                     message_validator,
                     &cached.sheet,
                     &builder.node_metadata,
+                    &builder.keys,
+                    &builder.pointer,
                     &mut base_styles,
                     &mut *style_cache,
                 );
             }
             keyframes = cached.keyframes.clone();
+            uses_hover = cached.sheet.uses_hover;
+            uses_active = cached.sheet.uses_active;
         }
 
         let (html, body) = (builder.html, builder.body);
@@ -250,6 +295,8 @@ impl Ui {
             text_lines: NodeMap::new(),
             ellipses,
             keys: builder.keys,
+            uses_hover,
+            uses_active,
         })
     }
 

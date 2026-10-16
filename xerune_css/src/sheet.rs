@@ -38,6 +38,10 @@ pub struct StyleSheet {
     pub rules: Vec<Rule>,
     /// Whether any declaration is `!important`.
     pub has_important: bool,
+    /// Whether any selector uses `:hover`.
+    pub uses_hover: bool,
+    /// Whether any selector uses `:active`.
+    pub uses_active: bool,
     /// The selectors of the rules dropped because they are invalid (or
     /// use something xerune doesn't support), for warnings.
     pub dropped: Vec<String>,
@@ -89,7 +93,9 @@ impl StyleSheet {
         // Stable, so equal specificities keep source order.
         rules.sort_by_key(|rule| rule.selector.specificity());
         let has_important = rules.iter().any(|rule| rule.declarations.iter().any(|d| d.important));
-        StyleSheet { rules, has_important, dropped }
+        let uses = |state| rules.iter().any(|rule| rule.selector.uses_state(state));
+        let (uses_hover, uses_active) = (uses(crate::selector::State::Hover), uses(crate::selector::State::Active));
+        StyleSheet { rules, has_important, uses_hover, uses_active, dropped }
     }
 }
 

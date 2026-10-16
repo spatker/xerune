@@ -22,6 +22,35 @@ pub struct UiBuilder {
     pub element_ids: Vec<(Cow<'static, str>, NodeId)>,
     /// Each element's [`element_key`].
     pub keys: NodeMap<u64>,
+    /// The elements under the pointer, for `:hover` and `:active`.
+    pub pointer: PointerState,
+}
+
+/// The keys of the elements the pointer is over and presses: the element
+/// under it and all its ancestors (`:hover` and `:active` apply to both).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PointerState {
+    /// The hovered elements.
+    pub hovered: Vec<u64>,
+    /// The elements being pressed.
+    pub active: Vec<u64>,
+}
+
+/// How far up from an element its nearest hovered (and pressed) element is:
+/// 0 when it is hovered itself, `u32::MAX` when none of its ancestors is.
+/// Templates compile `:hover` rules into tests of this, since hovered
+/// elements are an element and its ancestors.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PointerLevel {
+    /// Levels up to the nearest hovered element.
+    pub hover: u32,
+    /// Levels up to the nearest pressed element.
+    pub active: u32,
+}
+
+impl PointerLevel {
+    /// Nothing hovered or pressed.
+    pub const NONE: PointerLevel = PointerLevel { hover: u32::MAX, active: u32::MAX };
 }
 
 /// The key of an element: the same element of the view gets the same key
@@ -58,7 +87,16 @@ impl UiBuilder {
             body: None,
             element_ids: Vec::new(),
             keys: NodeMap::with_capacity(capacity),
+            pointer: PointerState::default(),
         }
+    }
+
+    /// The [`PointerLevel`] of the element with `key`, whose parent's is
+    /// `parent`.
+    #[inline]
+    pub fn pointer_level(&self, key: u64, parent: PointerLevel) -> PointerLevel {
+        let level = |chain: &[u64], parent: u32| if chain.contains(&key) { 0 } else { parent.saturating_add(1) };
+        PointerLevel { hover: level(&self.pointer.hovered, parent.hover), active: level(&self.pointer.active, parent.active) }
     }
 
     /// The initial containing block: a block box the size of the viewport,
@@ -355,17 +393,20 @@ impl UiBuilder {
 }
 
 #[cfg(feature = "std")]
+#[derive(Clone, Copy)]
 pub(crate) struct TaffyElementWrapper<'a> {
     pub node: NodeId,
     pub taffy: &'a TaffyTree,
     pub metadata: &'a NodeMap<NodeMetadata>,
     pub meta: &'a NodeMetadata,
+    pub keys: &'a NodeMap<u64>,
+    pub pointer: &'a PointerState,
 }
 
 #[cfg(feature = "std")]
 impl<'a> TaffyElementWrapper<'a> {
     fn at(&self, node: NodeId) -> Option<Self> {
-        self.metadata.get(&node).map(|meta| TaffyElementWrapper { node, taffy: self.taffy, metadata: self.metadata, meta })
+        self.metadata.get(&node).map(|meta| TaffyElementWrapper { node, meta, ..*self })
     }
 
     /// The element sibling `step` (-1 or 1) children away.
@@ -417,7 +458,14 @@ impl<'a> xerune_css::selector::Element for TaffyElementWrapper<'a> {
     }
 
     fn state(&self, state: xerune_css::selector::State) -> bool {
-        state == xerune_css::selector::State::Checked && self.meta.checked == Some(true)
+        use xerune_css::selector::State;
+        let in_chain = |chain: &[u64]| self.keys.get(self.node).is_some_and(|key| chain.contains(key));
+        match state {
+            State::Checked => self.meta.checked == Some(true),
+            State::Hover => in_chain(&self.pointer.hovered),
+            State::Active => in_chain(&self.pointer.active),
+            _ => false,
+        }
     }
 }
 

@@ -234,6 +234,16 @@ impl Selector {
         self.pseudo_element != Some(PseudoElement::Unsupported) && self.match_at(self.compounds.len() - 1, element) == Some(true)
     }
 
+    /// Whether matching depends on `state` anywhere in the selector.
+    pub fn uses_state(&self, state: State) -> bool {
+        self.compounds.iter().flat_map(|c| &c.conditions).any(|condition| match condition {
+            Condition::State(s) => *s == state,
+            Condition::Not(list) | Condition::Is(list) => list.iter().any(|s| s.uses_state(state)),
+            Condition::Nth { of: Some(of), .. } => of.iter().any(|s| s.uses_state(state)),
+            _ => false,
+        })
+    }
+
     fn match_at<E: Element>(&self, index: usize, element: &E) -> Match {
         let compound = &self.compounds[index];
         and(compound.matches(element), || {
@@ -970,6 +980,8 @@ html id=html
         assert_eq!(matching("input:checked"), ["box"]);
         assert_eq!(matching("a:hover"), Vec::<String>::new());
         assert_eq!(matching("a:lang(en)"), Vec::<String>::new());
+        let uses_hover = |text| Selector::parse(text).unwrap().uses_state(State::Hover);
+        assert!(uses_hover("nav:hover a") && uses_hover("a:not(:is(:hover))") && !uses_hover("a:active"));
     }
 
     #[test]

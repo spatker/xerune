@@ -85,6 +85,11 @@ pub struct Runtime<M, R> {
     ms_clock_anchor: Option<(u64, Instant)>,
     pub(crate) touch_state: Option<TouchState>,
     images: ImageStore,
+    /// Where the pointer was last seen, and whether it is pressed.
+    pointer: Option<(f32, f32)>,
+    pressed: bool,
+    /// The elements under the pointer the current view was built with.
+    pointer_state: crate::ui::PointerState,
 }
 
 impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
@@ -124,6 +129,9 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
              ms_clock_anchor: None,
              touch_state: None,
              images,
+             pointer: None,
+             pressed: false,
+             pointer_state: crate::ui::PointerState::default(),
          }
     }
 
@@ -272,7 +280,11 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
     /// Returns true if the screen needs to be redrawn.
     pub fn handle_event(&mut self, event: InputEvent) -> bool {
         match event {
+            InputEvent::Hover { x, y } => self.move_pointer(x, y, self.pressed),
             InputEvent::Click { x, y } => {
+                // The view is rebuilt below if the message changes it.
+                self.pointer = Some((x, y));
+                let restyled = self.update_pointer_state();
                 if let Some((interaction, clicked_node)) = self.ui.hit_test(x, y) {
                     if let Some(RenderKind::TextInput(id, _, _)) = self.ui.render_data.get(&clicked_node).map(|d| &d.kind) {
                         if !id.is_empty() {
@@ -295,11 +307,17 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
                         Some(Interaction::Text(text)) => self.process_message_str(&text),
                         None => false,
                     };
-                    return updated || self.focused_id.is_some();
+                    if restyled && !updated {
+                        self.rebuild();
+                    }
+                    return updated || restyled || self.focused_id.is_some();
                 }
-                
+
+                if restyled {
+                    self.rebuild();
+                }
                 let old_focus = self.focused_id.take();
-                return old_focus.is_some();
+                return old_focus.is_some() || restyled;
             }
             InputEvent::Message(msg_str) => {
                 if msg_str == WAKE_MESSAGE {
@@ -341,7 +359,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
                     has_scrolled: false,
                     scroll_node: None,
                 });
-                false
+                self.move_pointer(x, y, true)
             }
             InputEvent::TouchMove { id, x, y } => {
                 let mut redraw = false;
@@ -374,30 +392,32 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
                         }
                     }
                 }
-                redraw
+                // A touch that scrolls no longer presses what it started on.
+                let pressed = self.pressed && !self.touch_state.is_some_and(|t| t.has_scrolled);
+                self.move_pointer(x, y, pressed) || redraw
             }
             InputEvent::TouchEnd { id, x, y } => {
-                let mut redraw = false;
+                // Hover stays where the touch ended, as in mobile browsers.
+                let mut redraw = self.move_pointer(x, y, false);
                 if let Some(state) = self.touch_state.take() {
                     if state.id == id {
                         let moved_x = (x - state.start_x).abs();
                         let moved_y = (y - state.start_y).abs();
                         if !state.has_scrolled && moved_x <= 8.0 && moved_y <= 8.0 {
-                            redraw = self.handle_event(InputEvent::Click { x, y });
+                            redraw |= self.handle_event(InputEvent::Click { x, y });
                         }
                     }
                 }
                 redraw
             }
-            InputEvent::TouchCancel { id, .. } => {
+            InputEvent::TouchCancel { id, x, y } => {
                 if let Some(state) = self.touch_state.as_ref() {
                     if state.id == id {
                         self.touch_state = None;
                     }
                 }
-                false
+                self.move_pointer(x, y, false)
             }
-            _ => false
         }
     }
 
@@ -455,25 +475,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
 
         let rebuilt = !skip;
         if rebuilt {
-            if let Some((w, h)) = self.viewport_px {
-                crate::screen::set_viewport(w, h);
-            }
-            self.ui = {
-                profile!("ui_new_compiled");
-                let validator = |s: &str| M::Message::from_str(s).is_ok();
-                Ui::new_compiled(&self.model, &self.measurer, self.default_style.clone(), &validator).unwrap()
-            };
-            self.images.sync(self.ui.render_data.values().filter_map(|d| match &d.kind {
-                RenderKind::Image(src) => Some(src.as_str()),
-                _ => None,
-            }));
-            Runtime::<M, R>::apply_image_sizes(&mut self.ui, &self.images);
-            {
-                profile!("compute_layout");
-                let _ = self.ui.compute_layout(self.cached_size);
-            }
-            Runtime::<M, R>::sync_canvases(&self.ui, &mut self.context);
-            self.restore_scroll();
+            self.rebuild();
             self.last_fingerprint = fingerprint;
         }
 
@@ -506,6 +508,68 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
         }
 
         dirty
+    }
+
+    /// Builds the view anew and lays it out. If that moves another element
+    /// under the pointer, the view is built once more for its `:hover`.
+    fn rebuild(&mut self) {
+        self.build_view();
+        if self.update_pointer_state() {
+            self.build_view();
+        }
+    }
+
+    fn build_view(&mut self) {
+        if let Some((w, h)) = self.viewport_px {
+            crate::screen::set_viewport(w, h);
+        }
+        self.ui = {
+            profile!("ui_new_compiled");
+            let validator = |s: &str| M::Message::from_str(s).is_ok();
+            Ui::new_compiled_with_pointer(&self.model, &self.measurer, self.default_style.clone(), &validator, self.pointer_state.clone()).unwrap()
+        };
+
+        self.images.sync(self.ui.render_data.values().filter_map(|d| match &d.kind {
+            RenderKind::Image(src) => Some(src.as_str()),
+            _ => None,
+        }));
+        Runtime::<M, R>::apply_image_sizes(&mut self.ui, &self.images);
+        {
+            profile!("compute_layout");
+            let _ = self.ui.compute_layout(self.cached_size);
+        }
+        Runtime::<M, R>::sync_canvases(&self.ui, &mut self.context);
+        self.restore_scroll();
+    }
+
+    /// The pointer is at (`x`, `y`), pressed or not: restyles the view if
+    /// that changes what `:hover` / `:active` apply to. Returns true if so.
+    fn move_pointer(&mut self, x: f32, y: f32, pressed: bool) -> bool {
+        self.pointer = Some((x, y));
+        self.pressed = pressed;
+        if self.update_pointer_state() {
+            self.rebuild();
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Finds the elements under the pointer in the current view, for the
+    /// states its rules use. Returns true if they changed.
+    fn update_pointer_state(&mut self) -> bool {
+        let (hover, active) = (self.ui.uses_hover, self.ui.uses_active);
+        let chain = match self.pointer {
+            Some((x, y)) if hover || (active && self.pressed) => self.ui.pointer_chain(x, y),
+            _ => Vec::new(),
+        };
+        let state = crate::ui::PointerState {
+            active: if active && self.pressed { chain.clone() } else { Vec::new() },
+            hovered: if hover { chain } else { Vec::new() },
+        };
+        let changed = state != self.pointer_state;
+        self.pointer_state = state;
+        changed
     }
 
     /// Renders the current layout tree state into `target`, drawing only what

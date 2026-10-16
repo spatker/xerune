@@ -843,12 +843,31 @@ struct MacroElementWrapper {
     /// Stands for elements only known at runtime: a `{% for %}`/`{% if %}`
     /// wrapper, or what comes before or after a loop's or branch's body.
     opaque: bool,
+    /// How many levels up from the element being styled this one is;
+    /// `u32::MAX` off its chain of ancestors (a sibling).
+    distance: u32,
+    /// The `PointerLevel` (hover, active) assumed in this matching pass:
+    /// elements at least that many levels up are hovered (pressed).
+    pointer: (u32, u32),
 }
 
 impl MacroElementWrapper {
     fn new(handle: Handle) -> Self {
         let opaque = is_template_element(&handle);
-        MacroElementWrapper { active_classes: get_static_classes(&handle), handle, checked: false, opaque }
+        MacroElementWrapper {
+            active_classes: get_static_classes(&handle),
+            handle,
+            checked: false,
+            opaque,
+            distance: u32::MAX,
+            pointer: (u32::MAX, u32::MAX),
+        }
+    }
+
+    /// The element `handle` related to this one, `distance` levels up from
+    /// the element being styled, in the same matching pass.
+    fn relative(&self, handle: Handle, distance: u32) -> Self {
+        MacroElementWrapper { distance, pointer: self.pointer, ..MacroElementWrapper::new(handle) }
     }
 
     /// The element sibling `step` (-1 or 1) nodes away. Inside a loop's or
@@ -861,7 +880,7 @@ impl MacroElementWrapper {
         let parent = parent?;
         let siblings = parent.children.borrow();
         let index = siblings.iter().position(|child| std::rc::Rc::ptr_eq(child, &self.handle))?;
-        let element = |sibling: &Handle| matches!(sibling.data, NodeData::Element { .. }).then(|| MacroElementWrapper::new(sibling.clone()));
+        let element = |sibling: &Handle| matches!(sibling.data, NodeData::Element { .. }).then(|| self.relative(sibling.clone(), u32::MAX));
         let found = if step < 0 {
             siblings[..index].iter().rev().find_map(element)
         } else {
@@ -869,7 +888,7 @@ impl MacroElementWrapper {
         };
         found.or_else(|| {
             let owner = TEMPLATE_OWNERS.with(|m| m.borrow().get(&(std::rc::Rc::as_ptr(&parent) as usize)).cloned())?;
-            Some(MacroElementWrapper::new(owner))
+            Some(self.relative(owner, u32::MAX))
         })
     }
 }
@@ -934,7 +953,8 @@ impl xerune_css::selector::Element for MacroElementWrapper {
         while is_template_element(&parent) {
             parent = dom_parent(&parent)?;
         }
-        matches!(parent.data, NodeData::Element { .. }).then(|| MacroElementWrapper::new(parent))
+        let distance = if self.distance == u32::MAX { u32::MAX } else { self.distance + 1 };
+        matches!(parent.data, NodeData::Element { .. }).then(|| self.relative(parent, distance))
     }
 
     fn prev_sibling(&self) -> Option<Self> {
@@ -977,17 +997,84 @@ impl xerune_css::selector::Element for MacroElementWrapper {
     }
 
     fn state(&self, state: xerune_css::selector::State) -> bool {
-        // `checked="false"` is unchecked, as `parse_attributes_generic`
-        // reads it.
-        state == xerune_css::selector::State::Checked && match attribute_value(&self.handle, "checked") {
-            Some(v) if is_dynamic(&v) => self.checked,
-            Some(v) => v != "false",
-            None => false,
+        use xerune_css::selector::State;
+        // Hovered elements are one and its ancestors: an element on the
+        // chain at or above the assumed level. Siblings are never taken as
+        // hovered (`a:hover + b` doesn't match).
+        let on_pointer = |level: u32| self.distance != u32::MAX && self.distance >= level;
+        match state {
+            // `checked="false"` is unchecked, as `parse_attributes_generic`
+            // reads it.
+            State::Checked => match attribute_value(&self.handle, "checked") {
+                Some(v) if is_dynamic(&v) => self.checked,
+                Some(v) => v != "false",
+                None => false,
+            },
+            State::Hover => on_pointer(self.pointer.0),
+            State::Active => on_pointer(self.pointer.1),
+            _ => false,
         }
     }
 
     fn is_opaque(&self) -> bool {
         self.opaque
+    }
+}
+
+/// Whether `selector` matches `element`: `None` if it doesn't, else the
+/// condition on the element's `__pointer` (its `PointerLevel`) under which
+/// it does, `Some(None)` if it matches whatever the pointer does. Hovered
+/// elements are one and its ancestors, so the levels to try are 0 (the
+/// element itself) up to its root, and none.
+fn pointer_match(selector: &xerune_css::selector::Selector, element: &mut MacroElementWrapper) -> Option<Option<String>> {
+    use xerune_css::selector::State;
+    let (hover, active) = (selector.uses_state(State::Hover), selector.uses_state(State::Active));
+    element.pointer = (u32::MAX, u32::MAX);
+    if !hover && !active {
+        return selector.matches(element).then_some(None);
+    }
+    let depth = std::iter::successors(Some(element.handle.clone()), dom_parent).count() as u32;
+    let levels: Vec<u32> = (0..=depth).chain([u32::MAX]).collect();
+    let (hovers, actives) = match (hover, active) {
+        (true, true) => (levels.clone(), levels),
+        (true, false) => (levels, vec![u32::MAX]),
+        _ => (vec![u32::MAX], levels),
+    };
+    let mut matching = Vec::new();
+    for &h in &hovers {
+        for &a in &actives {
+            element.pointer = (h, a);
+            if selector.matches(element) {
+                matching.push((h, a));
+            }
+        }
+    }
+    element.pointer = (u32::MAX, u32::MAX);
+    if matching.is_empty() {
+        return None;
+    }
+    if matching.len() == hovers.len() * actives.len() {
+        return Some(None);
+    }
+    // One of the levels matters: a test of it alone.
+    let test = |field: &str, values: Vec<u32>| match values.iter().rposition(|&v| v != u32::MAX) {
+        Some(last) if !values.contains(&u32::MAX) && values == (0..=values[last]).collect::<Vec<_>>() => {
+            format!("__pointer.{field} <= {}", values[last])
+        }
+        _ => format!("matches!(__pointer.{field}, {})", values.iter().map(|v| format!("{v}u32")).collect::<Vec<_>>().join(" | ")),
+    };
+    Some(Some(match (hover, active) {
+        (true, false) => test("hover", matching.iter().map(|m| m.0).collect()),
+        (false, true) => test("active", matching.iter().map(|m| m.1).collect()),
+        _ => matching.iter().map(|(h, a)| format!("(__pointer.hover == {h}u32 && __pointer.active == {a}u32)")).collect::<Vec<_>>().join(" || "),
+    }))
+}
+
+/// `a && b` of two optional conditions.
+fn and_condition(a: Option<String>, b: Option<String>) -> Option<String> {
+    match (a, b) {
+        (Some(a), Some(b)) => Some(format!("({a}) && ({b})")),
+        (a, b) => a.or(b),
     }
 }
 
@@ -1322,6 +1409,7 @@ fn compile_dom_node<'a>(
             for GuardedRule { rule, guard } in rules {
                 let mut wrapper = MacroElementWrapper::new(handle.clone());
                 wrapper.active_classes = static_classes.clone();
+                wrapper.distance = 0;
                 // Only form controls have parts (`*::-moz-range-thumb`).
                 let part = match rule.selector.pseudo_element() {
                     None => None,
@@ -1338,8 +1426,8 @@ fn compile_dom_node<'a>(
                     media_guard: guard.clone(),
                 });
 
-                if rule.selector.matches(&wrapper) {
-                    push(None);
+                if let Some(condition) = pointer_match(&rule.selector, &mut wrapper) {
+                    push(condition);
                     continue;
                 }
                 for (cls, cond) in &conditional_classes {
@@ -1347,26 +1435,24 @@ fn compile_dom_node<'a>(
                     active.insert(cls.clone());
                     wrapper.active_classes = active;
                     wrapper.checked = false;
-                    if rule.selector.matches(&wrapper) {
-                        push(Some(cond.clone()));
+                    if let Some(condition) = pointer_match(&rule.selector, &mut wrapper) {
+                        push(and_condition(Some(cond.clone()), condition));
                     } else if let Some(checked) = &checked_condition {
                         wrapper.checked = true;
-                        if rule.selector.matches(&wrapper) {
-                            push(Some(format!("({cond}) && ({checked})")));
+                        if let Some(condition) = pointer_match(&rule.selector, &mut wrapper) {
+                            push(and_condition(Some(format!("({cond}) && ({checked})")), condition));
                         }
                     }
                 }
                 if let Some(checked) = &checked_condition {
                     wrapper.active_classes = static_classes.clone();
                     wrapper.checked = true;
-                    if rule.selector.matches(&wrapper) {
-                        push(Some(checked.clone()));
+                    if let Some(condition) = pointer_match(&rule.selector, &mut wrapper) {
+                        push(and_condition(Some(checked.clone()), condition));
                     }
                 }
             }
 
-            // `!important` declarations come after the `style` attribute,
-            // which `begin_element` applies.
             let mut rule_applications = Vec::new();
             let mut important_applications = Vec::new();
             for rule in matched_rules {
@@ -1458,6 +1544,7 @@ fn compile_dom_node<'a>(
             let site = next_site();
             quote! {
                 let __key = ::xerune::__private::element_key(__parent_key, #site);
+                let __pointer = builder.pointer_level(__key, __parent_pointer);
                 let (el, node) = {
                     #(#dynamic_vars)*
                     let attrs_slice: &[(std::borrow::Cow<'static, str>, std::borrow::Cow<'_, str>)] = &[
@@ -1476,6 +1563,7 @@ fn compile_dom_node<'a>(
                     let parent = node;
                     let parent_style = &el.style;
                     let __parent_key = __key;
+                    let __parent_pointer = __pointer;
                     #(#child_compilation)*
                 }
                 builder.finish_element(el, node, &parent_style);
@@ -1936,6 +2024,8 @@ fn expand_template(input: &DeriveInput, template: &TemplateRef) -> proc_macro2::
     };
 
     let mut local_vars = HashSet::new();
+    let uses = |state| rules.iter().any(|r| r.rule.selector.uses_state(state));
+    let (uses_hover, uses_active) = (uses(xerune_css::selector::State::Hover), uses(xerune_css::selector::State::Active));
     let body_compilation = compile_dom_node(&dom.document, &rules, &mut local_vars, &dynamic_exprs, &dynamic_loops, &dynamic_ifs);
 
     let expanded = quote! {
@@ -1944,6 +2034,10 @@ fn expand_template(input: &DeriveInput, template: &TemplateRef) -> proc_macro2::
         impl ::xerune::__private::TemplateLayout for #name {
             fn stylesheet(&self) -> &'static str {
                 ""
+            }
+
+            fn uses_pointer(&self) -> (bool, bool) {
+                (#uses_hover, #uses_active)
             }
 
             fn build_ui(
@@ -1988,6 +2082,7 @@ fn expand_template(input: &DeriveInput, template: &TemplateRef) -> proc_macro2::
                 let parent = builder.begin_root(default_style);
                 let parent_style = default_style.clone();
                 let __parent_key: u64 = 0;
+                let __parent_pointer = ::xerune::__private::PointerLevel::NONE;
                 {
                     let parent = parent;
                     let parent_style = parent_style;

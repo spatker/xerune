@@ -234,6 +234,8 @@ pub(crate) fn resolve_styles(
     message_validator: &impl Fn(&str) -> bool,
     stylesheet: &xerune_css::sheet::StyleSheet,
     node_metadata: &NodeMap<NodeMetadata>,
+    keys: &NodeMap<u64>,
+    pointer: &super::builder::PointerState,
     base_styles: &mut NodeMap<(Style, ContainerStyle)>,
     style_cache: &mut HashMap<StyleCacheKey, (Style, ContainerStyle)>,
 ) {
@@ -296,6 +298,8 @@ pub(crate) fn resolve_styles(
         taffy,
         metadata: node_metadata,
         meta,
+        keys,
+        pointer,
     };
     let matched_rules = stylesheet.rules.iter().enumerate()
         .filter_map(|(index, rule)| rule.selector.matches(&el_wrapper).then_some(index))
@@ -444,6 +448,8 @@ pub(crate) fn resolve_styles(
             message_validator,
             stylesheet,
             node_metadata,
+            keys,
+            pointer,
             base_styles,
             style_cache,
         );
