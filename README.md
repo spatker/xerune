@@ -8,8 +8,6 @@ Xerune is a lightweight, CPU-only native HTML/CSS rendering engine and UI framew
 | :---: | :---: | :---: |
 | ![Music Player](docs/img/music_player.gif) | ![Showcase](docs/img/showcase.gif) | ![Animation](docs/img/animation.gif) |
 
-High quality videos: [Music Player](docs/img/music_player.mkv), [Showcase](docs/img/showcase.mkv), [Animation](docs/img/animation.mkv)
-
 ## Features
 
 - **Model-View-Update (MVU) Architecture**: Elm-style design providing predictable state transitions and unidirectional data flow.
