@@ -388,6 +388,7 @@ cargo run --example todo
 | `XERUNE_SNAPSHOT` | Output PNG path; enables snapshot mode |
 | `XERUNE_SNAPSHOT_SIZE` | `WIDTHxHEIGHT`; defaults to the app's window size |
 | `XERUNE_SNAPSHOT_MESSAGES` | `;`-separated messages dispatched in order (same strings as `data-on-click`); an unknown message is an error |
+| `XERUNE_SNAPSHOT_POINTER` | `X,Y` where the pointer hovers after the messages, to see `:hover` and `data-on-hover` |
 | `XERUNE_SNAPSHOT_TIME_MS` | Simulated time to run before rendering, so timers fire and animations progress (default 0) |
 
 The frame goes through the app's own renderer, so fonts and drawing match the real app. Pending images are awaited (up to 10 s). `App::on_start` is not run, since background producers would make the output nondeterministic; drive state with messages instead. To snapshot from code, use `xerune::backend::SnapshotBackend` directly.

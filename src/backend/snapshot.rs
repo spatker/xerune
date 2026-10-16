@@ -18,6 +18,8 @@
 //! - `XERUNE_SNAPSHOT_SIZE`: `WIDTHxHEIGHT`, defaults to the app's window size
 //! - `XERUNE_SNAPSHOT_MESSAGES`: `;`-separated messages dispatched in order
 //! - `XERUNE_SNAPSHOT_TIME_MS`: simulated time to run before rendering (default 0)
+//! - `XERUNE_SNAPSHOT_POINTER`: `X,Y` where the pointer hovers, after the
+//!   messages (for `:hover` and `data-on-hover`)
 
 use std::path::PathBuf;
 use std::time::Duration;
@@ -39,6 +41,8 @@ pub struct SnapshotBackend {
     pub size: Option<(u32, u32)>,
     /// Messages dispatched, in order, before rendering.
     pub messages: Vec<String>,
+    /// Where the pointer hovers, after the messages.
+    pub pointer: Option<(f32, f32)>,
     /// Simulated time to advance before rendering, letting timers fire and
     /// animations progress deterministically.
     pub time: Duration,
@@ -47,7 +51,7 @@ pub struct SnapshotBackend {
 impl SnapshotBackend {
     /// Snapshot to `path` at the app's own size, with no messages.
     pub fn new(path: impl Into<PathBuf>) -> Self {
-        Self { path: path.into(), size: None, messages: Vec::new(), time: Duration::ZERO }
+        Self { path: path.into(), size: None, messages: Vec::new(), pointer: None, time: Duration::ZERO }
     }
 
     /// Read the snapshot configuration from the `XERUNE_SNAPSHOT*` environment
@@ -77,7 +81,14 @@ impl SnapshotBackend {
             Ok(s) => Duration::from_millis(s.trim().parse().map_err(|_| bad("XERUNE_SNAPSHOT_TIME_MS", "expected milliseconds"))?),
             Err(_) => Duration::ZERO,
         };
-        Ok(Self { path, size, messages, time })
+        let pointer = match std::env::var("XERUNE_SNAPSHOT_POINTER") {
+            Ok(s) => {
+                let parsed = s.split_once(',').and_then(|(x, y)| Some((x.trim().parse().ok()?, y.trim().parse().ok()?)));
+                Some(parsed.ok_or_else(|| bad("XERUNE_SNAPSHOT_POINTER", "expected X,Y, e.g. 120,80"))?)
+            }
+            Err(_) => None,
+        };
+        Ok(Self { path, size, messages, pointer, time })
     }
 
     /// Bring `runtime` into the configured state and render one frame,
@@ -98,6 +109,9 @@ impl SnapshotBackend {
             }
         }
         runtime.handle_messages(self.messages.iter().cloned());
+        if let Some((x, y)) = self.pointer {
+            runtime.handle_event(crate::InputEvent::Hover { x, y });
+        }
 
         // tick_at_ms anchors to the runtime's own clock on the first call, so
         // the real time spent starting up doesn't leak into animations.
