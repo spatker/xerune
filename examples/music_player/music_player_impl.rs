@@ -89,17 +89,34 @@ fn default_true() -> bool {
     true
 }
 
+/// Where the track list is looked for, relative to the working directory:
+/// the repository root, then a deployed layout.
+#[cfg(not(target_arch = "wasm32"))]
+const TRACK_LISTS: [&str; 2] = ["examples/music_player/resources/music.json", "resources/music_player/music.json"];
+
+/// Read the track list from the first of [`TRACK_LISTS`] that exists, or
+/// panic naming every path tried and why it failed.
+#[cfg(not(target_arch = "wasm32"))]
+fn read_tracks() -> Vec<Track> {
+    let mut failures = String::new();
+    for path in TRACK_LISTS {
+        match std::fs::read_to_string(path) {
+            Ok(content) => return serde_json::from_str(&content).unwrap_or_else(|e| panic!("can't parse {path}: {e}")),
+            Err(e) => failures.push_str(&format!("\n  {path}: {e}")),
+        }
+    }
+    let dir = std::env::current_dir().map_or_else(|e| format!("? ({e})"), |d| d.display().to_string());
+    panic!("can't read the track list; tried, in {dir}:{failures}");
+}
+
 impl MusicPlayerModel {
     pub fn new(json_content: Option<&str>) -> Self {
         let tracks: Vec<Track> = if let Some(content) = json_content {
-            serde_json::from_str(content).expect("Failed to parse music json")
+            serde_json::from_str(content).unwrap_or_else(|e| panic!("can't parse the track list: {e}"))
         } else {
             #[cfg(not(target_arch = "wasm32"))]
             {
-                let content = std::fs::read_to_string("examples/music_player/resources/music.json")
-                    .or_else(|_| std::fs::read_to_string("resources/music_player/music.json"))
-                    .expect("Failed to read music.json");
-                serde_json::from_str(&content).expect("Failed to parse music json")
+                read_tracks()
             }
             #[cfg(target_arch = "wasm32")]
             {
