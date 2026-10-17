@@ -586,14 +586,44 @@ pub fn draw_box_shadow(
     let orig_top = orig_ry + radius;
     let orig_bottom = orig_ry + orig_rh - radius;
 
+    let box_r = s_radius.min(sw / 2.0).min(sh / 2.0).max(0.0);
+    let b_left = sx + box_r;
+    let b_right = sx + sw - box_r;
+    let b_top = sy + box_r;
+    let b_bottom = sy + sh - box_r;
+
+    // The shadow's color at `dist_from_edge` from its shape.
+    let shade = |dist_from_edge: f32| -> Option<u32> {
+        // How much of the shape covers the pixel; an inset shadow is
+        // what it leaves.
+        let in_shape = if blur <= 0.5 {
+            if dist_from_edge <= 0.0 { 1.0 } else { 0.0 }
+        } else {
+            let u = (dist_from_edge / blur).clamp(-1.0, 1.0);
+            let t = 0.5 - 0.5 * u;
+            t * t * (3.0 - 2.0 * t)
+        };
+        let alpha_factor = if inset { 1.0 - in_shape } else { in_shape };
+        if alpha_factor <= 0.0 {
+            return None;
+        }
+        let final_a = (base_a * alpha_factor).round() as u32;
+        (final_a > 0).then(|| (packed & 0x00ffffff) | (final_a << 24))
+    };
+
     for py in start_y..end_y {
         let y_f = py as f32 + 0.5;
-        for px in start_x..end_x {
+        let ody = if y_f < orig_top { orig_top - y_f } else if y_f > orig_bottom { y_f - orig_bottom } else { 0.0 };
+        let dy = if y_f < b_top { b_top - y_f } else if y_f > b_bottom { y_f - b_bottom } else { 0.0 };
+        // Beyond the shape's top or bottom edge, between its corners, the
+        // shadow depends on the row only.
+        let mut edge_color = None;
+        let mut px = start_x;
+        while px < end_x {
             let x_f = px as f32 + 0.5;
 
             // Check if inside the original element border box
             let odx = if x_f < orig_left { orig_left - x_f } else if x_f > orig_right { x_f - orig_right } else { 0.0 };
-            let ody = if y_f < orig_top { orig_top - y_f } else if y_f > orig_bottom { y_f - orig_bottom } else { 0.0 };
             let is_inside_element = if odx > 0.0 && ody > 0.0 {
                 (odx * odx + ody * ody) <= radius * radius
             } else {
@@ -601,55 +631,37 @@ pub fn draw_box_shadow(
             };
 
             if !inset && is_inside_element {
+                // Pixels before the element's right edge (or before its
+                // right corner, in a corner row) are inside it too.
+                let inside_to = if ody > 0.0 { orig_right } else { orig_rx + orig_rw };
+                px = if odx > 0.0 { px + 1 } else { (px + 1).max((inside_to - 0.5).floor() as i32) };
                 continue;
             }
+            px += 1;
             if inset && !is_inside_element {
                 continue;
             }
 
-            let box_r = s_radius.min(sw / 2.0).min(sh / 2.0).max(0.0);
-            let b_left = sx + box_r;
-            let b_right = sx + sw - box_r;
-            let b_top = sy + box_r;
-            let b_bottom = sy + sh - box_r;
-
             let dx = if x_f < b_left { b_left - x_f } else if x_f > b_right { x_f - b_right } else { 0.0 };
-            let dy = if y_f < b_top { b_top - y_f } else if y_f > b_bottom { y_f - b_bottom } else { 0.0 };
 
-            let dist_from_edge = if dx > 0.0 && dy > 0.0 {
-                (dx * dx + dy * dy).sqrt() - box_r
+            let color = if dx > 0.0 && dy > 0.0 {
+                shade((dx * dx + dy * dy).sqrt() - box_r)
             } else if dx > 0.0 {
-                dx - box_r
+                shade(dx - box_r)
             } else if dy > 0.0 {
-                dy - box_r
+                *edge_color.get_or_insert_with(|| shade(dy - box_r))
             } else {
                 let d_left = x_f - sx;
                 let d_right = (sx + sw) - x_f;
                 let d_top = y_f - sy;
                 let d_bottom = (sy + sh) - y_f;
-                -d_left.min(d_right).min(d_top).min(d_bottom)
+                shade(-d_left.min(d_right).min(d_top).min(d_bottom))
             };
 
-            // How much of the shape covers the pixel; an inset shadow is
-            // what it leaves.
-            let in_shape = if blur <= 0.5 {
-                if dist_from_edge <= 0.0 { 1.0 } else { 0.0 }
-            } else {
-                let u = (dist_from_edge / blur).clamp(-1.0, 1.0);
-                let t = 0.5 - 0.5 * u;
-                t * t * (3.0 - 2.0 * t)
-            };
-            let alpha_factor = if inset { 1.0 - in_shape } else { in_shape };
-
-            if alpha_factor > 0.0 {
-                let final_a = (base_a * alpha_factor).round() as u32;
-                if final_a > 0 {
-                    let pixel_color = (packed & 0x00ffffff) | (final_a << 24);
-                    let idx = calc_pixel_index(px, py, rotation, physical_w, logical_w, logical_h);
-
-                    if idx < buffer.len() {
-                        blend_pixel(&mut buffer[idx], pixel_color);
-                    }
+            if let Some(pixel_color) = color {
+                let idx = calc_pixel_index(px - 1, py, rotation, physical_w, logical_w, logical_h);
+                if idx < buffer.len() {
+                    blend_pixel(&mut buffer[idx], pixel_color);
                 }
             }
         }
