@@ -635,9 +635,20 @@ has a switch in its sidebar: `LC_ALL=de_DE.UTF-8 cargo run --example todo`, or
 `XERUNE_SNAPSHOT_MESSAGES="lang:de"` in a snapshot. The `lang` attribute also picks the
 [on-screen keyboard](#8-on-screen-keyboard)'s layout for text inputs. There are
 no plural rules or number formats: write a key per form (`one_open`,
-`many_open`) and format numbers in Rust. Text is laid out as everywhere else, so
-scripts Roboto covers (Latin, Greek, Cyrillic) work; right-to-left and complex
-scripts don't (no bidi or shaping), and CJK needs a font that has it.
+`many_open`) and format numbers in Rust (the showcase reads its decimal
+separator from its catalogs).
+
+**Other writing systems.** Characters the text font lacks come from fallback
+fonts, `Fonts::with_fallback(regular, bold)`: the examples add a Hangul font
+(`resources/fonts/XeruneHangul-*.otf`, ~3.9 MB, made by
+`tools/subset-hangul.py`) for their Korean translations. A line with fallback
+characters is as tall as the fallback font needs, and Korean breaks between
+syllables, or only between words with `word-break: keep-all` (the examples set
+it on their root; it doesn't change Latin text), all as in Chromium. To keep
+ARM binaries small, the examples embed the Hangul font and offer Korean on
+32-bit ARM only with `--features hangul`. Right-to-left and complex scripts
+don't work yet (no bidi or shaping), and Chinese and Japanese would need their
+own font.
 
 ---
 

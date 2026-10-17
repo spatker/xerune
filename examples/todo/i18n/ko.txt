@@ -1,0 +1,26 @@
+# The todo example in Korean.
+language = 한국어
+app = XERUNE · 할 일
+title = 오늘
+done_big = 완료
+open = 할 일
+done = 완료
+placeholder = 새 할 일 입력
+add_task = 추가
+hint = 화살표 키로 이동 · Enter로 완료 표시
+empty_big = 모두 끝!
+empty_small = 오늘 남은 일이 없어요. 재미있는 일을 추가해 보세요.
+tag_work = 업무
+tag_home = 집안일
+tag_fun = 여가
+
+task_1 = Pi에 새 펌웨어 올리기
+task_2 = 베란다 토마토 물 주기
+task_3 = ARM에서 원뿔형 그라데이션 성능 측정하기
+task_4 = 토요일 클라이밍장 예약하기
+task_5 = 디스플레이 업체에 답장하기
+task_6 = 원두 사기
+task_7 = 쇼케이스 데모 영상 녹화하기
+task_8 = 새로 생긴 라멘집 가 보기
+task_9 = 3D 프린터 베드 청소하기
+task_10 = 릴리스 노트 작성하기

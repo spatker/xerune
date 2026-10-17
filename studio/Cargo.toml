@@ -6,6 +6,11 @@ edition = "2024"
 [lib]
 crate-type = ["cdylib"]
 
+[features]
+# The examples' Korean translations, which `cfg(feature = "hangul")` gates
+# on ARM; the browser draws Hangul with its own fonts, so wasm always has them.
+hangul = []
+
 [dependencies]
 xerune = { version = "0.1.0", path = "..", default-features = false, features = ["browser"] }
 wasm-bindgen = "0.2"

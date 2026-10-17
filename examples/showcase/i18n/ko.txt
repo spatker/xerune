@@ -1,0 +1,79 @@
+# The showcase in Korean.
+language = 한국어
+decimal = .
+
+tab_system = 시스템
+tab_vehicle = 차량
+tab_monitor = 모니터
+tab_controls = 컨트롤
+sub_system = 시스템 개요
+sub_vehicle = 계기판
+sub_monitor = 환자 모니터
+sub_controls = 위젯 갤러리
+
+# System
+cpu = CPU
+cores = 4코어
+memory = 메모리
+of_memory = 전체
+soc_temp = SoC 온도
+fan_auto = 팬 자동
+active_users = 활성 사용자
+users_week = 이번 주 +12%
+per_core_load = 코어별 부하
+core = 코어
+services = 서비스
+state_running = 실행 중
+state_syncing = 동기화 중
+state_idle = 대기
+detail_render = xerune_render · 60 fps
+detail_telemetry = mqtt://fleet.local
+detail_ota = 다음 확인 02:00
+configuration = 설정
+auto_scaling = 오토스케일링
+auto_scaling_hint = 부하가 늘면 워커 추가
+maintenance = 유지보수
+maintenance_hint = 새 작업 일시 중지
+load_spike = 부하 급증
+add_user = 사용자 추가
+
+# Vehicle
+speed = 속도
+battery = 배터리
+cabin = 실내 온도
+engine_on = 엔진 켜짐
+engine_off = 엔진 꺼짐
+shift_up = 변속하세요
+sport = 스포츠
+rpm = RPM
+rpm_unit = x1000 rpm
+accelerate = 가속
+start_engine = 시동 켜기
+stop_engine = 시동 끄기
+brake = 브레이크
+
+# Monitor (Korean monitors keep the English abbreviations)
+ecg = ECG  II
+pleth = PLETH
+hr = HR
+per_minute = bpm
+nibp = NIBP
+resp = RESP
+resp_unit = rpm
+
+# Controls
+buttons = 버튼
+primary = 기본 동작
+secondary = 보조
+destructive = 삭제
+neutral = 일반
+stepper = 카운터
+toggles = 토글
+wifi = Wi-Fi
+connected = 연결됨
+off = 꺼짐
+devices = 기기 2대
+system_tab = 시스템 탭
+volume = 볼륨
+percent = 퍼센트
+language_title = 언어

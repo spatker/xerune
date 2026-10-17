@@ -48,6 +48,9 @@ browser = ["dep:wasm-bindgen", "dep:serde", "dep:serde_json", "std", "interpret"
 interpret = ["std", "dep:serde", "dep:xerune_template"]
 # Embed the ~10 MB NotoColorEmoji font in the examples for color emoji.
 emoji = []
+# Embed the ~3.9 MB Hangul fallback font (and offer Korean) in the examples
+# on 32-bit ARM too; other targets always have it.
+hangul = []
 
 [dependencies]
 # Exact: generated code uses `xerune::__private`, which changes with the macro.

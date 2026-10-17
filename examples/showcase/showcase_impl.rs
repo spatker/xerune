@@ -5,10 +5,15 @@ use tiny_skia::{Color, LineCap, LineJoin, Paint, PathBuilder, PixmapMut, Rect, S
 use xerune::i18n::{Catalog, Translations};
 use xerune::{Model, XeruneMessage, XeruneTemplate};
 
-/// The showcase's strings, English and German (`i18n/*.txt`).
+/// The showcase's strings, English, German and Korean (`i18n/*.txt`; Korean
+/// only where the examples have the Hangul font).
 static STRINGS: LazyLock<Translations> = LazyLock::new(|| {
     let catalog = |lang, text| Catalog::parse(lang, text).expect("the showcase's strings");
-    Translations::new(catalog("en", include_str!("i18n/en.txt"))).with(catalog("de", include_str!("i18n/de.txt")))
+    let strings = Translations::new(catalog("en", include_str!("i18n/en.txt"))).with(catalog("de", include_str!("i18n/de.txt")));
+    // Korean needs the Hangul font, which ARM builds leave out (examples/support).
+    #[cfg(any(feature = "hangul", not(target_arch = "arm")))]
+    let strings = strings.with(catalog("ko", include_str!("i18n/ko.txt")));
+    strings
 });
 
 /// Simulation step; the vehicle needles and monitor traces advance per tick.

@@ -3,10 +3,15 @@ use std::sync::LazyLock;
 use xerune::i18n::{Catalog, Translations};
 use xerune::{Model, XeruneMessage, XeruneTemplate};
 
-/// The example's strings, English and German (`i18n/*.txt`).
+/// The example's strings, English, German and Korean (`i18n/*.txt`; Korean
+/// only where the examples have the Hangul font).
 static STRINGS: LazyLock<Translations> = LazyLock::new(|| {
     let catalog = |lang, text| Catalog::parse(lang, text).expect("the todo example's strings");
-    Translations::new(catalog("en", include_str!("i18n/en.txt"))).with(catalog("de", include_str!("i18n/de.txt")))
+    let strings = Translations::new(catalog("en", include_str!("i18n/en.txt"))).with(catalog("de", include_str!("i18n/de.txt")));
+    // Korean needs the Hangul font, which ARM builds leave out (examples/support).
+    #[cfg(any(feature = "hangul", not(target_arch = "arm")))]
+    let strings = strings.with(catalog("ko", include_str!("i18n/ko.txt")));
+    strings
 });
 
 #[derive(XeruneTemplate, serde::Serialize, serde::Deserialize)]

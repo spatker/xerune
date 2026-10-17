@@ -122,6 +122,9 @@ not gcc-arm or `cargo check`: it links against the boards' glibc 2.39):
 - Examples target 800x480 and have a portrait layout
   (`@media (orientation: portrait)`); check both sizes. No decorative emoji
   (they render as boxes without `--features emoji`; Roboto lacks arrows and ✓).
+  Hangul comes from a fallback font (`Fonts::with_fallback`, `examples/support`),
+  left out of 32-bit ARM builds unless `--features hangul`; gate Korean UI on the
+  same `cfg(any(feature = "hangul", not(target_arch = "arm")))`.
 - Commits: kernel style, `subsystem: summary` (e.g. `xerune_derive: ...`,
   `examples: todo: ...`, `xerune_render: ...`), short body explaining why.
   One work unit per commit, committed as each unit is done.

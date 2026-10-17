@@ -4,6 +4,8 @@
 
     .app {
         display: flex;
+        /* Korean wraps between words, not syllables; no change for Latin text. */
+        word-break: keep-all;
         flex-direction: column;
         width: 100vw;
         height: 100vh;
