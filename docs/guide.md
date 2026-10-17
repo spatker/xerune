@@ -575,7 +575,55 @@ which start with `kb:`: `XERUNE_SNAPSHOT_MESSAGES="edit_password;kb:type:a;kb:sh
 
 ---
 
-## 9. Headless Snapshots
+## 9. Translations
+
+`xerune::i18n` keeps an app's strings per language. Each language is a
+`Catalog`, a text file of `key = value` lines (`#` starts a comment) that
+translators edit without touching Rust:
+
+```text
+# i18n/de.txt
+title = Heute
+add_task = Aufgabe hinzufügen
+```
+
+A `Translations` holds the catalogs; the first is the fallback, for languages
+without a catalog and for keys a catalog lacks (a key in no catalog shows as the
+key itself, and logs a warning). The language in use is the model's own state,
+a plain field, so it is serialized with the rest (the studio, saved states) and
+switching is an ordinary update:
+
+```rust
+static STRINGS: LazyLock<Translations> = LazyLock::new(|| {
+    let catalog = |lang, text| Catalog::parse(lang, text).expect("valid strings");
+    Translations::new(catalog("en", include_str!("i18n/en.txt")))
+        .with(catalog("de", include_str!("i18n/de.txt")))
+});
+
+impl Settings {
+    pub fn t<'a>(&'a self, key: &'a str) -> &'a str {
+        STRINGS.t(&self.lang, key)
+    }
+}
+// update: Msg::Lang(lang) => self.lang = lang,
+```
+
+```html
+<div class="app" lang="{{ lang }}">
+    <div data-on-click="add">{{ self.t("add_task") }}</div>
+```
+
+Language tags compare ignoring case, and a regional tag (`de-AT`) takes its
+language's catalog. The `lang` attribute also picks the
+[on-screen keyboard](#8-on-screen-keyboard)'s layout for text inputs. There are
+no plural rules or number formats: write a key per form (`one_open`,
+`many_open`) and format numbers in Rust. Text is laid out as everywhere else, so
+scripts Roboto covers (Latin, Greek, Cyrillic) work; right-to-left and complex
+scripts don't (no bidi or shaping), and CJK needs a font that has it.
+
+---
+
+## 10. Headless Snapshots
 
 Any app can render a single frame to a PNG instead of opening a window, which makes the UI easy to check from tests, CI or an AI agent. Every built-in backend honours these variables, so no code changes are needed:
 
@@ -601,7 +649,7 @@ The frame goes through the app's own renderer, so fonts and drawing match the re
 
 ---
 
-## 10. Running on Embedded Linux (fbdev / DRM)
+## 11. Running on Embedded Linux (fbdev / DRM)
 
 Configure `Cargo.toml` features to enable embedded backends:
 ```toml
@@ -620,7 +668,7 @@ framebuffer by itself. Touch input is mapped to the rotated UI.
 
 ---
 
-## 11. WebAssembly & Browser Deployment
+## 12. WebAssembly & Browser Deployment
 
 Xerune applications can compile to WebAssembly to run directly in web browsers or inside **Xerune Studio** (a web-based live inspector).
 
@@ -672,7 +720,7 @@ of the compiled template.
 
 ---
 
-## 12. WPT Reftests
+## 13. WPT Reftests
 
 `wpt_runner` checks Xerune against the [web-platform-tests](https://github.com/web-platform-tests/wpt) reftests of the CSS features it implements. Each test is rendered by Xerune and compared pixel for pixel with Chromium's screenshot of the test's reference.
 

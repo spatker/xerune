@@ -8,9 +8,19 @@
 //! add_task = Aufgabe hinzufügen
 //! ```
 //!
-//! The model owns a [`Translations`] and templates call it through a model
-//! method, `{{ self.t("add_task") }}`. Switching the language is an ordinary
-//! update: [`Translations::set_lang`], then the view is rebuilt.
+//! The app's catalogs are a [`Translations`], kept where the model reaches
+//! them (a `static`, or a field). The language in use is the model's own
+//! state, a tag like any other field, and templates look strings up through
+//! a model method:
+//!
+//! ```ignore
+//! fn t<'a>(&'a self, key: &'a str) -> &'a str {
+//!     STRINGS.t(&self.lang, key)
+//! }
+//! ```
+//!
+//! `{{ self.t("add_task") }}`. Switching the language is an ordinary update
+//! that sets the field.
 
 use crate::alloc_prelude::*;
 
@@ -50,18 +60,17 @@ impl Catalog {
     }
 }
 
-/// The catalogs of an app and the language in use. The first catalog is the
-/// fallback for keys another language lacks.
+/// The catalogs of an app. The first is the fallback, for languages
+/// without a catalog and keys a catalog lacks.
 #[derive(Debug, Clone)]
 pub struct Translations {
     catalogs: Vec<Catalog>,
-    current: usize,
 }
 
 impl Translations {
-    /// Translations with `fallback` as the only, current language.
+    /// Translations with `fallback` as the only language.
     pub fn new(fallback: Catalog) -> Self {
-        Self { catalogs: vec![fallback], current: 0 }
+        Self { catalogs: vec![fallback] }
     }
 
     /// Adds another language.
@@ -70,35 +79,29 @@ impl Translations {
         self
     }
 
-    /// Switches to `lang`. Returns `false`, keeping the current language,
-    /// when there is no catalog for it.
-    pub fn set_lang(&mut self, lang: &str) -> bool {
-        match self.catalogs.iter().position(|c| c.lang == lang) {
-            Some(i) => {
-                self.current = i;
-                true
-            }
-            None => false,
-        }
-    }
-
-    /// The language in use.
-    pub fn lang(&self) -> &str {
-        &self.catalogs[self.current].lang
-    }
-
     /// The available languages, the fallback first.
     pub fn langs(&self) -> impl Iterator<Item = &str> {
         self.catalogs.iter().map(Catalog::lang)
     }
 
-    /// The text for `key` in the current language, else in the fallback,
-    /// else `key` itself (so a missing string shows up on screen).
-    pub fn t<'a>(&'a self, key: &'a str) -> &'a str {
-        if let Some(text) = self.catalogs[self.current].get(key) {
+    /// The catalog for `lang`, or for the language it is a variant of (`de`
+    /// for `de-AT`); tags are compared ignoring case. `None` when there is
+    /// none.
+    pub fn catalog(&self, lang: &str) -> Option<&Catalog> {
+        let primary = |tag: &str| tag.split('-').next().unwrap_or("").to_ascii_lowercase();
+        self.catalogs.iter().find(|c| c.lang.eq_ignore_ascii_case(lang))
+            .or_else(|| self.catalogs.iter().find(|c| primary(&c.lang) == primary(lang)))
+    }
+
+    /// The text for `key` in `lang` (see [`Self::catalog`]), else in the
+    /// fallback, else `key` itself (so a missing string shows up on screen).
+    pub fn t<'a>(&'a self, lang: &str, key: &'a str) -> &'a str {
+        if let Some(text) = self.catalog(lang).and_then(|c| c.get(key)) {
             return text;
         }
-        log::warn!("no `{key}` in the {} strings", self.lang());
+        if self.catalog(lang).is_some() {
+            log::warn!("no `{key}` in the {lang} strings");
+        }
         self.catalogs[0].get(key).unwrap_or(key)
     }
 }
@@ -114,27 +117,22 @@ mod tests {
     }
 
     #[test]
-    fn looks_up_the_current_language() {
-        let mut tr = translations();
-        assert_eq!(tr.t("add"), "Add task");
-        assert!(tr.set_lang("de"));
-        assert_eq!(tr.lang(), "de");
-        assert_eq!(tr.t("add"), "Aufgabe hinzufügen");
+    fn looks_up_the_language() {
+        let tr = translations();
+        assert_eq!(tr.t("en", "add"), "Add task");
+        assert_eq!(tr.t("de", "add"), "Aufgabe hinzufügen");
+        assert_eq!(tr.t("DE-at", "add"), "Aufgabe hinzufügen", "a regional variant takes the language");
+        assert_eq!(tr.catalog("de-AT").map(Catalog::lang), Some("de"));
     }
 
     #[test]
     fn falls_back_to_the_first_language_then_the_key() {
-        let mut tr = translations();
-        tr.set_lang("de");
-        assert_eq!(tr.t("open"), "open");
-        assert_eq!(tr.t("missing"), "missing");
-    }
-
-    #[test]
-    fn keeps_the_language_for_an_unknown_tag() {
-        let mut tr = translations();
-        assert!(!tr.set_lang("fr"));
-        assert_eq!(tr.lang(), "en");
+        let tr = translations();
+        assert_eq!(tr.t("de", "open"), "open");
+        assert_eq!(tr.t("fr", "add"), "Add task");
+        assert_eq!(tr.t("", "add"), "Add task");
+        assert_eq!(tr.t("de", "missing"), "missing");
+        assert!(tr.catalog("fr").is_none());
         assert_eq!(tr.langs().collect::<Vec<_>>(), ["en", "de"]);
     }
 

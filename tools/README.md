@@ -42,4 +42,4 @@ these make that cheap.
   `text_layout::line_breaks_match_chromium` come from
   `tests/text/reference.html`.
 - `wpt_runner` compares WPT reftests with Chromium screenshots (see
-  `docs/guide.md` §12).
+  `docs/guide.md` §13).

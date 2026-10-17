@@ -18,7 +18,7 @@ the working notes.
 | `xerune_css/` | The CSS parser both of them use (`no_std`): stylesheets and declarations (`sheet`), selectors with specificity and matching over an `Element` trait (`selector`), `@media` blocks and queries, comment/string-aware scanning. Change CSS reading here, not in either crate |
 | `xerune_render/` | Software rasterizer (blits, rounded rects, gradients, glyphs). Has a `no_std` mode |
 | `studio/` | WASM inspector (`wasm-pack build --target web`, `features = ["browser"]`): the model runs in wasm, the view is the template interpreted live (`xerune.js` polls the files; no rebuild for template edits, one for newly called model methods) |
-| `wpt_runner/` | WPT reftests vs Chromium screenshots; scope in `suites.txt`, known failures in `expectations.txt` (`docs/guide.md` §12) |
+| `wpt_runner/` | WPT reftests vs Chromium screenshots; scope in `suites.txt`, known failures in `expectations.txt` (`docs/guide.md` §13) |
 | `examples/<name>/` | `main.rs` (runtime + `xerune::App`) + `<name>_impl.rs` (model; also used by tests, benches, studio) + `templates/*.html`; `examples/support/` loads the bundled fonts |
 | `tests/` | Integration tests; HTML fixtures in `tests/*.html`, `tests/canvas/`, `tests/gaps/`; trybuild cases in `tests/template_errors/` |
 | `tools/` | Measurement scripts: ARM instruction counts under qemu, Chromium line breaks (`tools/README.md`) |
@@ -43,6 +43,7 @@ Modules:
 - `css/`: values/properties parser, gradients (linear/radial/conic), `@keyframes`, `transition`, `media` (`@media` evaluation; `xerune_css::sheet` records which blocks each rule is in).
 - `screen.rs`: global viewport (two atomics) + `Breakpoint`. `Runtime::set_size` → `Model::on_resize` → rebuild.
 - `keyboard/`: on-screen keyboard (`Context::edit_text(TextRequest, on_done)`). A derived template inside the crate (`extern crate self as xerune`); while open the runtime builds its tree instead of the model's (`KeyboardSession`), routes clicks/keys/`kb:*` messages to it, and restores the model's scroll offsets on close. Opt-in `Runtime::set_input_keyboard` (`XERUNE_INPUT_KEYBOARD=1`) opens it on tapping a text input and sends `<id>:value:<text>`. `keys.rs`: `KeyMap` (backend key names → `KeyAction`).
+- `i18n.rs`: `Catalog` (`key = value` text) and `Translations` (`t(lang, key)`, fallback to the first catalog). The language is a plain model field; templates call a model method `self.t("key")` (guide §9).
 - `backend/`: `winit_impl` (desktop), `linuxfb_impl`, `drm_impl`, `input/evdev`, `browser_impl`, `snapshot`, `common_loop`.
 - `text.rs`: `ShapedText` (glyphs, advances, UAX #14 break segments via `unicode-linebreak`), line breaking, `GlyphRun`. Shaping is `TextMeasurer::shape` (fontdue advances in `xerune_render::Fonts`, cached per font set); layout measures text leaves with a taffy measure function (`Ui::compute_layout`).
 - `font.rs`, `roboto_*.rs`: embedded bitmap fonts (`no_std` path).
