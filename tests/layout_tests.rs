@@ -2233,3 +2233,37 @@ mod known_gaps {
         assert!(text_rect(&commands, "first").x < text_rect(&commands, "second").x);
     }
 }
+
+/// A recording dispatches `@MS` messages when their time comes, and its
+/// frames, each repainting only what changed in the one buffer, end up as
+/// a fresh snapshot of the same state.
+#[test]
+fn snapshot_recording_dispatches_timed_messages() {
+    use xerune::backend::SnapshotBackend;
+    let fonts = roboto();
+    let mut recorder = SnapshotBackend::new("unused.png");
+    recorder.size = Some((800, 480));
+    recorder.messages = ["toggle:2", "@150", "remove:0", "@250", "toggle:0"].map(String::from).to_vec();
+    recorder.frames = 4;
+    recorder.fps = 10;
+    let mut frames = Vec::new();
+    let mut runtime = Runtime::new(todo_impl::TodoList::default(), fonts.clone());
+    recorder
+        .record(&mut runtime, &mut xerune_render::SoftwareRenderer::new(fonts.clone()), 800, 480, |_, pixels, _, _| {
+            frames.push(pixels.to_vec());
+            Ok(())
+        })
+        .unwrap();
+
+    // Frames at 0, 100, 200 and 300 ms: changes at 150 and 250 ms.
+    assert_eq!(frames.len(), 4);
+    assert_eq!(frames[0], frames[1]);
+    assert_ne!(frames[1], frames[2]);
+    assert_ne!(frames[2], frames[3]);
+
+    let mut snapshot = SnapshotBackend::new("unused.png");
+    snapshot.messages = ["toggle:2", "remove:0", "toggle:0"].map(String::from).to_vec();
+    let mut runtime = Runtime::new(todo_impl::TodoList::default(), fonts.clone());
+    let (pixels, _, _) = snapshot.render(&mut runtime, &mut xerune_render::SoftwareRenderer::new(fonts), 800, 480).unwrap();
+    assert!(frames[3] == pixels, "the last frame differs from a fresh snapshot of the same state");
+}

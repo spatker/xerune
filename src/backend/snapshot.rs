@@ -16,10 +16,15 @@
 //!
 //! - `XERUNE_SNAPSHOT`: output PNG path (enables snapshot mode)
 //! - `XERUNE_SNAPSHOT_SIZE`: `WIDTHxHEIGHT`, defaults to the app's window size
-//! - `XERUNE_SNAPSHOT_MESSAGES`: `;`-separated messages dispatched in order
+//! - `XERUNE_SNAPSHOT_MESSAGES`: `;`-separated messages dispatched in order;
+//!   an `@MS` item holds the messages after it until `MS` milliseconds of
+//!   simulated time, so a recording can be scripted
 //! - `XERUNE_SNAPSHOT_TIME_MS`: simulated time to run before rendering (default 0)
 //! - `XERUNE_SNAPSHOT_POINTER`: `X,Y` where the pointer hovers, after the
 //!   messages (for `:hover` and `data-on-hover`)
+//! - `XERUNE_SNAPSHOT_FRAMES`: record this many frames instead of one, written
+//!   as `out_0000.png`, `out_0001.png`, ... (the first at `TIME_MS`)
+//! - `XERUNE_SNAPSHOT_FPS`: frames per second of a recording (default 30)
 
 use std::path::PathBuf;
 use std::time::Duration;
@@ -45,12 +50,16 @@ pub struct SnapshotBackend {
     /// Simulated time to advance before rendering, letting timers fire and
     /// animations progress deterministically.
     pub time: Duration,
+    /// Frames to record; more than one writes numbered PNGs.
+    pub frames: u32,
+    /// Frames per second of a recording.
+    pub fps: u32,
 }
 
 impl SnapshotBackend {
     /// Snapshot to `path` at the app's own size, with no messages.
     pub fn new(path: impl Into<PathBuf>) -> Self {
-        Self { path: path.into(), size: None, messages: Vec::new(), pointer: None, time: Duration::ZERO }
+        Self { path: path.into(), size: None, messages: Vec::new(), pointer: None, time: Duration::ZERO, frames: 1, fps: 30 }
     }
 
     /// Read the snapshot configuration from the `XERUNE_SNAPSHOT*` environment
@@ -80,6 +89,12 @@ impl SnapshotBackend {
             Ok(s) => Duration::from_millis(s.trim().parse().map_err(|_| bad("XERUNE_SNAPSHOT_TIME_MS", "expected milliseconds"))?),
             Err(_) => Duration::ZERO,
         };
+        let count = |var: &str, default: u32| match std::env::var(var) {
+            Ok(s) => s.trim().parse::<u32>().ok().filter(|&n| n > 0).ok_or_else(|| bad(var, "expected a positive integer")),
+            Err(_) => Ok(default),
+        };
+        let frames = count("XERUNE_SNAPSHOT_FRAMES", 1)?;
+        let fps = count("XERUNE_SNAPSHOT_FPS", 30)?;
         let pointer = match std::env::var("XERUNE_SNAPSHOT_POINTER") {
             Ok(s) => {
                 let parsed = s.split_once(',').and_then(|(x, y)| Some((x.trim().parse().ok()?, y.trim().parse().ok()?)));
@@ -87,7 +102,7 @@ impl SnapshotBackend {
             }
             Err(_) => None,
         };
-        Ok(Self { path, size, messages, pointer, time })
+        Ok(Self { path, size, messages, pointer, time, frames, fps })
     }
 
     /// Bring `runtime` into the configured state and render one frame,
@@ -98,39 +113,95 @@ impl SnapshotBackend {
         TM: TextMeasurer + 'static,
         R: crate::Renderer,
     {
+        let mut frame = None;
+        Self { frames: 1, ..self.clone() }.record(runtime, renderer, width, height, |_, pixels, w, h| {
+            frame = Some((pixels.to_vec(), w, h));
+            Ok(())
+        })?;
+        Ok(frame.expect("one frame was rendered"))
+    }
+
+    /// Like [`render`](Self::render), but render [`frames`](Self::frames)
+    /// frames at [`fps`](Self::fps), handing each to `on_frame` with its
+    /// index. `@MS` items in the messages wait for that simulated time.
+    pub fn record<M, TM, R>(
+        &self,
+        runtime: &mut Runtime<M, TM>,
+        renderer: &mut R,
+        width: u32,
+        height: u32,
+        mut on_frame: impl FnMut(u32, &[u32], u32, u32) -> Result<(), BackendError>,
+    ) -> Result<(), BackendError>
+    where
+        M: Model + crate::ui::TemplateLayout + 'static,
+        TM: TextMeasurer + 'static,
+        R: crate::Renderer,
+    {
         let (width, height) = self.size.unwrap_or((width, height));
         let clock = crate::runtime::ManualClock::new();
         runtime.set_clock(clock.clone());
         runtime.set_size(width as f32, height as f32);
 
+        // Each message with the time it is due at.
+        let mut script = Vec::new();
+        let mut at = Duration::ZERO;
         for message in &self.messages {
-            // Report typos instead of silently snapshotting the wrong state.
-            if <M::Message as core::str::FromStr>::from_str(message).is_err() && !crate::keyboard::is_keyboard_message(message) {
+            if let Some(ms) = message.strip_prefix('@') {
+                let ms: u64 = ms.trim().parse().map_err(|_| BackendError::Run(format!("expected @MILLISECONDS, got {message:?}")))?;
+                at = Duration::from_millis(ms);
+            } else if <M::Message as core::str::FromStr>::from_str(message).is_err() && !crate::keyboard::is_keyboard_message(message) {
+                // Report typos instead of silently snapshotting the wrong state.
                 return Err(BackendError::Run(format!("unknown message {message:?}")));
+            } else {
+                script.push((at, message.clone()));
             }
         }
-        runtime.handle_messages(self.messages.iter().cloned());
+        let mut script = script.into_iter().peekable();
+
+        let start = clock.now();
+        // Poll whenever the runtime has work, on a clock that moves only
+        // here, so timers fire and frames come as they would live.
+        let advance = |runtime: &mut Runtime<M, TM>, to: Duration| {
+            let end = start + to;
+            loop {
+                match runtime.poll().wake.deadline() {
+                    Some(at) if at <= end => clock.advance_to(at),
+                    _ => break,
+                }
+            }
+            clock.advance_to(end);
+            runtime.poll();
+        };
+
+        let due_now: Vec<String> = core::iter::from_fn(|| script.next_if(|(at, _)| at.is_zero()).map(|(_, m)| m)).collect();
+        runtime.handle_messages(due_now);
         if let Some((x, y)) = self.pointer {
             runtime.handle_event(crate::InputEvent::Hover { x, y });
         }
 
-        // Poll whenever the runtime has work, on a clock that moves only
-        // here, so timers fire and frames come as they would live.
-        let end = clock.now() + self.time;
-        loop {
-            match runtime.poll().wake.deadline() {
-                Some(at) if at <= end => clock.advance_to(at),
-                _ => break,
-            }
-        }
-        clock.advance_to(end);
-        runtime.poll();
-
-        runtime.wait_for_images(IMAGE_TIMEOUT);
-
         let mut buffer = vec![0u32; width as usize * height as usize];
-        runtime.render(renderer, &mut crate::Surface::new(crate::Pixels::Xrgb8888(&mut buffer), width, height));
-        Ok((buffer, width, height))
+        for frame in 0..self.frames.max(1) {
+            let time = self.time + Duration::from_secs(frame as u64) / self.fps.max(1);
+            while let Some((at, message)) = script.next_if(|(at, _)| *at <= time) {
+                advance(runtime, at);
+                runtime.handle_messages([message]);
+            }
+            advance(runtime, time);
+            runtime.wait_for_images(IMAGE_TIMEOUT);
+            // The buffer is kept, so later frames repaint only what changed, as on a screen.
+            runtime.render(renderer, &mut crate::Surface::new(crate::Pixels::Xrgb8888(&mut buffer), width, height));
+            on_frame(frame, &buffer, width, height)?;
+        }
+        Ok(())
+    }
+}
+
+impl SnapshotBackend {
+    /// Where frame `n` of a recording goes: `out.png` becomes `out_0000.png`.
+    fn frame_path(&self, n: u32) -> PathBuf {
+        let stem = self.path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+        let ext = self.path.extension().map(|e| e.to_string_lossy().into_owned()).unwrap_or_else(|| "png".into());
+        self.path.with_file_name(format!("{stem}_{n:04}.{ext}"))
     }
 }
 
@@ -175,9 +246,14 @@ impl Backend for SnapshotBackend {
         TM: TextMeasurer + 'static,
         R: crate::Renderer + 'static,
     {
-        let (pixels, w, h) = self.render(&mut runtime, &mut renderer, width, height)?;
-        write_png(&self.path, &pixels, w, h)?;
-        log::info!("xerune: wrote {}x{} snapshot to {}", w, h, self.path.display());
+        if self.frames <= 1 {
+            let (pixels, w, h) = self.render(&mut runtime, &mut renderer, width, height)?;
+            write_png(&self.path, &pixels, w, h)?;
+            log::info!("xerune: wrote {}x{} snapshot to {}", w, h, self.path.display());
+            return Ok(());
+        }
+        self.record(&mut runtime, &mut renderer, width, height, |frame, pixels, w, h| write_png(&self.frame_path(frame), pixels, w, h))?;
+        log::info!("xerune: wrote {} frames to {}", self.frames, self.frame_path(0).display());
         Ok(())
     }
 }

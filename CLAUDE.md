@@ -78,6 +78,9 @@ XERUNE_SNAPSHOT=/path/out.png [XERUNE_SNAPSHOT_SIZE=480x800] \
 ```
 
 Then Read the PNG. Write snapshots to the scratchpad, not the repo.
+`XERUNE_SNAPSHOT_FRAMES=N` (+ `_FPS`) records numbered frames instead, and
+`@MS` items in the messages wait for that time; `tools/record-demos.sh`
+regenerates the README clips (`docs/img/*.webp`) this way.
 
 Text must match Chromium: `tests/text/reference.html` lists Chromium's line
 breaks in `text_layout::line_breaks_match_chromium`. To compare a page,

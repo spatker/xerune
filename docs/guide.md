@@ -670,11 +670,22 @@ cargo run --example todo
 |---|---|
 | `XERUNE_SNAPSHOT` | Output PNG path; enables snapshot mode |
 | `XERUNE_SNAPSHOT_SIZE` | `WIDTHxHEIGHT`; defaults to the app's window size |
-| `XERUNE_SNAPSHOT_MESSAGES` | `;`-separated messages dispatched in order (same strings as `data-on-click`); an unknown message is an error |
+| `XERUNE_SNAPSHOT_MESSAGES` | `;`-separated messages dispatched in order (same strings as `data-on-click`); an unknown message is an error. An `@MS` item holds the messages after it until `MS` ms of simulated time |
 | `XERUNE_SNAPSHOT_POINTER` | `X,Y` where the pointer hovers after the messages, to see `:hover` and `data-on-hover` |
 | `XERUNE_SNAPSHOT_TIME_MS` | Simulated time to run before rendering, so timers fire and animations progress (default 0) |
+| `XERUNE_SNAPSHOT_FRAMES` | Record this many frames instead of one, as `todo_0000.png`, `todo_0001.png`, ...; the first at `TIME_MS` |
+| `XERUNE_SNAPSHOT_FPS` | Frames per second of a recording (default 30) |
 
-The frame goes through the app's own renderer, so fonts and drawing match the real app. Pending images are awaited (up to 10 s). `App::on_start` is not run, since background producers would make the output nondeterministic; drive state with messages instead. To snapshot from code, use `xerune::backend::SnapshotBackend` directly.
+A recording plays a script on the simulated clock, so it comes out the same every time; `tools/record-demos.sh` makes the README's clips this way:
+
+```bash
+XERUNE_SNAPSHOT=out/todo.png XERUNE_SNAPSHOT_FRAMES=60 XERUNE_SNAPSHOT_FPS=20 \
+XERUNE_SNAPSHOT_MESSAGES="@500;toggle:0;@1500;lang:de" \
+cargo run --release --example todo
+ffmpeg -framerate 20 -i out/todo_%04d.png todo.webp
+```
+
+The frame goes through the app's own renderer, so fonts and drawing match the real app. Pending images are awaited (up to 10 s). `App::on_start` is not run, since background producers would make the output nondeterministic; drive state with messages instead. To snapshot from code, use `xerune::backend::SnapshotBackend` directly (`render` for one frame, `record` for a sequence).
 
 ---
 
