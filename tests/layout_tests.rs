@@ -277,6 +277,8 @@ enum TestTodoMsg {
     TodoInput(String),
     #[xerune(prefix = "keydown:")]
     KeyDown(String),
+    #[xerune(prefix = "lang:")]
+    Lang(String),
 }
 
 #[derive(XeruneTemplate)]
@@ -285,9 +287,31 @@ struct TestTodoModel {
     items: Vec<TodoItem>,
     active_item: usize,
     new_item_title: String,
+    lang: String,
 }
 
+/// Shows the template's keys in place of translations.
 impl TestTodoModel {
+    fn t<'a>(&self, key: &'a str) -> &'a str {
+        key
+    }
+
+    fn langs(&self) -> Vec<&'static str> {
+        vec!["en"]
+    }
+
+    fn lang_is(&self, lang: &str) -> bool {
+        lang == self.lang
+    }
+
+    fn lang_name<'a>(&self, lang: &'a str) -> &'a str {
+        lang
+    }
+
+    fn tag_name(&self, tag: &str) -> String {
+        tag.to_string()
+    }
+
     fn done_count(&self) -> usize {
         self.items.iter().filter(|i| i.completed).count()
     }
@@ -315,6 +339,7 @@ fn test_todo_layout_comparison() {
         ],
         active_item: 0,
         new_item_title: "abc".to_string(),
+        lang: "en".to_string(),
     };
     let measurer = MockMeasurer;
     // Since resolve_styles is crate-internal under super::resolve_styles, we can resolve it using Runtime's internal compilations, 
@@ -360,6 +385,7 @@ fn test_tiled_rendering_identity() {
         ],
         active_item: 0,
         new_item_title: "abc".to_string(),
+        lang: "en".to_string(),
     };
     let measurer = fonts.clone();
     let mut runtime = Runtime::new(model, measurer);
@@ -1086,7 +1112,7 @@ mod canvas {
 #[test]
 fn todo_list_scrolls_in_portrait() {
     let items = (0..30).map(|i| TodoItem::new(&format!("Item {}", i), false)).collect();
-    let model = TestTodoModel { items, active_item: 0, new_item_title: String::new() };
+    let model = TestTodoModel { items, active_item: 0, new_item_title: String::new(), lang: "en".to_string() };
     let mut runtime = Runtime::new(model, MockMeasurer);
     crate::set_size(&mut runtime, 480.0, 800.0);
 

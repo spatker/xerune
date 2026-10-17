@@ -1,0 +1,26 @@
+# The todo example in German.
+language = Deutsch
+app = XERUNE · AUFGABEN
+title = Heute
+done_big = ERLEDIGT
+open = offen
+done = erledigt
+placeholder = Neue Aufgabe eingeben
+add_task = Aufgabe hinzufügen
+hint = Pfeiltasten bewegen durch die Liste · Enter hakt ab
+empty_big = Alles erledigt
+empty_small = Für heute ist nichts mehr offen. Gönn dir etwas.
+tag_work = Arbeit
+tag_home = Haushalt
+tag_fun = Freizeit
+
+task_1 = Neue Firmware auf den Pi flashen
+task_2 = Balkontomaten gießen
+task_3 = Konischen Farbverlauf auf ARM profilieren
+task_4 = Kletterhalle für Samstag buchen
+task_5 = Dem Displayhersteller antworten
+task_6 = Kaffeebohnen kaufen
+task_7 = Demovideo vom Showcase aufnehmen
+task_8 = Das neue Ramen-Lokal ausprobieren
+task_9 = Druckbett des 3D-Druckers reinigen
+task_10 = Versionshinweise schreiben

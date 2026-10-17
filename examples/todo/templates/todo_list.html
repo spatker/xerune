@@ -21,6 +21,10 @@
     }
     .day { font-size: 13px; font-weight: bold; color: #f472b6; }
     .title { font-size: 30px; font-weight: bold; color: #ffffff; margin-top: 2px; }
+    .langs { display: flex; flex-direction: row; gap: 6px; margin-top: 10px; }
+    .lang { display: flex; padding: 4px 10px; border-radius: 8px; font-size: 12px; font-weight: bold;
+            color: #8b80b0; background-color: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.05); }
+    .lang.on { color: #ffffff; background-color: rgba(167,139,250,0.22); border: 1px solid rgba(167,139,250,0.45); }
 
     .ring-wrap { display: flex; justify-content: center; margin: 26px 0 22px 0; }
     .ring { position: relative; width: 150px; height: 150px; }
@@ -87,47 +91,52 @@
     }
 </style>
 
-<div class="app">
+<div class="app" lang="{{ lang }}">
     <div class="side">
         <div class="heading">
-            <div class="day">XERUNE · TASKS</div>
-            <div class="title">Today</div>
+            <div class="day">{{ self.t("app") }}</div>
+            <div class="title">{{ self.t("title") }}</div>
+            <div class="langs">
+                {% for l in self.langs() %}
+                <div class="lang {% if self.lang_is(l) %}on{% endif %}" data-on-click="lang:{{ l }}">{{ self.lang_name(l) }}</div>
+                {% endfor %}
+            </div>
         </div>
         <div class="ring-wrap">
             <div class="ring">
                 <div class="ring-fill" style="background: conic-gradient(#f472b6 0%, #8b5cf6 {{ self.done_pct() }}%, #2a2245 {{ self.done_pct() }}%);"></div>
                 <div class="ring-hole">
                     <span class="ring-pct">{{ self.done_pct() }}%</span>
-                    <span class="ring-label">DONE</span>
+                    <span class="ring-label">{{ self.t("done_big") }}</span>
                 </div>
             </div>
         </div>
         <div class="counts">
-            <div class="count"><span class="count-num">{{ self.open_count() }}</span><span class="count-name">open</span></div>
-            <div class="count"><span class="count-num">{{ self.done_count() }}</span><span class="count-name">done</span></div>
+            <div class="count"><span class="count-num">{{ self.open_count() }}</span><span class="count-name">{{ self.t("open") }}</span></div>
+            <div class="count"><span class="count-num">{{ self.done_count() }}</span><span class="count-name">{{ self.t("done") }}</span></div>
         </div>
     </div>
 
     <div class="main">
         <div class="composer">
-            <input type="text" id="todo_input" value="{{ new_item_title }}" class="todo-input" placeholder="New task: click, type, press Enter">
-            <div data-on-click="add" class="add-btn">Add task</div>
+            <input type="text" id="todo_input" value="{{ new_item_title }}" class="todo-input" placeholder="{{ self.t("placeholder") }}">
+            <div data-on-click="add" class="add-btn">{{ self.t("add_task") }}</div>
         </div>
-        <span class="hint">Arrow keys move through the list · Enter toggles</span>
+        <span class="hint">{{ self.t("hint") }}</span>
 
         <div class="todo-list">
             {% for item in items %}
             <div id="item-{{ loop.index0 }}" class="item {% if loop.index0 == active_item %}active{% endif %}" data-on-click="toggle:{{ loop.index0 }}">
                 <div class="check {% if item.completed %}done{% endif %}">{% if item.completed %}<div class="check-dot"></div>{% endif %}</div>
                 <span class="text {% if item.completed %}done{% endif %}">{{ item.title }}</span>
-                <div class="tag {% if item.tag == "home" %}home{% endif %} {% if item.tag == "fun" %}fun{% endif %}">{{ item.tag }}</div>
+                <div class="tag {% if item.tag == "home" %}home{% endif %} {% if item.tag == "fun" %}fun{% endif %}">{{ self.tag_name(&item.tag) }}</div>
                 <div data-on-click="remove:{{ loop.index0 }}" class="remove">×</div>
             </div>
             {% endfor %}
             {% if items.is_empty() %}
             <div class="empty">
-                <span class="empty-big">All clear</span>
-                <span class="empty-small">Nothing left for today. Add something fun.</span>
+                <span class="empty-big">{{ self.t("empty_big") }}</span>
+                <span class="empty-small">{{ self.t("empty_small") }}</span>
             </div>
             {% endif %}
         </div>

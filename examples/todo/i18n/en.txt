@@ -1,0 +1,28 @@
+# The todo example in English. The keys are the template's and
+# todo_impl.rs's; a key missing in another language falls back to these.
+language = English
+app = XERUNE · TASKS
+title = Today
+done_big = DONE
+open = open
+done = done
+placeholder = New task: click, type, press Enter
+add_task = Add task
+hint = Arrow keys move through the list · Enter toggles
+empty_big = All clear
+empty_small = Nothing left for today. Add something fun.
+tag_work = work
+tag_home = home
+tag_fun = fun
+
+# The tasks a new list starts with.
+task_1 = Flash the new firmware to the Pi
+task_2 = Water the balcony tomatoes
+task_3 = Profile the conic gradient path on ARM
+task_4 = Book climbing gym for Saturday
+task_5 = Reply to the display vendor
+task_6 = Buy coffee beans
+task_7 = Record a demo video of the showcase
+task_8 = Try the new ramen place
+task_9 = Clean up the 3D printer bed
+task_10 = Write release notes

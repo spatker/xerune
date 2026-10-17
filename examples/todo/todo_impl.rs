@@ -1,4 +1,13 @@
+use std::sync::LazyLock;
+
+use xerune::i18n::{Catalog, Translations};
 use xerune::{Model, XeruneMessage, XeruneTemplate};
+
+/// The example's strings, English and German (`i18n/*.txt`).
+static STRINGS: LazyLock<Translations> = LazyLock::new(|| {
+    let catalog = |lang, text| Catalog::parse(lang, text).expect("the todo example's strings");
+    Translations::new(catalog("en", include_str!("i18n/en.txt"))).with(catalog("de", include_str!("i18n/de.txt")))
+});
 
 #[derive(XeruneTemplate, serde::Serialize, serde::Deserialize)]
 #[template(path = "examples/todo/templates/todo_list.html")]
@@ -6,30 +15,16 @@ pub struct TodoList {
     pub(crate) items: Vec<TodoItem>,
     pub(crate) active_item: usize,
     new_item_title: String,
+    /// The language shown, a tag like `de` (English when there are no
+    /// strings for it).
+    #[serde(default)]
+    lang: String,
 }
 
+/// In English, so tests and benchmarks see the same list everywhere.
 impl Default for TodoList {
     fn default() -> Self {
-        let tasks = [
-            ("Flash the new firmware to the Pi", "work", false),
-            ("Water the balcony tomatoes", "home", true),
-            ("Profile the conic gradient path on ARM", "work", false),
-            ("Book climbing gym for Saturday", "fun", false),
-            ("Reply to the display vendor", "work", true),
-            ("Buy coffee beans", "home", false),
-            ("Record a demo video of the showcase", "work", false),
-            ("Try the new ramen place", "fun", true),
-            ("Clean up the 3D printer bed", "home", false),
-            ("Write release notes", "work", false),
-        ];
-        Self {
-            items: tasks
-                .iter()
-                .map(|&(title, tag, completed)| TodoItem { title: title.into(), tag: tag.into(), completed })
-                .collect(),
-            active_item: 0,
-            new_item_title: String::new(),
-        }
+        Self::new("en")
     }
 }
 
@@ -42,6 +37,61 @@ pub struct TodoItem {
 }
 
 impl TodoList {
+    /// A list in language `lang`, starting with a few tasks in it.
+    pub fn new(lang: &str) -> Self {
+        let tasks = [
+            ("work", false),
+            ("home", true),
+            ("work", false),
+            ("fun", false),
+            ("work", true),
+            ("home", false),
+            ("work", false),
+            ("fun", true),
+            ("home", false),
+            ("work", false),
+        ];
+        Self {
+            items: tasks
+                .iter()
+                .enumerate()
+                .map(|(i, &(tag, completed))| TodoItem {
+                    title: STRINGS.t(lang, &format!("task_{}", i + 1)).to_string(),
+                    tag: tag.into(),
+                    completed,
+                })
+                .collect(),
+            active_item: 0,
+            new_item_title: String::new(),
+            lang: lang.to_string(),
+        }
+    }
+
+    /// The text for `key` in the list's language.
+    pub fn t<'a>(&'a self, key: &'a str) -> &'a str {
+        STRINGS.t(&self.lang, key)
+    }
+
+    /// The languages to switch between.
+    pub fn langs(&self) -> Vec<&'static str> {
+        STRINGS.langs().collect()
+    }
+
+    /// Whether `lang` is the one shown (`de-AT` shows `de`).
+    pub fn lang_is(&self, lang: &str) -> bool {
+        STRINGS.catalog(&self.lang).map_or(STRINGS.langs().next() == Some(lang), |c| c.lang() == lang)
+    }
+
+    /// The name of `lang`, in it: "Deutsch".
+    pub fn lang_name(&self, lang: &str) -> &'static str {
+        STRINGS.t(lang, "language")
+    }
+
+    /// A category's name, from its tag (`work`).
+    pub fn tag_name(&self, tag: &str) -> String {
+        STRINGS.t(&self.lang, &format!("tag_{tag}")).to_string()
+    }
+
     pub fn done_count(&self) -> usize {
         self.items.iter().filter(|i| i.completed).count()
     }
@@ -67,6 +117,9 @@ pub enum TodoMsg {
     TodoValue(String),
     #[xerune(prefix = "keydown:")]
     KeyDown(String),
+    /// Shows the list in another language.
+    #[xerune(prefix = "lang:")]
+    Lang(String),
 }
 
 impl Model for TodoList {
@@ -106,6 +159,7 @@ impl Model for TodoList {
                 }
             }
             TodoMsg::TodoValue(text) => self.new_item_title = text,
+            TodoMsg::Lang(lang) => self.lang = lang,
             TodoMsg::KeyDown(key) => {
                 match key.as_str() {
                     "Backspace" => {
