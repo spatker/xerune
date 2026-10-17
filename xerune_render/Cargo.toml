@@ -8,7 +8,8 @@ license = "MIT"
 repository = "https://github.com/spatker/xerune"
 keywords = ["rasterizer", "embedded", "software-rendering", "xerune"]
 categories = ["embedded", "rendering", "graphics"]
-include = ["/src"]
+readme = "README.md"
+include = ["/src", "/README.md", "/LICENSE"]
 
 [dependencies]
 xerune = { version = "0.1.0", path = "../", default-features = false }
