@@ -58,6 +58,11 @@ impl Catalog {
     pub fn get(&self, key: &str) -> Option<&str> {
         self.entries.get(key).map(String::as_str)
     }
+
+    /// The keys this catalog has, in no particular order.
+    pub fn keys(&self) -> impl Iterator<Item = &str> {
+        self.entries.keys().map(String::as_str)
+    }
 }
 
 /// The catalogs of an app. The first is the fallback, for languages

@@ -19,7 +19,7 @@ the working notes.
 | `xerune_render/` | Software rasterizer (blits, rounded rects, gradients, glyphs). Has a `no_std` mode |
 | `studio/` | WASM inspector (`wasm-pack build --target web`, `features = ["browser"]`): the model runs in wasm, the view is the template interpreted live (`xerune.js` polls the files; no rebuild for template edits, one for newly called model methods) |
 | `wpt_runner/` | WPT reftests vs Chromium screenshots; scope in `suites.txt`, known failures in `expectations.txt` (`docs/guide.md` §13) |
-| `examples/<name>/` | `main.rs` (runtime + `xerune::App`) + `<name>_impl.rs` (model; also used by tests, benches, studio) + `templates/*.html`; `examples/support/` loads the bundled fonts |
+| `examples/<name>/` | `main.rs` (runtime + `xerune::App`) + `<name>_impl.rs` (model; also used by tests, benches, studio) + `templates/*.html` (+ `i18n/*.txt` strings in todo and showcase, English and German; `tests/i18n_tests.rs` checks every language has every key); `examples/support/` loads the bundled fonts |
 | `tests/` | Integration tests; HTML fixtures in `tests/*.html`, `tests/canvas/`, `tests/gaps/`; trybuild cases in `tests/template_errors/` |
 | `tools/` | Measurement scripts: ARM instruction counts under qemu, Chromium line breaks (`tools/README.md`) |
 | `build_arm.sh`, `qemu-arm/` | Local ARM cross-build/deploy helpers (untracked / user's own) |
