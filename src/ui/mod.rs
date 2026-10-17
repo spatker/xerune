@@ -157,6 +157,8 @@ pub struct Ui {
     pub text_lines: NodeMap<Vec<crate::text::Line>>,
     /// The shaped "…" of text nodes with `text-overflow: ellipsis`.
     pub ellipses: NodeMap<Arc<crate::text::ShapedText>>,
+    /// The shaped text a text input shows: its value, or its placeholder.
+    pub input_texts: NodeMap<Arc<crate::text::ShapedText>>,
     /// Elements with an `id` attribute, for [`Ui::scroll_into_view`].
     pub element_ids: Vec<(Cow<'static, str>, NodeId)>,
     /// Elements with a `lang` attribute, for [`Ui::lang`].
@@ -338,7 +340,7 @@ impl Ui {
         }
 
         let (html, body) = (builder.html, builder.body);
-        let (paragraphs, ellipses) = {
+        let (paragraphs, ellipses, input_texts) = {
             profile!("shape_texts");
             shape_texts(&builder.render_data, measurer)
         };
@@ -364,6 +366,7 @@ impl Ui {
             paragraphs,
             text_lines: NodeMap::new(),
             ellipses,
+            input_texts,
             keys: builder.keys,
             uses_hover,
             uses_active,
@@ -566,6 +569,7 @@ impl Ui {
                 paragraphs: &self.paragraphs,
                 text_lines: &self.text_lines,
                 ellipses: &self.ellipses,
+                input_texts: &self.input_texts,
                 scroll_offsets: &self.scroll_offsets,
                 focused_id,
                 canvas_source: source.map(|(node, _)| node),
@@ -841,6 +845,7 @@ struct Painter<'a> {
     paragraphs: &'a NodeMap<Arc<crate::text::ShapedText>>,
     text_lines: &'a NodeMap<Vec<crate::text::Line>>,
     ellipses: &'a NodeMap<Arc<crate::text::ShapedText>>,
+    input_texts: &'a NodeMap<Arc<crate::text::ShapedText>>,
     scroll_offsets: &'a NodeMap<(f32, f32)>,
     focused_id: Option<&'a str>,
     canvas_source: Option<NodeId>,
@@ -910,7 +915,7 @@ fn traverse_layout(
     clips: &mut Vec<Rect>,
     deferred: &mut Vec<Deferred>,
 ) -> usize {
-    let Painter { taffy, render_data, paragraphs, text_lines, ellipses, scroll_offsets, focused_id, canvas_source } = *painter;
+    let Painter { taffy, render_data, paragraphs, text_lines, ellipses, input_texts, scroll_offsets, focused_id, canvas_source } = *painter;
     let layout = match taffy.layout(root) {
         Ok(l) => l,
         Err(_) => return commands.len(),
@@ -1028,16 +1033,13 @@ fn traverse_layout(
                     border: if is_focused { crate::style::Borders::all(focus_ring) } else { style.border.resolved(style.color) },
                 });
 
-                // The value, or the placeholder while the value is empty.
-                let shown = match (text.as_deref(), placeholder.as_deref()) {
-                    (Some(t), _) if !t.is_empty() => Some((t, style)),
-                    (_, Some((p, p_style))) => Some((p.as_str(), p_style)),
-                    _ => None,
-                };
-                if let Some((t, text_style)) = shown {
+                if let Some((t, text_style)) = input_shown(text, placeholder, style) {
+                    let shaped = input_texts.get(root);
                     // Inset by the left padding and center one line vertically.
                     let pad_x = if style.padding_left > 0.0 { style.padding_left } else { 8.0 };
-                    let line_h = text_style.font_size * 1.2;
+                    // Taller for a fallback font's line (Hangul), as text elements.
+                    let normal = shaped.map_or(0.0, |s| s.metrics.normal_line_height());
+                    let line_h = (text_style.font_size * 1.2).max(normal);
                     let text_rect = Rect {
                         x: rect.x + pad_x,
                         y: rect.y + ((rect.height - line_h) * 0.5).max(0.0),
@@ -1050,7 +1052,14 @@ fn traverse_layout(
                         color: text_style.color,
                         font_size: text_style.font_size,
                         weight: text_style.weight,
-                        run: None,
+                        run: shaped.map(|shaped| crate::text::GlyphRun {
+                            shaped: shaped.clone(),
+                            start: 0,
+                            end: shaped.glyphs.len() as u32,
+                            text_start: 0,
+                            // The line's half-leading above the ascent.
+                            baseline: shaped.metrics.ascent + ((line_h - normal) * 0.5).max(0.0),
+                        }),
                     });
                 }
             },
@@ -1151,19 +1160,42 @@ type ShapedTexts = NodeMap<Arc<crate::text::ShapedText>>;
 
 /// Shapes the text of every text node, and the "…" of those that may need
 /// one.
-fn shape_texts(render_data: &NodeMap<RenderData>, measurer: &impl TextMeasurer) -> (ShapedTexts, ShapedTexts) {
+fn shape_texts(render_data: &NodeMap<RenderData>, measurer: &impl TextMeasurer) -> (ShapedTexts, ShapedTexts, ShapedTexts) {
     let mut paragraphs = NodeMap::new();
     let mut ellipses = NodeMap::new();
+    let mut input_texts = NodeMap::new();
     for (node, data) in render_data.iter() {
-        if let RenderKind::Text(text) = &data.kind {
-            let style = &data.style;
-            paragraphs.insert(node, measurer.shape(text, style.font_size, style.weight));
-            if style.text_overflow_ellipsis {
-                ellipses.insert(node, measurer.shape("\u{2026}", style.font_size, style.weight));
+        match &data.kind {
+            RenderKind::Text(text) => {
+                let style = &data.style;
+                paragraphs.insert(node, measurer.shape(text, style.font_size, style.weight));
+                if style.text_overflow_ellipsis {
+                    ellipses.insert(node, measurer.shape("\u{2026}", style.font_size, style.weight));
+                }
             }
+            RenderKind::TextInput(_, value, placeholder) => {
+                if let Some((text, style)) = input_shown(value, placeholder, &data.style) {
+                    input_texts.insert(node, measurer.shape(text, style.font_size, style.weight));
+                }
+            }
+            _ => {}
         }
     }
-    (paragraphs, ellipses)
+    (paragraphs, ellipses, input_texts)
+}
+
+/// What a text input shows, in which style: its value, or its placeholder
+/// while the value is empty.
+fn input_shown<'a>(
+    value: &'a Option<String>,
+    placeholder: &'a Option<Box<(String, ContainerStyle)>>,
+    style: &'a ContainerStyle,
+) -> Option<(&'a str, &'a ContainerStyle)> {
+    match (value.as_deref(), placeholder.as_deref()) {
+        (Some(t), _) if !t.is_empty() => Some((t, style)),
+        (_, Some((p, p_style))) => Some((p.as_str(), p_style)),
+        _ => None,
+    }
 }
 
 /// Height of one line of `paragraph`.
