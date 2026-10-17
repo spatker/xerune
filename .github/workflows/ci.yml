@@ -23,7 +23,13 @@ jobs:
       - run: cargo test --lib --features drm,linuxfb,evdev
       # The studio's template interpreter against the compiled templates.
       - run: cargo test --features interpret --test interpret_tests
+      # The studio's model tests, natively (the wasm job only checks it builds).
+      - run: cargo test -p xerune_studio --lib
       - run: cargo build --examples
+      # Broken doc links, as docs.rs would render them.
+      - run: cargo doc --no-deps -p xerune -p xerune_render -p xerune_css -p xerune_template -p xerune_derive
+        env:
+          RUSTDOCFLAGS: -D warnings
 
   arm:
     runs-on: ubuntu-latest
