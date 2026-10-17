@@ -243,6 +243,8 @@ struct ColorLut {
     /// Repeat outside the domain instead of clamping (conic seam,
     /// `repeating-` gradients).
     periodic: bool,
+    /// Every color is opaque: pixels are written, not blended.
+    opaque: bool,
 }
 
 #[cfg(feature = "std")]
@@ -380,7 +382,8 @@ impl ColorLut {
             run_end[i] = if finest[i + 1] == finest[i] { run_end[i + 1] } else { (i + 1) as u32 };
         }
 
-        Self { levels, start, inv_cell, scale, log2_cells_per_turn, opaque_before, run_end, periodic }
+        let opaque = finest.iter().all(|&c| c >> 24 == 255);
+        Self { levels, start, inv_cell, scale, log2_cells_per_turn, opaque_before, run_end, periodic, opaque }
     }
 
     /// Mip level for a footprint of `dt` stop units.
@@ -773,15 +776,12 @@ pub fn draw_shaded_rounded_rect(
                         u += inv_rx;
                     }
                     let block_end = (block + BLOCK).min(span_hi);
-                    for _ in px..block_end {
+                    fill_span(buffer, idx, stride, (block_end - px) as usize, shader.colors.opaque, move || {
                         let t = (u * u + vv).sqrt();
-                        let color = table[(t * scale - offset).clamp(0.0, max) as usize];
-                        if let Some(dst) = buffer.get_mut(idx as usize) {
-                            blend_pixel(dst, color);
-                        }
                         u += inv_rx;
-                        idx += stride;
-                    }
+                        table[(t * scale - offset).clamp(0.0, max) as usize]
+                    });
+                    idx += stride * (block_end - px) as isize;
                     px = block_end;
                     block += BLOCK;
                 }
@@ -796,14 +796,11 @@ pub fn draw_shaded_rounded_rect(
                 let max = (table.len() - 1) as i32;
                 let du = (du * 65536.0) as i32;
                 let mut u = (u_box * 65536.0) as i32 + (span_lo - box_left) * du;
-                for _ in span_lo..span_hi {
+                fill_span(buffer, idx, stride, (span_hi - span_lo) as usize, shader.colors.opaque, move || {
                     let color = table[(u >> 16).clamp(0, max) as usize];
-                    if let Some(dst) = buffer.get_mut(idx as usize) {
-                        blend_pixel(dst, color);
-                    }
                     u += du;
-                    idx += stride;
-                }
+                    color
+                });
             } else {
                 for px in span_lo..span_hi {
                     let color = shader.color_at(px as f32 + 0.5, fy, level);
@@ -817,6 +814,35 @@ pub fn draw_shaded_rounded_rect(
         for px in span_hi.max(row_lo)..row_hi {
             edge_pixel(buffer, px, py, fy, qy);
         }
+    }
+}
+
+/// Writes `len` pixels of `color()`, one after another, from `idx` on,
+/// `stride` apart in `buffer`: stored when `opaque`, else blended. A
+/// contiguous row is bounds-checked once.
+#[inline(always)]
+fn fill_span(buffer: &mut [u32], idx: isize, stride: isize, len: usize, opaque: bool, mut color: impl FnMut() -> u32) {
+    if stride == 1 {
+        if let Some(row) = usize::try_from(idx).ok().and_then(|idx| buffer.get_mut(idx..)?.get_mut(..len)) {
+            if opaque {
+                for dst in row {
+                    *dst = color();
+                }
+            } else {
+                for dst in row {
+                    blend_pixel(dst, color());
+                }
+            }
+            return;
+        }
+    }
+    let mut idx = idx;
+    for _ in 0..len {
+        let color = color();
+        if let Some(dst) = buffer.get_mut(idx as usize) {
+            blend_pixel(dst, color);
+        }
+        idx += stride;
     }
 }
 
