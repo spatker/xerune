@@ -822,7 +822,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
             match self.active_animations.get_mut(&key) {
                 Some(active) if active.name == *name => {
                     active.node_id = node;
-                    active.play_state = data.style.animation_play_state.clone();
+                    active.play_state = data.style.animation_play_state;
                 }
                 _ => {
                     self.active_animations.insert(key, ActiveAnimation::new(node, name.clone(), &data.style, start));

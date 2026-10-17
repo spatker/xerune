@@ -855,7 +855,9 @@ fn apply_resolved_declaration(prop: &str, val: &str, current_style: &mut Contain
              current_style.animation_duration = parse_duration_sec(val);
          }
          "animation-timing-function" => {
-             current_style.animation_timing_function = Arc::from(val.trim());
+             if let Some(easing) = animation::Easing::parse(val) {
+                 current_style.animation_timing_function = easing;
+             }
          }
          "animation-delay" => {
              current_style.animation_delay = parse_duration_sec(val);
@@ -868,13 +870,19 @@ fn apply_resolved_declaration(prop: &str, val: &str, current_style: &mut Contain
              };
          }
          "animation-direction" => {
-             current_style.animation_direction = Arc::from(val.trim().to_lowercase());
+             if let Some(direction) = animation::keyword(val, &animation::DIRECTIONS) {
+                 current_style.animation_direction = direction;
+             }
          }
          "animation-fill-mode" => {
-             current_style.animation_fill_mode = Arc::from(val.trim().to_lowercase());
+             if let Some(fill_mode) = animation::keyword(val, &animation::FILL_MODES) {
+                 current_style.animation_fill_mode = fill_mode;
+             }
          }
          "animation-play-state" => {
-             current_style.animation_play_state = Arc::from(val.trim().to_lowercase());
+             if let Some(play_state) = animation::keyword(val, &animation::PLAY_STATES) {
+                 current_style.animation_play_state = play_state;
+             }
          }
          "animation" => {
              parse_animation_shorthand(val, current_style);

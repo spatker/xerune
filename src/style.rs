@@ -444,17 +444,17 @@ pub struct ContainerStyle {
     /// Animation duration in seconds.
     pub animation_duration: f32,
     /// Animation easing function name.
-    pub animation_timing_function: Arc<str>,
+    pub animation_timing_function: crate::css::animation::Easing,
     /// Animation startup delay in seconds.
     pub animation_delay: f32,
     /// Iteration count of the animation.
     pub animation_iteration_count: AnimationIterationCount,
     /// Direction direction of keyframes progression.
-    pub animation_direction: Arc<str>,
+    pub animation_direction: &'static str,
     /// Animation fill mode.
-    pub animation_fill_mode: Arc<str>,
+    pub animation_fill_mode: &'static str,
     /// Animation play state control state.
-    pub animation_play_state: Arc<str>,
+    pub animation_play_state: &'static str,
     /// `transition-*`; `None` is the initial `all 0s`, which transitions
     /// nothing.
     pub transitions: Option<Arc<crate::css::transition::Transitions>>,
@@ -518,12 +518,12 @@ impl Default for ContainerStyle {
             box_sizing: BoxSizing::ContentBox,
             animation_name: None,
             animation_duration: 0.0,
-            animation_timing_function: Arc::from("ease"),
+            animation_timing_function: crate::css::animation::Easing::EASE,
             animation_delay: 0.0,
             animation_iteration_count: AnimationIterationCount::Count(1.0),
-            animation_direction: Arc::from("normal"),
-            animation_fill_mode: Arc::from("none"),
-            animation_play_state: Arc::from("running"),
+            animation_direction: "normal",
+            animation_fill_mode: "none",
+            animation_play_state: "running",
             transitions: None,
             color_scheme_dark: false,
             accent_color: None,

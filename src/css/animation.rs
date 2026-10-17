@@ -24,7 +24,24 @@ pub enum Easing {
     Steps { steps: u32, jumps_at_start: bool, jumps_at_end: bool },
 }
 
+/// `animation-direction` values.
+pub(crate) const DIRECTIONS: [&str; 4] = ["normal", "reverse", "alternate", "alternate-reverse"];
+/// `animation-fill-mode` values.
+pub(crate) const FILL_MODES: [&str; 4] = ["none", "forwards", "backwards", "both"];
+/// `animation-play-state` values.
+pub(crate) const PLAY_STATES: [&str; 2] = ["running", "paused"];
+
+/// `value` as one of `keywords`, ignoring ASCII case: a `&'static str`, so
+/// keeping it in a style allocates nothing.
+pub(crate) fn keyword(value: &str, keywords: &[&'static str]) -> Option<&'static str> {
+    let value = value.trim();
+    keywords.iter().copied().find(|k| k.eq_ignore_ascii_case(value))
+}
+
 impl Easing {
+    /// `ease`, the initial `animation-timing-function`.
+    pub const EASE: Easing = Easing::CubicBezier(0.25, 0.1, 0.25, 1.0);
+
     /// Parses a timing function; `None` if it isn't one.
     pub fn parse(value: &str) -> Option<Self> {
         let value = value.trim().to_ascii_lowercase();
@@ -358,14 +375,15 @@ pub fn parse_animation_shorthand(val: &str, current_style: &mut ContainerStyle) 
             durations_found += 1;
         } else if part_lower == "infinite" {
             current_style.animation_iteration_count = AnimationIterationCount::Infinite;
-        } else if Easing::parse(part).is_some() {
-            current_style.animation_timing_function = Arc::from(part);
-        } else if ["normal", "reverse", "alternate", "alternate-reverse"].contains(&part_lower.as_str()) {
-            current_style.animation_direction = Arc::from(part_lower);
-        } else if ["forwards", "backwards", "both"].contains(&part_lower.as_str()) {
-            current_style.animation_fill_mode = Arc::from(part_lower);
-        } else if ["running", "paused"].contains(&part_lower.as_str()) {
-            current_style.animation_play_state = Arc::from(part_lower);
+        } else if let Some(easing) = Easing::parse(part) {
+            current_style.animation_timing_function = easing;
+        } else if let Some(direction) = keyword(part, &DIRECTIONS) {
+            current_style.animation_direction = direction;
+        } else if let Some(fill_mode) = keyword(part, &FILL_MODES[1..]) {
+            // `none` is the animation name's here.
+            current_style.animation_fill_mode = fill_mode;
+        } else if let Some(play_state) = keyword(part, &PLAY_STATES) {
+            current_style.animation_play_state = play_state;
         } else if let Ok(count) = part_lower.parse::<f32>() {
             current_style.animation_iteration_count = AnimationIterationCount::Count(count);
         } else if part_lower == "none" {

@@ -22,11 +22,11 @@ pub struct ActiveAnimation {
     /// Number of times the animation should execute.
     pub iteration_count: AnimationIterationCount,
     /// Progression direction of the keyframes sequence.
-    pub direction: Arc<str>,
+    pub direction: &'static str,
     /// Fill mode configuration.
-    pub fill_mode: Arc<str>,
+    pub fill_mode: &'static str,
     /// Play state configuration ("running" or "paused").
-    pub play_state: Arc<str>,
+    pub play_state: &'static str,
     /// Elapsed duration since animation start.
     pub elapsed: core::time::Duration,
     /// The time `elapsed` runs up to.
@@ -43,12 +43,12 @@ impl ActiveAnimation {
             node_id,
             name,
             duration: style.animation_duration,
-            easing: Easing::parse(&style.animation_timing_function).unwrap_or(Easing::CubicBezier(0.25, 0.1, 0.25, 1.0)),
+            easing: style.animation_timing_function,
             delay: style.animation_delay,
             iteration_count: style.animation_iteration_count,
-            direction: style.animation_direction.clone(),
-            fill_mode: style.animation_fill_mode.clone(),
-            play_state: style.animation_play_state.clone(),
+            direction: style.animation_direction,
+            fill_mode: style.animation_fill_mode,
+            play_state: style.animation_play_state,
             elapsed: core::time::Duration::ZERO,
             updated: now,
             is_finished: false,
@@ -57,11 +57,11 @@ impl ActiveAnimation {
 
     /// Whether time moves it on: started, not finished and not paused.
     pub(crate) fn is_running(&self) -> bool {
-        !self.is_finished && &*self.play_state != "paused"
+        !self.is_finished && self.play_state != "paused"
     }
 
     fn reversed(&self, iteration: u32) -> bool {
-        match &*self.direction {
+        match self.direction {
             "reverse" => true,
             "alternate" => iteration % 2 == 1,
             "alternate-reverse" => iteration % 2 == 0,
@@ -74,7 +74,7 @@ impl ActiveAnimation {
     /// after it ended, without a fill mode for that). Marks it finished
     /// once its iterations are over.
     pub(crate) fn progress(&mut self) -> Option<f32> {
-        let fills = |mode: &str| &*self.fill_mode == mode || &*self.fill_mode == "both";
+        let fills = |mode: &str| self.fill_mode == mode || self.fill_mode == "both";
         let elapsed = self.elapsed.as_secs_f32() - self.delay;
         if elapsed < 0.0 {
             return fills("backwards").then(|| if self.reversed(0) { 1.0 } else { 0.0 });

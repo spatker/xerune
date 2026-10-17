@@ -1112,12 +1112,12 @@ pub(crate) fn text_style(parent_style: &ContainerStyle) -> ContainerStyle {
     style.overflow = Overflow::Visible;
     style.animation_name = None;
     style.animation_duration = 0.0;
-    style.animation_timing_function = Arc::from("ease");
+    style.animation_timing_function = crate::css::animation::Easing::EASE;
     style.animation_delay = 0.0;
     style.animation_iteration_count = crate::style::AnimationIterationCount::Count(1.0);
-    style.animation_direction = Arc::from("normal");
-    style.animation_fill_mode = Arc::from("none");
-    style.animation_play_state = Arc::from("running");
+    style.animation_direction = "normal";
+    style.animation_fill_mode = "none";
+    style.animation_play_state = "running";
     style.transitions = None;
     style
 }

@@ -105,12 +105,12 @@ pub fn get_default_style(tag: &str, parent_style: &ContainerStyle) -> StyleBundl
     bundle.container_style.position = crate::style::Position::Static;
     bundle.container_style.animation_name = None;
     bundle.container_style.animation_duration = 0.0;
-    bundle.container_style.animation_timing_function = Arc::from("ease");
+    bundle.container_style.animation_timing_function = crate::css::animation::Easing::EASE;
     bundle.container_style.animation_delay = 0.0;
     bundle.container_style.animation_iteration_count = crate::style::AnimationIterationCount::Count(1.0);
-    bundle.container_style.animation_direction = Arc::from("normal");
-    bundle.container_style.animation_fill_mode = Arc::from("none");
-    bundle.container_style.animation_play_state = Arc::from("running");
+    bundle.container_style.animation_direction = "normal";
+    bundle.container_style.animation_fill_mode = "none";
+    bundle.container_style.animation_play_state = "running";
     bundle.container_style.transitions = None;
 
     // The HTML rendering section's default styles (html.css in browsers).
