@@ -30,8 +30,21 @@ macro_rules! profile {
 #[derive(Clone, Copy)]
 enum FontSource<'a> {
     #[cfg(feature = "std")]
-    Ttf(&'a [Font]),
+    Ttf(&'a TtfFaces),
     Bitmap(&'a [xerune::font::BitmapFont]),
+}
+
+/// TrueType/OpenType faces: the text font's (regular, then bold if there
+/// is one), then the fallback fonts'. A shaped glyph names its face by its
+/// index here.
+#[cfg(feature = "std")]
+#[derive(Clone)]
+struct TtfFaces {
+    faces: Vec<Font>,
+    /// How many of `faces` are the text font's (1 or 2).
+    primary: usize,
+    /// The fallback fonts, as their (regular, bold) faces' indices.
+    fallbacks: Vec<(usize, usize)>,
 }
 
 /// The fonts text is shaped and drawn with: TrueType/OpenType faces (regular
@@ -52,7 +65,7 @@ struct FontSet {
 #[derive(Clone)]
 enum FontKind {
     #[cfg(feature = "std")]
-    Ttf { faces: Vec<Font>, color_emoji: Option<Cow<'static, [u8]>> },
+    Ttf { faces: TtfFaces, color_emoji: Option<Cow<'static, [u8]>> },
     Bitmap(&'static [xerune::font::BitmapFont]),
 }
 
@@ -85,7 +98,32 @@ impl Fonts {
         if let Some(bold) = bold {
             faces.push(face(bold)?);
         }
-        Ok(Self::new(FontKind::Ttf { faces, color_emoji: None }))
+        let primary = faces.len();
+        Ok(Self::new(FontKind::Ttf { faces: TtfFaces { faces, primary, fallbacks: Vec::new() }, color_emoji: None }))
+    }
+
+    /// Draws characters the fonts so far lack from this font, `regular` for
+    /// normal text and `bold` for bold (`regular` if `None`): for a script
+    /// the text font doesn't cover, like Hangul with Roboto. Lines with such
+    /// characters are as tall as this font needs, as in browsers.
+    #[cfg(feature = "std")]
+    pub fn with_fallback(self, regular: &[u8], bold: Option<&[u8]>) -> Result<Self, FontError> {
+        let face = |bytes: &[u8]| Font::from_bytes(bytes, fontdue::FontSettings::default()).map_err(FontError);
+        let mut set = Arc::unwrap_or_clone(self.0);
+        if let FontKind::Ttf { faces, .. } = &mut set.kind {
+            let regular_index = faces.faces.len();
+            faces.faces.push(face(regular)?);
+            let bold_index = match bold {
+                Some(bold) => {
+                    faces.faces.push(face(bold)?);
+                    regular_index + 1
+                }
+                None => regular_index,
+            };
+            faces.fallbacks.push((regular_index, bold_index));
+        }
+        // A new id: shaping caches are per font set.
+        Ok(Self::new(set.kind))
     }
 
     /// Draws characters the fonts lack from this color emoji font (bitmap
@@ -325,26 +363,44 @@ impl Fonts {
                 let Some(font_index) = ttf_font_index(ttf_fonts, weight) else {
                     return ShapedText::default();
                 };
-                let font = &ttf_fonts[font_index];
+                let font = &ttf_fonts.faces[font_index];
                 if let Some(m) = font.horizontal_line_metrics(font_size) {
                     metrics = rounded_metrics(m.ascent, -m.descent, m.line_gap);
                 }
+                // The fallback faces glyphs came from, whose metrics the line takes too.
+                let mut used_fallbacks: Vec<usize> = Vec::new();
                 for (i, c) in text.char_indices() {
                     // Newlines are line breaks, not glyphs.
                     if c == '\u{fe0f}' || c.is_control() {
                         continue;
                     }
-                    let id = font.lookup_glyph_index(c);
-                    let advance = font.metrics_indexed(id, font_size).advance_width;
-                    // Characters the font lacks are drawn as color emoji when
+                    let mut face = font_index;
+                    let mut id = font.lookup_glyph_index(c);
+                    if id == 0 && (c as u32) < 0x1F000 {
+                        if let Some((fallback, fallback_id)) = ttf_fonts.fallback_glyph(c, weight) {
+                            (face, id) = (fallback, fallback_id);
+                            if !used_fallbacks.contains(&face) {
+                                used_fallbacks.push(face);
+                            }
+                        }
+                    }
+                    let advance = ttf_fonts.faces[face].metrics_indexed(id, font_size).advance_width;
+                    // Characters no font has are drawn as color emoji when
                     // an emoji font is available (see the renderer), a bit
                     // wider than the font's missing-glyph box.
                     let (font, advance) = if is_emoji(c, id) {
                         (EMOJI_FONT, advance + font_size * 0.85)
                     } else {
-                        (font_index as u16, advance)
+                        (face as u16, advance)
                     };
                     glyphs.push(ShapedGlyph { cluster: i as u32, font, id, advance });
+                }
+                for &face in &used_fallbacks {
+                    if let Some(m) = ttf_fonts.faces[face].horizontal_line_metrics(font_size) {
+                        let m = rounded_metrics(m.ascent, -m.descent, m.line_gap);
+                        metrics.ascent = metrics.ascent.max(m.ascent);
+                        metrics.descent = metrics.descent.max(m.descent);
+                    }
                 }
             }
             FontSource::Bitmap(bitmap_fonts) => {
@@ -366,11 +422,23 @@ impl Fonts {
 }
 
 #[cfg(feature = "std")]
-fn ttf_font_index(fonts: &[Font], weight: u16) -> Option<usize> {
-    match fonts.len() {
+fn ttf_font_index(fonts: &TtfFaces, weight: u16) -> Option<usize> {
+    match fonts.primary {
         0 => None,
         1 => Some(0),
         _ => Some(if weight > 0 { 1 } else { 0 }),
+    }
+}
+
+#[cfg(feature = "std")]
+impl TtfFaces {
+    /// The first fallback face of `weight` with a glyph for `c`, and the glyph.
+    fn fallback_glyph(&self, c: char, weight: u16) -> Option<(usize, u16)> {
+        self.fallbacks.iter().find_map(|&(regular, bold)| {
+            let face = if weight > 0 { bold } else { regular };
+            let id = self.faces[face].lookup_glyph_index(c);
+            (id != 0).then_some((face, id))
+        })
     }
 }
 
@@ -422,11 +490,11 @@ impl TextMeasurer for Fonts {
 
         let result = match &self.source() {
             #[cfg(feature = "std")]
-            FontSource::Ttf(ttf_fonts) => {
-                if ttf_fonts.is_empty() {
+            FontSource::Ttf(faces) => {
+                let Some(font_index) = ttf_font_index(faces, weight) else {
                     return (0.0, 0.0);
-                }
-                let font_index = if weight > 0 && ttf_fonts.len() > 1 { 1 } else { 0 };
+                };
+                let ttf_fonts = &faces.faces[..];
 
                 let mut layout = fontdue::layout::Layout::new(fontdue::layout::CoordinateSystem::PositiveYDown);
                 layout.reset(&fontdue::layout::LayoutSettings::default());
@@ -1048,11 +1116,11 @@ impl Frame<'_> {
 
                     match &self.fonts {
                         #[cfg(feature = "std")]
-                        FontSource::Ttf(ttf_fonts) => {
-                            let ttf_fonts: &[Font] = ttf_fonts;
-                            let Some(font_index) = ttf_font_index(ttf_fonts, *weight) else {
+                        FontSource::Ttf(faces) => {
+                            let Some(font_index) = ttf_font_index(faces, *weight) else {
                                 continue;
                             };
+                            let ttf_fonts: &[Font] = &faces.faces;
                             let target = GlyphTarget {
                                 clip: (clip_x1, clip_y1, clip_x2, clip_y2),
                                 packed_color,
@@ -1900,6 +1968,27 @@ mod tests {
         let b = measurer.shape("cached run", 15.0, 0);
         assert!(Arc::ptr_eq(&a, &b));
         assert!(!Arc::ptr_eq(&a, &measurer.shape("cached run", 16.0, 0)));
+    }
+
+    #[test]
+    fn fallback_fonts_draw_what_the_text_font_lacks() {
+        let fonts = roboto()
+            .with_fallback(
+                include_bytes!("../../resources/fonts/XeruneHangul-Regular.otf"),
+                Some(include_bytes!("../../resources/fonts/XeruneHangul-Bold.otf")),
+            )
+            .unwrap();
+        let latin = fonts.shape("Today", 16.0, 0);
+        let mixed = fonts.shape("오늘 Today", 16.0, 0);
+        // Hangul from the fallback's regular (face 2) or bold (3) face, Latin from Roboto.
+        let faces = |shaped: &ShapedText| shaped.glyphs.iter().map(|g| g.font).collect::<Vec<_>>();
+        assert_eq!(faces(&mixed), [2, 2, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(faces(&fonts.shape("오늘", 16.0, 700)), [3, 3]);
+        assert!(mixed.glyphs.iter().all(|g| g.id != 0 && g.advance > 0.0));
+        // Its Hangul is 0.92 em wide (920 units), and its line is taller.
+        assert!((mixed.glyphs[0].advance - 14.72).abs() < 0.001);
+        assert!(mixed.metrics.ascent > latin.metrics.ascent && mixed.metrics.descent > latin.metrics.descent);
+        assert_eq!(fonts.shape("Today", 16.0, 0).metrics.ascent, roboto().shape("Today", 16.0, 0).metrics.ascent);
     }
 
     #[test]

@@ -37,9 +37,19 @@ these make that cheap.
 ## Matching Chromium
 
 - `tools/chromium-lines.sh PAGE.html [800x480]`: Chromium's line breaks
-  for a page with the bundled Roboto fonts, as JSON, via
-  `tests/text/chromium_lines.js`. The expected lines of
+  for a page with the bundled fonts (Roboto, then the Hangul fallback), as
+  JSON, via `tests/text/chromium_lines.js`. The expected lines of
   `text_layout::line_breaks_match_chromium` come from
-  `tests/text/reference.html`.
+  `tests/text/reference.html`, and those of
+  `korean_line_breaks_match_chromium` from `tests/text/korean.html`.
 - `wpt_runner` compares WPT reftests with Chromium screenshots (see
   `docs/guide.md` §13).
+
+## Fonts
+
+- `tools/subset-hangul.py SOURCE_HAN_SANS_KR_DIR` makes
+  `resources/fonts/XeruneHangul-{Regular,Bold}.otf`, the examples' Korean
+  fallback: Source Han Sans KR cut down to Hangul and CJK punctuation
+  (~1.9 MB each instead of 4.6), renamed because its license (SIL OFL,
+  `XeruneHangul-LICENSE.txt`) reserves the name "Source" for unmodified
+  fonts. Needs fontTools.

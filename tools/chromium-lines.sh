@@ -1,5 +1,6 @@
 #!/bin/sh
-# Chromium's line breaks for a page, with the Roboto fonts xerune bundles.
+# Chromium's line breaks for a page, with the fonts the examples bundle
+# (Roboto, and the Hangul fallback).
 #
 #   tools/chromium-lines.sh tests/text/reference.html [800x480]
 #
@@ -20,7 +21,9 @@ trap 'rm -rf "$tmp"' EXIT
 <style>
 @font-face { font-family: XeruneRoboto; src: url("file://$fonts/Roboto-Regular.ttf"); font-weight: 400; }
 @font-face { font-family: XeruneRoboto; src: url("file://$fonts/Roboto-Bold.ttf"); font-weight: 700; }
-* { font-family: XeruneRoboto !important; }
+@font-face { font-family: XeruneHangul; src: url("file://$fonts/XeruneHangul-Regular.otf"); font-weight: 400; }
+@font-face { font-family: XeruneHangul; src: url("file://$fonts/XeruneHangul-Bold.otf"); font-weight: 700; }
+* { font-family: XeruneRoboto, XeruneHangul !important; }
 </style>
 EOF
     cat "$page"
