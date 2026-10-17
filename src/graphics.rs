@@ -717,6 +717,36 @@ pub trait Renderer {
     /// Draws `commands` into `target`, changing only pixels inside `area`
     /// (screen coordinates). For a full repaint, pass `target.area()`.
     fn render(&mut self, target: &mut Surface<'_>, commands: &[DrawCommand], resources: &RenderResources<'_>, area: Rect);
+
+    /// Starts or stops timing each kind of draw command, for
+    /// [`take_profile`](Self::take_profile). The runtime turns it on for
+    /// `XERUNE_PROFILE=1`. Renderers that can't measure ignore it.
+    fn set_profiling(&mut self, _on: bool) {}
+
+    /// The time spent per kind of draw command since the last call, while
+    /// profiling. Empty when the renderer doesn't measure.
+    fn take_profile(&mut self) -> Vec<CommandProfile> {
+        Vec::new()
+    }
+}
+
+/// The time a [`Renderer`] spent on one kind of draw command.
+#[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
+pub struct CommandProfile {
+    /// The kind, e.g. `"rect"` or `"text"`.
+    pub kind: &'static str,
+    /// Commands of this kind drawn.
+    pub count: u32,
+    /// The time they took.
+    pub time: core::time::Duration,
+}
+
+impl CommandProfile {
+    /// `count` commands of `kind` that took `time`.
+    pub fn new(kind: &'static str, count: u32, time: core::time::Duration) -> Self {
+        Self { kind, count, time }
+    }
 }
 
 #[cfg(test)]

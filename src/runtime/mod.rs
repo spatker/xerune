@@ -5,8 +5,10 @@ pub mod animation;
 /// Platform-independent monotonic time wrappers.
 pub mod time;
 mod diff;
+mod stats;
 mod transition;
 
+pub use stats::{FrameStats, PhaseTime};
 pub use timer::{Poll, Subscriptions, TimerId, Wake};
 pub use time::{Clock, SystemClock};
 #[cfg(feature = "std")]
@@ -18,15 +20,8 @@ use taffy::prelude::*;
 use crate::alloc_prelude::*;
 use crate::runtime::time::Instant;
 use crate::runtime::timer::{Interval, Timer};
+use crate::runtime::stats::Phase;
 use core::time::Duration;
-
-#[cfg(feature = "profile")]
-use coarse_prof::profile;
-
-#[cfg(not(feature = "profile"))]
-macro_rules! profile {
-    ($($tt:tt)*) => {};
-}
 
 use crate::graphics::{Context, Damage, DrawCommand, Rect, TextMeasurer, Renderer, RenderResources, Surface};
 use crate::images::ImageStore;
@@ -128,6 +123,9 @@ pub struct Runtime<M: Model, R> {
     /// The next view replaces another tree (the keyboard's or the
     /// model's): none of its elements were there before.
     new_tree: bool,
+    /// Phase times, while the model's stats subscription or
+    /// `XERUNE_PROFILE=1` wants them.
+    stats: stats::Profiler,
 }
 
 impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
@@ -153,6 +151,10 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
          let input_keyboard_override = std::env::var("XERUNE_INPUT_KEYBOARD").is_ok_and(|v| v.trim() == "1");
          #[cfg(not(all(feature = "std", not(target_arch = "wasm32"))))]
          let input_keyboard_override = false;
+         #[cfg(all(feature = "std", not(target_arch = "wasm32")))]
+         let profile = std::env::var("XERUNE_PROFILE").is_ok_and(|v| v.trim() == "1");
+         #[cfg(not(all(feature = "std", not(target_arch = "wasm32"))))]
+         let profile = false;
 
          let mut runtime = Self {
              model,
@@ -188,6 +190,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
              input_keyboard: false,
              input_keyboard_override,
              new_tree: true,
+             stats: stats::Profiler::new(profile.then(|| SystemClock.now())),
          };
          runtime.update_subscriptions();
          runtime
@@ -205,6 +208,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
             timer.deadline = new + timer.deadline.saturating_duration_since(old);
         }
         self.intervals.clear();
+        self.stats.restart(new);
         self.update_subscriptions();
         for active in self.active_animations.values_mut() {
             active.updated = new;
@@ -572,8 +576,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
                 }
             }
             if let Ok(msg) = M::Message::from_str(&msg_str) {
-                profile!("update");
-                self.model.update(msg, &mut self.context);
+                self.update(msg);
                 any_update = true;
                 // The keyboard opens now, for the messages after this one.
                 if self.context.text_request.is_some() {
@@ -589,9 +592,15 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
     }
 
     fn process_message(&mut self, msg: M::Message) -> bool {
-        profile!("update");
-        self.model.update(msg, &mut self.context);
+        self.update(msg);
         self.sync_view_inner(true)
+    }
+
+    /// Hands the model `msg`, timed.
+    fn update(&mut self, msg: M::Message) {
+        let start = self.stats.start();
+        self.model.update(msg, &mut self.context);
+        self.stats.stop(Phase::Update, start);
     }
 
     fn process_message_str(&mut self, msg_str: &str) -> bool {
@@ -676,8 +685,8 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
         if let Some((w, h)) = self.viewport_px {
             crate::screen::set_viewport(w, h);
         }
+        let start = self.stats.start();
         let ui = {
-            profile!("ui_new_compiled");
             // Elements not in the current view are new; in a new tree, all
             // are (also the first: the view built by `new` was never shown).
             let previous_keys = self.ui.uses_starting_style.then(|| match self.new_tree {
@@ -706,15 +715,22 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
             }));
         }
         Runtime::<M, R>::apply_image_sizes(&mut self.ui, &self.images);
-        {
-            profile!("compute_layout");
-            let _ = self.ui.compute_layout(self.cached_size);
-        }
+        self.stats.stop(Phase::View, start);
+        self.layout();
+        let start = self.stats.start();
         Runtime::<M, R>::sync_canvases(&self.ui, &mut self.context);
         self.restore_scroll();
         self.update_transitions(&old);
         self.new_tree = false;
+        self.stats.stop(Phase::View, start);
         self.animate(None);
+    }
+
+    /// Lays the view out at the viewport size, timed.
+    fn layout(&mut self) {
+        let start = self.stats.start();
+        let _ = self.ui.compute_layout(self.cached_size);
+        self.stats.stop(Phase::Layout, start);
     }
 
     /// Starts and stops transitions where the new view's styles differ from
@@ -797,6 +813,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
         if cfg!(target_arch = "wasm32") || (self.ui.keyframes.is_empty() && self.active_animations.is_empty() && self.transitions.is_empty()) {
             return false;
         }
+        let timer = self.stats.start();
         let start = now.unwrap_or_else(|| self.now());
         let mut declared = HashSet::new();
         for (node, data) in &self.ui.render_data {
@@ -845,8 +862,9 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
             self.queue_transition_events(events);
             applied = true;
         }
+        self.stats.stop(Phase::Animate, timer);
         if layout_affected {
-            let _ = self.ui.compute_layout(self.cached_size);
+            self.layout();
         }
         applied
     }
@@ -874,8 +892,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
         self.scroll_offsets = session.scroll_offsets;
         self.switch_tree();
         if let Some(msg) = (session.on_done)(result) {
-            profile!("update");
-            self.model.update(msg, &mut self.context);
+            self.update(msg);
         }
         self.sync_view_inner(false)
     }
@@ -948,7 +965,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
     /// `target` must hold the previous frame, as drawn by this method; the
     /// first frame, a viewport change and newly loaded images repaint all.
     pub fn render(&mut self, renderer: &mut impl Renderer, target: &mut Surface<'_>) -> Damage {
-        profile!("render");
+        let start = self.stats.start();
         let commands = self.ui.build_commands(&self.context.canvases, self.focused_id.as_deref());
 
         let damage = if self.full_repaint {
@@ -970,10 +987,24 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
             canvas.dirty = false;
         }
 
+        self.stats.stop(Phase::Paint, start);
+
+        let start = self.stats.start();
         let resources = RenderResources::new(&self.context.canvases, &self.images);
+        renderer.set_profiling(self.stats.reporting());
         for area in damage.rects() {
             renderer.render(target, &commands, &resources, *area);
         }
+        self.stats.stop(Phase::Raster, start);
+
+        let screen = target.width() as f32 * target.height() as f32;
+        let repainted = damage.rects().iter().map(|r| r.width * r.height).sum::<f32>() / screen.max(1.0);
+        self.stats.frame(commands.len(), repainted.min(1.0));
+        #[cfg(feature = "std")]
+        if let Some(stats) = self.stats.take_report(self.now()) {
+            eprint!("{}", stats::report(&stats, &renderer.take_profile()));
+        }
+
         self.full_repaint = false;
         self.last_commands = commands;
         damage
@@ -1056,6 +1087,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
             Some(i) => old.remove(i),
             None => Interval { interval, next: now + interval },
         }).collect();
+        self.stats.subscribe(subscriptions.stats.as_ref().map(|(interval, _)| *interval), now);
         self.subscriptions = subscriptions;
     }
 
@@ -1101,6 +1133,10 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
             }
         }
 
+        if let (Some(stats), Some((_, message))) = (self.stats.take_due(now), &self.subscriptions.stats) {
+            messages.push(message(stats));
+        }
+
         // Frames that just started (from input, or the last poll's updates)
         // come at once.
         let frame = match self.frame_clock.or(Some((now, now))) {
@@ -1121,8 +1157,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
 
         if !messages.is_empty() {
             for message in messages {
-                profile!("update");
-                self.model.update(message, &mut self.context);
+                self.update(message);
             }
             redraw |= self.sync_view_inner(true);
         }
@@ -1134,8 +1169,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
         let messages = self.take_transition_messages();
         if !messages.is_empty() {
             for message in messages {
-                profile!("update");
-                self.model.update(message, &mut self.context);
+                self.update(message);
             }
             redraw |= self.sync_view_inner(true);
         }
@@ -1150,7 +1184,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
             self.frame_clock = None;
             let next_timer = self.timers.iter().map(|t| t.deadline);
             let next_interval = self.intervals.iter().map(|i| i.next);
-            next_timer.chain(next_interval).min().map_or(Wake::Idle, Wake::At)
+            next_timer.chain(next_interval).chain(self.stats.due()).min().map_or(Wake::Idle, Wake::At)
         };
         Poll { redraw, wake }
     }

@@ -82,7 +82,7 @@ pub mod backend;
 ))]
 pub use backend::App;
 
-pub use graphics::{Color, Gradient, LinearGradient, RadialGradient, RadialShape, RadialExtent, ConicGradient, Rect, Damage, Canvas, Context, DrawCommand, TextMeasurer, Renderer, RenderResources, Surface, Pixels, Rotation};
+pub use graphics::{Color, Gradient, LinearGradient, RadialGradient, RadialShape, RadialExtent, ConicGradient, Rect, Damage, Canvas, Context, DrawCommand, TextMeasurer, Renderer, CommandProfile, RenderResources, Surface, Pixels, Rotation};
 pub use images::{Image, ImageStatus, ImageStore};
 #[cfg(feature = "std")]
 pub use images::{DefaultImageLoader, ImageError, ImageLoader};
@@ -97,7 +97,7 @@ pub use ui::{Interaction, Ui, UiBuilder};
 #[doc(hidden)]
 #[cfg(feature = "std")]
 pub use ui::{cache_config, stylesheet_cache_len};
-pub use runtime::{Runtime, Subscriptions, TimerId};
+pub use runtime::{Runtime, Subscriptions, TimerId, FrameStats, PhaseTime};
 pub use font::{BitmapGlyph, BitmapFont};
 pub use xerune_derive::{XeruneTemplate, XeruneMessage};
 

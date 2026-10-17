@@ -38,7 +38,6 @@ std = [
 ]
 # Load images from http(s):// URLs (via ureq) in the default image loader.
 http = ["std", "dep:ureq"]
-profile = ["dep:coarse-prof"]
 dynamic-parser = ["dep:html5ever", "dep:markup5ever", "dep:markup5ever_rcdom", "std"]
 
 drm = ["dep:drm", "dep:drm-fourcc", "dep:libc", "std"]
@@ -62,7 +61,6 @@ xerune_template = { version = "=0.1.0", path = "xerune_template", features = ["i
 wasm-bindgen = { version = "0.2", optional = true }
 serde = { version = "1.0", features = ["derive"], optional = true }
 serde_json = { version = "1.0", optional = true }
-coarse-prof = { version = "0.2.6", optional = true }
 html5ever = { version = "0.36.1", optional = true }
 markup5ever = { version = "0.36.1", optional = true }
 markup5ever_rcdom = { version = "0.36.0", optional = true }
@@ -92,12 +90,11 @@ ureq = { version = "2", optional = true }
 [dev-dependencies]
 # No "regex": env_logger falls back to substring matching for RUST_LOG filters.
 env_logger = { version = "0.11", default-features = false, features = ["auto-color", "humantime"] }
-coarse-prof = "0.2.6"
 winit = "0.29.15"
 softbuffer = "0.4.1"
 tiny-skia = "0.12.0"
 fontdue = "0.9.3"
-xerune_render = { path = "xerune_render", features = ["profile"] }
+xerune_render = { path = "xerune_render" }
 
 
 serde = { version = "1.0", features = ["derive"] }

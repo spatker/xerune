@@ -187,3 +187,62 @@ fn timers_are_handled_with_the_next_frame() {
     runtime.poll();
     assert_eq!(runtime.model().fired, 1);
 }
+
+#[derive(Debug, Clone, XeruneMessage)]
+enum StatsMsg {
+    /// Built by the subscription only: no string form.
+    #[xerune(skip)]
+    Stats(FrameStats),
+}
+
+#[derive(XeruneTemplate)]
+#[template(source = r#"<div style="width: 50px; height: 50px; background-color: red">{{ received.len() }}</div>"#)]
+struct StatsModel {
+    received: Vec<FrameStats>,
+}
+
+impl Model for StatsModel {
+    type Message = StatsMsg;
+    fn update(&mut self, msg: StatsMsg, _context: &mut Context<StatsMsg>) {
+        let StatsMsg::Stats(stats) = msg;
+        self.received.push(stats);
+    }
+
+    fn subscriptions(&self) -> Subscriptions<StatsMsg> {
+        Subscriptions::none().stats(Duration::from_secs(1), StatsMsg::Stats)
+    }
+}
+
+struct NoRenderer;
+
+impl Renderer for NoRenderer {
+    fn render(&mut self, _: &mut Surface<'_>, _: &[DrawCommand], _: &RenderResources<'_>, _: Rect) {}
+}
+
+/// The stats subscription reports the frames rendered in each interval,
+/// and wakes the runtime for it when nothing else would.
+#[test]
+fn stats_come_every_interval_with_the_frames_rendered() {
+    assert!("stats".parse::<StatsMsg>().is_err(), "a skipped variant has no string form");
+    let mut runtime = Runtime::new(StatsModel { received: Vec::new() }, MockMeasurer);
+    let clock = ManualClock::new();
+    runtime.set_clock(clock.clone());
+    runtime.set_size(100.0, 100.0);
+    let start = clock.now();
+    let mut pixels = vec![0u32; 100 * 100];
+    for _ in 0..3 {
+        runtime.render(&mut NoRenderer, &mut Surface::new(Pixels::Xrgb8888(&mut pixels), 100, 100));
+        clock.advance(Duration::from_millis(100));
+    }
+    assert_eq!(runtime.poll().wake, Wake::At(start + Duration::from_secs(1)));
+    assert!(runtime.model().received.is_empty());
+
+    clock.advance(Duration::from_millis(700));
+    runtime.poll();
+    let [stats] = &runtime.model().received[..] else { panic!("one report: {:?}", runtime.model().received) };
+    assert_eq!((stats.frames, stats.period), (3, Duration::from_secs(1)));
+    assert_eq!(stats.fps(), 3.0);
+    assert!(stats.commands > 0, "the box and its text");
+    // The first frame repaints all, the other two nothing.
+    assert!((stats.repainted - 1.0 / 3.0).abs() < 1e-6, "{}", stats.repainted);
+}

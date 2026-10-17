@@ -38,16 +38,6 @@ use xerune::text::{LineMetrics, ShapedGlyph, ShapedText};
 use blitter::{pack_color, blend_solid_rect, blend_pixel, blend_glyph_span, div_255, calc_pixel_index};
 use rounded_rect::{draw_rounded_rect, draw_rounded_border, draw_border_sides, draw_box_shadow, draw_check_mark};
 
-#[cfg(feature = "profile")]
-macro_rules! profile {
-    ($($tt:tt)*) => { coarse_prof::profile!($($tt)*); };
-}
-
-#[cfg(not(feature = "profile"))]
-macro_rules! profile {
-    ($($tt:tt)*) => {};
-}
-
 /// The fonts of a [`Fonts`], borrowed for shaping or one render call.
 #[derive(Clone, Copy)]
 enum FontSource<'a> {
@@ -478,7 +468,6 @@ pub fn measure_cache_len() -> usize {
 
 impl TextMeasurer for Fonts {
     fn shape(&self, text: &str, font_size: f32, weight: u16) -> Arc<ShapedText> {
-        profile!("text_shape");
         #[cfg(feature = "std")]
         {
             let size_bits = font_size.to_bits();
@@ -494,7 +483,6 @@ impl TextMeasurer for Fonts {
     }
 
     fn measure_text(&self, text: &str, font_size: f32, weight: u16) -> (f32, f32) {
-        profile!("text_measure");
         if text.trim().is_empty() {
             return (0.0, 0.0);
         }
@@ -840,6 +828,10 @@ fn blit_glyph(buffer: &mut [u32], cached: &CachedGlyph, gx: i32, gy: i32, px: f3
 /// converted images between frames.
 pub struct SoftwareRenderer {
     fonts: Fonts,
+    /// Per kind of draw command (see [`COMMAND_KINDS`]): how many were
+    /// drawn and how long they took, while profiling.
+    #[cfg(feature = "std")]
+    profile: Option<CommandTimes>,
     image_cache: HashMap<String, (u32, u32, Vec<u32>)>, // src -> (width, height, packed pixels)
     glyph_cache: HashMap<(usize, u16, u32), CachedGlyph>,
     clip_stack: Vec<Rect>,
@@ -857,12 +849,55 @@ impl SoftwareRenderer {
             glyph_cache: HashMap::new(),
             clip_stack: Vec::new(),
             #[cfg(feature = "std")]
+            profile: None,
+            #[cfg(feature = "std")]
             layout: fontdue::layout::Layout::new(fontdue::layout::CoordinateSystem::PositiveYDown),
         }
     }
 }
 
+/// The kinds of draw commands profiled, in [`CommandTimes`] order.
+#[cfg(feature = "std")]
+const COMMAND_KINDS: [&str; 6] = ["rect", "text", "image", "shadow", "check", "canvas"];
+
+/// Count and time per kind of draw command.
+#[cfg(feature = "std")]
+type CommandTimes = [(u32, core::time::Duration); COMMAND_KINDS.len()];
+
+/// Where `command` is counted in [`CommandTimes`]; clips aren't.
+#[cfg(feature = "std")]
+fn command_kind(command: &DrawCommand) -> Option<usize> {
+    Some(match command {
+        DrawCommand::DrawRect { .. } => 0,
+        DrawCommand::DrawText { .. } => 1,
+        DrawCommand::DrawImage { .. } => 2,
+        DrawCommand::DrawBoxShadow { .. } => 3,
+        DrawCommand::DrawCheckMark { .. } => 4,
+        DrawCommand::DrawCanvas { .. } => 5,
+        _ => return None,
+    })
+}
+
 impl Renderer for SoftwareRenderer {
+    #[cfg(feature = "std")]
+    fn set_profiling(&mut self, on: bool) {
+        if on != self.profile.is_some() {
+            self.profile = on.then(Default::default);
+        }
+    }
+
+    #[cfg(feature = "std")]
+    fn take_profile(&mut self) -> Vec<xerune::CommandProfile> {
+        let Some(times) = &mut self.profile else { return Vec::new() };
+        let taken = core::mem::take(times);
+        COMMAND_KINDS
+            .iter()
+            .zip(taken)
+            .filter(|(_, (count, _))| *count > 0)
+            .map(|(kind, (count, time))| xerune::CommandProfile::new(kind, count, time))
+            .collect()
+    }
+
     fn render(&mut self, target: &mut Surface<'_>, commands: &[DrawCommand], resources: &RenderResources<'_>, area: Rect) {
         // Follow the image store's evictions: the converted pixels of an image
         // that is no longer drawn would otherwise stay here forever.
@@ -888,6 +923,8 @@ impl Renderer for SoftwareRenderer {
             fonts: self.fonts.source(),
             color_emoji: self.fonts.color_emoji(),
             clip_stack: &mut self.clip_stack,
+            #[cfg(feature = "std")]
+            profile: self.profile.as_mut(),
             swap_rb,
             rotate: rotation != Rotation::Deg0,
             rotation: rotation.degrees(),
@@ -916,6 +953,8 @@ struct Frame<'a> {
     #[cfg_attr(not(feature = "std"), allow(dead_code))]
     color_emoji: Option<&'a [u8]>,
     clip_stack: &'a mut Vec<Rect>,
+    #[cfg(feature = "std")]
+    profile: Option<&'a mut CommandTimes>,
     swap_rb: bool,
     #[allow(dead_code)]
     rotate: bool,
@@ -948,7 +987,6 @@ impl Frame<'_> {
 impl Frame<'_> {
     /// Draws `commands`, changing only pixels inside `area` (screen coordinates).
     fn draw(&mut self, commands: &[DrawCommand], resources: &RenderResources<'_>, area: Rect) {
-        profile!("render_full");
         let tile_rect = Rect {
             x: self.x_offset as f32,
             y: self.y_offset as f32,
@@ -982,9 +1020,11 @@ impl Frame<'_> {
                 }
             }
 
+            #[cfg(feature = "std")]
+            let started = self.profile.is_some().then(std::time::Instant::now);
+
             match command {
                 DrawCommand::Clip { rect } => {
-                    profile!("render_clip");
                     let local_rect = self.translate_rect(rect);
                     let intersected = if let Some(top) = self.clip_stack.last() {
                         let x1 = top.x.max(local_rect.x);
@@ -1003,7 +1043,6 @@ impl Frame<'_> {
                     self.clip_stack.push(intersected);
                 }
                 DrawCommand::PopClip => {
-                    profile!("render_pop_clip");
                     self.clip_stack.pop();
                 }
                 DrawCommand::DrawBoxShadow {
@@ -1016,7 +1055,6 @@ impl Frame<'_> {
                     color,
                     inset,
                 } => {
-                    profile!("render_box_shadow");
                     let local_rect = self.translate_rect(rect);
                     let clip = self.get_clip_rect();
                     draw_box_shadow(
@@ -1047,7 +1085,6 @@ impl Frame<'_> {
                     border_radius,
                     border,
                 } => {
-                    profile!("render_rect");
                     let local_rect = self.translate_rect(rect);
                     let clip = self.get_clip_rect();
 
@@ -1118,7 +1155,6 @@ impl Frame<'_> {
                     weight,
                     run,
                 } => {
-                    profile!("render_text");
                     // Bitmap fonts lay the text out themselves.
                     #[cfg(not(feature = "std"))]
                     let _ = run;
@@ -1157,7 +1193,6 @@ impl Frame<'_> {
 
                             if let Some(run) = run {
                                 // Shaped glyphs: positions are the advances.
-                                profile!("text_rasterize_blend");
                                 let baseline = round_i32(local_rect.y + run.baseline);
                                 let emoji_top = floor_i32(local_rect.y + run.baseline - run.shaped.metrics.ascent + px * 0.10);
                                 let mut pen = local_rect.x;
@@ -1186,11 +1221,9 @@ impl Frame<'_> {
                                 }
                             } else {
                                 {
-                                    profile!("text_layout");
                                     self.layout.reset(&fontdue::layout::LayoutSettings::default());
                                     self.layout.append(ttf_fonts, &fontdue::layout::TextStyle::new(text, px, font_index));
                                 }
-                                profile!("text_rasterize_blend");
                                 let mut extra_x: f32 = 0.0;
                                 for glyph in self.layout.glyphs() {
                                     if glyph.parent == '\u{fe0f}' {
@@ -1305,7 +1338,6 @@ impl Frame<'_> {
                     rect,
                     border_radius,
                 } => {
-                    profile!("render_image");
                     let local_rect = self.translate_rect(rect);
                     let clip = self.get_clip_rect();
 
@@ -1358,7 +1390,6 @@ impl Frame<'_> {
                     }
                 }
                 DrawCommand::DrawCheckMark { rect, color } => {
-                    profile!("render_check_mark");
                     let local_rect = self.translate_rect(rect);
                     let clip = self.get_clip_rect();
                     draw_check_mark(
@@ -1374,7 +1405,6 @@ impl Frame<'_> {
                     );
                 }
                 DrawCommand::DrawCanvas { id, rect, border_radius } => {
-                    profile!("render_canvas");
                     let local_rect = self.translate_rect(rect);
                     if let Some(canvas) = resources.canvases.get(id) {
                         let clip = self.get_clip_rect();
@@ -1396,6 +1426,13 @@ impl Frame<'_> {
                 }
                 // A command added to xerune after this renderer: skipped.
                 _ => {}
+            }
+
+            // (Text skipped for a missing font isn't counted.)
+            #[cfg(feature = "std")]
+            if let (Some(started), Some(times), Some(kind)) = (started, self.profile.as_deref_mut(), command_kind(command)) {
+                times[kind].0 += 1;
+                times[kind].1 += started.elapsed();
             }
         }
 

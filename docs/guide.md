@@ -520,6 +520,38 @@ the time from its `Clock`: the system clock by default; `no_std` hosts install
 their own (`runtime.set_clock(|| Instant::from_millis(board_millis()))`), and
 tests use a `ManualClock` they move themselves.
 
+**Frame stats.** `Subscriptions::stats(interval, Msg::Stats)` sends a
+`FrameStats` every interval: the frames rendered and the frame rate, and per
+phase the average and slowest frame's time: `update` (the model), `view`
+(template, styles, text shaping), `layout`, `animate` (CSS animations and
+transitions), `paint` (display list and damage) and `raster` (the renderer),
+plus draw commands and the share of the screen repainted per frame. The
+variant carrying it is marked `#[xerune(skip)]`, since stats have no string
+form. The `animation` example shows FPS, frame and render time this way. The
+runtime times frames only while something asks; times come from the system's
+monotonic clock and are zero without one (`no_std`, wasm).
+
+`XERUNE_PROFILE=1` prints the same stats to stderr once a second from any
+app, plus the renderer's time per kind of draw command (`xerune_render`
+measures rects, text, images, shadows, check marks and canvases):
+
+```text
+xerune: 31.0 fps, 31 frames, 1521 us/frame, 418 commands, 100% repainted
+  phase      avg us   max us
+  update          0        2
+  view          740     1255
+  layout        295      418
+  animate         0        0
+  paint          79      153
+  raster        405      914
+  raster   us/frame    count
+  rect          332      106
+  text           62      108
+```
+
+A `Renderer` of your own reports its own breakdown through
+`Renderer::set_profiling` and `take_profile`.
+
 ---
 
 ## 8. On-screen Keyboard

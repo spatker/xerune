@@ -356,16 +356,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "coarse-prof"
-version = "0.2.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "af7da8b0d459456192d8fba242b77d9832bf1841358944c82faa4a5e88beb5f1"
-dependencies = [
- "instant",
- "log",
-]
-
-[[package]]
 name = "colorchoice"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1018,15 +1008,6 @@ checksum = "7714e70437a7dc3ac8eb7e6f8df75fd8eb422675fc7678aff7364301092b1017"
 dependencies = [
  "equivalent",
  "hashbrown 0.16.1",
-]
-
-[[package]]
-name = "instant"
-version = "0.1.13"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e0242819d153cba4b4b05a5a8f2a7e9bbf97b6055b2a002b395c96b5ff3c0222"
-dependencies = [
- "cfg-if",
 ]
 
 [[package]]
@@ -3206,7 +3187,6 @@ name = "xerune"
 version = "0.1.0"
 dependencies = [
  "bytemuck",
- "coarse-prof",
  "csscolorparser",
  "drm 0.12.0",
  "drm-fourcc",
@@ -3257,7 +3237,6 @@ dependencies = [
 name = "xerune_render"
 version = "0.1.0"
 dependencies = [
- "coarse-prof",
  "fontdue",
  "hashbrown 0.14.5",
  "log",
@@ -3271,7 +3250,6 @@ name = "xerune_studio"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "coarse-prof",
  "console_error_panic_hook",
  "console_log",
  "log",

@@ -34,14 +34,6 @@ pub type Handle = DomHandle;
 #[cfg(not(feature = "dynamic-parser"))]
 pub type Handle = ();
 
-#[cfg(feature = "profile")]
-use coarse_prof::profile;
-
-#[cfg(not(feature = "profile"))]
-macro_rules! profile {
-    ($($tt:tt)*) => {};
-}
-
 use crate::graphics::{Canvas, DrawCommand, Rect, TextMeasurer};
 use crate::style::{ContainerStyle, Overflow, RenderData, RenderKind};
 use crate::css;
@@ -192,7 +184,6 @@ impl Ui {
         default_style: ContainerStyle,
         message_validator: &impl Fn(&str) -> bool,
     ) -> Result<Self, TaffyError> {
-        profile!("ui_new_internal");
         let dom = parse_document(RcDom::default(), Default::default())
             .from_utf8()
             .read_from(&mut html.as_bytes())
@@ -240,12 +231,10 @@ impl Ui {
         pointer: PointerState,
         previous_keys: Option<HashSet<u64>>,
     ) -> Result<Self, TaffyError> {
-        profile!("ui_new_compiled");
         let mut builder = UiBuilder::new();
         builder.pointer = pointer;
         builder.previous_keys = previous_keys;
         let root = {
-            profile!("build_ui");
             model.build_ui(&mut builder, measurer, &default_style, message_validator)
         };
         let mut ui = Self::from_builder(builder, root, model.stylesheet(), measurer, default_style, message_validator)?;
@@ -314,7 +303,6 @@ impl Ui {
             let mut style_cache = cached.style_cache.borrow_mut();
             
             {
-                profile!("resolve_styles");
                 style_resolution::resolve_styles(
                     &mut builder.taffy,
                     root,
@@ -341,7 +329,6 @@ impl Ui {
 
         let (html, body) = (builder.html, builder.body);
         let (paragraphs, ellipses, input_texts) = {
-            profile!("shape_texts");
             shape_texts(&builder.render_data, measurer)
         };
 
@@ -437,7 +424,6 @@ impl Ui {
     /// Handles scroll inputs by checking for a scrollable element containing coordinates (x, y)
     /// and adjusting its scroll offset by (delta_x, delta_y). Returns true if scrolled.
     pub fn handle_scroll(&mut self, x: f32, y: f32, delta_x: f32, delta_y: f32) -> bool {
-        profile!("handle_scroll");
         if let Some(node) = self.find_scroll_container(x, y) {
             self.scroll_node(node, delta_x, delta_y)
         } else {
@@ -491,7 +477,6 @@ impl Ui {
 
     /// Recalculates the taffy layout based on the available size constraints.
     pub fn compute_layout(&mut self, available_space: Size<AvailableSpace>) -> Result<(), TaffyError> {
-        profile!("taffy_layout");
         if let Ok(mut style) = self.taffy.style(self.root).cloned() {
             let mut changed = false;
             if style.size.width.is_auto() {
@@ -612,7 +597,6 @@ impl Ui {
     /// Performs a hit test check for coordinates (x, y) and returns the corresponding interaction
     /// message identifier and the matching NodeId if found.
     pub fn hit_test(&self, x: f32, y: f32) -> Option<(Option<Interaction>, NodeId)> {
-         profile!("hit_test");
          if let Some(clicked_node) = hit_test_recursive(&self.taffy, self.root, &self.scroll_offsets, &self.render_data, x, y, 0.0, 0.0) {
              let mut current = Some(clicked_node);
              while let Some(node) = current {

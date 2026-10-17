@@ -36,7 +36,7 @@ the working notes.
 
 Modules:
 - `model.rs`: `Model`, `InputEvent`, `hash_bytes` (FNV, for fingerprints).
-- `runtime/`: `poll` (timers, subscriptions, frames at `target_fps`, returns `Wake`), `Clock`, keyframe animations (by key), transitions (by key + property, `runtime/transition.rs`), fingerprint gating.
+- `runtime/`: `poll` (timers, subscriptions, frames at `target_fps`, returns `Wake`), `Clock`, keyframe animations (by key), transitions (by key + property, `runtime/transition.rs`), fingerprint gating, frame stats (`runtime/stats.rs`: phase times while `Subscriptions::stats` or `XERUNE_PROFILE=1` asks).
 - `ui/`: `builder` (tree building), `attributes`, `style_resolution` (+ style cache), `metadata` (`NodeMetadata`), `node_map`.
 - `style.rs`: `ContainerStyle` and CSS enums. `graphics.rs`: `Color`, `Canvas`, `Context`, `DrawCommand`, `TextMeasurer`, `Renderer`, `Surface` (pixels, stride, rotation, origin: a band or the whole screen), `Damage`.
 - `xerune_render`: `SoftwareRenderer` (owns glyph/image caches) and `Fonts` (TTF via fontdue or bitmap fonts; the runtime's `TextMeasurer`).
@@ -87,6 +87,8 @@ breaks in `text_layout::line_breaks_match_chromium`. To compare a page,
 `tools/chromium-lines.sh page.html` prints Chromium's lines with the bundled
 Roboto, or take screenshots. `cargo run --release --example text_bench` times rebuild,
 layout and render of a text-heavy view.
+`XERUNE_PROFILE=1` prints per-phase frame times and the renderer's time per
+draw command kind once a second, from any app (also on the board).
 `cargo run --release --example render_bench` times full repaints and single
 interactions of the example UIs; `tools/arm-insns.sh` counts its ARM
 instructions under qemu-arm (no board needed). See `tools/README.md`.

@@ -36,12 +36,13 @@ pub(crate) struct PendingTimer<M> {
 pub struct Subscriptions<M> {
     pub(crate) every: Vec<(Duration, M)>,
     pub(crate) frames: Option<Box<dyn Fn(f32) -> M + Send>>,
+    pub(crate) stats: Option<(Duration, Box<dyn Fn(super::FrameStats) -> M + Send>)>,
 }
 
 impl<M> Subscriptions<M> {
     /// No messages.
     pub fn none() -> Self {
-        Self { every: Vec::new(), frames: None }
+        Self { every: Vec::new(), frames: None, stats: None }
     }
 
     /// `message` every `interval`, the first one `interval` after the model
@@ -58,6 +59,15 @@ impl<M> Subscriptions<M> {
     /// ([`crate::Runtime::set_target_fps`]).
     pub fn frames(mut self, message: impl Fn(f32) -> M + Send + 'static) -> Self {
         self.frames = Some(Box::new(message));
+        self
+    }
+
+    /// Every `interval`, a message made by `message` from what the frames
+    /// rendered in it cost ([`FrameStats`](super::FrameStats): frame rate
+    /// and time per phase), e.g. for an on-screen FPS counter. The runtime
+    /// times frames only while something asks for them.
+    pub fn stats(mut self, interval: Duration, message: impl Fn(super::FrameStats) -> M + Send + 'static) -> Self {
+        self.stats = Some((interval.max(Duration::from_millis(1)), Box::new(message)));
         self
     }
 }

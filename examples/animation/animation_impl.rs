@@ -47,14 +47,12 @@ pub struct Item {
 #[template(path = "examples/animation/templates/animation.html")]
 pub struct AnimationModel {
     pub items: Vec<Item>,
-    /// Seconds counted towards the next `fps` reading.
-    #[serde(default)]
-    pub fps_window: f32,
-    pub frame_count: u32,
+    /// Frames per second, from the runtime's stats.
     pub fps: u32,
-    pub render_time: Option<f32>,
     pub item_count: usize,
-    pub render_time_ms: String,
+    /// Milliseconds per frame, all phases, and drawing alone.
+    pub frame_ms: String,
+    pub render_ms: String,
     /// Viewport the items bounce in, from `on_resize`.
     #[serde(default = "default_bounds")]
     pub bounds: (f32, f32),
@@ -83,12 +81,10 @@ impl AnimationModel {
         
         Self {
             items,
-            fps_window: 0.0,
-            frame_count: 0,
             fps: 0,
-            render_time: None,
             item_count: count,
-            render_time_ms: "0.00".to_string(),
+            frame_ms: "0.00".to_string(),
+            render_ms: "0.00".to_string(),
             bounds: default_bounds(),
         }
     }
@@ -96,8 +92,9 @@ impl AnimationModel {
 
 #[derive(Debug, Clone, XeruneMessage)]
 pub enum AnimationMsg {
-    #[xerune(prefix = "render_time_ms:")]
-    RenderTime(f32),
+    /// What the last second's frames cost.
+    #[xerune(skip)]
+    Stats(xerune::FrameStats),
     /// Seconds since the previous frame.
     Frame(f32),
 }
@@ -106,7 +103,7 @@ impl Model for AnimationModel {
     type Message = AnimationMsg;
 
     fn subscriptions(&self) -> xerune::Subscriptions<AnimationMsg> {
-        xerune::Subscriptions::none().frames(AnimationMsg::Frame)
+        xerune::Subscriptions::none().frames(AnimationMsg::Frame).stats(core::time::Duration::from_secs(1), AnimationMsg::Stats)
     }
 
     fn on_resize(&mut self, width: f32, height: f32, _context: &mut xerune::Context<AnimationMsg>) {
@@ -115,10 +112,11 @@ impl Model for AnimationModel {
 
     fn update(&mut self, msg: Self::Message, _context: &mut xerune::Context<AnimationMsg>) {
         match msg {
-            AnimationMsg::RenderTime(ms) => {
-                self.render_time = Some(ms);
-                self.render_time_ms = format!("{:.2}", ms);
-            },
+            AnimationMsg::Stats(stats) => {
+                self.fps = stats.fps().round() as u32;
+                self.frame_ms = format!("{:.2}", stats.frame_time().as_secs_f32() * 1000.0);
+                self.render_ms = format!("{:.2}", stats.raster.avg.as_secs_f32() * 1000.0);
+            }
             AnimationMsg::Frame(dt) => {
                 // Velocities are in pixels per 60 Hz frame.
                 let steps = dt * 60.0;
@@ -131,21 +129,6 @@ impl Model for AnimationModel {
                     if item.x + item.size > w { item.vx = -item.vx.abs(); }
                     if item.y < 0.0 { item.vy = item.vy.abs(); }
                     if item.y + item.size > h { item.vy = -item.vy.abs(); }
-                }
-                
-                self.frame_count += 1;
-                self.fps_window += dt;
-                if self.fps_window >= 1.0 {
-                    self.fps = self.frame_count;
-                    self.frame_count = 0;
-                    self.fps_window -= 1.0;
-                    
-                    #[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm")))]
-                    {
-                        println!("--- 1 Second Profile Dump ---");
-                        coarse_prof::write(&mut std::io::stdout()).unwrap();
-                        coarse_prof::reset();
-                    }
                 }
             }
         }

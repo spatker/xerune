@@ -32,7 +32,10 @@ these make that cheap.
   count natively, and `perf record` / `perf report` show where it goes.
   Headless snapshots (`XERUNE_SNAPSHOT`, see `docs/guide.md`) only render
   the final frame, so profile rebuild and layout with them, rendering
-  with `render_bench`.
+  with `render_bench` (or record frames with `XERUNE_SNAPSHOT_FRAMES`).
+- `XERUNE_PROFILE=1` on any app, on the board too: once a second, the
+  time per frame in each phase (update, view, layout, animate, paint,
+  raster) and the renderer's time per kind of draw command (guide §7).
 
 ## Matching Chromium
 
