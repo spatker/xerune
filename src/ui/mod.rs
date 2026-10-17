@@ -379,14 +379,12 @@ impl Ui {
                      let mut content_width = 0.0f32;
                      let mut content_height = 0.0f32;
                      
-                     if let Ok(children) = self.taffy.children(node) {
-                         for child in children {
-                             if let Ok(child_layout) = self.taffy.layout(child) {
-                                 let right = child_layout.location.x + child_layout.size.width;
-                                 let bottom = child_layout.location.y + child_layout.size.height;
-                                 if right > content_width { content_width = right; }
-                                 if bottom > content_height { content_height = bottom; }
-                             }
+                     for child in self.taffy.child_ids(node) {
+                         if let Ok(child_layout) = self.taffy.layout(child) {
+                             let right = child_layout.location.x + child_layout.size.width;
+                             let bottom = child_layout.location.y + child_layout.size.height;
+                             if right > content_width { content_width = right; }
+                             if bottom > content_height { content_height = bottom; }
                          }
                      }
                      
@@ -1068,7 +1066,7 @@ fn traverse_layout(
     }
 
     let is_flex = render_data.get(&root).and_then(RenderData::container_style).is_some_and(|s| s.display.is_flex());
-    for child in taffy.children(root).unwrap_or_default() {
+    for child in taffy.child_ids(root) {
         match paint_layer_of(child, is_flex, render_data) {
             Some(z) => deferred.push(Deferred { node: child, offset_x: child_offset_x, offset_y: child_offset_y, clips: clips.clone(), z }),
             None => { traverse_layout(painter, child, child_offset_x, child_offset_y, commands, clips, deferred); }

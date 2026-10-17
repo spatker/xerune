@@ -190,14 +190,14 @@ pub(crate) fn apply_block_display(
     tag: &str,
     style: &ContainerStyle,
     layout_style: &mut Style,
-    children: &[NodeId],
+    node: NodeId,
     render_data: &NodeMap<RenderData>,
 ) {
-    let is_inline = |child: &NodeId| match render_data.get(child) {
+    let is_inline = |child: NodeId| match render_data.get(child) {
         Some(data) => data.container_style().is_none_or(|s| s.display.is_inline_level() || s.is_floated),
         None => false,
     };
-    if !children.iter().any(is_inline) && tag != "tr" {
+    if !taffy.child_ids(node).any(is_inline) && tag != "tr" {
         layout_style.display = taffy::style::Display::Block;
         return;
     }
@@ -211,12 +211,12 @@ pub(crate) fn apply_block_display(
             TextAlign::Left => JustifyContent::FlexStart,
         });
     }
-    for child in children {
+    for child in taffy.children(node).unwrap_or_default() {
         if render_data.get(child).and_then(RenderData::container_style).is_some_and(|s| s.display == Display::Block) {
-            if let Ok(mut child_style) = taffy.style(*child).cloned() {
+            if let Ok(mut child_style) = taffy.style(child).cloned() {
                 if child_style.size.width.is_auto() {
                     child_style.size.width = Dimension::percent(1.0);
-                    let _ = taffy.set_style(*child, child_style);
+                    let _ = taffy.set_style(child, child_style);
                 }
             }
         }
@@ -748,19 +748,17 @@ pub(crate) fn finish_node(
 ) -> GeneratedBoxes {
     // Generated boxes, then flex items in `order` (Taffy has no `order`).
     let generated = super::pseudo::generate(node, parsed.element_type, current_style, taffy, render_data, interactions, base_styles);
-    let mut children = taffy.children(node).unwrap_or_default();
-    if current_style.display.is_flex() {
-        let original = children.clone();
-        children.sort_by_key(|child| render_data.get(child).map(|data| data.style.order).unwrap_or(0));
-        if children != original {
-            let _ = taffy.set_children(node, &children);
-        }
+    let order = |child: &NodeId| render_data.get(*child).map(|data| data.style.order).unwrap_or(0);
+    if current_style.display.is_flex() && taffy.child_ids(node).any(|child| order(&child) != 0) {
+        let mut children = taffy.children(node).unwrap_or_default();
+        children.sort_by_key(order);
+        let _ = taffy.set_children(node, &children);
     }
 
     if current_style.display == Display::None {
         layout_style.display = taffy::style::Display::None;
     } else if !current_style.display.is_flex() {
-        apply_block_display(taffy, tag, current_style, layout_style, &children, render_data);
+        apply_block_display(taffy, tag, current_style, layout_style, node, render_data);
     }
 
     layout_style.border = current_style.border.widths().map(length);
