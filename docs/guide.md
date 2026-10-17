@@ -541,8 +541,14 @@ together type all printable ASCII, a single line with a caret moved by the
 `‹` `›` keys, and Del. Long text scrolls to keep the caret in view.
 
 **Languages.** `.lang("de")` lays the keyboard out and labels it for a language:
-English (QWERTY) or German (QWERTZ with ä ö ü ß, "Abbrechen", "Löschen"); a
-regional tag like `de-AT` takes its language, and others get English. Each
+English (QWERTY), German (QWERTZ with ä ö ü ß, "Abbrechen", "Löschen") or
+Korean; a regional tag like `de-AT` takes its language, and others get English.
+Korean is the two-set (Dubeolsik) layout: its keys type jamo, which join the
+syllable before the caret as typed (ㅎ ㅏ ㄴ → 한, 한 + ㅏ → 하나, compound vowels
+and finals too), Shift gives the double consonants and ㅒ ㅖ, and Backspace
+takes the last jamo off while composing (한 → 하 → ㅎ); moving the caret or a
+space ends composing. Korean text needs a font with Hangul (see
+[Translations](#9-translations)). Each
 language is a catalog of its letter rows and labels (`src/keyboard/de.txt`, see
 [Translations](#9-translations)), so adding one is adding a file. The keyboard a
 text input opens takes the input's `lang` attribute, or its nearest ancestor's,

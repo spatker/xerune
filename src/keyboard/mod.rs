@@ -8,6 +8,7 @@
 //! delete and move the caret.
 
 mod edit;
+mod hangul;
 
 pub use edit::TextEdit;
 
@@ -63,7 +64,8 @@ impl TextRequest {
     }
 
     /// Lays the keys out and labels them for language `lang` (`de`, `en-US`).
-    /// The keyboard has English and German; it is English for others.
+    /// The keyboard has English, German and Korean (two-set, composing
+    /// jamo into syllables); it is English for others.
     /// A text input's keyboard takes the input's `lang` (or an ancestor's).
     pub fn lang(mut self, lang: &str) -> Self {
         self.lang = Some(lang.to_string());
@@ -71,11 +73,15 @@ impl TextRequest {
     }
 }
 
-/// The keyboard's languages: their letter rows (`row1` to `row3`) and
-/// labels. English, the first, has every key.
+/// The keyboard's languages: their letter rows (`row1` to `row3`, and
+/// `shift_row1` to `shift_row3` where Shift doesn't just capitalize), labels,
+/// and `compose = hangul` where typed jamo join into syllables. English,
+/// the first, has every label.
 fn translations() -> Translations {
     let catalog = |lang, source| Catalog::parse(lang, source).expect("the keyboard's own strings");
-    Translations::new(catalog("en", include_str!("en.txt"))).with(catalog("de", include_str!("de.txt")))
+    Translations::new(catalog("en", include_str!("en.txt")))
+        .with(catalog("de", include_str!("de.txt")))
+        .with(catalog("ko", include_str!("ko.txt")))
 }
 
 /// The keys of the symbol pages, by row (the letters are the language's);
@@ -176,6 +182,9 @@ pub(crate) struct Keyboard {
     /// The language of the letters and labels (see [`translations`]).
     lang: String,
     tr: Translations,
+    /// The jamo before the caret were typed here and may still join with
+    /// the next one (Korean); moving or typing anything else ends it.
+    composing: bool,
 }
 
 impl Keyboard {
@@ -197,12 +206,51 @@ impl Keyboard {
             column: None,
             lang: request.lang.unwrap_or_default(),
             tr: translations(),
+            composing: false,
         }
     }
 
     /// The label `key` in the keyboard's language.
     fn t<'a>(&'a self, key: &'a str) -> &'a str {
         self.tr.t(&self.lang, key)
+    }
+
+    /// `key` of the keyboard's language only, without falling back to
+    /// English: what only some layouts have.
+    fn own(&self, key: &str) -> Option<&str> {
+        self.tr.catalog(&self.lang)?.get(key)
+    }
+
+    /// Types `text` from a key: a jamo joins the syllable before the caret
+    /// while composing.
+    fn type_key(&mut self, text: &str) {
+        let mut chars = text.chars();
+        let jamo = match (chars.next(), chars.next()) {
+            (Some(c), None) if self.own("compose") == Some("hangul") && hangul::is_jamo(c) => Some(c),
+            _ => None,
+        };
+        let Some(jamo) = jamo else {
+            self.composing = false;
+            self.edit.insert(text);
+            return;
+        };
+        let prev = self.edit.before_caret().chars().next_back().filter(|_| self.composing);
+        match prev.and_then(|prev| hangul::type_jamo(prev, jamo).map(|joined| (prev, joined))) {
+            Some((prev, joined)) => self.replace_before_caret(prev, &joined),
+            None => {
+                self.edit.insert(text);
+            }
+        }
+        self.composing = true;
+    }
+
+    /// Replaces `prev`, the character before the caret, with `text`, or
+    /// keeps it when `text` doesn't fit in the length limit.
+    fn replace_before_caret(&mut self, prev: char, text: &str) {
+        self.edit.backspace();
+        if !self.edit.insert(text) {
+            self.edit.insert(prev.encode_utf8(&mut [0; 4]));
+        }
     }
 
     /// How many keys wide the keyboard is: its longest row of letters or
@@ -221,7 +269,7 @@ impl Keyboard {
     pub(crate) fn press(&mut self, msg: KeyboardMsg) -> Option<Option<String>> {
         match msg {
             KeyboardMsg::Type(text) => {
-                self.edit.insert(&text);
+                self.type_key(&text);
                 if self.shift == Shift::Once {
                     self.shift = Shift::Off;
                 }
@@ -240,15 +288,26 @@ impl Keyboard {
                 self.page = if self.page == Page::Symbols { Page::MoreSymbols } else { Page::Symbols };
             }
             KeyboardMsg::Space => {
+                self.composing = false;
                 self.edit.insert(" ");
             }
             KeyboardMsg::Backspace => {
-                self.edit.backspace();
+                // While composing, takes off the last jamo: 한 → 하 → ㅎ.
+                let prev = self.edit.before_caret().chars().next_back().filter(|_| self.composing);
+                match prev.and_then(|prev| hangul::remove_jamo(prev).map(|rest| (prev, rest))) {
+                    Some((prev, rest)) => self.replace_before_caret(prev, rest.encode_utf8(&mut [0; 4])),
+                    None => {
+                        self.composing = false;
+                        self.edit.backspace();
+                    }
+                }
             }
             KeyboardMsg::Left => {
+                self.composing = false;
                 self.edit.move_left();
             }
             KeyboardMsg::Right => {
+                self.composing = false;
                 self.edit.move_right();
             }
             KeyboardMsg::Reveal => {
@@ -387,6 +446,7 @@ impl Keyboard {
 
     /// Types text from a hardware keyboard.
     pub(crate) fn type_text(&mut self, text: &str) {
+        self.composing = false;
         self.edit.insert(text);
     }
 
@@ -396,13 +456,17 @@ impl Keyboard {
 
     /// The characters of `row` on the current page.
     fn row(&self, row: usize) -> Vec<String> {
+        let shifted = self.page == Page::Letters && self.shift != Shift::Off;
+        // A layout's own shifted row (Korean: double consonants), or capitals.
+        if let Some(keys) = self.own(["shift_row1", "shift_row2", "shift_row3"][row]).filter(|_| shifted) {
+            return keys.chars().map(String::from).collect();
+        }
         let keys = match self.page {
             Page::Letters => self.t(["row1", "row2", "row3"][row]),
             Page::Symbols => SYMBOLS[row],
             Page::MoreSymbols => MORE_SYMBOLS[row],
         };
-        let upper = self.page == Page::Letters && self.shift != Shift::Off;
-        keys.chars().map(|c| if upper { upper_case(c) } else { c.to_string() }).collect()
+        keys.chars().map(|c| if shifted { upper_case(c) } else { c.to_string() }).collect()
     }
 
     fn letters(&self) -> bool {
@@ -581,6 +645,43 @@ mod tests {
         assert_eq!(kb.edit.text(), "Ä");
         let kb = keyboard(TextRequest::new("Name").lang("fr"));
         assert_eq!(kb.row(0).concat(), "qwertyuiop", "English for other languages");
+    }
+
+    #[test]
+    fn korean_composes_syllables_as_typed() {
+        let mut kb = keyboard(TextRequest::new("이름").lang("ko"));
+        assert_eq!(kb.row(0).concat(), "ㅂㅈㄷㄱㅅㅛㅕㅑㅐㅔ");
+        assert_eq!(kb.t("cancel"), "취소");
+        let type_keys = |kb: &mut Keyboard, keys: &str| {
+            for c in keys.chars() {
+                kb.press(if c == ' ' { KeyboardMsg::Space } else { KeyboardMsg::Type(c.to_string()) });
+            }
+        };
+        type_keys(&mut kb, "ㅎㅏㄴㄱㅜㄱ ㅁㅏㄹ");
+        assert_eq!(kb.edit.text(), "한국 말");
+        // Backspace takes the jamo off one by one while composing.
+        kb.press(KeyboardMsg::Backspace);
+        assert_eq!(kb.edit.text(), "한국 마");
+        kb.press(KeyboardMsg::Backspace);
+        kb.press(KeyboardMsg::Backspace);
+        assert_eq!(kb.edit.text(), "한국 ");
+        // After moving, a jamo doesn't join the syllable before the caret.
+        kb.press(KeyboardMsg::Left);
+        kb.press(KeyboardMsg::Right);
+        kb.press(KeyboardMsg::Backspace);
+        type_keys(&mut kb, "ㅏ");
+        assert_eq!(kb.edit.text(), "한국ㅏ");
+        // Shift types double consonants.
+        kb.press(KeyboardMsg::Shift);
+        assert_eq!(kb.row(0).concat(), "ㅃㅉㄸㄲㅆㅛㅕㅑㅒㅖ");
+        assert_eq!(kb.row(1).concat(), "ㅁㄴㅇㄹㅎㅗㅓㅏㅣ");
+        // English has no shifted rows of its own.
+        let mut en = keyboard(TextRequest::new("Name"));
+        en.press(KeyboardMsg::Shift);
+        assert_eq!(en.row(0)[0], "Q");
+        en.press(KeyboardMsg::Type("ㄱ".into()));
+        en.press(KeyboardMsg::Type("ㅏ".into()));
+        assert_eq!(en.edit.text(), "ㄱㅏ", "only Korean composes");
     }
 
     #[test]

@@ -1,0 +1,20 @@
+# The on-screen keyboard in Korean: two-set (Dubeolsik). The keys type
+# jamo, which join into syllables as they are typed (hangul.rs); Shift
+# gives the double consonants and ㅒ ㅖ.
+compose = hangul
+row1 = ㅂㅈㄷㄱㅅㅛㅕㅑㅐㅔ
+row2 = ㅁㄴㅇㄹㅎㅗㅓㅏㅣ
+row3 = ㅋㅌㅊㅍㅠㅜㅡ
+shift_row1 = ㅃㅉㄸㄲㅆㅛㅕㅑㅒㅖ
+shift_row2 = ㅁㄴㅇㄹㅎㅗㅓㅏㅣ
+shift_row3 = ㅋㅌㅊㅍㅠㅜㅡ
+show = 보기
+hide = 숨기기
+cancel = 취소
+ok = 확인
+shift = Shift
+caps = Caps
+del = 지우기
+space = 띄어쓰기
+letters = 한글
+symbols = ?123
