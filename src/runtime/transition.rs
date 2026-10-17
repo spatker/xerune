@@ -227,7 +227,7 @@ pub(crate) fn apply_transitions(store: &mut TransitionStore, ui: &mut Ui, now: I
         let (Some(data), Ok(layout)) = (ui.render_data.get_mut(transition.node_id), ui.taffy.style(transition.node_id)) else { continue };
         let mut layout = layout.clone();
         property.set(&value, &mut data.style, &mut layout);
-        if property.affects_layout() {
+        if property.affects_layout() && ui.taffy.style(transition.node_id).is_ok_and(|current| *current != layout) {
             let _ = ui.taffy.set_style(transition.node_id, layout);
             layout_affected = true;
         }

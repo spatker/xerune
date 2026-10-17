@@ -852,9 +852,13 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
             let mut layout = base_layout.clone();
             let mut style = base_style.clone();
             if let Some(progress) = active.progress() {
-                layout_affected |= animation::apply_keyframes(keyframes, progress, active.easing, base_style, base_layout, &mut style, &mut layout);
+                animation::apply_keyframes(keyframes, progress, active.easing, base_style, base_layout, &mut style, &mut layout);
             }
-            let _ = self.ui.taffy.set_style(active.node_id, layout);
+            // Setting a style marks the node for layout: only one that changed.
+            if self.ui.taffy.style(active.node_id).is_ok_and(|current| *current != layout) {
+                let _ = self.ui.taffy.set_style(active.node_id, layout);
+                layout_affected = true;
+            }
             if let Some(data) = self.ui.render_data.get_mut(active.node_id) {
                 data.style = style;
             }

@@ -106,8 +106,7 @@ impl ActiveAnimation {
 /// Each property goes between the nearest keyframes that set it, with
 /// implicit `0%` / `100%` keyframes of the element's own value, and eases
 /// with the timing function of the keyframe the segment starts at (else the
-/// element's `easing`). Returns whether a property that affects layout was
-/// set.
+/// element's `easing`).
 pub(crate) fn apply_keyframes(
     keyframes: &KeyframesAnimation,
     progress: f32,
@@ -116,14 +115,13 @@ pub(crate) fn apply_keyframes(
     base_layout: &Style,
     style: &mut ContainerStyle,
     layout: &mut Style,
-) -> bool {
+) {
     let mut properties: Vec<AnimatedProperty> = Vec::new();
     for (property, _) in keyframes.keyframes.iter().flat_map(|k| &k.declarations) {
         if !properties.contains(property) {
             properties.push(*property);
         }
     }
-    let mut layout_affected = false;
     for property in properties {
         let Some(own) = property.get(base_style, base_layout) else { continue };
         let frames = keyframes.keyframes.iter().filter_map(|k| {
@@ -145,7 +143,5 @@ pub(crate) fn apply_keyframes(
         let t = if to.0 > from.0 { (progress - from.0) / (to.0 - from.0) } else { 0.0 };
         let eased = from.2.unwrap_or(easing).apply(t);
         property.set(&from.1.interpolate(to.1, eased), style, layout);
-        layout_affected |= property.affects_layout();
     }
-    layout_affected
 }
