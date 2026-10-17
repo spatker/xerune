@@ -622,7 +622,11 @@ impl Settings {
 ```
 
 Language tags compare ignoring case, and a regional tag (`de-AT`) takes its
-language's catalog. The `lang` attribute also picks the
+language's catalog. `i18n::system_lang()` reads the user's language from the
+POSIX locale (`LC_ALL`, then `LC_MESSAGES`, then `LANG`: `de_DE.UTF-8` gives
+`de-DE`), for the language an app starts in. The todo example starts in it and
+has a switch in its sidebar: `LC_ALL=de_DE.UTF-8 cargo run --example todo`, or
+`XERUNE_SNAPSHOT_MESSAGES="lang:de"` in a snapshot. The `lang` attribute also picks the
 [on-screen keyboard](#8-on-screen-keyboard)'s layout for text inputs. There are
 no plural rules or number formats: write a key per form (`one_open`,
 `many_open`) and format numbers in Rust. Text is laid out as everywhere else, so

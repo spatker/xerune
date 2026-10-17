@@ -106,6 +106,28 @@ impl Translations {
     }
 }
 
+/// The user's language, from the environment as POSIX has it (`LC_ALL`,
+/// then `LC_MESSAGES`, then `LANG`), as a tag: `de-DE` for `de_DE.UTF-8`.
+/// `None` when none is set, or for the `C` and `POSIX` locales.
+#[cfg(all(feature = "std", not(target_arch = "wasm32")))]
+pub fn system_lang() -> Option<String> {
+    ["LC_ALL", "LC_MESSAGES", "LANG"]
+        .iter()
+        .filter_map(|var| std::env::var(var).ok())
+        .find(|value| !value.is_empty())
+        .and_then(|locale| lang_of_locale(&locale))
+}
+
+/// The language tag of a POSIX locale name (`de_DE.UTF-8@euro`).
+#[cfg(any(test, all(feature = "std", not(target_arch = "wasm32"))))]
+fn lang_of_locale(locale: &str) -> Option<String> {
+    let lang = locale.split(['.', '@']).next().unwrap_or("");
+    match lang {
+        "" | "C" | "POSIX" => None,
+        lang => Some(lang.replace('_', "-")),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -134,6 +156,15 @@ mod tests {
         assert_eq!(tr.t("de", "missing"), "missing");
         assert!(tr.catalog("fr").is_none());
         assert_eq!(tr.langs().collect::<Vec<_>>(), ["en", "de"]);
+    }
+
+    #[test]
+    fn reads_posix_locales_as_tags() {
+        assert_eq!(lang_of_locale("de_DE.UTF-8").as_deref(), Some("de-DE"));
+        assert_eq!(lang_of_locale("de_AT@euro").as_deref(), Some("de-AT"));
+        assert_eq!(lang_of_locale("en").as_deref(), Some("en"));
+        assert_eq!(lang_of_locale("C.UTF-8"), None);
+        assert_eq!(lang_of_locale("POSIX"), None);
     }
 
     #[test]
