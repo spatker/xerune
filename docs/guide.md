@@ -540,6 +540,14 @@ Shift (once, or locked when pressed twice) and two pages of symbols, which
 together type all printable ASCII, a single line with a caret moved by the
 `‹` `›` keys, and Del. Long text scrolls to keep the caret in view.
 
+**Languages.** `.lang("de")` lays the keyboard out and labels it for a language:
+English (QWERTY) or German (QWERTZ with ä ö ü ß, "Abbrechen", "Löschen"); a
+regional tag like `de-AT` takes its language, and others get English. Each
+language is a catalog of its letter rows and labels (`src/keyboard/de.txt`, see
+[Translations](#9-translations)), so adding one is adding a file. The keyboard a
+text input opens takes the input's `lang` attribute, or its nearest ancestor's,
+as in HTML: `<div class="app" lang="{{ lang }}">`.
+
 While it is open, input goes to the keyboard and not the model: taps press its
 keys, text from a hardware keyboard types into it, and other keys act by the
 runtime's `KeyMap`. The direction keys move a focus over the keys (up and down

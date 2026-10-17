@@ -12,6 +12,7 @@ mod edit;
 pub use edit::TextEdit;
 
 use crate::alloc_prelude::*;
+use crate::i18n::{Catalog, Translations};
 use crate::keys::KeyAction;
 use crate::{XeruneMessage, XeruneTemplate};
 
@@ -27,6 +28,7 @@ pub struct TextRequest {
     password: bool,
     min_len: usize,
     max_len: Option<usize>,
+    lang: Option<String>,
 }
 
 impl TextRequest {
@@ -59,11 +61,26 @@ impl TextRequest {
         self.max_len = Some(max_len);
         self
     }
+
+    /// Lays the keys out and labels them for language `lang` (`de`, `en-US`).
+    /// The keyboard has English and German; it is English for others.
+    /// A text input's keyboard takes the input's `lang` (or an ancestor's).
+    pub fn lang(mut self, lang: &str) -> Self {
+        self.lang = Some(lang.to_string());
+        self
+    }
 }
 
-/// The keys of a page, by row; the third row also has the page's switch
-/// key and Del, and every page has the bottom row.
-const LETTERS: [&str; 3] = ["qwertyuiop", "asdfghjkl", "zxcvbnm"];
+/// The keyboard's languages: their letter rows (`row1` to `row3`) and
+/// labels. English, the first, has every key.
+fn translations() -> Translations {
+    let catalog = |lang, source| Catalog::parse(lang, source).expect("the keyboard's own strings");
+    Translations::new(catalog("en", include_str!("en.txt"))).with(catalog("de", include_str!("de.txt")))
+}
+
+/// The keys of the symbol pages, by row (the letters are the language's);
+/// the third row also has the page's switch key and Del, and every page
+/// has the bottom row.
 const SYMBOLS: [&str; 3] = ["1234567890", "-/:;()$&@\"", ".,?!'"];
 const MORE_SYMBOLS: [&str; 3] = ["[]{}#%^*+=", "_\\|~<>`", ".,?!'"];
 
@@ -120,6 +137,16 @@ fn nearest(row: &[(KeyboardMsg, f32)], x: f32) -> usize {
     (0..row.len()).min_by(|&a, &b| (row[a].1 - x).abs().total_cmp(&(row[b].1 - x).abs())).unwrap_or(0)
 }
 
+/// `c` in upper case, if that is one letter: ß stays (its capital, SS,
+/// would be two).
+fn upper_case(c: char) -> String {
+    let mut upper = c.to_uppercase();
+    match (upper.next(), upper.next()) {
+        (Some(u), None) => u.to_string(),
+        _ => c.to_string(),
+    }
+}
+
 /// Whether `message` is one of the keyboard's (`kb:...`), which
 /// [`crate::Runtime::handle_messages`] sends to it while it is open.
 #[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm", feature = "browser")))]
@@ -146,6 +173,9 @@ pub(crate) struct Keyboard {
     /// Where across the keyboard moving up and down aims, so going through
     /// a shorter row comes back to the same column.
     column: Option<f32>,
+    /// The language of the letters and labels (see [`translations`]).
+    lang: String,
+    tr: Translations,
 }
 
 impl Keyboard {
@@ -165,7 +195,25 @@ impl Keyboard {
             shift: Shift::Off,
             focus: None,
             column: None,
+            lang: request.lang.unwrap_or_default(),
+            tr: translations(),
         }
+    }
+
+    /// The label `key` in the keyboard's language.
+    fn t<'a>(&'a self, key: &'a str) -> &'a str {
+        self.tr.t(&self.lang, key)
+    }
+
+    /// How many keys wide the keyboard is: its longest row of letters or
+    /// symbols (10, or 11 with German's umlauts).
+    fn columns(&self) -> usize {
+        ["row1", "row2", "row3"].iter().map(|row| self.t(row).chars().count()).chain([10]).max().unwrap_or(10)
+    }
+
+    /// The width of a letter or symbol key, as a percentage of a row.
+    fn key_width(&self) -> String {
+        format!("{:.2}", 92.0 / self.columns() as f32)
     }
 
     /// Handles a key's message. Returns the result once the keyboard is
@@ -288,35 +336,38 @@ impl Keyboard {
 
     /// The keys the focus moves over, by row as laid out (the buttons by
     /// the text first), with their messages and where their middles are
-    /// across the keyboard, in key widths: the top letter row is 10 wide.
+    /// across the keyboard, in key widths: the keyboard is
+    /// [`Self::columns`] wide.
     fn focus_rows(&self) -> Vec<Vec<(KeyboardMsg, f32)>> {
+        let width = self.columns() as f32;
         let mut actions = Vec::new();
         if self.password {
             actions.push(KeyboardMsg::Reveal);
         }
         actions.extend([KeyboardMsg::Cancel, KeyboardMsg::Ok]);
         // To the right of the text in landscape, across under it in portrait.
-        let (width, height) = crate::screen::size();
+        let (screen_width, height) = crate::screen::size();
         let n = actions.len();
         let actions = actions.into_iter().enumerate().map(|(i, msg)| {
-            let x = if height > width { 10.0 * (i as f32 + 0.5) / n as f32 } else { 10.0 - 1.4 * (n - i) as f32 + 0.7 };
+            let x = if height > screen_width { width * (i as f32 + 0.5) / n as f32 } else { width - 1.4 * (n - i) as f32 + 0.7 };
             (msg, x)
         });
         let centered = |keys: Vec<String>| {
-            let start = (10.0 - keys.len() as f32) / 2.0;
+            let start = (width - keys.len() as f32) / 2.0;
             keys.into_iter().enumerate().map(move |(i, k)| (KeyboardMsg::Type(k), start + i as f32 + 0.5))
         };
         let third = self.row(2);
         // The switch key and Del share what the keys leave.
-        let side = (10.0 - third.len() as f32) / 2.0;
+        let side = (width - third.len() as f32) / 2.0;
         let switch = if self.letters() { KeyboardMsg::Shift } else { KeyboardMsg::MoreSymbols };
-        let third = core::iter::once((switch, side / 2.0)).chain(centered(third)).chain([(KeyboardMsg::Backspace, 10.0 - side / 2.0)]);
+        let third = core::iter::once((switch, side / 2.0)).chain(centered(third)).chain([(KeyboardMsg::Backspace, width - side / 2.0)]);
+        let bottom = [(KeyboardMsg::Symbols, 0.75), (KeyboardMsg::Left, 2.0), (KeyboardMsg::Space, 5.75), (KeyboardMsg::Right, 9.5)];
         vec![
             actions.collect(),
             centered(self.row(0)).collect(),
             centered(self.row(1)).collect(),
             third.collect(),
-            vec![(KeyboardMsg::Symbols, 0.75), (KeyboardMsg::Left, 2.0), (KeyboardMsg::Space, 5.75), (KeyboardMsg::Right, 9.5)],
+            bottom.into_iter().map(|(msg, x)| (msg, x * width / 10.0)).collect(),
         ]
     }
 
@@ -346,12 +397,12 @@ impl Keyboard {
     /// The characters of `row` on the current page.
     fn row(&self, row: usize) -> Vec<String> {
         let keys = match self.page {
-            Page::Letters => LETTERS[row],
+            Page::Letters => self.t(["row1", "row2", "row3"][row]),
             Page::Symbols => SYMBOLS[row],
             Page::MoreSymbols => MORE_SYMBOLS[row],
         };
         let upper = self.page == Page::Letters && self.shift != Shift::Off;
-        keys.chars().map(|c| if upper { c.to_ascii_uppercase() } else { c }.to_string()).collect()
+        keys.chars().map(|c| if upper { upper_case(c) } else { c.to_string() }).collect()
     }
 
     fn letters(&self) -> bool {
@@ -439,8 +490,14 @@ mod tests {
 
     #[test]
     fn symbol_pages_type_all_printable_ascii() {
-        let mut typable: Vec<char> = LETTERS.iter().chain(&SYMBOLS).chain(&MORE_SYMBOLS).flat_map(|row| row.chars()).collect();
-        typable.extend(LETTERS.iter().flat_map(|row| row.chars()).map(|c| c.to_ascii_uppercase()));
+        let mut kb = keyboard(TextRequest::new("Name"));
+        let mut typable: Vec<char> = SYMBOLS.iter().chain(&MORE_SYMBOLS).flat_map(|row| row.chars()).collect();
+        for shift in [false, true] {
+            if shift {
+                kb.press(KeyboardMsg::Shift);
+            }
+            typable.extend((0..3).flat_map(|row| kb.row(row)).flat_map(|key| key.chars().collect::<Vec<_>>()));
+        }
         typable.push(' ');
         for c in ' '..='~' {
             assert!(typable.contains(&c), "{c:?} has no key");
@@ -503,6 +560,27 @@ mod tests {
         kb.key(Left);
         let (row, index) = kb.focus().unwrap();
         assert!(matches!(kb.focus_rows()[row][index].0, KeyboardMsg::Backspace));
+    }
+
+    #[test]
+    fn german_has_qwertz_with_umlauts() {
+        use KeyAction::*;
+        crate::screen::set_viewport(800.0, 480.0);
+        let mut kb = keyboard(TextRequest::new("Name").lang("de-DE"));
+        assert_eq!(kb.row(0).concat(), "qwertzuiopü");
+        assert_eq!(kb.t("cancel"), "Abbrechen");
+        assert_eq!(kb.columns(), 11);
+        kb.press(KeyboardMsg::Shift);
+        assert_eq!(kb.row(2).concat(), "YXCVBNMß");
+        // Down from Ü: Ä, under it.
+        kb.key(Down);
+        kb.key(Left);
+        kb.key(Down);
+        assert_eq!(kb.focus(), Some((2, 10)));
+        kb.key(Activate);
+        assert_eq!(kb.edit.text(), "Ä");
+        let kb = keyboard(TextRequest::new("Name").lang("fr"));
+        assert_eq!(kb.row(0).concat(), "qwertyuiop", "English for other languages");
     }
 
     #[test]

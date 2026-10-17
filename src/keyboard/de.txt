@@ -1,0 +1,14 @@
+# The on-screen keyboard in German: QWERTZ with the umlauts and ß.
+row1 = qwertzuiopü
+row2 = asdfghjklöä
+row3 = yxcvbnmß
+show = Zeigen
+hide = Verbergen
+cancel = Abbrechen
+ok = OK
+shift = Umschalt
+caps = Feststell
+del = Löschen
+space = Leerzeichen
+letters = ABC
+symbols = ?123

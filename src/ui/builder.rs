@@ -20,6 +20,8 @@ pub struct UiBuilder {
     pub body: Option<NodeId>,
     /// Elements with an `id` attribute.
     pub element_ids: Vec<(Cow<'static, str>, NodeId)>,
+    /// Elements with a `lang` attribute (see `Ui::langs`).
+    pub langs: Vec<(NodeId, String)>,
     /// Each element's [`element_key`].
     pub keys: NodeMap<u64>,
     /// The elements under the pointer, for `:hover` and `:active`.
@@ -103,6 +105,7 @@ impl UiBuilder {
             html: None,
             body: None,
             element_ids: Vec::new(),
+            langs: Vec::new(),
             keys: NodeMap::with_capacity(capacity),
             pointer: PointerState::default(),
             hover_handlers: NodeMap::new(),
@@ -384,6 +387,9 @@ impl UiBuilder {
         self.append_child(parent, node);
         if let Some((_, id)) = attrs.iter().find(|(name, _)| name == "id") {
             self.element_ids.push((Cow::Owned(id.clone().into_owned()), node));
+        }
+        if let Some((_, lang)) = attrs.iter().find(|(name, _)| name == "lang") {
+            self.langs.push((node, lang.clone().into_owned()));
         }
         self.note_root_element(el.tag, node);
         node

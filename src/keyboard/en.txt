@@ -1,0 +1,14 @@
+# The on-screen keyboard in English: the letter rows, then the labels.
+row1 = qwertyuiop
+row2 = asdfghjkl
+row3 = zxcvbnm
+show = Show
+hide = Hide
+cancel = Cancel
+ok = OK
+shift = Shift
+caps = Caps
+del = Del
+space = space
+letters = ABC
+symbols = ?123

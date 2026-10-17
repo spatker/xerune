@@ -157,8 +157,8 @@ enum FormMsg {
 }
 
 #[derive(XeruneTemplate)]
-#[template(source = r#"<div>
-    <input type="text" id="name" value="{{ name }}" placeholder="Your name">
+#[template(source = r#"<div lang="de">
+    <input type="text" id="name" value="{{ name }}" placeholder="Your name" lang="en">
     <input type="text" id="other" placeholder="Not handled">
 </div>"#)]
 struct Form {
@@ -196,6 +196,7 @@ fn tapping_an_input_opens_the_keyboard_when_asked_to() {
     runtime.handle_event(InputEvent::Click { x: 20.0, y: 15.0 });
     let texts = form_texts(&runtime);
     assert!(texts.iter().any(|t| t == "Your name") && texts.iter().any(|t| t == "Ada!"), "{texts:?}");
+    assert!(texts.iter().any(|t| t == "Cancel"), "in the input's own language: {texts:?}");
     runtime.handle_messages(["kb:backspace".to_string(), "kb:type:?".to_string(), "kb:ok".to_string()]);
     assert_eq!(runtime.model().name, "Ada?");
 
@@ -203,7 +204,9 @@ fn tapping_an_input_opens_the_keyboard_when_asked_to() {
     runtime.handle_event(InputEvent::Click { x: 20.0, y: 15.0 });
     runtime.handle_messages(["kb:type:x".to_string(), "kb:cancel".to_string()]);
     runtime.handle_event(InputEvent::Click { x: 190.0, y: 15.0 });
-    assert!(form_texts(&runtime).iter().any(|t| t == "Not handled"), "the other input's keyboard");
+    let texts = form_texts(&runtime);
+    assert!(texts.iter().any(|t| t == "Not handled"), "the other input's keyboard");
+    assert!(texts.iter().any(|t| t == "Abbrechen"), "in the language of its parent: {texts:?}");
     runtime.handle_messages(["kb:type:x".to_string(), "kb:ok".to_string()]);
     assert_eq!(runtime.model().name, "Ada?");
     assert!(!form_texts(&runtime).iter().any(|t| t == "OK"), "closed");

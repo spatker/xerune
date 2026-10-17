@@ -159,6 +159,8 @@ pub struct Ui {
     pub ellipses: NodeMap<Arc<crate::text::ShapedText>>,
     /// Elements with an `id` attribute, for [`Ui::scroll_into_view`].
     pub element_ids: Vec<(Cow<'static, str>, NodeId)>,
+    /// Elements with a `lang` attribute, for [`Ui::lang`].
+    pub langs: Vec<(NodeId, String)>,
     /// Each element's key, the same for the same element in every rebuild
     /// (see [`builder::element_key`]).
     pub keys: NodeMap<u64>,
@@ -343,8 +345,12 @@ impl Ui {
 
         let mut element_ids = builder.element_ids;
         element_ids.extend(builder.node_metadata.iter().filter_map(|(node, meta)| Some((meta.id.clone()?, node))));
+        let mut langs = builder.langs;
+        langs.extend(builder.node_metadata.iter()
+            .filter_map(|(node, meta)| Some((node, meta.other_attrs.as_ref()?.iter().find(|(k, _)| k == "lang")?.1.clone()))));
         Ok(Self {
             element_ids,
+            langs,
             taffy: builder.taffy,
             render_data: builder.render_data,
             interactions: builder.interactions,
@@ -434,6 +440,19 @@ impl Ui {
         } else {
             false
         }
+    }
+
+    /// The language of `node`: its `lang` attribute or its nearest
+    /// ancestor's, as in HTML. `None` when no element says.
+    pub fn lang(&self, node: NodeId) -> Option<&str> {
+        let mut current = Some(node);
+        while let Some(node) = current {
+            if let Some((_, lang)) = self.langs.iter().find(|(n, _)| *n == node) {
+                return Some(lang);
+            }
+            current = self.taffy.parent(node);
+        }
+        None
     }
 
     /// Scrolls the nearest scrollable ancestor of the element with `id` so

@@ -401,7 +401,10 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
                     if let Some(RenderKind::TextInput(id, value, placeholder)) = self.ui.render_data.get(&clicked_node).map(|d| &d.kind) {
                         if (self.input_keyboard || self.input_keyboard_override) && !id.is_empty() {
                             let title = placeholder.as_ref().map_or("", |p| p.0.as_str());
-                            let request = TextRequest::new(title).text(value.as_deref().unwrap_or(""));
+                            let mut request = TextRequest::new(title).text(value.as_deref().unwrap_or(""));
+                            if let Some(lang) = self.ui.lang(clicked_node) {
+                                request = request.lang(lang);
+                            }
                             let id = id.clone();
                             self.open_keyboard(request, Box::new(move |text: Option<String>| {
                                 let message = format!("{id}:value:{}", text?);
