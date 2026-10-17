@@ -1,4 +1,4 @@
-use crate::blitter::{pack_color, blend_solid_rect, blend_pixel, calc_pixel_index};
+use crate::blitter::{pack_color, blend_solid_rect, blend_pixel, calc_pixel_index, round_alpha};
 use crate::gradient::{draw_gradient_rect, draw_shaded_rounded_rect};
 #[cfg(not(feature = "std"))]
 use crate::F32Ext;
@@ -201,7 +201,7 @@ pub fn draw_rounded_rect(
                             let src_color = packed_solid;
 
                             let alpha = ((src_color >> 24) & 0xff) as f32 * coverage;
-                            let packed_col = (src_color & 0x00ffffff) | ((alpha.round() as u32) << 24);
+                            let packed_col = (src_color & 0x00ffffff) | (round_alpha(alpha) << 24);
 
                             let idx = calc_pixel_index(px, py, rotation, physical_w, logical_w, logical_h);
 
@@ -221,7 +221,7 @@ pub fn draw_rounded_rect(
                             let src_color = packed_solid;
 
                             let alpha = ((src_color >> 24) & 0xff) as f32 * coverage;
-                            let packed_col = (src_color & 0x00ffffff) | ((alpha.round() as u32) << 24);
+                            let packed_col = (src_color & 0x00ffffff) | (round_alpha(alpha) << 24);
 
                             let idx = calc_pixel_index(px, py, rotation, physical_w, logical_w, logical_h);
 
@@ -248,7 +248,7 @@ pub fn draw_rounded_rect(
                         let src_color = packed_solid;
 
                         let alpha = ((src_color >> 24) & 0xff) as f32 * coverage;
-                        let packed_col = (src_color & 0x00ffffff) | ((alpha.round() as u32) << 24);
+                        let packed_col = (src_color & 0x00ffffff) | (round_alpha(alpha) << 24);
 
                         let idx = calc_pixel_index(px, py, rotation, physical_w, logical_w, logical_h);
 
@@ -487,7 +487,7 @@ pub fn draw_rounded_border(
 
                 if coverage > 0.0 {
                     let alpha = ((packed_border >> 24) & 0xff) as f32 * coverage;
-                    let packed_col = (packed_border & 0x00ffffff) | ((alpha.round() as u32) << 24);
+                    let packed_col = (packed_border & 0x00ffffff) | (round_alpha(alpha) << 24);
 
                     let idx = calc_pixel_index(px, py, rotation, physical_w, logical_w, logical_h);
 
@@ -607,7 +607,7 @@ pub fn draw_box_shadow(
         if alpha_factor <= 0.0 {
             return None;
         }
-        let final_a = (base_a * alpha_factor).round() as u32;
+        let final_a = round_alpha(base_a * alpha_factor);
         (final_a > 0).then(|| (packed & 0x00ffffff) | (final_a << 24))
     };
 
@@ -805,7 +805,7 @@ pub fn draw_border_sides(
                 for (share, packed) in [(horizontal_share, colh), (1.0 - horizontal_share, colv)] {
                     let alpha = ((packed >> 24) & 0xff) as f32 * coverage * share;
                     if alpha >= 0.5 {
-                        blend_pixel(&mut buffer[idx], (packed & 0x00ff_ffff) | ((alpha.round() as u32) << 24));
+                        blend_pixel(&mut buffer[idx], (packed & 0x00ff_ffff) | (round_alpha(alpha) << 24));
                     }
                 }
             }

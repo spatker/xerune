@@ -1541,7 +1541,7 @@ pub fn blit_image_rgba(
             if coverage > 0.0 {
                 let blended_pixel = if coverage < 1.0 {
                     let a_cov = ((pixel >> 24) & 0xff) as f32 * coverage;
-                    (pixel & 0x00ffffff) | ((a_cov.round() as u32) << 24)
+                    (pixel & 0x00ffffff) | (crate::blitter::round_alpha(a_cov) << 24)
                 } else {
                     pixel
                 };
@@ -1648,7 +1648,7 @@ pub fn blit_image(
             if coverage > 0.0 {
                 let blended_pixel = if coverage < 1.0 {
                     let a = ((pixel >> 24) & 0xff) as f32 * coverage;
-                    (pixel & 0x00ffffff) | ((a.round() as u32) << 24)
+                    (pixel & 0x00ffffff) | (crate::blitter::round_alpha(a) << 24)
                 } else {
                     pixel
                 };

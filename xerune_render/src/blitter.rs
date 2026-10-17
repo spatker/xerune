@@ -28,6 +28,15 @@ pub fn pack_color(color: xerune::Color, swap_rb: bool) -> u32 {
     }
 }
 
+/// `x.round()` for `0 <= x < 2^23` (alpha values), without the libm call
+/// `round` is on targets lacking a rounding instruction (ARMv7, baseline
+/// x86-64): `x - floor(x)` is exact there.
+#[inline(always)]
+pub fn round_alpha(x: f32) -> u32 {
+    let floor = x as u32;
+    floor + (x - floor as f32 >= 0.5) as u32
+}
+
 #[inline(always)]
 pub fn blend_pixel(dst: &mut u32, src: u32) {
     let src_a = (src >> 24) & 0xff;
