@@ -1,7 +1,6 @@
 #![allow(missing_docs)]
 
 pub(crate) mod parser;
-/// Declarations parsed once.
 pub mod declared;
 pub(crate) mod animation;
 pub(crate) mod gradient;
