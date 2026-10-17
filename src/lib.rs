@@ -166,6 +166,13 @@ pub mod __private {
         }
     }
 
+    /// An item of a `Vec<&str>` in a `{% for %}` loop.
+    impl MessageArg<crate::alloc_prelude::String> for &&str {
+        fn to_message_arg(&self) -> crate::alloc_prelude::String {
+            crate::alloc_prelude::ToString::to_string(**self)
+        }
+    }
+
     /// Calls [`MessageArg::to_message_arg`]; generated code passes `&(expr)`.
     pub fn message_arg<T, A: MessageArg<T> + ?Sized>(value: &A) -> T {
         value.to_message_arg()

@@ -6,7 +6,9 @@ error[E0277]: a `data-on-click` message takes a `usize`, but the template passes
    |
    = help: the trait `MessageArg<usize>` is not implemented for `&String`
    = note: the `{{ ... }}` argument must have the message variant's field type (or be a reference to it)
-   = help: the trait `MessageArg<String>` is implemented for `&str`
+   = help: the following other types implement trait `MessageArg<T>`:
+             &&str
+             &str
 note: required by a bound in `message_arg`
   --> src/lib.rs
    |
