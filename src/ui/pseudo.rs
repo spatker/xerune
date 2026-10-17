@@ -87,8 +87,10 @@ pub(crate) fn build(
         if !normalized.is_empty() {
             let leaf_layout = super::text_leaf_style(&text_style);
             let leaf = taffy.new_leaf(leaf_layout.clone()).ok()?;
-            render_data.insert(leaf, RenderData::new(crate::style::RenderKind::Text(normalized.into_owned()), text_style.clone()));
-            base_styles.insert(leaf, (leaf_layout, text_style));
+            if text_style.animates() {
+                base_styles.insert(leaf, (leaf_layout, text_style.clone()));
+            }
+            render_data.insert(leaf, RenderData::new(crate::style::RenderKind::Text(normalized.into_owned()), text_style));
             let _ = taffy.add_child(node, leaf);
         }
     }

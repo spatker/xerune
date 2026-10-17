@@ -256,8 +256,10 @@ pub(crate) fn resolve_styles(
                 // Sized by the layout's measure function (see `Ui::compute_layout`).
                 let text_layout_style = super::text_leaf_style(&current_style);
                 let _ = taffy.set_style(node, text_layout_style.clone());
-                render_data.insert(node, RenderData::new(crate::style::RenderKind::Text(normalized.into_owned()), current_style.clone()));
-                base_styles.insert(node, (text_layout_style, current_style));
+                if current_style.animates() {
+                    base_styles.insert(node, (text_layout_style, current_style.clone()));
+                }
+                render_data.insert(node, RenderData::new(crate::style::RenderKind::Text(normalized.into_owned()), current_style));
             }
         }
         return;
@@ -846,7 +848,9 @@ pub(crate) fn finish_node(
         interactions.insert(node, interaction);
     }
 
-    base_styles.insert(node, (layout_style.clone(), current_style.clone()));
+    if current_style.animates() {
+        base_styles.insert(node, (layout_style.clone(), current_style.clone()));
+    }
     generated
 }
 

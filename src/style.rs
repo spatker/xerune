@@ -92,6 +92,12 @@ pub enum WhiteSpace {
 }
 
 impl ContainerStyle {
+    /// Whether keyframe animations or transitions may restyle the element,
+    /// which then needs its styles as built kept (`Ui::base_styles`).
+    pub(crate) fn animates(&self) -> bool {
+        self.animation_name.is_some() || self.transitions.is_some()
+    }
+
     /// Where lines of this style's text may break inside words.
     pub fn word_break(&self) -> crate::text::WordBreak {
         if self.word_break_all {
