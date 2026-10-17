@@ -611,6 +611,10 @@ pub fn draw_box_shadow(
         (final_a > 0).then(|| (packed & 0x00ffffff) | (final_a << 24))
     };
 
+    // Beside the shape, between its corners, the shadow depends on the
+    // column only.
+    let mut side_colors: Vec<Option<Option<u32>>> = Vec::new();
+    side_colors.resize((end_x - start_x) as usize, None);
     for py in start_y..end_y {
         let y_f = py as f32 + 0.5;
         let ody = if y_f < orig_top { orig_top - y_f } else if y_f > orig_bottom { y_f - orig_bottom } else { 0.0 };
@@ -647,7 +651,7 @@ pub fn draw_box_shadow(
             let color = if dx > 0.0 && dy > 0.0 {
                 shade((dx * dx + dy * dy).sqrt() - box_r)
             } else if dx > 0.0 {
-                shade(dx - box_r)
+                *side_colors[(px - 1 - start_x) as usize].get_or_insert_with(|| shade(dx - box_r))
             } else if dy > 0.0 {
                 *edge_color.get_or_insert_with(|| shade(dy - box_r))
             } else {
