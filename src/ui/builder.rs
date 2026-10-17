@@ -384,7 +384,8 @@ impl UiBuilder {
         key: u64,
     ) -> NodeId {
         super::attributes::parse_attribute_slice(el.tag, attrs, &mut el.style, &mut el.layout, &mut el.parsed, message_validator);
-        let node = self.taffy.new_leaf(el.layout.clone()).unwrap();
+        // `finish_element` sets the layout; nothing reads it before.
+        let node = self.taffy.new_leaf(Style::default()).unwrap();
         self.keys.insert(node, key);
         self.append_child(parent, node);
         if let Some((_, id)) = attrs.iter().find(|(name, _)| name == "id") {
@@ -419,8 +420,8 @@ impl UiBuilder {
             node,
             el.tag,
             parent_style,
-            &mut el.layout,
-            &mut el.style,
+            el.layout,
+            el.style,
             &el.parsed,
             &mut self.taffy,
             &mut self.render_data,

@@ -470,7 +470,7 @@ pub(crate) fn resolve_styles(
     if !parsed.transition.is_empty() {
         transition_handlers.insert(node, parsed.transition.clone());
     }
-    let generated = finish_node(node, tag, &parent_style, &mut layout_style, &mut current_style, &parsed, taffy, render_data, interactions, base_styles);
+    let generated = finish_node(node, tag, &parent_style, layout_style, current_style, &parsed, taffy, render_data, interactions, base_styles);
     if let Some(&key) = keys.get(node) {
         super::builder::key_generated_boxes(keys, key, generated);
     }
@@ -482,15 +482,15 @@ pub fn finalize_node_style(
     node: NodeId,
     tag: &str,
     parent_style: &ContainerStyle,
-    layout_style: &mut Style,
-    current_style: &mut ContainerStyle,
+    mut layout_style: Style,
+    mut current_style: ContainerStyle,
     parsed: &crate::ui::attributes::ParsedAttributes,
     taffy: &mut TaffyTree,
     render_data: &mut NodeMap<RenderData>,
     interactions: &mut NodeMap<Interaction>,
     base_styles: &mut NodeMap<(Style, ContainerStyle)>,
 ) -> GeneratedBoxes {
-    resolve_box(parent_style, layout_style, current_style);
+    resolve_box(parent_style, &mut layout_style, &mut current_style);
     finish_node(node, tag, parent_style, layout_style, current_style, parsed, taffy, render_data, interactions, base_styles)
 }
 
@@ -738,8 +738,8 @@ pub(crate) fn finish_node(
     node: NodeId,
     tag: &str,
     parent_style: &ContainerStyle,
-    layout_style: &mut Style,
-    current_style: &mut ContainerStyle,
+    mut layout_style: Style,
+    mut current_style: ContainerStyle,
     parsed: &crate::ui::attributes::ParsedAttributes,
     taffy: &mut TaffyTree,
     render_data: &mut NodeMap<RenderData>,
@@ -747,7 +747,7 @@ pub(crate) fn finish_node(
     base_styles: &mut NodeMap<(Style, ContainerStyle)>,
 ) -> GeneratedBoxes {
     // Generated boxes, then flex items in `order` (Taffy has no `order`).
-    let generated = super::pseudo::generate(node, parsed.element_type, current_style, taffy, render_data, interactions, base_styles);
+    let generated = super::pseudo::generate(node, parsed.element_type, &mut current_style, taffy, render_data, interactions, base_styles);
     let order = |child: &NodeId| render_data.get(*child).map(|data| data.style.order).unwrap_or(0);
     if current_style.display.is_flex() && taffy.child_ids(node).any(|child| order(&child) != 0) {
         let mut children = taffy.children(node).unwrap_or_default();
@@ -758,7 +758,7 @@ pub(crate) fn finish_node(
     if current_style.display == Display::None {
         layout_style.display = taffy::style::Display::None;
     } else if !current_style.display.is_flex() {
-        apply_block_display(taffy, tag, current_style, layout_style, node, render_data);
+        apply_block_display(taffy, tag, &mut current_style, &mut layout_style, node, render_data);
     }
 
     layout_style.border = current_style.border.widths().map(length);
@@ -838,10 +838,6 @@ pub(crate) fn finish_node(
         }
     }
 
-    let _ = taffy.set_style(node, layout_style.clone());
-
-    crate::ui::attributes::process_element_type(node, parsed, current_style.clone(), render_data);
-
     if let Some(interaction) = parsed.interaction_id.clone() {
         interactions.insert(node, interaction);
     }
@@ -849,6 +845,8 @@ pub(crate) fn finish_node(
     if current_style.animates() {
         base_styles.insert(node, (layout_style.clone(), current_style.clone()));
     }
+    let _ = taffy.set_style(node, layout_style);
+    crate::ui::attributes::process_element_type(node, parsed, current_style, render_data);
     generated
 }
 
