@@ -4,9 +4,17 @@ Xerune is a lightweight, CPU-only native HTML/CSS rendering engine and UI framew
 
 ## Demos
 
-| Music Player | Showcase | Animation |
-| :---: | :---: | :---: |
-| ![Music Player](docs/img/music_player.gif) | ![Showcase](docs/img/showcase.gif) | ![Animation](docs/img/animation.gif) |
+| Showcase | Music player |
+| :---: | :---: |
+| ![Showcase: system, vehicle, monitor and controls tabs](docs/img/showcase.webp) | ![Music player: library, sliding player view, visualizer](docs/img/music_player.webp) |
+| **Todo** | **CSS keyframes** |
+| ![Todo: typing a task, toggling, English, German and Korean](docs/img/todo.webp) | ![CSS @keyframes gallery with no animation code in Rust](docs/img/animation_css.webp) |
+| **Breakout** | **Animation stress test** |
+| ![Breakout game](docs/img/breakout.webp) | ![100 moving elements rebuilt every frame](docs/img/animation.webp) |
+
+Every example targets an 800x480 panel and has a portrait layout. The clips
+are rendered headlessly by Xerune itself, frame by frame on a simulated clock
+(`tools/record-demos.sh`), with the same renderer the boards use.
 
 ## Features
 
@@ -16,9 +24,14 @@ Xerune is a lightweight, CPU-only native HTML/CSS rendering engine and UI framew
 - **Embedded hardware-ready**: Dedicated backends for Linux Framebuffer (`/dev/fb0`) and DRM/KMS with double buffering.
 - **Input integration**: Built-in support for mouse, keyboard, and `evdev` touch input bounds calibration.
 - **CSS Stylesheets, Animations & Transitions**: Parse inline styles, global styles, classes, IDs, gradients, borders, font weights, keyframe animations and transitions.
+- **Text like Chromium**: Line breaking (UAX #14) checked against Chromium's breaks, `white-space`, `overflow-wrap`, `word-break`, `text-overflow: ellipsis`, `line-height`, and glyphs from fallback fonts (Hangul).
+- **Interaction**: `:hover`, `:active`, `:checked`, form controls drawn like Chromium (`accent-color`, `appearance: none`, `::placeholder`), and element keys that keep animation and transition state across rebuilds.
+- **On-screen keyboard**: A full-screen keyboard for touch or D-pad devices, with English, German and Korean (Hangul composition) layouts.
+- **Translations**: Per-language string catalogs, with the language picked from the POSIX locale.
 - **Responsive Layout**: `@media` queries (width/height/orientation), `vw`/`vh`/`vmin`/`vmax` viewport units, automatic `Model::on_resize` notification, and breakpoint helpers — compiled into cheap static guards for embedded targets.
 - **Fingerprint Gating**: Opt-in `Model::view_fingerprint` lets the runtime skip full view rebuilds when a message changes no rendered state.
 - **Canvas APIs**: Support for custom user-drawn Canvas pixel buffers.
+- **Headless snapshots and recordings**: Any app renders to PNGs instead of a window (`XERUNE_SNAPSHOT`), driven by scripted messages, for tests, CI and AI agents.
 
 ## Documentation
 - [Quick Start Guide](docs/guide.md)
@@ -100,7 +113,11 @@ See [`examples/todo/templates/todo_list.html`](examples/todo/templates/todo_list
 ```bash
 cargo run --release --example todo
 cargo run --release --example music_player
-cargo run --release --example showcase   # try XERUNE_SNAPSHOT_SIZE=480x800 or resize for the portrait layout
+cargo run --release --example showcase       # resize the window for the portrait layout
+cargo run --release --example animation_css
+cargo run --release --example breakout       # arrow keys
+cargo run --release --example animation
+cargo run --release --example calculator
 ```
 
 ### Running in WebBrowser (WASM & Xerune Studio)
