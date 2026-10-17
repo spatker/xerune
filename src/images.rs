@@ -233,7 +233,15 @@ mod loader {
     #[derive(Debug)]
     #[non_exhaustive]
     pub enum ImageError {
-        /// Local file could not be read.
+        /// A local file could not be read.
+        File {
+            /// The file tried, made absolute against the working directory,
+            /// which is where relative and `/`-rooted sources are looked up.
+            path: std::path::PathBuf,
+            /// Why reading it failed.
+            error: std::io::Error,
+        },
+        /// Reading the image's bytes failed otherwise (e.g. a response body).
         Io(std::io::Error),
         /// Remote fetch failed (network error, bad status, ...).
         Http(String),
@@ -248,6 +256,7 @@ mod loader {
     impl fmt::Display for ImageError {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             match self {
+                ImageError::File { path, error } => write!(f, "can't read {}: {error}", path.display()),
                 ImageError::Io(e) => write!(f, "io error: {e}"),
                 ImageError::Http(e) => write!(f, "http error: {e}"),
                 ImageError::HttpDisabled => write!(f, "remote images require the `http` feature"),
@@ -310,7 +319,11 @@ mod loader {
                 Some(p) => p,
                 None => src.strip_prefix('/').unwrap_or(src),
             };
-            let bytes = std::fs::read(path)?;
+            let bytes = std::fs::read(path).map_err(|error| {
+                // Name the file as it was looked up, not as the source spelled it.
+                let path = std::env::current_dir().map(|dir| dir.join(path)).unwrap_or_else(|_| path.into());
+                ImageError::File { path, error }
+            })?;
             if bytes.len() as u64 > MAX_IMAGE_BYTES {
                 return Err(ImageError::TooLarge);
             }
@@ -505,6 +518,17 @@ mod tests {
         assert!(is_remote("HTTP://example.com/a.png"));
         assert!(!is_remote("/res/a.png"));
         assert!(!is_remote("file:///a.png"));
+    }
+
+    /// A missing file names the file looked for, resolved against the
+    /// working directory as a `/`-rooted source is, and why it failed.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn missing_file_names_the_path_tried() {
+        let err = DefaultImageLoader::default().fetch("/no/such/cover.png").unwrap_err().to_string();
+        let tried = std::env::current_dir().unwrap().join("no/such/cover.png");
+        assert!(err.starts_with(&format!("can't read {}: ", tried.display())), "{err}");
+        assert!(err.ends_with("(os error 2)"), "{err}");
     }
 
     #[test]
