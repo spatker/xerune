@@ -44,6 +44,8 @@ impl BitmapFont {
 
 
 
+// Roboto prerasterized by `examples/font_compiler.rs`: font data under the
+// SIL Open Font License 1.1, not MIT (resources/fonts/Roboto-LICENSE.txt).
 include!("roboto_regular.rs");
 include!("roboto_bold.rs");
 
@@ -53,4 +55,8 @@ pub static DEFAULT_ROBOTO_REGULAR: BitmapFont = ROBOTO_REGULAR_REGULAR;
 pub static DEFAULT_ROBOTO_BOLD: BitmapFont = ROBOTO_BOLD_BOLD;
 /// The default precompiled Roboto fonts, regular and bold, as a font set
 /// (`xerune_render::Fonts::bitmap(&DEFAULT_ROBOTO)`).
+///
+/// Like the other bitmap Roboto fonts here, this is Roboto font data under
+/// the SIL Open Font License 1.1: a product that ships it ships the font's
+/// copyright notice and license too (`resources/fonts/Roboto-LICENSE.txt`).
 pub static DEFAULT_ROBOTO: [BitmapFont; 2] = [ROBOTO_REGULAR_REGULAR, ROBOTO_BOLD_BOLD];

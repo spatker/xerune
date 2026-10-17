@@ -7,14 +7,16 @@ name = "xerune"
 version = "0.1.0"
 edition = "2024"
 description = "A lightweight, CPU-only native HTML renderer designed for embedded Linux environments"
-license = "MIT"
+# The code is MIT; the bitmap Roboto in src/roboto_*.rs is font data under
+# the SIL Open Font License (resources/fonts/Roboto-LICENSE.txt).
+license = "MIT AND OFL-1.1"
 repository = "https://github.com/spatker/xerune"
 readme = "README.md"
 keywords = ["html", "renderer", "embedded", "mvu", "gui"]
 categories = ["embedded", "gui", "rendering"]
 rust-version = "1.85"
 # Examples, docs (videos), fonts and test fixtures stay in the repository.
-include = ["/src", "/README.md", "/LICENSE"]
+include = ["/src", "/README.md", "/LICENSE", "/resources/fonts/Roboto-LICENSE.txt"]
 
 [package.metadata.docs.rs]
 # Document the embedded Linux backends too, not only winit.

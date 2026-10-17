@@ -125,8 +125,24 @@ Open your browser to:
   *(Available apps: `music_player`, `todo`, `calculator`, `breakout`, `animation`, `animation_css`, `showcase`)*
 
 The page interprets the templates from disk: edit one and save, and the view
-updates within a second, without rebuilding the wasm (see `docs/guide.md`, section 11).
+updates within a second, without rebuilding the wasm (see `docs/guide.md`, section 12).
 
 ## License
 
-Licensed under the MIT License.
+The code is licensed under the MIT License (`LICENSE`).
+
+The fonts are under the SIL Open Font License 1.1, which lets you bundle and
+embed them in any software, closed-source and commercial included, and on
+locked-down devices; a product that ships one ships its copyright notice and
+license (e.g. on a third-party licenses screen), and the font can't be sold on
+its own:
+
+| Font | Where | License |
+|---|---|---|
+| Roboto (bitmap, in `src/roboto_*.rs`) | the `xerune` crate | `resources/fonts/Roboto-LICENSE.txt` |
+| Roboto Regular/Bold | the examples, tests | `resources/fonts/Roboto-LICENSE.txt` |
+| Xerune Hangul (Source Han Sans KR subset) | the examples (on 32-bit ARM with `--features hangul`) | `resources/fonts/XeruneHangul-LICENSE.txt` |
+| Noto Color Emoji | the examples with `--features emoji` | `resources/fonts/NotoColorEmoji-LICENSE.txt` |
+
+So the `xerune` crate is `MIT AND OFL-1.1`, for its bitmap Roboto; an app
+using its own fonts with `xerune_render` (MIT) doesn't ship Roboto.
