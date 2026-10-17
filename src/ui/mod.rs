@@ -473,26 +473,71 @@ impl Ui {
         }
     }
 
-    /// Recalculates the taffy layout based on the available size constraints.
-    pub fn compute_layout(&mut self, available_space: Size<AvailableSpace>) -> Result<(), TaffyError> {
-        if let Ok(mut style) = self.taffy.style(self.root).cloned() {
-            let mut changed = false;
-            if style.size.width.is_auto() {
-                if let AvailableSpace::Definite(_) = available_space.width {
-                    style.size.width = Dimension::percent(1.0);
-                    changed = true;
-                }
+    /// Makes the root fill the definite axes of `available_space`.
+    fn fill_available(&mut self, available_space: Size<AvailableSpace>) {
+        let Ok(style) = self.taffy.style(self.root) else { return };
+        let fill = |auto: bool, available: AvailableSpace| auto && matches!(available, AvailableSpace::Definite(_));
+        let (fill_width, fill_height) =
+            (fill(style.size.width.is_auto(), available_space.width), fill(style.size.height.is_auto(), available_space.height));
+        if fill_width || fill_height {
+            let mut style = style.clone();
+            if fill_width {
+                style.size.width = Dimension::percent(1.0);
             }
-            if style.size.height.is_auto() {
-                if let AvailableSpace::Definite(_) = available_space.height {
-                    style.size.height = Dimension::percent(1.0);
-                    changed = true;
-                }
+            if fill_height {
+                style.size.height = Dimension::percent(1.0);
             }
-            if changed {
-                let _ = self.taffy.set_style(self.root, style);
+            let _ = self.taffy.set_style(self.root, style);
+        }
+    }
+
+    /// Takes over the Taffy tree of `old`, the view this one replaces, with
+    /// its layout, when both have the same nodes under the root (as a view
+    /// built again from the same template mostly has): the nodes whose
+    /// style or text changed are set dirty in it, so [`Self::compute_layout`]
+    /// lays out only those and their ancestors, and takes the rest from
+    /// Taffy's cache. `old` gets this view's tree. Returns whether the tree
+    /// was taken over.
+    pub fn reuse_layout(&mut self, old: &mut Ui, available_space: Size<AvailableSpace>) -> bool {
+        self.fill_available(available_space);
+        if self.root != old.root || !same_children(&self.taffy, &old.taffy, self.root) {
+            return false;
+        }
+        let mut stack = vec![self.root];
+        while let Some(node) = stack.pop() {
+            stack.extend(self.taffy.child_ids(node));
+            let (Ok(style), Ok(old_style)) = (self.taffy.style(node), old.taffy.style(node)) else { continue };
+            if style != old_style {
+                let _ = old.taffy.set_style(node, style.clone());
+            } else if !self.measures_like(old, node) {
+                let _ = old.taffy.mark_dirty(node);
             }
         }
+        core::mem::swap(&mut self.taffy, &mut old.taffy);
+        true
+    }
+
+    /// Whether `node`, a text leaf here or in `other`, measures the same in
+    /// both: same text, shaped the same, in the same line style.
+    fn measures_like(&self, other: &Ui, node: NodeId) -> bool {
+        match (self.paragraphs.get(node), other.paragraphs.get(node)) {
+            (None, None) => true,
+            (Some(paragraph), Some(other_paragraph)) => {
+                let (Some(data), Some(other_data)) = (self.render_data.get(node), other.render_data.get(node)) else { return false };
+                let (style, other_style) = (&data.style, &other_data.style);
+                (Arc::ptr_eq(paragraph, other_paragraph) || paragraph == other_paragraph)
+                    && style.font_size == other_style.font_size
+                    && style.line_height == other_style.line_height
+                    && style.white_space.wraps() == other_style.white_space.wraps()
+                    && style.word_break() == other_style.word_break()
+            }
+            _ => false,
+        }
+    }
+
+    /// Recalculates the taffy layout based on the available size constraints.
+    pub fn compute_layout(&mut self, available_space: Size<AvailableSpace>) -> Result<(), TaffyError> {
+        self.fill_available(available_space);
         let Ui { taffy, render_data, paragraphs, text_lines, ellipses, root, .. } = self;
         taffy.compute_layout_with_measure(*root, available_space, |known, available, node, _, _| {
             match (paragraphs.get(node), render_data.get(node)) {
@@ -607,6 +652,19 @@ impl Ui {
          }
          None
     }
+}
+
+/// Whether the nodes under `node` are the same in `a` and `b`: the same
+/// node ids, each with the same children in the same order.
+fn same_children(a: &TaffyTree, b: &TaffyTree, node: NodeId) -> bool {
+    let mut stack = vec![node];
+    while let Some(node) = stack.pop() {
+        if !a.child_ids(node).eq(b.child_ids(node)) {
+            return false;
+        }
+        stack.extend(a.child_ids(node));
+    }
+    true
 }
 
 /// Gives the elements built at runtime under `node` (whose key is `key`)

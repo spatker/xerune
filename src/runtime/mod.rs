@@ -705,7 +705,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
             }
         };
         // Kept until the transitions have compared the views.
-        let old = core::mem::replace(&mut self.ui, ui);
+        let mut old = core::mem::replace(&mut self.ui, ui);
 
         // The keyboard shows no images; the model's stay loaded for its view.
         if self.keyboard.is_none() {
@@ -715,13 +715,17 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
             }));
         }
         Runtime::<M, R>::apply_image_sizes(&mut self.ui, &self.images);
+        self.update_transitions(&old);
         self.stats.stop(Phase::View, start);
+        let start = self.stats.start();
+        self.ui.reuse_layout(&mut old, self.cached_size);
+        self.stats.stop(Phase::Layout, start);
         self.layout();
         let start = self.stats.start();
         Runtime::<M, R>::sync_canvases(&self.ui, &mut self.context);
         self.restore_scroll();
-        self.update_transitions(&old);
         self.new_tree = false;
+        drop(old);
         self.stats.stop(Phase::View, start);
         self.animate(None);
     }

@@ -29,7 +29,11 @@ the working notes.
 1. Input (`backend/` → `InputEvent`) → `Runtime` → `Model::update(msg, &mut Context<Msg>)`.
 2. Rebuild unless `Model::view_fingerprint` returns the same `Some(..)` and the
    viewport didn't change. Rebuild = generated `build_ui` → `UiBuilder` →
-   style resolution → fresh Taffy tree.
+   style resolution → fresh Taffy tree. When it has the same nodes as the
+   previous view (`Ui::reuse_layout`: same ids, same children), the previous
+   Taffy tree is kept instead, with changed styles/text set dirty, so layout
+   redoes only those paths; inserted/removed elements shift ids and fall back
+   to a full layout.
 3. Taffy layout → walk → absolute `DrawCommand`s (rects, text, images,
    check marks, canvas, clip push/pop).
 4. `Renderer` (normally `xerune_render`) draws into a `u32` buffer; the backend presents it.
