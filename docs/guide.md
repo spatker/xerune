@@ -84,6 +84,9 @@ element keeps its message and sends a copy on each click. The runtime's own
 messages (`keydown:Enter`, `<input id>:text:...`) and those from
 `Messenger::send`, `XERUNE_SNAPSHOT_MESSAGES` or JavaScript are strings,
 parsed with the derived `FromStr`.
+A variant marked `#[xerune(skip)]` has no string form: only Rust code
+builds it, e.g. a subscription with `Stats(FrameStats)`, and its payload
+needs no `FromStr`.
 
 To scroll an element into view, give it an `id` and call
 `context.scroll_into_view("item-3")` from `update`:

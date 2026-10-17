@@ -1651,6 +1651,7 @@ pub fn derive_xerune_message(input: TokenStream) -> TokenStream {
 
         let mut custom_rename = None;
         let mut custom_prefix = None;
+        let mut skip = false;
         for attr in &variant.attrs {
             if attr.path().is_ident("xerune") {
                 let _ = attr.parse_nested_meta(|meta| {
@@ -1664,11 +1665,19 @@ pub fn derive_xerune_message(input: TokenStream) -> TokenStream {
                         let s: syn::LitStr = value.parse()?;
                         custom_prefix = Some(s.value());
                         Ok(())
+                    } else if meta.path.is_ident("skip") {
+                        skip = true;
+                        Ok(())
                     } else {
                         Err(meta.error("unsupported attribute"))
                     }
                 });
             }
+        }
+
+        // Built in Rust only (e.g. by a subscription), never from a string.
+        if skip {
+            continue;
         }
 
         match &variant.fields {
