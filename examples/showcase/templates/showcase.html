@@ -24,6 +24,7 @@
             border: 1px solid rgba(255,255,255,0.06); }
     .tab { display: flex; padding: 7px 14px; border-radius: 9px; font-size: 13px; color: #7c89a3; }
     .tab.on { background-color: #1e293b; color: #ffffff; font-weight: bold; box-shadow: 0px 2px 8px rgba(0,0,0,0.5); }
+    .langs { display: flex; flex-direction: row; align-self: flex-start; background-color: #111827; border-radius: 12px; padding: 3px; }
 
     .page { display: flex; flex-grow: 1; flex-direction: column; }
 
@@ -219,7 +220,7 @@
     }
 </style>
 
-<div class="app">
+<div class="app" lang="{{ lang }}">
     <div class="top">
         <div class="brand">
             <div class="logo"></div>
@@ -227,10 +228,10 @@
             <span class="brand-sub">{{ self.subtitle() }}</span>
         </div>
         <div class="tabs">
-            <div class="tab {% if active_tab == 1 %}on{% endif %}" data-on-click="select_tab:1">System</div>
-            <div class="tab {% if active_tab == 2 %}on{% endif %}" data-on-click="select_tab:2">Vehicle</div>
-            <div class="tab {% if active_tab == 3 %}on{% endif %}" data-on-click="select_tab:3">Monitor</div>
-            <div class="tab {% if active_tab == 4 %}on{% endif %}" data-on-click="select_tab:4">Controls</div>
+            <div class="tab {% if active_tab == 1 %}on{% endif %}" data-on-click="select_tab:1">{{ self.t("tab_system") }}</div>
+            <div class="tab {% if active_tab == 2 %}on{% endif %}" data-on-click="select_tab:2">{{ self.t("tab_vehicle") }}</div>
+            <div class="tab {% if active_tab == 3 %}on{% endif %}" data-on-click="select_tab:3">{{ self.t("tab_monitor") }}</div>
+            <div class="tab {% if active_tab == 4 %}on{% endif %}" data-on-click="select_tab:4">{{ self.t("tab_controls") }}</div>
         </div>
     </div>
 
@@ -244,9 +245,9 @@
                     <div class="donut-hole">{{ "{:.0}"|format(cpu) }}%</div>
                 </div>
                 <div class="tile-text">
-                    <span class="tile-name">CPU</span>
-                    <span class="tile-value">{{ "{:.2}"|format(cpu_ghz) }} GHz</span>
-                    <span class="tile-delta">4 cores</span>
+                    <span class="tile-name">{{ self.t("cpu") }}</span>
+                    <span class="tile-value">{{ self.num(cpu_ghz, 2) }} GHz</span>
+                    <span class="tile-delta">{{ self.t("cores") }}</span>
                 </div>
             </div>
             <div class="tile">
@@ -255,9 +256,9 @@
                     <div class="donut-hole">{{ "{:.0}"|format(mem) }}%</div>
                 </div>
                 <div class="tile-text">
-                    <span class="tile-name">MEMORY</span>
-                    <span class="tile-value">{{ "{:.1}"|format(self.mem_gb()) }} GB</span>
-                    <span class="tile-delta">of 4.0 GB</span>
+                    <span class="tile-name">{{ self.t("memory") }}</span>
+                    <span class="tile-value">{{ self.num(self.mem_gb(), 1) }} GB</span>
+                    <span class="tile-delta">{{ self.t("of_memory") }} {{ self.num(4.0, 1) }} GB</span>
                 </div>
             </div>
             <div class="tile">
@@ -266,55 +267,55 @@
                     <div class="donut-hole">{{ "{:.0}"|format(soc_temp) }}°</div>
                 </div>
                 <div class="tile-text">
-                    <span class="tile-name">SOC TEMP</span>
-                    <span class="tile-value">{{ "{:.1}"|format(soc_temp) }} °C</span>
-                    <span class="tile-delta">fan auto</span>
+                    <span class="tile-name">{{ self.t("soc_temp") }}</span>
+                    <span class="tile-value">{{ self.num(soc_temp, 1) }} °C</span>
+                    <span class="tile-delta">{{ self.t("fan_auto") }}</span>
                 </div>
             </div>
             <div class="tile">
                 <div class="tile-text">
-                    <span class="tile-name">ACTIVE USERS</span>
+                    <span class="tile-name">{{ self.t("active_users") }}</span>
                     <span class="tile-value">{{ user_counter }}</span>
-                    <span class="tile-delta">+12% this week</span>
+                    <span class="tile-delta">{{ self.t("users_week") }}</span>
                 </div>
             </div>
         </div>
 
         <div class="sys-main">
             <div class="panel cores">
-                <span class="panel-title">PER-CORE LOAD</span>
+                <span class="panel-title">{{ self.t("per_core_load") }}</span>
                 {% for core in cores %}
                 <div class="core-row">
-                    <span class="core-name">core {{ loop.index0 }}</span>
+                    <span class="core-name">{{ self.t("core") }} {{ loop.index0 }}</span>
                     <progress class="bar core-bar" value="{{ "{:.1}"|format(core) }}" max="100"></progress>
                     <span class="core-pct">{{ "{:.0}"|format(core) }}%</span>
                 </div>
                 {% endfor %}
-                <span class="panel-title" style="margin-top: 6px;">SERVICES</span>
+                <span class="panel-title" style="margin-top: 6px;">{{ self.t("services") }}</span>
                 {% for svc in services %}
                 <div class="svc">
                     <div class="tile-text">
                         <span class="svc-name">{{ svc.name }}</span>
-                        <span class="svc-detail">{{ svc.detail }}</span>
+                        <span class="svc-detail">{{ self.t(&svc.detail) }}</span>
                     </div>
-                    <div class="chip {% if svc.tone == "ok" %}ok{% endif %} {% if svc.tone == "warn" %}warn{% endif %}">{{ svc.state }}</div>
+                    <div class="chip {% if svc.tone == "ok" %}ok{% endif %} {% if svc.tone == "warn" %}warn{% endif %}">{{ self.t(&svc.state) }}</div>
                 </div>
                 {% endfor %}
             </div>
 
             <div class="panel side">
-                <span class="panel-title">CONFIGURATION</span>
+                <span class="panel-title">{{ self.t("configuration") }}</span>
                 <div class="switch-row" data-on-click="toggle_auto_scale">
-                    <div class="switch-label"><span class="switch-name">Auto-scaling</span><span class="switch-hint">spin up workers on load</span></div>
+                    <div class="switch-label"><span class="switch-name">{{ self.t("auto_scaling") }}</span><span class="switch-hint">{{ self.t("auto_scaling_hint") }}</span></div>
                     <input type="checkbox" class="switch" {% if auto_scale %}checked{% endif %}>
                 </div>
                 <div class="switch-row" data-on-click="toggle_maintenance">
-                    <div class="switch-label"><span class="switch-name">Maintenance</span><span class="switch-hint">pause incoming jobs</span></div>
+                    <div class="switch-label"><span class="switch-name">{{ self.t("maintenance") }}</span><span class="switch-hint">{{ self.t("maintenance_hint") }}</span></div>
                     <input type="checkbox" class="switch" {% if maintenance_mode %}checked{% endif %}>
                 </div>
                 <div class="side-actions">
-                    <div class="btn violet" data-on-click="increment_progress">Load spike</div>
-                    <div class="btn" data-on-click="increment_user_counter">Add user</div>
+                    <div class="btn violet" data-on-click="increment_progress">{{ self.t("load_spike") }}</div>
+                    <div class="btn" data-on-click="increment_user_counter">{{ self.t("add_user") }}</div>
                 </div>
             </div>
         </div>
@@ -333,7 +334,7 @@
                 <div class="g-ring g-arc" style="background: conic-gradient(from 225deg, #0e7490 0deg, #22d3ee {{ "{:.1}"|format(self.speed_deg()) }}deg, transparent {{ "{:.1}"|format(self.speed_deg()) }}deg);"></div>
                 <div class="g-ring g-needle" style="background: conic-gradient(from {{ "{:.1}"|format(self.speed_needle()) }}deg, #ffffff 0deg 3deg, transparent 3deg);"></div>
                 <div class="g-ring g-inner">
-                    <span class="g-label">SPEED</span>
+                    <span class="g-label">{{ self.t("speed") }}</span>
                     <span class="g-value">{{ "{:.0}"|format(speed_kmh) }}</span>
                     <span class="g-unit">km/h</span>
                 </div>
@@ -348,16 +349,16 @@
                     {% if engine_running %}<span class="gear-num">{{ self.gear() }}</span>{% endif %}
                 </div>
                 <div class="panel stat">
-                    <div class="stat-head"><span class="stat-name">BATTERY</span><span class="stat-val">{{ "{:.0}"|format(battery_pct) }}%  ·  {{ "{:.0}"|format(self.range_km()) }} km</span></div>
+                    <div class="stat-head"><span class="stat-name">{{ self.t("battery") }}</span><span class="stat-val">{{ "{:.0}"|format(battery_pct) }}%  ·  {{ "{:.0}"|format(self.range_km()) }} km</span></div>
                     <progress class="bar fill-batt" value="{{ "{:.1}"|format(battery_pct) }}" max="100"></progress>
                 </div>
                 <div class="panel stat">
-                    <div class="stat-head"><span class="stat-name">CABIN</span><span class="stat-val">{{ "{:.1}"|format(target_temp) }} °C</span></div>
+                    <div class="stat-head"><span class="stat-name">{{ self.t("cabin") }}</span><span class="stat-val">{{ self.num(target_temp, 1) }} °C</span></div>
                     <progress class="bar fill-temp" value="{{ "{:.1}"|format(self.cabin_pct()) }}" max="100"></progress>
                 </div>
                 <div class="chips">
-                    {% if engine_running %}<div class="chip ok">ENGINE ON</div>{% else %}<div class="chip">ENGINE OFF</div>{% endif %}
-                    {% if engine_rpm > 5000.0 %}<div class="chip bad">SHIFT UP</div>{% else %}<div class="chip warn">SPORT</div>{% endif %}
+                    {% if engine_running %}<div class="chip ok">{{ self.t("engine_on") }}</div>{% else %}<div class="chip">{{ self.t("engine_off") }}</div>{% endif %}
+                    {% if engine_rpm > 5000.0 %}<div class="chip bad">{{ self.t("shift_up") }}</div>{% else %}<div class="chip warn">{{ self.t("sport") }}</div>{% endif %}
                 </div>
             </div>
 
@@ -370,17 +371,17 @@
                 <div class="g-ring g-arc" style="background: conic-gradient(from 225deg, #c2410c 0deg, #fb923c {{ "{:.1}"|format(self.rpm_deg()) }}deg, transparent {{ "{:.1}"|format(self.rpm_deg()) }}deg);"></div>
                 <div class="g-ring g-needle" style="background: conic-gradient(from {{ "{:.1}"|format(self.rpm_needle()) }}deg, #ffffff 0deg 3deg, transparent 3deg);"></div>
                 <div class="g-ring g-inner">
-                    <span class="g-label">RPM</span>
-                    <span class="g-value">{{ "{:.1}"|format(self.rpm_k()) }}</span>
-                    <span class="g-unit">x1000 rpm</span>
+                    <span class="g-label">{{ self.t("rpm") }}</span>
+                    <span class="g-value">{{ self.num(self.rpm_k(), 1) }}</span>
+                    <span class="g-unit">{{ self.t("rpm_unit") }}</span>
                 </div>
             </div>
         </div>
 
         <div class="controls">
-            <div class="btn blue" data-on-click="increment_speed">Accelerate</div>
-            <div class="btn rose" data-on-click="decrement_speed">Brake</div>
-            <div class="btn" data-on-click="toggle_engine">{% if engine_running %}Engine off{% else %}Engine on{% endif %}</div>
+            <div class="btn blue" data-on-click="increment_speed">{{ self.t("accelerate") }}</div>
+            <div class="btn rose" data-on-click="decrement_speed">{{ self.t("brake") }}</div>
+            <div class="btn" data-on-click="toggle_engine">{% if engine_running %}{{ self.t("stop_engine") }}{% else %}{{ self.t("start_engine") }}{% endif %}</div>
         </div>
     </div>
     {% endif %}
@@ -390,7 +391,7 @@
     <div class="page">
         <div class="monitor">
             <div class="panel waves">
-                <div class="wave-head"><span class="wave-name c-ecg">ECG  II</span><span class="vital-range">25 mm/s</span></div>
+                <div class="wave-head"><span class="wave-name c-ecg">{{ self.t("ecg") }}</span><span class="vital-range">25 mm/s</span></div>
                 <!-- FIXME: two canvases only because a canvas keeps its first layout size
                      (known_gaps::canvas_follows_its_layout_size); one canvas sized by CSS should do. -->
                 {% if portrait %}
@@ -398,24 +399,24 @@
                 {% else %}
                 <canvas id="waves_wide" width="512" height="330"></canvas>
                 {% endif %}
-                <div class="wave-head" style="margin-top: 4px;"><span class="wave-name c-spo2">PLETH</span><span class="vital-range">canvas + tiny-skia</span></div>
+                <div class="wave-head" style="margin-top: 4px;"><span class="wave-name c-spo2">{{ self.t("pleth") }}</span><span class="vital-range">canvas + tiny-skia</span></div>
             </div>
             <div class="vitals">
                 <div class="vital">
-                    <div class="vital-head"><span class="vital-name c-ecg">HR</span><span class="vital-range">50 – 120</span></div>
-                    <div class="vital-row"><span class="vital-value c-ecg">{{ heart_rate_bpm }}</span><span class="vital-unit">bpm</span></div>
+                    <div class="vital-head"><span class="vital-name c-ecg">{{ self.t("hr") }}</span><span class="vital-range">50 – 120</span></div>
+                    <div class="vital-row"><span class="vital-value c-ecg">{{ heart_rate_bpm }}</span><span class="vital-unit">{{ self.t("per_minute") }}</span></div>
                 </div>
                 <div class="vital">
                     <div class="vital-head"><span class="vital-name c-spo2">SpO2</span><span class="vital-range">90 – 100</span></div>
                     <div class="vital-row"><span class="vital-value c-spo2">{{ spo2_pct }}</span><span class="vital-unit">%</span></div>
                 </div>
                 <div class="vital">
-                    <div class="vital-head"><span class="vital-name c-nibp">NIBP</span><span class="vital-range">mmHg</span></div>
+                    <div class="vital-head"><span class="vital-name c-nibp">{{ self.t("nibp") }}</span><span class="vital-range">mmHg</span></div>
                     <div class="vital-row"><span class="vital-value c-nibp">{{ sys_bp }}/{{ dia_bp }}</span></div>
                 </div>
                 <div class="vital">
-                    <div class="vital-head"><span class="vital-name c-resp">RESP</span><span class="vital-range">8 – 30</span></div>
-                    <div class="vital-row"><span class="vital-value c-resp">{{ resp_rate }}</span><span class="vital-unit">rpm</span></div>
+                    <div class="vital-head"><span class="vital-name c-resp">{{ self.t("resp") }}</span><span class="vital-range">8 – 30</span></div>
+                    <div class="vital-row"><span class="vital-value c-resp">{{ resp_rate }}</span><span class="vital-unit">{{ self.t("resp_unit") }}</span></div>
                 </div>
             </div>
         </div>
@@ -427,14 +428,14 @@
     <div class="page">
         <div class="gallery">
             <div class="panel col">
-                <span class="panel-title">BUTTONS</span>
+                <span class="panel-title">{{ self.t("buttons") }}</span>
                 <div class="btn-stack">
-                    <div class="btn blue" data-on-click="increment_user_counter">Primary action</div>
-                    <div class="btn violet" data-on-click="increment_progress">Secondary</div>
-                    <div class="btn rose" data-on-click="reset_counter">Destructive</div>
-                    <div class="btn" data-on-click="increment_user_counter">Neutral</div>
+                    <div class="btn blue" data-on-click="increment_user_counter">{{ self.t("primary") }}</div>
+                    <div class="btn violet" data-on-click="increment_progress">{{ self.t("secondary") }}</div>
+                    <div class="btn rose" data-on-click="reset_counter">{{ self.t("destructive") }}</div>
+                    <div class="btn" data-on-click="increment_user_counter">{{ self.t("neutral") }}</div>
                 </div>
-                <span class="panel-title" style="margin-top: 12px;">STEPPER</span>
+                <span class="panel-title" style="margin-top: 12px;">{{ self.t("stepper") }}</span>
                 <div class="stepper">
                     <div class="step-btn" data-on-click="decrement_user_counter">−</div>
                     <span class="step-value">{{ user_counter }}</span>
@@ -443,33 +444,39 @@
             </div>
 
             <div class="panel col">
-                <span class="panel-title">TOGGLES</span>
+                <span class="panel-title">{{ self.t("toggles") }}</span>
                 <div class="switch-row" data-on-click="toggle_wifi">
-                    <div class="switch-label"><span class="switch-name">Wi-Fi</span><span class="switch-hint">{% if wifi %}connected{% else %}off{% endif %}</span></div>
+                    <div class="switch-label"><span class="switch-name">{{ self.t("wifi") }}</span><span class="switch-hint">{% if wifi %}{{ self.t("connected") }}{% else %}{{ self.t("off") }}{% endif %}</span></div>
                     <input type="checkbox" class="switch" {% if wifi %}checked{% endif %}>
                 </div>
                 <div class="switch-row" data-on-click="toggle_bluetooth">
-                    <div class="switch-label"><span class="switch-name">Bluetooth</span><span class="switch-hint">{% if bluetooth %}2 devices{% else %}off{% endif %}</span></div>
+                    <div class="switch-label"><span class="switch-name">Bluetooth</span><span class="switch-hint">{% if bluetooth %}{{ self.t("devices") }}{% else %}{{ self.t("off") }}{% endif %}</span></div>
                     <input type="checkbox" class="switch" {% if bluetooth %}checked{% endif %}>
                 </div>
                 <div class="switch-row" data-on-click="toggle_auto_scale">
-                    <div class="switch-label"><span class="switch-name">Auto-scaling</span><span class="switch-hint">system tab</span></div>
+                    <div class="switch-label"><span class="switch-name">{{ self.t("auto_scaling") }}</span><span class="switch-hint">{{ self.t("system_tab") }}</span></div>
                     <input type="checkbox" class="switch" {% if auto_scale %}checked{% endif %}>
                 </div>
                 <div class="switch-row" data-on-click="toggle_maintenance">
-                    <div class="switch-label"><span class="switch-name">Maintenance</span><span class="switch-hint">system tab</span></div>
+                    <div class="switch-label"><span class="switch-name">{{ self.t("maintenance") }}</span><span class="switch-hint">{{ self.t("system_tab") }}</span></div>
                     <input type="checkbox" class="switch" {% if maintenance_mode %}checked{% endif %}>
+                </div>
+                <span class="panel-title" style="margin-top: 12px;">{{ self.t("language_title") }}</span>
+                <div class="langs">
+                    {% for l in self.langs() %}
+                    <div class="tab {% if self.lang_is(l) %}on{% endif %}" data-on-click="lang:{{ l }}">{{ self.lang_name(l) }}</div>
+                    {% endfor %}
                 </div>
             </div>
 
             <div class="panel col">
-                <span class="panel-title">VOLUME</span>
+                <span class="panel-title">{{ self.t("volume") }}</span>
                 <div class="dial-wrap">
                     <div class="dial">
                         <div class="dial-ring" style="background: conic-gradient(from 180deg, #7c3aed 0%, #f472b6 {{ volume * 10 }}%, #1a2234 {{ volume * 10 }}%);"></div>
                         <div class="dial-hole">
                             <span class="dial-value">{{ volume * 10 }}</span>
-                            <span class="dial-unit">PERCENT</span>
+                            <span class="dial-unit">{{ self.t("percent") }}</span>
                         </div>
                     </div>
                 </div>

@@ -1,0 +1,79 @@
+# The showcase in German.
+language = Deutsch
+decimal = ,
+
+tab_system = System
+tab_vehicle = Fahrzeug
+tab_monitor = Monitor
+tab_controls = Steuerung
+sub_system = Systemübersicht
+sub_vehicle = Kombiinstrument
+sub_monitor = Patientenmonitor
+sub_controls = Widget-Galerie
+
+# System
+cpu = CPU
+cores = 4 Kerne
+memory = SPEICHER
+of_memory = von
+soc_temp = SOC-TEMP.
+fan_auto = Lüfter auto
+active_users = AKTIVE NUTZER
+users_week = +12 % diese Woche
+per_core_load = LAST PRO KERN
+core = Kern
+services = DIENSTE
+state_running = LÄUFT
+state_syncing = SYNC
+state_idle = BEREIT
+detail_render = xerune_render · 60 fps
+detail_telemetry = mqtt://fleet.local
+detail_ota = nächste Prüfung 02:00
+configuration = KONFIGURATION
+auto_scaling = Autoskalierung
+auto_scaling_hint = Worker bei Last starten
+maintenance = Wartung
+maintenance_hint = neue Jobs anhalten
+load_spike = Lastspitze
+add_user = Neuer Nutzer
+
+# Vehicle
+speed = TEMPO
+battery = AKKU
+cabin = INNENRAUM
+engine_on = MOTOR AN
+engine_off = MOTOR AUS
+shift_up = HOCHSCHALTEN
+sport = SPORT
+rpm = DREHZAHL
+rpm_unit = x1000 U/min
+accelerate = Gas geben
+start_engine = Motor starten
+stop_engine = Motor aus
+brake = Bremsen
+
+# Monitor (German clinical abbreviations)
+ecg = EKG  II
+pleth = PLETH
+hr = HF
+per_minute = /min
+nibp = NIBD
+resp = AF
+resp_unit = /min
+
+# Controls
+buttons = SCHALTFLÄCHEN
+primary = Hauptaktion
+secondary = Sekundär
+destructive = Destruktiv
+neutral = Neutral
+stepper = ZÄHLER
+toggles = SCHALTER
+wifi = WLAN
+connected = verbunden
+off = aus
+devices = 2 Geräte
+system_tab = Tab System
+volume = LAUTSTÄRKE
+percent = PROZENT
+language_title = SPRACHE

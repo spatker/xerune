@@ -1,6 +1,15 @@
+use std::sync::LazyLock;
+
 use serde::{Serialize, Deserialize};
 use tiny_skia::{Color, LineCap, LineJoin, Paint, PathBuilder, PixmapMut, Rect, Stroke, Transform};
+use xerune::i18n::{Catalog, Translations};
 use xerune::{Model, XeruneMessage, XeruneTemplate};
+
+/// The showcase's strings, English and German (`i18n/*.txt`).
+static STRINGS: LazyLock<Translations> = LazyLock::new(|| {
+    let catalog = |lang, text| Catalog::parse(lang, text).expect("the showcase's strings");
+    Translations::new(catalog("en", include_str!("i18n/en.txt"))).with(catalog("de", include_str!("i18n/de.txt")))
+});
 
 /// Simulation step; the vehicle needles and monitor traces advance per tick.
 pub const TICK_MS: u32 = 50;
@@ -28,6 +37,7 @@ impl LcgRng {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Service {
     pub name: String,
+    /// The keys of the detail line and of the state, in [`STRINGS`].
     pub detail: String,
     pub state: String,
     /// Status chip tone: `ok`, `warn` or empty for neutral.
@@ -44,6 +54,10 @@ impl Service {
 #[template(path = "examples/showcase/templates/showcase.html")]
 pub struct ShowcaseModel {
     pub active_tab: usize, // 1 = System, 2 = Vehicle, 3 = Monitor, 4 = Controls
+    /// The language shown, a tag like `de` (English when there are no
+    /// strings for it).
+    #[serde(default)]
+    pub lang: String,
     /// Set from the viewport in `on_resize`; picks the monitor canvas size.
     /// FIXME: only needed because a canvas keeps its first layout size
     /// (known_gaps::canvas_follows_its_layout_size).
@@ -93,6 +107,7 @@ impl Default for ShowcaseModel {
     fn default() -> Self {
         Self {
             active_tab: 1,
+            lang: "en".into(),
             portrait: false,
 
             cpu: 38.0,
@@ -102,9 +117,9 @@ impl Default for ShowcaseModel {
             cores: vec![34.0, 52.0, 21.0, 45.0],
             user_counter: 1234,
             services: vec![
-                Service::new("render-engine", "xerune_render · 60 fps", "RUNNING", "ok"),
-                Service::new("telemetry", "mqtt://fleet.local", "SYNCING", "warn"),
-                Service::new("ota-updater", "next check 02:00", "IDLE", ""),
+                Service::new("render-engine", "detail_render", "state_running", "ok"),
+                Service::new("telemetry", "detail_telemetry", "state_syncing", "warn"),
+                Service::new("ota-updater", "detail_ota", "state_idle", ""),
             ],
             auto_scale: true,
             maintenance_mode: false,
@@ -136,6 +151,9 @@ impl Default for ShowcaseModel {
 #[derive(Debug, Clone, XeruneMessage)]
 pub enum ShowcaseMsg {
     SelectTab(usize),
+    /// Shows the showcase in another language.
+    #[xerune(prefix = "lang:")]
+    Lang(String),
     IncrementProgress,
     IncrementUserCounter,
     DecrementUserCounter,
@@ -160,13 +178,39 @@ const MAX_RPM: f32 = 7000.0;
 const GEAR_TOPS: [f32; 6] = [30.0, 60.0, 95.0, 135.0, 180.0, MAX_SPEED];
 
 impl ShowcaseModel {
-    pub fn subtitle(&self) -> &'static str {
-        match self.active_tab {
-            1 => "system overview",
-            2 => "vehicle cluster",
-            3 => "patient monitor",
-            _ => "widget gallery",
-        }
+    pub fn subtitle(&self) -> &str {
+        self.t(match self.active_tab {
+            1 => "sub_system",
+            2 => "sub_vehicle",
+            3 => "sub_monitor",
+            _ => "sub_controls",
+        })
+    }
+
+    /// The text for `key` in the showcase's language.
+    pub fn t<'a>(&'a self, key: &'a str) -> &'a str {
+        STRINGS.t(&self.lang, key)
+    }
+
+    /// `value` with `decimals` digits after the language's decimal
+    /// separator: 1.42, or 1,42 in German.
+    pub fn num(&self, value: f32, decimals: usize) -> String {
+        format!("{value:.decimals$}").replace('.', self.t("decimal"))
+    }
+
+    /// The languages to switch between.
+    pub fn langs(&self) -> Vec<&'static str> {
+        STRINGS.langs().collect()
+    }
+
+    /// Whether `lang` is the one shown (`de-AT` shows `de`).
+    pub fn lang_is(&self, lang: &str) -> bool {
+        STRINGS.catalog(&self.lang).map_or(STRINGS.langs().next() == Some(lang), |c| c.lang() == lang)
+    }
+
+    /// The name of `lang`, in it: "Deutsch".
+    pub fn lang_name(&self, lang: &str) -> &'static str {
+        STRINGS.t(lang, "language")
     }
 
     pub fn speed_deg(&self) -> f32 {
@@ -370,6 +414,7 @@ impl Model for ShowcaseModel {
     fn update(&mut self, msg: Self::Message, context: &mut xerune::Context<ShowcaseMsg>) {
         match msg {
             ShowcaseMsg::SelectTab(idx) => self.active_tab = idx.clamp(1, 4),
+            ShowcaseMsg::Lang(lang) => self.lang = lang,
             ShowcaseMsg::IncrementProgress => self.cpu = (self.cpu + 15.0).min(97.0),
             ShowcaseMsg::IncrementUserCounter => self.user_counter += 1,
             ShowcaseMsg::DecrementUserCounter => self.user_counter -= 1,

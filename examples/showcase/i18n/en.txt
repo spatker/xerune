@@ -1,0 +1,81 @@
+# The showcase in English. The keys are the template's and
+# showcase_impl.rs's; a key missing in another language falls back to these.
+language = English
+# Numbers: what separates the decimals.
+decimal = .
+
+tab_system = System
+tab_vehicle = Vehicle
+tab_monitor = Monitor
+tab_controls = Controls
+sub_system = system overview
+sub_vehicle = vehicle cluster
+sub_monitor = patient monitor
+sub_controls = widget gallery
+
+# System
+cpu = CPU
+cores = 4 cores
+memory = MEMORY
+of_memory = of
+soc_temp = SOC TEMP
+fan_auto = fan auto
+active_users = ACTIVE USERS
+users_week = +12% this week
+per_core_load = PER-CORE LOAD
+core = core
+services = SERVICES
+state_running = RUNNING
+state_syncing = SYNCING
+state_idle = IDLE
+detail_render = xerune_render · 60 fps
+detail_telemetry = mqtt://fleet.local
+detail_ota = next check 02:00
+configuration = CONFIGURATION
+auto_scaling = Auto-scaling
+auto_scaling_hint = spin up workers on load
+maintenance = Maintenance
+maintenance_hint = pause incoming jobs
+load_spike = Load spike
+add_user = Add user
+
+# Vehicle
+speed = SPEED
+battery = BATTERY
+cabin = CABIN
+engine_on = ENGINE ON
+engine_off = ENGINE OFF
+shift_up = SHIFT UP
+sport = SPORT
+rpm = RPM
+rpm_unit = x1000 rpm
+accelerate = Accelerate
+start_engine = Engine on
+stop_engine = Engine off
+brake = Brake
+
+# Monitor
+ecg = ECG  II
+pleth = PLETH
+hr = HR
+per_minute = bpm
+nibp = NIBP
+resp = RESP
+resp_unit = rpm
+
+# Controls
+buttons = BUTTONS
+primary = Primary action
+secondary = Secondary
+destructive = Destructive
+neutral = Neutral
+stepper = STEPPER
+toggles = TOGGLES
+wifi = Wi-Fi
+connected = connected
+off = off
+devices = 2 devices
+system_tab = system tab
+volume = VOLUME
+percent = PERCENT
+language_title = LANGUAGE
