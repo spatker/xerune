@@ -850,6 +850,6 @@ pub(crate) fn finish_node(
     generated
 }
 
-/// The `::before` and `::after` boxes [`finish_node`] generated for an
+/// The `::before` and `::after` boxes `finish_node` generated for an
 /// element, which get keys from the element's.
 pub type GeneratedBoxes = (Option<NodeId>, Option<NodeId>);

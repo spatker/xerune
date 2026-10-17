@@ -8,7 +8,7 @@
 //!   blocking code; the store runs it on a small pool of worker threads, so loading never
 //!   blocks the UI thread.
 //! * When a load finishes, the store invokes the waker installed by the backend so the event
-//!   loop wakes up, then [`Runtime::tick`](crate::Runtime::tick) picks up the result, rebuilds
+//!   loop wakes up, then [`Runtime::poll`](crate::Runtime::poll) picks up the result, rebuilds
 //!   layout (images without an explicit size take their natural size) and requests a redraw.
 
 use crate::alloc_prelude::*;

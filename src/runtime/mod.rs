@@ -290,7 +290,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
     }
 
     /// Install a callback that wakes the event loop when a background image load completes.
-    /// Built-in backends install this automatically; the next [`Self::tick`] applies the result.
+    /// Built-in backends install this automatically; the next [`Self::poll`] applies the result.
     #[cfg(all(feature = "std", not(target_arch = "wasm32")))]
     pub fn set_image_waker(&mut self, waker: impl Fn() + Send + Sync + 'static) {
         self.images.set_waker(Arc::new(waker));
