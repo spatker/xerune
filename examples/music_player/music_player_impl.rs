@@ -378,7 +378,10 @@ mod tests {
     /// and comes back to slide in.
     #[test]
     fn the_hidden_view_leaves_after_sliding_out() {
-        let mut runtime = xerune::Runtime::new(MusicPlayerModel::new(None), Measurer);
+        // The list as an outside source would hand it over: the studio runs
+        // these tests from its own directory, where the file path doesn't resolve.
+        let tracks = include_str!("resources/music.json");
+        let mut runtime = xerune::Runtime::new(MusicPlayerModel::new(Some(tracks)), Measurer);
         let clock = xerune::runtime::ManualClock::new();
         runtime.set_clock(clock.clone());
         runtime.set_size(800.0, 480.0);
