@@ -892,6 +892,13 @@ fn draw_conic_blocks(
     // Half diagonal of a block, plus the anti-aliasing half pixel.
     let block_reach = B as f32 * core::f32::consts::FRAC_1_SQRT_2 + 0.5;
     let turn_at = |x: f32, y: f32| fast_atan2(x - shader.cx, shader.cy - y) * (1.0 / TAU) - from;
+    // Destination step between horizontally adjacent logical pixels.
+    let stride: isize = match rotation {
+        90 => physical_w as isize,
+        180 => -1,
+        270 => -(physical_w as isize),
+        _ => 1,
+    };
 
     let mut by = start_y;
     while by < end_y {
@@ -930,6 +937,25 @@ fn draw_conic_blocks(
                 None
             };
             if uniform == Some(0) {
+                bx = bx1;
+                continue;
+            }
+
+            if fully_inside {
+                // No edge to anti-alias: whole rows of the block.
+                for py in by..by1 {
+                    let fy = py as f32 + 0.5;
+                    let idx = calc_pixel_index(bx, py, rotation, physical_w, logical_w, logical_h) as isize;
+                    let mut fx = bx as f32 + 0.5;
+                    fill_span(buffer, idx, stride, (bx1 - bx) as usize, shader.colors.opaque, move || {
+                        let color = match uniform {
+                            Some(c) => c,
+                            None => shader.color_at(fx, fy, 0),
+                        };
+                        fx += 1.0;
+                        color
+                    });
+                }
                 bx = bx1;
                 continue;
             }
