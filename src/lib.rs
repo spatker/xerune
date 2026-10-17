@@ -126,6 +126,7 @@ pub mod __private {
     pub use crate::alloc_prelude::Cow;
     pub use crate::css::media::{matches_query, Feature, FeatureGroup};
     pub use crate::css::parse_keyframes;
+    pub use crate::css::declared::Declarations;
     pub use crate::style::{ContainerStyle, ControlPart};
     pub use crate::ui::{ElementStyle, PointerLevel, TemplateLayout, ToDisplayString, UiBuilder};
     pub use crate::ui::builder::element_key;

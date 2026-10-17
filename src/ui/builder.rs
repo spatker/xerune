@@ -681,6 +681,12 @@ impl ElementStyle {
         crate::css::apply_declarations(declarations, &mut self.style, &mut self.layout);
     }
 
+    /// Applies a template's matched CSS declarations, parsed once.
+    #[inline(never)]
+    pub fn apply_declared(&mut self, declarations: &crate::css::declared::Declarations) {
+        declarations.apply(&mut self.style, &mut self.layout);
+    }
+
     /// Applies the `!important` declarations of the `style` attribute in
     /// `attrs`, after the stylesheet's.
     pub fn apply_important_style(&mut self, attrs: &[(Cow<'static, str>, Cow<'_, str>)]) {

@@ -901,7 +901,13 @@ fn compile_node(
                     }
                     let (names, values): (Vec<_>, Vec<_>) = declarations.into_iter().map(|(name, value, _)| (name, value)).unzip();
                     let mut body = match rule.part {
-                        None => quote! { el.apply(&[#((#names, #values)),*]); },
+                        None => quote! {
+                            {
+                                static DECLARATIONS: ::xerune::__private::Declarations =
+                                    ::xerune::__private::Declarations::new(&[#((#names, #values)),*]);
+                                el.apply_declared(&DECLARATIONS);
+                            }
+                        },
                         Some(part) => {
                             let part = syn::Ident::new(&format!("{part:?}"), proc_macro2::Span::call_site());
                             quote! { el.apply_part(::xerune::__private::ControlPart::#part, &[#((#names, #values)),*]); }
