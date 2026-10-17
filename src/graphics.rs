@@ -461,6 +461,8 @@ pub enum DrawCommand {
         rect: Rect,
         /// Corner radius to clip image edges.
         border_radius: f32,
+        /// How opaque the image is drawn, 0 to 1 (`opacity`).
+        opacity: f32,
     },
     /// Draw the check mark of a checked checkbox: a stroke scaled to `rect`,
     /// as Chromium paints it.
@@ -478,10 +480,43 @@ pub enum DrawCommand {
         rect: Rect,
         /// Border corner radius.
         border_radius: f32,
+        /// How opaque the pixels are drawn, 0 to 1 (`opacity`).
+        opacity: f32,
     },
 }
 
 impl DrawCommand {
+    /// Makes the command draw `opacity` (0 to 1) as opaque as it did: the
+    /// alpha of its colors, or its own `opacity` for images and canvases.
+    pub fn fade(&mut self, opacity: f32) {
+        let fade = |color: &mut Color| color.a = (color.a as f32 * opacity + 0.5) as u8;
+        let fade_copy = |color: &mut Color| {
+            fade(color);
+            *color
+        };
+        match self {
+            DrawCommand::Clip { .. } | DrawCommand::PopClip => {}
+            DrawCommand::DrawBoxShadow { color, .. } | DrawCommand::DrawText { color, .. } | DrawCommand::DrawCheckMark { color, .. } => fade(color),
+            DrawCommand::DrawRect { color, gradient, border, .. } => {
+                if let Some(color) = color {
+                    fade(color);
+                }
+                // The stops are shared with the style: faded ones are new.
+                let faded = |stops: &Arc<[(Color, f32)]>| -> Arc<[(Color, f32)]> {
+                    stops.iter().map(|&(mut c, at)| (fade_copy(&mut c), at)).collect()
+                };
+                match gradient {
+                    Some(Gradient::Linear(g)) => g.stops = faded(&g.stops),
+                    Some(Gradient::Radial(g)) => g.stops = faded(&g.stops),
+                    Some(Gradient::Conic(g)) => g.stops = faded(&g.stops),
+                    None => {}
+                }
+                border.sides_mut().into_iter().filter_map(|side| side.color.as_mut()).for_each(fade);
+            }
+            DrawCommand::DrawImage { opacity: own, .. } | DrawCommand::DrawCanvas { opacity: own, .. } => *own *= opacity,
+        }
+    }
+
     /// Computes the layout bounding box of a draw command, padded for anti-aliasing bleeds.
     pub fn bounds(&self) -> Option<Rect> {
         let pad = 10.0; // Pad bounds generously to catch font overhangs and anti-aliasing bleeds

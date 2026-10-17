@@ -631,6 +631,7 @@ fn test_zero_copy_canvas_blitting() {
         2,
         2,
         &canvas_rgba,
+        1.0,
         false,
         None,
         0,

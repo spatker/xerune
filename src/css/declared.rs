@@ -13,7 +13,7 @@ use taffy::prelude::*;
 use taffy::style::Style;
 
 use super::parser::{self, parse_padding, parse_margin};
-use super::{gradient, parse_dimension, parse_hex_color, parse_length_percentage, parse_length_percentage_auto, parse_px};
+use super::{gradient, parse_dimension, parse_hex_color, parse_length_percentage, parse_length_percentage_auto, parse_opacity, parse_px};
 use crate::alloc_prelude::*;
 use crate::{Color, ContainerStyle, CssJustifyContent, Display, Gradient};
 
@@ -56,6 +56,8 @@ pub enum Declared {
     /// `border`, all sides.
     Border(crate::style::BorderSide),
     BoxShadow(Option<crate::style::BoxShadow>),
+    /// `opacity`, clamped to 0..1.
+    Opacity(f32),
     /// `padding`: the layout's, and the `px` sides the style keeps.
     Padding(Option<Rect<LengthPercentage>>, Option<Rect<f32>>),
     PaddingSide(BoxSide, Option<LengthPercentage>, Option<f32>),
@@ -135,6 +137,7 @@ impl Declared {
                 Some(shadow) => Some(Declared::BoxShadow(Some(shadow))),
                 None => (val.trim() == "none").then_some(Declared::BoxShadow(None)),
             }),
+            "opacity" => or_nothing(parse_opacity(val).map(Declared::Opacity)),
             "padding" => Some(Declared::Padding(parse_padding(val), parser::parse_sides(val, parse_px))),
             _ if prop.starts_with("padding-") => {
                 Some(Declared::PaddingSide(side(prop, "padding-")?, parse_length_percentage(val), parse_px(val)))
@@ -285,6 +288,7 @@ impl Declared {
             &Declared::BorderRadius(radius) => style.border_radius = radius,
             &Declared::Border(side) => style.border = crate::style::Borders::all(side),
             Declared::BoxShadow(shadow) => style.box_shadow = shadow.clone(),
+            &Declared::Opacity(opacity) => style.opacity = opacity,
             &Declared::Padding(sides, px) => {
                 if let Some(sides) = sides {
                     layout.padding = sides;

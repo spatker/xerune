@@ -77,6 +77,7 @@ pub fn get_default_style(tag: &str, parent_style: &ContainerStyle) -> StyleBundl
     bundle.container_style.background_color = None;
     bundle.container_style.background_gradient = None;
     bundle.container_style.box_shadow = None;
+    bundle.container_style.opacity = 1.0;
     bundle.container_style.border_radius = 0.0;
     bundle.container_style.border = crate::style::Borders::NONE;
     bundle.container_style.overflow = crate::Overflow::Visible;

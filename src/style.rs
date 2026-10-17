@@ -370,6 +370,9 @@ pub struct ContainerStyle {
     pub border: Borders,
     /// Optional CSS box shadow.
     pub box_shadow: Option<BoxShadow>,
+    /// `opacity`, 0 to 1 (not inherited). Below 1 the element paints as a
+    /// stacking context whose draw commands are faded by it.
+    pub opacity: f32,
     /// Optional background gradient.
     pub background_gradient: Option<Gradient>,
     /// Bounding box overflow behavior.
@@ -482,6 +485,7 @@ impl Default for ContainerStyle {
             border_radius: 0.0,
             border: Borders::NONE,
             box_shadow: None,
+            opacity: 1.0,
             background_gradient: None,
             overflow: Overflow::Visible,
             z_index: None,

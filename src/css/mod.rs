@@ -134,6 +134,17 @@ fn apply_inline_style(style_str: &str, important: bool, current_style: &mut Cont
     }
 }
 
+/// Parses an `opacity` value: a number or a percentage, clamped to 0..1
+/// as CSS clamps it when used.
+pub fn parse_opacity(val: &str) -> Option<f32> {
+    let val = val.trim();
+    let opacity = match val.strip_suffix('%') {
+        Some(percent) => percent.trim().parse::<f32>().ok()? / 100.0,
+        None => val.parse::<f32>().ok()?,
+    };
+    opacity.is_finite().then(|| opacity.clamp(0.0, 1.0))
+}
+
 /// Parses a `line-height` value. Negative values are invalid.
 fn parse_line_height(val: &str) -> Option<crate::style::LineHeight> {
     use crate::style::LineHeight;

@@ -281,12 +281,12 @@ CSS is resolved at **compile time**: selectors are matched against the template 
 
 - Box: `width`, `height`, `min-/max-width`, `min-/max-height`, logical sizes (`inline-size`, `block-size` and their `min-`/`max-` forms), `margin*`, `padding*`, `box-sizing`
 - Layout: `display` (`block`, `inline-block`, `inline`, `flex`, `none`), `flex`, `flex-direction`, `flex-wrap`, `flex-flow`, `flex-grow`, `flex-shrink`, `flex-basis`, `justify-content`, `align-items`, `align-self`, `align-content`, `gap`, `row-gap`, `column-gap`, `order`, `position` (`static`, `relative`, `absolute`), `top`/`right`/`bottom`/`left`, `float`, `overflow`, `direction`, `writing-mode`
-- Visual: `color`, `background`, `background-color`, `background-image`, `border*` (width, color, style, per side), `border-radius`, `box-shadow`, `accent-color`
+- Visual: `color`, `background`, `background-color`, `background-image`, `border*` (width, color, style, per side), `border-radius`, `box-shadow`, `accent-color`, `opacity` (a number or a percentage; below 1 the element is a stacking context, as in browsers, and everything it paints is faded by it — each part on its own, so where parts of a faded element overlap they show through each other, unlike a browser's composited layer)
 - Gradients: `linear-gradient`, `radial-gradient`, `conic-gradient` and the `repeating-` radial/conic forms, with any CSS color, hard stops (`red 0deg 90deg`) and `from <angle>` / `at <position>`. Stop positions take `%` (and angles for conic); `px` stops are not supported. Conic gradients plus `border-radius: 50%` make rings, arcs and dials without a canvas — see the vehicle tab of `examples/showcase`.
 - Text: `font-size`, `font-weight`, `font` (size, weight and `/line-height`), `line-height`, `text-align`, `white-space` (`normal`, `nowrap`, `pre`, `pre-wrap`, `pre-line`), `overflow-wrap` / `word-wrap` (`break-word`, `anywhere`), `word-break` (`break-all`), `text-overflow` (`ellipsis`, with `overflow` other than `visible`)
 - Animation: `animation` and all `animation-*` longhands, with `@keyframes`
 
-Not supported, among others: `font-family` (fonts are compiled bitmap fonts), `opacity`, `transform`, `transition`, `display: grid`, `z-index`.
+Not supported, among others: `font-family` (fonts are compiled bitmap fonts), `transform`, `transition`, `display: grid`, `z-index`.
 
 **Text layout.** Text wraps to its container like in a browser: lines break at Unicode (UAX #14) break opportunities, so spaces, hyphens and between CJK characters; `text-align` aligns each line. A run of text and `{{ }}` values (`Hello {{ name }}, you have {{ n }} messages`) is one paragraph and wraps as a whole. Limits: inline elements (`<b>`, `<span>`, `<a>`) are separate boxes rather than part of the surrounding paragraph, so text after one starts a new box; there is no OpenType shaping (Roboto's kerning, ligatures, font features such as `font-variant-numeric: proportional-nums`, Arabic or Indic scripts). Roboto's digits are tabular, so right-aligned numbers move as digits with different side bearings appear (a lone `1` ends short of the edge), exactly as in Chromium; Thai, Lao, Khmer and Myanmar break only at spaces. For truncated single lines, use `white-space: nowrap; overflow: hidden; text-overflow: ellipsis` on the element holding the text.
 
@@ -415,7 +415,7 @@ Animations are declared directly in CSS style blocks:
 <div class="pulsing-box"></div>
 ```
 
-Animatable properties: `color`, `background-color`, `border-color`, `border-width`, `border-radius`, `font-size`, `width`, `height`, `margin-*`, `padding-*`, `top`/`right`/`bottom`/`left`, and `background` gradients. Two gradients of the same kind with the same number of stops interpolate their angle, center, colors and stop positions, so a spinner is just:
+Animatable properties: `color`, `background-color`, `border-color`, `border-width`, `border-radius`, `font-size`, `opacity`, `width`, `height`, `margin-*`, `padding-*`, `top`/`right`/`bottom`/`left`, and `background` gradients. Two gradients of the same kind with the same number of stops interpolate their angle, center, colors and stop positions, so a spinner is just:
 
 ```css
 @keyframes spin {

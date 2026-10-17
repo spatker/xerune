@@ -43,13 +43,14 @@ const EASE: Easing = Easing::CubicBezier(0.25, 0.1, 0.25, 1.0);
 const SIDES: [Side; 4] = [Side::Top, Side::Right, Side::Bottom, Side::Left];
 
 /// What `all` transitions. `background` covers `background-color`.
-const ALL: [Property; 20] = [
+const ALL: [Property; 21] = [
     Property::Color,
     Property::Background,
     Property::BorderColor,
     Property::BorderWidth,
     Property::BorderRadius,
     Property::FontSize,
+    Property::Opacity,
     Property::Width,
     Property::Height,
     Property::Inset(Side::Top),

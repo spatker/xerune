@@ -1337,6 +1337,7 @@ impl Frame<'_> {
                     src,
                     rect,
                     border_radius,
+                    opacity,
                 } => {
                     let local_rect = self.translate_rect(rect);
                     let clip = self.get_clip_rect();
@@ -1369,11 +1370,13 @@ impl Frame<'_> {
                             img_w,
                             img_h,
                             img_pixels,
+                            *opacity,
                             clip,
                             self.rotation,
                         );
                     } else {
-                        let grey = pack_color(xerune::Color::new(200, 200, 200, 255), self.swap_rb);
+                        let grey = xerune::Color::new(200, 200, 200, (255.0 * opacity.clamp(0.0, 1.0) + 0.5) as u8);
+                        let grey = pack_color(grey, self.swap_rb);
                         blend_solid_rect(
                             self.buffer,
                             self.width,
@@ -1404,7 +1407,7 @@ impl Frame<'_> {
                         self.rotation,
                     );
                 }
-                DrawCommand::DrawCanvas { id, rect, border_radius } => {
+                DrawCommand::DrawCanvas { id, rect, border_radius, opacity } => {
                     let local_rect = self.translate_rect(rect);
                     if let Some(canvas) = resources.canvases.get(id) {
                         let clip = self.get_clip_rect();
@@ -1418,6 +1421,7 @@ impl Frame<'_> {
                             canvas.width,
                             canvas.height,
                             &canvas.data,
+                            *opacity,
                             self.swap_rb,
                             clip,
                             self.rotation,
@@ -1440,6 +1444,8 @@ impl Frame<'_> {
     }
 }
 
+/// Draws RGBA pixels (a canvas) scaled into `rect`, `opacity` (0 to 1) as
+/// opaque as they are.
 pub fn blit_image_rgba(
     buffer: &mut [u32],
     logical_w: u32,
@@ -1450,6 +1456,28 @@ pub fn blit_image_rgba(
     img_w: u32,
     img_h: u32,
     img_rgba: &[u8],
+    opacity: f32,
+    swap_rb: bool,
+    clip: Option<Rect>,
+    rotation: u32,
+) {
+    // Unfaded pixels skip the multiply: a separate loop for faded ones.
+    let opacity = opacity.clamp(0.0, 1.0);
+    let blit = if opacity < 1.0 { blit_image_rgba_faded::<true> } else { blit_image_rgba_faded::<false> };
+    blit(buffer, logical_w, logical_h, physical_w, rect, border_radius, img_w, img_h, img_rgba, opacity, swap_rb, clip, rotation);
+}
+
+fn blit_image_rgba_faded<const FADE: bool>(
+    buffer: &mut [u32],
+    logical_w: u32,
+    logical_h: u32,
+    physical_w: u32,
+    rect: &Rect,
+    border_radius: f32,
+    img_w: u32,
+    img_h: u32,
+    img_rgba: &[u8],
+    opacity: f32,
     swap_rb: bool,
     clip: Option<Rect>,
     rotation: u32,
@@ -1475,7 +1503,7 @@ pub fn blit_image_rgba(
     let end_x = (rx + rw).min(clip_x2);
     let end_y = (ry + rh).min(clip_y2);
 
-    if start_x >= end_x || start_y >= end_y || rw <= 0 || rh <= 0 || img_w == 0 || img_h == 0 || img_rgba.is_empty() {
+    if start_x >= end_x || start_y >= end_y || rw <= 0 || rh <= 0 || img_w == 0 || img_h == 0 || img_rgba.is_empty() || opacity == 0.0 {
         return;
     }
 
@@ -1538,6 +1566,9 @@ pub fn blit_image_rgba(
                 }
             }
 
+            if FADE {
+                coverage *= opacity;
+            }
             if coverage > 0.0 {
                 let blended_pixel = if coverage < 1.0 {
                     let a_cov = ((pixel >> 24) & 0xff) as f32 * coverage;
@@ -1556,6 +1587,8 @@ pub fn blit_image_rgba(
     }
 }
 
+/// Draws a decoded image scaled into `rect`, `opacity` (0 to 1) as opaque
+/// as it is.
 pub fn blit_image(
     buffer: &mut [u32],
     logical_w: u32,
@@ -1566,6 +1599,27 @@ pub fn blit_image(
     img_w: u32,
     img_h: u32,
     img_pixels: &[u32],
+    opacity: f32,
+    clip: Option<Rect>,
+    rotation: u32,
+) {
+    // Unfaded pixels skip the multiply: a separate loop for faded ones.
+    let opacity = opacity.clamp(0.0, 1.0);
+    let blit = if opacity < 1.0 { blit_image_faded::<true> } else { blit_image_faded::<false> };
+    blit(buffer, logical_w, logical_h, physical_w, rect, border_radius, img_w, img_h, img_pixels, opacity, clip, rotation);
+}
+
+fn blit_image_faded<const FADE: bool>(
+    buffer: &mut [u32],
+    logical_w: u32,
+    logical_h: u32,
+    physical_w: u32,
+    rect: &Rect,
+    border_radius: f32,
+    img_w: u32,
+    img_h: u32,
+    img_pixels: &[u32],
+    opacity: f32,
     clip: Option<Rect>,
     rotation: u32,
 ) {
@@ -1590,7 +1644,7 @@ pub fn blit_image(
     let end_x = (rx + rw).min(clip_x2);
     let end_y = (ry + rh).min(clip_y2);
 
-    if start_x >= end_x || start_y >= end_y || rw <= 0 || rh <= 0 || img_w == 0 || img_h == 0 || img_pixels.is_empty() {
+    if start_x >= end_x || start_y >= end_y || rw <= 0 || rh <= 0 || img_w == 0 || img_h == 0 || img_pixels.is_empty() || opacity == 0.0 {
         return;
     }
 
@@ -1645,6 +1699,9 @@ pub fn blit_image(
                 }
             }
 
+            if FADE {
+                coverage *= opacity;
+            }
             if coverage > 0.0 {
                 let blended_pixel = if coverage < 1.0 {
                     let a = ((pixel >> 24) & 0xff) as f32 * coverage;
@@ -1969,9 +2026,9 @@ mod tests {
         let mut buffer = vec![0u32; 100];
         let rect = Rect { x: 0.0, y: 0.0, width: 10.0, height: 10.0 };
         // Must not panic on zero dimensions or empty pixel slice
-        blit_image(&mut buffer, 10, 10, 10, &rect, 0.0, 0, 0, &[], None, 0);
-        blit_image(&mut buffer, 10, 10, 10, &rect, 0.0, 10, 0, &[], None, 0);
-        blit_image(&mut buffer, 10, 10, 10, &rect, 0.0, 0, 10, &[], None, 0);
+        blit_image(&mut buffer, 10, 10, 10, &rect, 0.0, 0, 0, &[], 1.0, None, 0);
+        blit_image(&mut buffer, 10, 10, 10, &rect, 0.0, 10, 0, &[], 1.0, None, 0);
+        blit_image(&mut buffer, 10, 10, 10, &rect, 0.0, 0, 10, &[], 1.0, None, 0);
     }
 
     #[test]

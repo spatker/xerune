@@ -139,6 +139,7 @@ pub enum Property {
     BorderWidth,
     BorderRadius,
     FontSize,
+    Opacity,
     Width,
     Height,
     /// `top`, `right`, `bottom`, `left`.
@@ -162,6 +163,8 @@ pub enum Value {
     Color(Color),
     Gradient(Gradient),
     Px(f32),
+    /// A plain number (`opacity`).
+    Number(f32),
     Dimension(Dimension),
     LengthAuto(LengthPercentageAuto),
     Length(LengthPercentage),
@@ -185,6 +188,7 @@ impl Property {
             "border-width" => Property::BorderWidth,
             "border-radius" => Property::BorderRadius,
             "font-size" => Property::FontSize,
+            "opacity" => Property::Opacity,
             "width" => Property::Width,
             "height" => Property::Height,
             _ => {
@@ -210,6 +214,7 @@ impl Property {
             Property::Color | Property::BackgroundColor | Property::BorderColor => super::parse_hex_color(value).map(Value::Color),
             Property::Background => super::parse_gradient(value).map(Value::Gradient).or_else(|| super::parse_hex_color(value).map(Value::Color)),
             Property::BorderWidth | Property::BorderRadius | Property::FontSize => super::parse_px(value).map(Value::Px),
+            Property::Opacity => super::parse_opacity(value).map(Value::Number),
             Property::Width | Property::Height => super::parse_dimension(value).map(Value::Dimension),
             Property::Inset(_) | Property::Margin(_) => super::parse_length_percentage_auto(value).map(Value::LengthAuto),
             Property::Padding(_) => super::parse_length_percentage(value).map(Value::Length),
@@ -236,6 +241,7 @@ impl Property {
             Property::BorderWidth => Value::Px(style.border.top.width),
             Property::BorderRadius => Value::Px(style.border_radius),
             Property::FontSize => Value::Px(style.font_size),
+            Property::Opacity => Value::Number(style.opacity),
             Property::Width => Value::Dimension(layout.size.width),
             Property::Height => Value::Dimension(layout.size.height),
             Property::Inset(side) => Value::LengthAuto(pick(&layout.inset, side)),
@@ -267,6 +273,7 @@ impl Property {
             (Property::BorderWidth, Value::Px(v)) => style.border.sides_mut().into_iter().for_each(|side| side.width = *v),
             (Property::BorderRadius, Value::Px(v)) => style.border_radius = *v,
             (Property::FontSize, Value::Px(v)) => style.font_size = *v,
+            (Property::Opacity, Value::Number(v)) => style.opacity = v.clamp(0.0, 1.0),
             (Property::Width, Value::Dimension(d)) => {
                 layout.size.width = *d;
                 style.width = px(d.into_raw());
@@ -325,6 +332,7 @@ impl Value {
             }
             (Value::Gradient(a), Value::Gradient(b)) if super::gradient::gradients_interpolate(a, b) => Some(Value::Gradient(super::interpolate_gradient(a, b, t))),
             (Value::Px(a), Value::Px(b)) => Some(Value::Px(mix(*a, *b))),
+            (Value::Number(a), Value::Number(b)) => Some(Value::Number(mix(*a, *b))),
             (Value::Dimension(a), Value::Dimension(b)) => compact(a.into_raw(), b.into_raw())
                 .map(|(px, v)| Value::Dimension(if px { Dimension::length(v) } else { Dimension::percent(v) })),
             (Value::LengthAuto(a), Value::LengthAuto(b)) => compact(a.into_raw(), b.into_raw())

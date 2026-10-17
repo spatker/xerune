@@ -903,13 +903,17 @@ struct Deferred {
 
 /// The paint layer of `node` in a parent laid out as `parent_is_flex`:
 /// `Some(z)` for a positioned element or a flex item with a `z-index`
-/// (`auto` counts as 0), `None` for in-flow content.
+/// (`auto` counts as 0), or an element with `opacity` below 1 (painted like
+/// a positioned one with `z-index: 0`, CSS 2 Appendix E); `None` for
+/// in-flow content.
 fn paint_layer_of(node: NodeId, parent_is_flex: bool, render_data: &NodeMap<RenderData>) -> Option<i32> {
-    let style = render_data.get(&node)?.container_style()?;
+    let data = render_data.get(&node)?;
+    let translucent = data.style.opacity < 1.0;
+    let Some(style) = data.container_style() else { return translucent.then_some(0) };
     let positioned = style.position != crate::style::Position::Static;
     match style.z_index {
         Some(z) if positioned || parent_is_flex => Some(z),
-        _ if positioned => Some(0),
+        _ if positioned || translucent => Some(0),
         _ => None,
     }
 }
@@ -920,10 +924,15 @@ fn paint_layer_of(node: NodeId, parent_is_flex: bool, render_data: &NodeMap<Rend
 /// positive `z-index`. Each positioned descendant is painted the same way;
 /// unlike CSS, one with `z-index: auto` keeps its positioned descendants to
 /// itself.
+///
+/// A layer with `opacity` below 1 fades each of its commands. Unlike a
+/// browser, which composites the layer as one image, parts of it that
+/// overlap show through each other.
 fn paint_layer(painter: &Painter, layer: &Deferred, commands: &mut Vec<DrawCommand>) {
     for &rect in &layer.clips {
         commands.push(DrawCommand::Clip { rect });
     }
+    let start = commands.len();
     let mut own = Vec::new();
     let mut clips = layer.clips.clone();
     let mut deferred = Vec::new();
@@ -938,6 +947,12 @@ fn paint_layer(painter: &Painter, layer: &Deferred, commands: &mut Vec<DrawComma
     commands.append(&mut rest);
     for d in &deferred[below..] {
         paint_layer(painter, d, commands);
+    }
+    let opacity = painter.render_data.get(&layer.node).map_or(1.0, |data| data.style.opacity);
+    if opacity <= 0.0 {
+        commands.truncate(start);
+    } else if opacity < 1.0 {
+        commands[start..].iter_mut().for_each(|command| command.fade(opacity));
     }
     for _ in &layer.clips {
         commands.push(DrawCommand::PopClip);
@@ -1033,6 +1048,7 @@ fn traverse_layout(
                     src: src.clone(),
                     rect,
                     border_radius: style.border_radius,
+                    opacity: 1.0,
                 });
             },
             RenderKind::Checkbox(checked) => controls::checkbox(commands, rect, *checked, style),
@@ -1059,6 +1075,7 @@ fn traverse_layout(
                     id: id.clone(),
                     rect: canvas_rect,
                     border_radius: style.border_radius,
+                    opacity: 1.0,
                 });
             },
             RenderKind::TextInput(id, text, placeholder) => {
