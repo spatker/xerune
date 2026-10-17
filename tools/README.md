@@ -53,3 +53,12 @@ these make that cheap.
   (~1.9 MB each instead of 4.6), renamed because its license (SIL OFL,
   `XeruneHangul-LICENSE.txt`) reserves the name "Source" for unmodified
   fonts. Needs fontTools.
+
+## README demos
+
+- `tools/record-demos.sh [NAME...]`: records the clips in `docs/img/*.webp`
+  headlessly (`XERUNE_SNAPSHOT_FRAMES`, guide §10): each example plays a
+  scripted message list on the simulated clock, so a clip only changes when
+  the UI does. Animated WebP, 600 px wide at 20 fps, a few hundred KB each.
+  Needs ffmpeg with libwebp. Re-record after visible UI changes; every
+  recording adds its bytes to the history, so not after every tweak.
