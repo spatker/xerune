@@ -21,6 +21,12 @@ fn roboto() -> xerune_render::Fonts {
                 Some(include_bytes!("../resources/fonts/Roboto-Bold.ttf")),
             )
             .unwrap()
+            // As the examples: Hangul from a fallback font.
+            .with_fallback(
+                include_bytes!("../resources/fonts/XeruneHangul-Regular.otf"),
+                Some(include_bytes!("../resources/fonts/XeruneHangul-Bold.otf")),
+            )
+            .unwrap()
         })
         .clone()
 }
@@ -1244,6 +1250,61 @@ mod text_layout {
             "Pneumonoultramicroscopic",
         ];
         assert_eq!(crate::roboto_lines(Reference, 800.0, 480.0), expected);
+    }
+
+    #[derive(XeruneTemplate)]
+    #[template(path = "tests/text/korean.html")]
+    struct Korean;
+    impl Model for Korean {
+        type Message = String;
+        fn update(&mut self, _msg: String, _context: &mut Context<Self::Message>) {}
+    }
+
+    /// Korean breaks between any two syllables, or with `word-break:
+    /// keep-all` only at spaces, as in Chromium with the same fonts:
+    /// `tools/chromium-lines.sh tests/text/korean.html`.
+    #[test]
+    fn korean_line_breaks_match_chromium() {
+        let expected = [
+            "다람쥐 헌 쳇바퀴에 타고",
+            "파. 키스의 고유조건은 입",
+            "술끼리 만나야 하고 특별",
+            "한 기술은 필요치 않다.",
+            "오늘 할 일 목록",
+            "새 펌웨어를 Pi에 플래시",
+            "하고 ARM에서 원뿔형 그",
+            "라데이션을 프로파일링하",
+            "기",
+            "Mixed 한국어 and",
+            "English text, 숫자 1234",
+            "도 함께.",
+            "다람쥐 헌 쳇바퀴에",
+            "타고파. 키스의",
+            "고유조건은 입술끼리",
+            "만나야 하고 특별한",
+            "기술은 필요치 않다.",
+            "한 줄",
+        ];
+        assert_eq!(crate::roboto_lines(Korean, 800.0, 480.0), expected);
+    }
+
+    /// A line with Hangul is as tall as the Hangul font needs: its ascent
+    /// and descent are the largest of the fonts on it (24px at 16px, not
+    /// Roboto's 19px), as in Chromium, whose heights these are.
+    #[test]
+    fn korean_line_heights_match_chromium() {
+        let mut runtime = Runtime::new(Korean, crate::roboto());
+        crate::set_size(&mut runtime, 800.0, 480.0);
+        let heights: Vec<f32> = runtime
+            .ui
+            .build_commands(&HashMap::new(), None)
+            .into_iter()
+            .filter_map(|c| match c {
+                DrawCommand::DrawRect { rect, color: Some(c), .. } if c == Color::new(0xe0, 0xf2, 0xfe, 255) => Some(rect.height),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(heights, [96.0, 29.0, 96.0, 72.0, 120.0, 24.0]);
     }
 
     #[derive(XeruneTemplate)]

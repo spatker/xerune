@@ -59,6 +59,8 @@ pub struct ShapedText {
     min_content: f32,
     /// Widest grapheme: min-content when words may break anywhere.
     min_content_anywhere: f32,
+    /// Widest piece between breaks that aren't between two letters.
+    min_content_keep_all: f32,
     max_content: f32,
 }
 
@@ -84,6 +86,10 @@ pub enum WordBreak {
     Anywhere,
     /// Lines break between any two letters (`word-break: break-all`).
     BreakAll,
+    /// Lines don't break between two letters, only at spaces and
+    /// punctuation: Korean (and Chinese and Japanese) text keeps its words
+    /// whole (`word-break: keep-all`).
+    KeepAll,
 }
 
 /// The glyphs of one line of a [`ShapedText`], as drawn by
@@ -125,6 +131,9 @@ struct Segment {
     trailing: f32,
     /// A line must end after this segment (a preserved newline).
     forced: bool,
+    /// The break after this segment is between two letters, which
+    /// [`WordBreak::KeepAll`] doesn't break.
+    between_letters: bool,
 }
 
 /// One laid out line: a range of glyphs of a [`ShapedText`].
@@ -170,7 +179,10 @@ impl ShapedText {
                 continue;
             }
             let forced = mandatory && offset < text.len();
-            segments.push(Segment { end: g as u32, width, trailing, forced });
+            let before = text[..offset].chars().next_back();
+            let after = text[offset..].chars().next();
+            let between_letters = !mandatory && before.is_some_and(is_letter) && after.is_some_and(is_letter);
+            segments.push(Segment { end: g as u32, width, trailing, forced, between_letters });
             width = 0.0;
             trailing = 0.0;
         }
@@ -192,8 +204,11 @@ impl ShapedText {
             }
             previous = Some((glyph.cluster, c));
         }
-        let mut shaped = Self { glyphs, metrics, segments, flags, min_content: 0.0, min_content_anywhere, max_content: 0.0 };
+        let mut shaped = Self { glyphs, metrics, segments, flags, min_content: 0.0, min_content_anywhere, min_content_keep_all: 0.0, max_content: 0.0 };
         shaped.min_content = shaped.segments.iter().fold(0.0, |w, s| w.max(s.width - s.trailing));
+        let mut keep_all = 0.0f32;
+        shaped.keep_all_segments(|seg| keep_all = keep_all.max(seg.width - seg.trailing));
+        shaped.min_content_keep_all = keep_all;
         let mut max_content = 0.0f32;
         shaped.break_lines(f32::INFINITY, WordBreak::Normal, |line| max_content = max_content.max(line.width - line.hanging));
         shaped.max_content = max_content;
@@ -211,6 +226,27 @@ impl ShapedText {
         match word_break {
             WordBreak::Normal | WordBreak::BreakWord => self.min_content,
             WordBreak::Anywhere | WordBreak::BreakAll => self.min_content_anywhere,
+            WordBreak::KeepAll => self.min_content_keep_all,
+        }
+    }
+
+    /// The segments with those after which [`WordBreak::KeepAll`] doesn't
+    /// break joined to the next.
+    fn keep_all_segments(&self, mut each: impl FnMut(Segment)) {
+        let mut joined: Option<Segment> = None;
+        for seg in &self.segments {
+            let seg = match joined.take() {
+                Some(j) => Segment { width: j.width + seg.width, ..*seg },
+                None => *seg,
+            };
+            if seg.between_letters {
+                joined = Some(seg);
+            } else {
+                each(seg);
+            }
+        }
+        if let Some(seg) = joined {
+            each(seg);
         }
     }
 
@@ -240,6 +276,11 @@ impl ShapedText {
     /// [`finish_line`](Self::finish_line).
     fn break_lines(&self, max_width: f32, word_break: WordBreak, mut emit: impl FnMut(RawLine)) {
         let mut line = LineState::default();
+        if word_break == WordBreak::KeepAll {
+            self.keep_all_segments(|seg| line.place(&seg, max_width, &mut emit));
+            line.finish(&mut emit);
+            return;
+        }
         if word_break == WordBreak::Normal {
             for seg in &self.segments {
                 line.place(seg, max_width, &mut emit);
@@ -250,7 +291,7 @@ impl ShapedText {
         let mut seg_start = 0u32;
         for seg in &self.segments {
             let split = match word_break {
-                WordBreak::Normal => false,
+                WordBreak::Normal | WordBreak::KeepAll => false,
                 WordBreak::BreakAll => true,
                 // Only a word too long for a line of its own; it starts on
                 // a fresh line.
@@ -296,7 +337,7 @@ impl ShapedText {
         let glyphs = &self.glyphs[start as usize..end as usize];
         let width = glyphs.iter().map(|g| g.advance).sum();
         let space = self.flags[start as usize] & GLYPH_SPACE != 0;
-        Segment { end, width, trailing: if space { width } else { 0.0 }, forced: seg.forced && end == seg.end }
+        Segment { end, width, trailing: if space { width } else { 0.0 }, forced: seg.forced && end == seg.end, between_letters: false }
     }
 
     /// `line` if it fits in `max_width`; otherwise its longest start that
@@ -397,6 +438,17 @@ fn continues_grapheme(c: char) -> bool {
         | 0xFE00..=0xFE0F | 0x200D | 0x1F3FB..=0x1F3FF | 0xE0020..=0xE007F)
 }
 
+/// Whether `c` is a letter for [`WordBreak::KeepAll`]: CSS Text's
+/// typographic letter units (line breaking classes AL, HL, NU, AI and ID),
+/// and Hangul syllables and jamo.
+fn is_letter(c: char) -> bool {
+    use unicode_linebreak::BreakClass::*;
+    matches!(
+        unicode_linebreak::break_property(c as u32),
+        Alphabetic | HebrewLetter | Numeric | Ambiguous | Ideographic | HangulLvSyllable | HangulLvtSyllable | HangulLJamo | HangulVJamo | HangulTJamo
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -495,6 +547,16 @@ mod tests {
     #[test]
     fn break_all_fills_lines() {
         assert_eq!(texts_in("aa bbbbbb", 40.0, WordBreak::BreakAll), ["aa b", "bbbb", "b"]);
+    }
+
+    #[test]
+    fn keep_all_keeps_korean_words_whole() {
+        // Each syllable is a break opportunity; keep-all leaves only the spaces and punctuation.
+        let text = "다람쥐 헌 쳇바퀴에, 타고파";
+        assert_eq!(texts_in(text, 40.0, WordBreak::Normal), ["다람쥐", "헌 쳇바", "퀴에,", "타고파"]);
+        assert_eq!(texts_in(text, 40.0, WordBreak::KeepAll), ["다람쥐", "헌", "쳇바퀴에,", "타고파"]);
+        assert_eq!(paragraph(text).min_content_width(WordBreak::KeepAll), 50.0);
+        assert_eq!(paragraph(text).min_content_width(WordBreak::Normal), 20.0);
     }
 
     #[test]

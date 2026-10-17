@@ -94,7 +94,13 @@ pub enum WhiteSpace {
 impl ContainerStyle {
     /// Where lines of this style's text may break inside words.
     pub fn word_break(&self) -> crate::text::WordBreak {
-        if self.word_break_all { crate::text::WordBreak::BreakAll } else { self.overflow_wrap }
+        if self.word_break_all {
+            crate::text::WordBreak::BreakAll
+        } else if self.word_keep_all {
+            crate::text::WordBreak::KeepAll
+        } else {
+            self.overflow_wrap
+        }
     }
 }
 
@@ -374,6 +380,8 @@ pub struct ContainerStyle {
     pub overflow_wrap: crate::text::WordBreak,
     /// `word-break: break-all`.
     pub word_break_all: bool,
+    /// `word-break: keep-all`: no breaks between letters.
+    pub word_keep_all: bool,
     /// `text-overflow: ellipsis`. On a text node: its parent clips and
     /// asked for an ellipsis.
     pub text_overflow_ellipsis: bool,
@@ -477,6 +485,7 @@ impl Default for ContainerStyle {
             white_space: WhiteSpace::Normal,
             overflow_wrap: crate::text::WordBreak::Normal,
             word_break_all: false,
+            word_keep_all: false,
             text_overflow_ellipsis: false,
             order: 0,
             direction: Direction::Ltr,

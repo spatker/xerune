@@ -330,11 +330,12 @@ fn apply_resolved_declaration(prop: &str, val: &str, current_style: &mut Contain
             };
         }
         "word-break" => match val.trim() {
-            "normal" | "keep-all" => current_style.word_break_all = false,
-            "break-all" => current_style.word_break_all = true,
+            "normal" => (current_style.word_break_all, current_style.word_keep_all) = (false, false),
+            "break-all" => (current_style.word_break_all, current_style.word_keep_all) = (true, false),
+            "keep-all" => (current_style.word_break_all, current_style.word_keep_all) = (false, true),
             // Deprecated alias of `overflow-wrap: anywhere` with `word-break: normal`.
             "break-word" => {
-                current_style.word_break_all = false;
+                (current_style.word_break_all, current_style.word_keep_all) = (false, false);
                 current_style.overflow_wrap = crate::text::WordBreak::Anywhere;
             }
             _ => {}
