@@ -11,7 +11,8 @@ these make that cheap.
   animation UIs, the share of the screen
   an interaction repaints, and a hash of the pixels (compare hashes on one architecture; SSE and NEON round
   differently). `RENDER_BENCH_SCENES`, `RENDER_BENCH_PHASE=raster|frame`,
-  `RENDER_BENCH_ITERS`, `RENDER_BENCH_SIZE`.
+  `RENDER_BENCH_ITERS`, `RENDER_BENCH_SIZE`, `RENDER_BENCH_ROTATION` (a
+  display mounted turned by 90, 180 or 270 degrees, as `XERUNE_ROTATION`).
 - `cargo run --release --example text_bench`: rebuild, layout and render
   of a text-heavy feed.
 - `tools/arm-insns.sh`: per-iteration ARM instruction counts of

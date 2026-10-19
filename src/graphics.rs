@@ -749,6 +749,68 @@ impl Rotation {
             Self::Deg270 => 270,
         }
     }
+
+    /// Copies `area` of an upright `width` x `height` frame into `display`,
+    /// the display's packed rows, turned as the display is mounted, and
+    /// converts each pixel with `convert` (to the display's format).
+    ///
+    /// Drawing into an upright frame and turning it here, once, is much
+    /// cheaper than drawing turned: a renderer's rows then run along memory,
+    /// where a turned display has them a whole row apart.
+    pub fn copy_frame<T>(self, frame: &[u32], width: u32, height: u32, area: Rect, display: &mut [T], convert: impl Fn(u32) -> T) {
+        let (w, h) = (width as usize, height as usize);
+        let Some(area) = area.round_out().intersect(&Rect::new(0.0, 0.0, width as f32, height as f32)) else {
+            return;
+        };
+        let (x0, y0) = (area.x as usize, area.y as usize);
+        let (x1, y1) = (x0 + area.width as usize, y0 + area.height as usize);
+        assert!(frame.len() >= w * h && display.len() >= w * h, "a {width}x{height} frame and display");
+        match self {
+            Self::Deg0 => {
+                for y in y0..y1 {
+                    let (src, dst) = (&frame[y * w + x0..y * w + x1], &mut display[y * w + x0..y * w + x1]);
+                    dst.iter_mut().zip(src).for_each(|(d, &s)| *d = convert(s));
+                }
+            }
+            Self::Deg180 => {
+                for y in y0..y1 {
+                    let row = (h - 1 - y) * w;
+                    let dst = &mut display[row + w - x1..row + w - x0];
+                    dst.iter_mut().zip(frame[y * w + x0..y * w + x1].iter().rev()).for_each(|(d, &s)| *d = convert(s));
+                }
+            }
+            // A frame row becomes a display column: copy in square tiles so
+            // that reads and writes both stay within a few cache lines.
+            Self::Deg90 | Self::Deg270 => {
+                const TILE: usize = 16;
+                // Display rows are `h` pixels long; frame pixel (x, y) lands
+                // at display row `x` (90) or `w - 1 - x` (270), column
+                // `h - 1 - y` (90) or `y` (270).
+                for ty in (y0..y1).step_by(TILE) {
+                    let ty1 = (ty + TILE).min(y1);
+                    for tx in (x0..x1).step_by(TILE) {
+                        for x in tx..(tx + TILE).min(x1) {
+                            let row = if self == Self::Deg90 { x } else { w - 1 - x } * h;
+                            // Frame column `x`, rows `ty..ty1`.
+                            let mut src = ty * w + x;
+                            let mut next = || {
+                                // SAFETY: `src` stays below `y1 * w <= frame.len()`
+                                // (asserted above): `x < w` and `y < y1 <= h`.
+                                let pixel = unsafe { *frame.get_unchecked(src) };
+                                src += w;
+                                convert(pixel)
+                            };
+                            if self == Self::Deg90 {
+                                display[row + h - ty1..row + h - ty].iter_mut().rev().for_each(|d| *d = next());
+                            } else {
+                                display[row + ty..row + ty1].iter_mut().for_each(|d| *d = next());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 /// The pixels a [`Renderer`] draws into: the whole screen, or a band of it
@@ -905,6 +967,35 @@ mod tests {
             gradient: Some(Gradient::Conic(ConicGradient { from, center: (0.5, 0.5), stops: stops.into(), repeating: false })),
             border_radius: 50.0,
             border: crate::style::Borders::NONE,
+        }
+    }
+
+    /// A turned copy puts each pixel where a renderer drawing turned would
+    /// (`xerune_render`'s `calc_pixel_index`), and only inside the area.
+    #[test]
+    fn frames_turn_as_the_display_is_mounted() {
+        use super::Rotation;
+        let (w, h) = (37usize, 21usize);
+        let frame: Vec<u32> = (0..(w * h) as u32).map(|i| i + 1).collect();
+        let turned = |rotation: Rotation, x: usize, y: usize| match rotation {
+            Rotation::Deg0 => y * w + x,
+            Rotation::Deg90 => x * h + (h - 1 - y),
+            Rotation::Deg180 => (h - 1 - y) * w + (w - 1 - x),
+            Rotation::Deg270 => (w - 1 - x) * h + y,
+        };
+        for rotation in [Rotation::Deg0, Rotation::Deg90, Rotation::Deg180, Rotation::Deg270] {
+            let mut display = vec![0u32; w * h];
+            rotation.copy_frame(&frame, w as u32, h as u32, Rect::new(0.0, 0.0, w as f32, h as f32), &mut display, |p| p);
+            for (y, x) in (0..h).flat_map(|y| (0..w).map(move |x| (y, x))) {
+                assert_eq!(display[turned(rotation, x, y)], frame[y * w + x], "{rotation:?} ({x}, {y})");
+            }
+            let mut display = vec![0u32; w * h];
+            let area = Rect::new(3.5, 2.0, 20.0, 17.25);
+            rotation.copy_frame(&frame, w as u32, h as u32, area, &mut display, |p| p);
+            for (y, x) in (0..h).flat_map(|y| (0..w).map(move |x| (y, x))) {
+                let inside = (3..24).contains(&x) && (2..20).contains(&y);
+                assert_eq!(display[turned(rotation, x, y)], if inside { frame[y * w + x] } else { 0 }, "{rotation:?} ({x}, {y})");
+            }
         }
     }
 

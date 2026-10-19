@@ -41,7 +41,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use xerune::images::{DefaultImageLoader, ImageError, ImageLoader};
-use xerune::{InputEvent, Model, Pixels, RenderResources, Runtime, Surface, TemplateLayout};
+use xerune::{InputEvent, Model, Pixels, RenderResources, Rotation, Runtime, Surface, TemplateLayout};
 use xerune_render::{Fonts, SoftwareRenderer};
 
 /// Counts heap allocations, to report them per frame.
@@ -96,6 +96,9 @@ fn median(samples: &mut [Duration]) -> f64 {
 struct Bench {
     width: u32,
     height: u32,
+    /// How the display is mounted (`RENDER_BENCH_ROTATION`, degrees): frames
+    /// are drawn upright and turned when copied to it, as the backends do.
+    rotation: Rotation,
     iters: usize,
     phase: Option<String>,
     fonts: Fonts,
@@ -159,6 +162,8 @@ impl Bench {
 
         if wants("frame") {
             let (mut update, mut render) = (Vec::with_capacity(self.iters), Vec::with_capacity(self.iters));
+            let mut present = Vec::with_capacity(self.iters);
+            let mut display = vec![0u32; buffer.len()];
             let mut area = 0.0;
             let (mut update_allocs, mut render_allocs) = (0, 0);
             for i in 0..self.iters {
@@ -175,6 +180,12 @@ impl Bench {
                 let damage = runtime.render(&mut renderer, &mut Surface::new(Pixels::Xrgb8888(&mut buffer), width, height));
                 render.push(t.elapsed());
                 render_allocs += allocations() - a;
+                // The backend's copy of what changed to the display.
+                let t = Instant::now();
+                if let Some(bounds) = damage.bounds() {
+                    self.rotation.copy_frame(&buffer, width, height, bounds, &mut display, |p| p);
+                }
+                present.push(t.elapsed());
                 let screen = xerune::Rect::new(0.0, 0.0, width as f32, height as f32);
                 area += damage.rects().iter().filter_map(|d| d.intersect(&screen)).map(|d| d.width * d.height).sum::<f32>();
             }
@@ -192,9 +203,10 @@ impl Bench {
             let screen_share = area / self.iters.max(1) as f32 / (width * height) as f32 * 100.0;
             let iters = self.iters.max(1);
             line += &format!(
-                " | frame: update {:>8.1} us render {:>8.1} us, repaints {screen_share:>5.1}% of the screen, allocations {}+{}",
+                " | frame: update {:>8.1} us render {:>8.1} us present {:>7.1} us, repaints {screen_share:>5.1}% of the screen, allocations {}+{}",
                 median(&mut update),
                 median(&mut render),
+                median(&mut present),
                 update_allocs / iters,
                 render_allocs / iters
             );
@@ -214,6 +226,7 @@ fn main() {
     let bench = Bench {
         width,
         height,
+        rotation: Rotation::from_degrees(env_or("RENDER_BENCH_ROTATION", 0)).expect("RENDER_BENCH_ROTATION is 0, 90, 180 or 270"),
         iters: env_or("RENDER_BENCH_ITERS", 100),
         phase: std::env::var("RENDER_BENCH_PHASE").ok(),
         fonts: xerune_render::Fonts::ttf(
@@ -224,7 +237,7 @@ fn main() {
     };
     let scenes = std::env::var("RENDER_BENCH_SCENES").unwrap_or_else(|_| "todo,todo_scroll,calculator,showcase,vehicle,music_player,animation".into());
 
-    println!("render_bench: {width}x{height}, {} iterations, medians", bench.iters);
+    println!("render_bench: {width}x{height}, rotated {:?}, {} iterations, medians", bench.rotation, bench.iters);
     for scene in scenes.split(',') {
         match scene {
             "todo" => bench.run(scene, todo_impl::TodoList::default(), ["toggle:0", "toggle:0"]),
