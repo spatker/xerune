@@ -238,10 +238,10 @@ struct ColorLut {
     log2_cells_per_turn: i32,
     /// `opaque_before[i]`: finest cells before `i` that aren't transparent.
     opaque_before: Vec<u32>,
-    /// `run_end[i]`: first finest cell after `i` with a different color.
-    run_end: Vec<u32>,
-    /// Runs of one color in each level's table.
-    runs: [u32; LUT_LEVELS],
+    /// Per level, made when first needed: for each cell, the run of cells
+    /// with its color (its first cell and the one after its last), and how
+    /// many runs there are.
+    run_bounds: [core::cell::OnceCell<(Vec<(u16, u16)>, u32)>; LUT_LEVELS],
     /// Repeat outside the domain instead of clamping (conic seam,
     /// `repeating-` gradients).
     periodic: bool,
@@ -379,14 +379,29 @@ impl ColorLut {
             count += (c >> 24 != 0) as u32;
             opaque_before.push(count);
         }
-        let mut run_end: Vec<u32> = (0..LUT_N).map(|_| LUT_N as u32).collect();
-        for i in (0..LUT_N - 1).rev() {
-            run_end[i] = if finest[i + 1] == finest[i] { run_end[i + 1] } else { (i + 1) as u32 };
-        }
-
         let opaque = finest.iter().all(|&c| c >> 24 == 255);
-        let runs = core::array::from_fn(|level| 1 + levels[level].windows(2).filter(|w| w[0] != w[1]).count() as u32);
-        Self { levels, start, inv_cell, scale, log2_cells_per_turn, opaque_before, run_end, runs, periodic, opaque }
+        let run_bounds = Default::default();
+        Self { levels, start, inv_cell, scale, log2_cells_per_turn, opaque_before, run_bounds, periodic, opaque }
+    }
+
+    /// The runs of one color in `level`'s table: for each cell, its run's
+    /// first cell and the one after its last; and how many runs there are.
+    fn runs(&self, level: usize) -> (&[(u16, u16)], u32) {
+        let (bounds, count) = self.run_bounds[level].get_or_init(|| {
+            let table = &self.levels[level];
+            let mut bounds = Vec::new();
+            bounds.resize(table.len(), (0u16, 0u16));
+            let (mut first, mut count) = (0, 0);
+            for i in 1..=table.len() {
+                if i == table.len() || table[i] != table[first] {
+                    bounds[first..i].fill((first as u16, i as u16));
+                    first = i;
+                    count += 1;
+                }
+            }
+            (bounds, count)
+        });
+        (bounds, *count)
     }
 
     /// Mip level for a footprint of `dt` stop units.
@@ -430,7 +445,7 @@ impl ColorLut {
         if self.opaque_before[e + 1] == self.opaque_before[s] {
             return Some(0);
         }
-        (self.run_end[s] as usize > e).then(|| self.levels[0][s])
+        (self.runs(0).0[s].1 as usize > e).then(|| self.levels[0][s])
     }
 
     #[inline(always)]
@@ -806,9 +821,10 @@ pub fn draw_shaded_rounded_rect(
                 };
                 // Pixels per run of one color, on average: runs of a few
                 // pixels are cheaper to step through.
-                let run_pixels = table.len() as f32 / shader.colors.runs[level] as f32 * 65536.0 / (du.unsigned_abs() as f32).max(1.0);
+                let (bounds, runs) = shader.colors.runs(level);
+                let run_pixels = table.len() as f32 / runs as f32 * 65536.0 / (du.unsigned_abs() as f32).max(1.0);
                 if let Some(row) = row.filter(|_| run_pixels >= 8.0) {
-                    fill_linear_runs(row, table, u, du, shader.colors.opaque);
+                    fill_linear_runs(row, table, bounds, u, du, shader.colors.opaque);
                 } else {
                     fill_span(buffer, idx, stride, len, shader.colors.opaque, move || {
                         let color = table[(u >> 16).clamp(0, max) as usize];
@@ -836,7 +852,7 @@ pub fn draw_shaded_rounded_rect(
 /// `table[clamp((u + k * du) >> 16)]`. Smooth gradients repeat each color
 /// over many pixels; each such run is found in the table and written at
 /// once.
-fn fill_linear_runs(row: &mut [u32], table: &[u32], mut u: i32, du: i32, opaque: bool) {
+fn fill_linear_runs(row: &mut [u32], table: &[u32], bounds: &[(u16, u16)], mut u: i32, du: i32, opaque: bool) {
     let max = table.len() as i32 - 1;
     // Run lengths come from a float estimate made exact with integer steps;
     // 32-bit ARM has no fast divide. Indices stay below 2^15 cells and rows
@@ -861,17 +877,11 @@ fn fill_linear_runs(row: &mut [u32], table: &[u32], mut u: i32, du: i32, opaque:
         // Pixels left in this color: until the index leaves the run of
         // cells with it, in the direction it moves.
         let left = (row.len() - k) as i32;
+        let (start, end) = bounds[i as usize];
+        let (start, end) = (start as i32, end as i32);
         let n = if du > 0 {
-            let mut end = i + 1;
-            while end <= max && table[end as usize] == color {
-                end += 1;
-            }
             if end > max { left } else { pixels_to((end << 16) - u) }
         } else if du < 0 {
-            let mut start = i;
-            while start > 0 && table[start as usize - 1] == color {
-                start -= 1;
-            }
             // While `u` stays at or above the run's first cell.
             if start == 0 { left } else { pixels_to(u - (start << 16) + 1) }
         } else {
@@ -1079,10 +1089,22 @@ mod tests {
             table.extend(core::iter::repeat_n(0xff00_0000 | (i as u32 % 3), *len));
         }
         let max = table.len() as i32 - 1;
+        let bounds: Vec<(u16, u16)> = (0..table.len())
+            .map(|i| {
+                let (mut start, mut end) = (i, i + 1);
+                while start > 0 && table[start - 1] == table[i] {
+                    start -= 1;
+                }
+                while end < table.len() && table[end] == table[i] {
+                    end += 1;
+                }
+                (start as u16, end as u16)
+            })
+            .collect();
         for &du in &[1, 977, 0x8000, 0x1_0000, 0x1_8001, -1, -977, -0x8000, -0x1_0000, -0x2_3456, 0] {
             for &u in &[-0x3_0000, -1, 0, 0x7fff, 0x2_0000, 0x5_4321, (max << 16) + 0xffff, 0x40_0000] {
                 let mut runs = vec![0u32; 300];
-                fill_linear_runs(&mut runs, &table, u, du, true);
+                fill_linear_runs(&mut runs, &table, &bounds, u, du, true);
                 let stepped: Vec<u32> = (0..300).map(|k| table[((u + k * du) >> 16).clamp(0, max) as usize]).collect();
                 assert_eq!(runs, stepped, "u {u:#x}, du {du:#x}");
             }
