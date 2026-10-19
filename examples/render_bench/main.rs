@@ -7,7 +7,8 @@
 //!   the heap allocations of the update and of the render,
 //!
 //! and prints a hash of the final pixels so renderer changes can prove they
-//! draw the same image.
+//! draw the same image. After the frames it checks that they left the
+//! pixels of a full repaint, so damage that misses a change shows.
 //!
 //! ```sh
 //! nice cargo run -j4 --release --example render_bench
@@ -151,6 +152,17 @@ impl Bench {
                 render_allocs += allocations() - a;
                 let screen = xerune::Rect::new(0.0, 0.0, width as f32, height as f32);
                 area += damage.rects().iter().filter_map(|d| d.intersect(&screen)).map(|d| d.width * d.height).sum::<f32>();
+            }
+            // Damage-limited frames must leave what a full repaint draws.
+            let commands = runtime.ui.build_commands(&runtime.context().canvases, None);
+            let resources = RenderResources::new(&runtime.context().canvases, runtime.images());
+            let mut full = vec![0u32; buffer.len()];
+            let mut target = Surface::new(Pixels::Xrgb8888(&mut full), width, height);
+            let screen_area = target.area();
+            xerune::Renderer::render(&mut renderer, &mut target, &commands, &resources, screen_area);
+            let stale = buffer.iter().zip(&full).filter(|(a, b)| a != b).count();
+            if stale > 0 {
+                eprintln!("{name}: {stale} pixels differ from a full repaint after the frames");
             }
             let screen_share = area / self.iters.max(1) as f32 / (width * height) as f32 * 100.0;
             let iters = self.iters.max(1);
