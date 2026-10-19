@@ -41,7 +41,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use xerune::images::{DefaultImageLoader, ImageError, ImageLoader};
-use xerune::{Model, Pixels, RenderResources, Runtime, Surface, TemplateLayout};
+use xerune::{InputEvent, Model, Pixels, RenderResources, Runtime, Surface, TemplateLayout};
 use xerune_render::{Fonts, SoftwareRenderer};
 
 /// Counts heap allocations, to report them per frame.
@@ -101,9 +101,23 @@ struct Bench {
     fonts: Fonts,
 }
 
+/// One interaction of a scene's `frame` iterations.
+#[derive(Clone, Copy)]
+enum Step {
+    /// A message to the model.
+    Message(&'static str),
+    /// A finger already scrolling, moved to this height (at 65% of the width).
+    Drag(f32),
+}
+
 impl Bench {
     /// Runs one scene; `messages` alternate, one per `frame` iteration.
-    fn run<M: Model + TemplateLayout + 'static>(&self, name: &str, model: M, messages: [&str; 2]) {
+    fn run<M: Model + TemplateLayout + 'static>(&self, name: &str, model: M, messages: [&'static str; 2]) {
+        self.run_steps(name, model, messages.map(Step::Message));
+    }
+
+    /// Runs one scene; `steps` alternate, one per `frame` iteration.
+    fn run_steps<M: Model + TemplateLayout + 'static>(&self, name: &str, model: M, steps: [Step; 2]) {
         let (width, height) = (self.width, self.height);
         let mut runtime = Runtime::new(model, self.fonts.clone());
         runtime.set_image_loader(LocalImages(DefaultImageLoader::default()));
@@ -116,6 +130,14 @@ impl Bench {
         let mut renderer = SoftwareRenderer::new(self.fonts.clone());
         // Warm the glyph and image caches as a running app has them.
         runtime.render(&mut renderer, &mut Surface::new(Pixels::Xrgb8888(&mut buffer), width, height));
+        // Put a finger down for dragging, and move it past the scroll
+        // threshold to the last step's height, where the first one starts.
+        let finger_x = width as f32 * 0.65;
+        if let [_, Step::Drag(y)] = steps {
+            runtime.handle_event(InputEvent::TouchStart { id: 0, x: finger_x, y: y + 20.0 });
+            runtime.handle_event(InputEvent::TouchMove { id: 0, x: finger_x, y });
+            runtime.render(&mut renderer, &mut Surface::new(Pixels::Xrgb8888(&mut buffer), width, height));
+        }
 
         let wants = |phase: &str| self.phase.as_deref().is_none_or(|p| p == phase);
         let mut line = format!("{name:<13}");
@@ -140,9 +162,12 @@ impl Bench {
             let mut area = 0.0;
             let (mut update_allocs, mut render_allocs) = (0, 0);
             for i in 0..self.iters {
-                let message = messages[i % 2].to_string();
+                let step = steps[i % 2];
                 let (t, a) = (Instant::now(), allocations());
-                runtime.handle_messages([message]);
+                match step {
+                    Step::Message(message) => runtime.handle_messages([message.to_string()]),
+                    Step::Drag(y) => runtime.handle_event(InputEvent::TouchMove { id: 0, x: finger_x, y }),
+                };
                 update.push(t.elapsed());
                 update_allocs += allocations() - a;
 
@@ -197,7 +222,7 @@ fn main() {
         )
         .unwrap(),
     };
-    let scenes = std::env::var("RENDER_BENCH_SCENES").unwrap_or_else(|_| "todo,calculator,showcase,vehicle,music_player,animation".into());
+    let scenes = std::env::var("RENDER_BENCH_SCENES").unwrap_or_else(|_| "todo,todo_scroll,calculator,showcase,vehicle,music_player,animation".into());
 
     println!("render_bench: {width}x{height}, {} iterations, medians", bench.iters);
     for scene in scenes.split(',') {
@@ -207,6 +232,8 @@ fn main() {
             "showcase" => bench.run(scene, showcase_impl::ShowcaseModel::default(), ["toggle_wifi", "toggle_wifi"]),
             "animation" => bench.run(scene, animation_impl::AnimationModel::new(100), ["frame:0.0166", "frame:0.0166"]),
             "vehicle" => bench.run(scene, showcase_impl::ShowcaseModel { active_tab: 2, ..Default::default() }, ["tick", "tick"]),
+            // A finger moving 6 px per frame, down and back.
+            "todo_scroll" => bench.run_steps(scene, todo_impl::TodoList::default(), [Step::Drag(300.0), Step::Drag(294.0)]),
             "music_player" => bench.run(scene, music_player_impl::MusicPlayerModel::new(None), ["hover_track:2", "unhover_track"]),
             other => eprintln!("unknown scene {other}"),
         }

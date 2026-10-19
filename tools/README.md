@@ -6,8 +6,9 @@ these make that cheap.
 ## Rendering cost
 
 - `cargo run --release --example render_bench`: times full repaints and
-  single interactions of the todo, calculator, showcase (its system and
-  vehicle tabs), music player and animation UIs, the share of the screen
+  single interactions of the todo (also scrolled by a finger),
+  calculator, showcase (its system and vehicle tabs), music player and
+  animation UIs, the share of the screen
   an interaction repaints, and a hash of the pixels (compare hashes on one architecture; SSE and NEON round
   differently). `RENDER_BENCH_SCENES`, `RENDER_BENCH_PHASE=raster|frame`,
   `RENDER_BENCH_ITERS`, `RENDER_BENCH_SIZE`.

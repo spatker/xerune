@@ -19,7 +19,7 @@ root=$(cd "$(dirname "$0")/.." && pwd)
 out=$root/target/tools
 target=armv7-unknown-linux-musleabihf
 N=${N:-50}
-SCENES=${SCENES:-todo calculator showcase vehicle music_player animation}
+SCENES=${SCENES:-todo todo_scroll calculator showcase vehicle music_player animation}
 PHASES=${PHASES:-raster frame}
 mkdir -p "$out"
 
