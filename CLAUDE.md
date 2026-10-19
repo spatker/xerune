@@ -110,7 +110,7 @@ and a no_std check of `xerune` + `xerune_render` for `thumbv7em-none-eabihf`
 
 ARM target build (user's setup; use it for every ARM check, locally and in CI,
 not gcc-arm or `cargo check`: it links against the boards' glibc 2.39):
-`RUSTFLAGS="-C target-feature=+neon,+vfp4,+d32" cargo zigbuild --target armv7-unknown-linux-gnueabihf.2.39 --features "drm,evdev" --release --example X`
+`RUSTFLAGS="-C target-feature=+neon,+vfp4,+d32" cargo zigbuild --target armv7-unknown-linux-gnueabihf.2.39 --no-default-features --features "std,drm,evdev" --release --example X`
 (the default armv7 target has no NEON; without the flags `blitter.rs` falls back to scalar loops)
 
 ## Constraints

@@ -734,11 +734,18 @@ The frame goes through the app's own renderer, so fonts and drawing match the re
 
 ## 11. Running on Embedded Linux (fbdev / DRM)
 
-Configure `Cargo.toml` features to enable embedded backends:
+Configure `Cargo.toml` features to enable embedded backends. The default
+features include the desktop window (`winit`); a board doesn't need it,
+so leave the defaults out and keep `std`:
 ```toml
 [dependencies]
-xerune = { version = "0.1", features = ["linuxfb", "drm", "evdev"] }
+xerune = { version = "0.1", default-features = false, features = ["std", "linuxfb", "drm", "evdev"] }
 ```
+
+The examples in this repository build the same way:
+`--no-default-features --features std,drm,evdev`. On 32-bit ARM, also
+enable NEON (`RUSTFLAGS="-C target-feature=+neon"`; `XERUNE_PROFILE=1`
+prints whether a build has it, §7).
 
 `App::run` (see section 1) uses DRM/KMS or the fbdev framebuffer
 `/dev/fb0` outside a desktop session; `XERUNE_BACKEND=drm` or `=fbdev`
