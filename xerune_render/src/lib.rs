@@ -883,6 +883,10 @@ impl Renderer for SoftwareRenderer {
     fn set_profiling(&mut self, on: bool) {
         if on != self.profile.is_some() {
             self.profile = on.then(Default::default);
+            if on {
+                // A build without NEON is slow on ARM and easy to miss.
+                eprintln!("xerune_render: SIMD {}", blitter::SIMD);
+            }
         }
     }
 

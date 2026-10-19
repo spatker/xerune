@@ -551,6 +551,12 @@ xerune: 31.0 fps, 31 frames, 1521 us/frame, 418 commands, 100% repainted
   text           62      108
 ```
 
+When profiling starts, `xerune_render` also prints which vector
+instructions its blending loops were built for (`xerune_render: SIMD
+NEON`, `SSE2`, or `none (scalar)`). On 32-bit ARM, `none` means the build
+lacks `-C target-feature=+neon`, which costs the animation example about
+half again its raster time.
+
 A `Renderer` of your own reports its own breakdown through
 `Renderer::set_profiling` and `take_profile`.
 

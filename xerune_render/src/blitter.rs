@@ -59,6 +59,16 @@ pub fn blend_pixel(dst: &mut u32, src: u32) {
     }
 }
 
+/// The vector instructions the blending loops were compiled for. NEON on
+/// 32-bit ARM needs `-C target-feature=+neon`; without it they run scalar.
+pub const SIMD: &str = if cfg!(any(target_arch = "x86_64", all(target_arch = "x86", target_feature = "sse2"))) {
+    "SSE2"
+} else if cfg!(any(target_arch = "aarch64", all(target_arch = "arm", target_feature = "neon"))) {
+    "NEON"
+} else {
+    "none (scalar)"
+};
+
 // The per-channel values are prepared for the SIMD loops; without SIMD only
 // the scalar loop runs.
 #[cfg_attr(
