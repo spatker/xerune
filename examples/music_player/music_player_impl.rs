@@ -60,6 +60,50 @@ impl Track {
     }
 }
 
+/// The equalizer's bands: center frequency labels.
+pub const EQ_BANDS: [&str; 5] = ["60 Hz", "230 Hz", "910 Hz", "3.6 kHz", "14 kHz"];
+/// How far a band boosts or cuts, in dB.
+pub const EQ_RANGE: i32 = 12;
+/// The presets, as band gains in dB.
+const EQ_PRESETS: [(&str, [i32; 5]); 4] = [
+    ("Flat", [0, 0, 0, 0, 0]),
+    ("Bass", [7, 4, 0, -1, -2]),
+    ("Vocal", [-3, -1, 4, 3, 0]),
+    ("Treble", [-2, -1, 0, 4, 7]),
+];
+
+/// One band of the equalizer, as the template shows it.
+#[derive(Debug, Serialize, Clone, PartialEq)]
+pub struct EqBand {
+    pub label: &'static str,
+    pub gain: i32,
+    /// The gain as text: "+3 dB", "0 dB".
+    pub gain_text: String,
+}
+
+/// An equalizer preset button.
+#[derive(Debug, Serialize, Clone, PartialEq)]
+pub struct EqPreset {
+    pub name: &'static str,
+    /// Whether the bands are set as this preset sets them.
+    pub active: bool,
+}
+
+/// A band's new gain, from a band slider's `eq:<band>:<gain>`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct BandGain {
+    pub band: usize,
+    pub gain: i32,
+}
+
+impl core::str::FromStr for BandGain {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, ()> {
+        let (band, gain) = s.split_once(':').ok_or(())?;
+        Ok(Self { band: band.parse().map_err(|_| ())?, gain: gain.parse().map_err(|_| ())? })
+    }
+}
+
 #[derive(XeruneTemplate, Serialize, Deserialize, Clone, PartialEq)]
 #[template(path = "examples/music_player/templates/music_player.html")]
 pub struct MusicPlayerModel {
@@ -73,7 +117,6 @@ pub struct MusicPlayerModel {
     pub current_track: Track,
     pub elapsed_time: String,
     pub total_time: String,
-    pub progress: f32,
     #[serde(default)]
     pub tick_count: u64,
     /// Whether the list and the player view are in the view. The screen's
@@ -83,6 +126,23 @@ pub struct MusicPlayerModel {
     pub list_shown: bool,
     #[serde(default)]
     pub player_shown: bool,
+    /// Playback volume, 0 to 100.
+    #[serde(default = "default_volume")]
+    pub volume: u32,
+    /// The equalizer's gain per band of [`EQ_BANDS`], in dB.
+    #[serde(default = "default_eq")]
+    pub eq_gains: Vec<i32>,
+    /// Whether the equalizer shows in place of the cover.
+    #[serde(default)]
+    pub eq_open: bool,
+}
+
+fn default_volume() -> u32 {
+    70
+}
+
+fn default_eq() -> Vec<i32> {
+    vec![0; EQ_BANDS.len()]
 }
 
 fn default_true() -> bool {
@@ -146,10 +206,12 @@ impl MusicPlayerModel {
             current_track: current_track.clone(),
             elapsed_time: "0:00".to_string(),
             total_time: if current_track.id.is_empty() { "0:00".to_string() } else { current_track.duration.clone() },
-            progress: 0.0,
             tick_count: 0,
             list_shown: true,
             player_shown: false,
+            volume: default_volume(),
+            eq_gains: default_eq(),
+            eq_open: false,
         }
     }
 
@@ -157,8 +219,34 @@ impl MusicPlayerModel {
         self.tracks.iter().map(Track::duration_seconds).sum::<u64>() / 60
     }
 
-    pub fn progress_pct(&self) -> f32 {
-        (self.progress * 100.0).clamp(0.0, 100.0)
+    /// The current track's length, the seek bar's end.
+    pub fn duration_seconds(&self) -> u64 {
+        self.current_track.duration_seconds()
+    }
+
+    /// The visualizer's bar heights (px): the simulated levels, louder
+    /// with the volume and with the gain of each bar's equalizer band, as
+    /// the music would sound. At most the visualizer's 64px.
+    pub fn viz_heights(&self) -> Vec<u32> {
+        let bars = self.visualizer_data.len().max(1);
+        let volume = self.volume as f32 / default_volume() as f32;
+        self.visualizer_data.iter().enumerate().map(|(i, level)| {
+            let gain = self.eq_gains.get(i * EQ_BANDS.len() / bars).copied().unwrap_or(0);
+            let boost = 10f32.powf(gain as f32 / 20.0);
+            (level * volume * boost).clamp(2.0, 64.0) as u32
+        }).collect()
+    }
+
+    pub fn eq_bands(&self) -> Vec<EqBand> {
+        EQ_BANDS.iter().zip(&self.eq_gains).map(|(&label, &gain)| EqBand {
+            label,
+            gain,
+            gain_text: if gain > 0 { format!("+{gain} dB") } else { format!("{gain} dB") },
+        }).collect()
+    }
+
+    pub fn eq_presets(&self) -> Vec<EqPreset> {
+        EQ_PRESETS.iter().map(|(name, gains)| EqPreset { name, active: self.eq_gains == gains }).collect()
     }
 
     /// Three bar heights (px) for the "now playing" marker in the list.
@@ -190,11 +278,9 @@ impl MusicPlayerModel {
             None => &dummy_track,
         };
         self.current_track = current.clone();
-        let duration = current.duration_seconds();
 
         self.elapsed_time = Self::format_time(self.elapsed_seconds);
         self.total_time = current.duration.clone();
-        self.progress = if duration > 0 { self.elapsed_seconds as f32 / duration as f32 } else { 0.0 };
     }
 }
 
@@ -219,6 +305,17 @@ pub enum Msg {
     UnhoverTrack,
     #[xerune(prefix = "keydown:")]
     KeyDown(String),
+    /// Jump to a second of the track (the seek bar).
+    #[xerune(prefix = "seek:")]
+    Seek(u64),
+    #[xerune(prefix = "volume:")]
+    Volume(u32),
+    /// Show or hide the equalizer.
+    ToggleEq,
+    #[xerune(prefix = "eq:")]
+    EqBand(BandGain),
+    #[xerune(prefix = "eq_preset:")]
+    EqPreset(String),
 }
 
 impl Model for MusicPlayerModel {
@@ -331,6 +428,12 @@ impl Model for MusicPlayerModel {
                      "Back" | "KEY_SUSPEND" | "Escape" => {
                          self.update(Msg::Back, context);
                      }
+                     "VolumeUp" | "KEY_VOLUMEUP" | "AudioVolumeUp" => {
+                         self.update(Msg::Volume((self.volume + 5).min(100)), context);
+                     }
+                     "VolumeDown" | "KEY_VOLUMEDOWN" | "AudioVolumeDown" => {
+                         self.update(Msg::Volume(self.volume.saturating_sub(5)), context);
+                     }
                      _ => {}
                  }
              },
@@ -350,6 +453,23 @@ impl Model for MusicPlayerModel {
                      }
                  }
 
+             }
+             Msg::Seek(second) => {
+                 if let Some(idx) = self.current_track_index {
+                     self.elapsed_seconds = second.min(self.tracks[idx].duration_seconds());
+                 }
+             }
+             Msg::Volume(volume) => self.volume = volume.min(100),
+             Msg::ToggleEq => self.eq_open = !self.eq_open,
+             Msg::EqBand(BandGain { band, gain }) => {
+                 if let Some(slot) = self.eq_gains.get_mut(band) {
+                     *slot = gain.clamp(-EQ_RANGE, EQ_RANGE);
+                 }
+             }
+             Msg::EqPreset(name) => {
+                 if let Some((_, gains)) = EQ_PRESETS.iter().find(|(preset, _)| *preset == name) {
+                     self.eq_gains = gains.to_vec();
+                 }
              }
              Msg::ListSlid => self.list_shown &= self.current_track_index.is_none(),
              Msg::PlayerSlid => self.player_shown &= self.current_track_index.is_some(),
@@ -382,6 +502,69 @@ mod tests {
         assert_eq!(Msg::from_str("prev"), Ok(Msg::Prev));
         assert_eq!(Msg::from_str("select_track:song1"), Ok(Msg::SelectTrack("song1".to_string())));
         assert_eq!(Msg::from_str("hover_track:song1"), Ok(Msg::HoverTrack("song1".to_string())));
+        assert_eq!(Msg::from_str("seek:42"), Ok(Msg::Seek(42)));
+        assert_eq!(Msg::from_str("eq:2:-3"), Ok(Msg::EqBand(BandGain { band: 2, gain: -3 })));
+        assert_eq!(Msg::from_str("eq:2"), Err(()));
+    }
+
+    /// Dragging the seek bar seeks, and a band slider sets its band.
+    #[test]
+    fn dragging_the_bars() {
+        let tracks = include_str!("resources/music.json");
+        let mut runtime = xerune::Runtime::new(MusicPlayerModel::new(Some(tracks)), Measurer);
+        let clock = xerune::runtime::ManualClock::new();
+        runtime.set_clock(clock.clone());
+        runtime.set_size(800.0, 480.0);
+        runtime.handle_messages(["select_track:1".to_string(), "toggle_eq".to_string()]);
+        // The player slides in.
+        for _ in 0..30 {
+            clock.advance(core::time::Duration::from_millis(16));
+            runtime.poll();
+        }
+        // The ranges in view order: five bands, the seek bar, the volume.
+        let bars: Vec<xerune::Rect> = runtime.ui.render_data.iter()
+            .filter(|(_, data)| matches!(data.kind, xerune::style::RenderKind::Slider(..)))
+            .filter_map(|(node, _)| runtime.ui.absolute_rect(node))
+            .collect();
+        assert_eq!(bars.len(), 7);
+        let drag = |runtime: &mut xerune::Runtime<MusicPlayerModel, Measurer>, bar: xerune::Rect, fraction: f32| {
+            let y = bar.y + bar.height / 2.0;
+            runtime.handle_event(xerune::InputEvent::TouchStart { id: 0, x: bar.x + 1.0, y });
+            runtime.handle_event(xerune::InputEvent::TouchMove { id: 0, x: bar.x + 7.0 + fraction * (bar.width - 14.0), y });
+            runtime.handle_event(xerune::InputEvent::TouchEnd { id: 0, x: bar.x + 7.0 + fraction * (bar.width - 14.0), y });
+        };
+        drag(&mut runtime, bars[5], 0.5);
+        let duration = runtime.model().current_track.duration_seconds();
+        assert!(runtime.model().elapsed_seconds.abs_diff(duration / 2) <= 1, "{} of {duration}", runtime.model().elapsed_seconds);
+        drag(&mut runtime, bars[1], 1.0);
+        assert_eq!(runtime.model().eq_gains, [0, EQ_RANGE, 0, 0, 0]);
+        drag(&mut runtime, bars[6], 0.0);
+        assert_eq!(runtime.model().volume, 0);
+    }
+
+    /// Seeking stays within the track; the equalizer keeps to its range,
+    /// and its presets set every band.
+    #[test]
+    fn seek_volume_and_equalizer() {
+        let mut model = MusicPlayerModel::new(Some(include_str!("resources/music.json")));
+        let mut context = xerune::Context::default();
+        model.update(Msg::SelectTrack(model.tracks[0].id.clone()), &mut context);
+        let duration = model.tracks[0].duration_seconds();
+        model.update(Msg::Seek(30), &mut context);
+        assert_eq!((model.elapsed_seconds, model.elapsed_time.as_str()), (30, "0:30"));
+        model.update(Msg::Seek(duration + 100), &mut context);
+        assert_eq!(model.elapsed_seconds, duration);
+
+        model.update(Msg::EqBand(BandGain { band: 0, gain: 40 }), &mut context);
+        model.update(Msg::EqBand(BandGain { band: 9, gain: 1 }), &mut context);
+        assert_eq!(model.eq_gains, [EQ_RANGE, 0, 0, 0, 0]);
+        assert_eq!(model.eq_bands()[0].gain_text, "+12 dB");
+        model.update(Msg::EqPreset("Bass".into()), &mut context);
+        assert!(model.eq_presets().iter().find(|p| p.name == "Bass").unwrap().active);
+
+        // Silence flattens the visualizer.
+        model.update(Msg::Volume(0), &mut context);
+        assert!(model.viz_heights().iter().all(|&h| h == 2));
     }
 
     struct Measurer;

@@ -17,12 +17,36 @@
     .viz-bar { flex-grow: 1; border-radius: 3px; }
 
     .progress-row { display: flex; flex-direction: row; align-items: center; gap: 12px; }
-    .time { font-size: 12px; color: #9a93b3; width: 34px; }
+    .time { font-size: 12px; color: #9a93b3; width: 34px; flex-shrink: 0; }
     .time.right { text-align: right; }
-    .track-bar { position: relative; flex-grow: 1; height: 6px; border-radius: 3px; background-color: rgba(255,255,255,0.10); }
-    .track-fill { height: 6px; border-radius: 3px; }
-    .knob { position: absolute; top: -4px; width: 14px; height: 14px; border-radius: 7px; background-color: #ffffff;
-            margin-left: -7px; box-shadow: 0px 2px 6px rgba(0,0,0,0.5); }
+
+    /* Seek, volume and equalizer bars: a thin track filled with the
+       track's accent (accent-color) up to a white knob. */
+    .bar { -webkit-appearance: none; flex-grow: 1; flex-basis: 0px; min-width: 0px; height: 22px; margin: 0px; }
+    .bar::-webkit-slider-runnable-track { height: 6px; border-radius: 3px; background-color: rgba(255,255,255,0.10); }
+    .bar::-moz-range-progress { height: 6px; border-radius: 3px; }
+    .bar::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 7px; margin-top: -4px;
+                                 background-color: #ffffff; box-shadow: 0px 2px 6px rgba(0,0,0,0.5); }
+
+    .volume-row { display: flex; flex-direction: row; align-items: center; gap: 12px; margin-top: 18px; }
+    .ico-speaker { display: flex; flex-direction: row; align-items: center; width: 34px; flex-shrink: 0; }
+    .ico-speaker-box { width: 5px; height: 8px; border-radius: 1px; background-color: #9a93b3; }
+    .ico-speaker-cone { width: 8px; height: 16px;
+                        background: conic-gradient(from 60deg at 0% 50%, #9a93b3 0deg 60deg, transparent 60deg); }
+
+    .eq-toggle { font-size: 12px; font-weight: bold; color: #d9d4e8; }
+    .eq-toggle.on { color: #0b0a10; }
+
+    .eq-panel { display: flex; flex-direction: column; width: 300px; height: 300px; padding: 18px 18px 10px 18px; border-radius: 22px;
+                background-color: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.10); }
+    .eq-head { display: flex; flex-direction: row; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+    .eq-title { font-size: 16px; font-weight: bold; color: #ffffff; }
+    .presets { display: flex; flex-direction: row; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+    .preset { padding: 5px 10px; border-radius: 12px; font-size: 12px; color: #d9d4e8; background-color: rgba(255,255,255,0.06); }
+    .preset.on { color: #0b0a10; font-weight: bold; }
+    .band { display: flex; flex-direction: row; align-items: center; gap: 10px; flex-grow: 1; }
+    .band-freq { font-size: 12px; color: #9a93b3; width: 52px; flex-shrink: 0; }
+    .band-gain { font-size: 12px; color: #d9d4e8; width: 42px; text-align: right; flex-shrink: 0; }
 
     .controls { display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 18px; margin-top: 22px; }
     .ctl { display: flex; width: 48px; height: 48px; border-radius: 24px; justify-content: center; align-items: center;
@@ -33,7 +57,7 @@
         .player-view { flex-direction: column; align-items: stretch; padding: 18px 22px; gap: 0px; }
         .art-col { align-items: center; }
         .back { align-self: flex-start; }
-        .art { width: 320px; height: 320px; }
+        .art, .eq-panel { width: 320px; height: 320px; }
         .info-col { flex-grow: 0; padding-top: 22px; }
     }
 </style>
@@ -41,11 +65,30 @@
 <div class="view player-view" data-on-transitionend="player_slid">
     <div class="art-col">
         <div data-on-click="back" class="back"><div class="ico-tri-left"></div><span>Library</span></div>
+        {% if eq_open %}
+        <div class="eq-panel" style="accent-color: {{ current_track.accent }};">
+            <div class="eq-head"><span class="eq-title">Equalizer</span></div>
+            <div class="presets">
+                {% for preset in self.eq_presets() %}
+                <div data-on-click="eq_preset:{{ preset.name }}" class="preset {% if preset.active %}on{% endif %}"
+                    style="{% if preset.active %}background-color: {{ current_track.accent }};{% endif %}">{{ preset.name }}</div>
+                {% endfor %}
+            </div>
+            {% for band in self.eq_bands() %}
+            <div class="band">
+                <span class="band-freq">{{ band.label }}</span>
+                <input type="range" class="bar" min="-12" max="12" value="{{ band.gain }}" data-on-input="eq:{{ loop.index0 }}">
+                <span class="band-gain">{{ band.gain_text }}</span>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
         <!-- FIXME: wrapper only because <img> ignores box-shadow
              (known_gaps::image_box_shadow_is_drawn). -->
         <div class="art-glow" style="box-shadow: 0px 18px 50px {{ current_track.accent }}55;">
             <img src="{{ current_track.cover_url }}" class="cover art" />
         </div>
+        {% endif %}
     </div>
 
     <div class="info-col">
@@ -54,17 +97,15 @@
         <span class="artist">{{ current_track.artist }}</span>
 
         <div class="viz">
-            {% for v in visualizer_data %}
-            <div class="viz-bar" style="height: {{ "{:.0}"|format(v) }}px; background: linear-gradient(180deg, {{ current_track.accent }} 0%, {{ current_track.accent }}30 100%);"></div>
+            {% for h in self.viz_heights() %}
+            <div class="viz-bar" style="height: {{ h }}px; background: linear-gradient(180deg, {{ current_track.accent }} 0%, {{ current_track.accent }}30 100%);"></div>
             {% endfor %}
         </div>
 
         <div class="progress-row">
             <span class="time">{{ elapsed_time }}</span>
-            <div class="track-bar">
-                <div class="track-fill" style="width: {{ self.progress_pct() }}%; background-color: {{ current_track.accent }};"></div>
-                <div class="knob" style="left: {{ self.progress_pct() }}%;"></div>
-            </div>
+            <input type="range" class="bar" min="0" max="{{ self.duration_seconds() }}" value="{{ elapsed_seconds }}"
+                data-on-input="seek" style="accent-color: {{ current_track.accent }};">
             <span class="time right">{{ total_time }}</span>
         </div>
 
@@ -79,7 +120,15 @@
                 {% endif %}
             </div>
             <div data-on-click="next" class="ctl"><div class="ico-skip"><div class="ico-tri-right"></div><div class="ico-bar"></div></div></div>
-            <div class="ctl" style="background-color: transparent;"></div>
+            <div data-on-click="toggle_eq" class="ctl eq-toggle {% if eq_open %}on{% endif %}"
+                style="{% if eq_open %}background-color: {{ current_track.accent }};{% endif %}">EQ</div>
+        </div>
+
+        <div class="volume-row">
+            <div class="ico-speaker"><div class="ico-speaker-box"></div><div class="ico-speaker-cone"></div></div>
+            <input type="range" class="bar" min="0" max="100" value="{{ volume }}" data-on-input="volume"
+                style="accent-color: {{ current_track.accent }};">
+            <span class="time right">{{ volume }}%</span>
         </div>
     </div>
 </div>
