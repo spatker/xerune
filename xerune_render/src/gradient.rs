@@ -240,6 +240,8 @@ struct ColorLut {
     opaque_before: Vec<u32>,
     /// `run_end[i]`: first finest cell after `i` with a different color.
     run_end: Vec<u32>,
+    /// Runs of one color in each level's table.
+    runs: [u32; LUT_LEVELS],
     /// Repeat outside the domain instead of clamping (conic seam,
     /// `repeating-` gradients).
     periodic: bool,
@@ -383,7 +385,8 @@ impl ColorLut {
         }
 
         let opaque = finest.iter().all(|&c| c >> 24 == 255);
-        Self { levels, start, inv_cell, scale, log2_cells_per_turn, opaque_before, run_end, periodic, opaque }
+        let runs = core::array::from_fn(|level| 1 + levels[level].windows(2).filter(|w| w[0] != w[1]).count() as u32);
+        Self { levels, start, inv_cell, scale, log2_cells_per_turn, opaque_before, run_end, runs, periodic, opaque }
     }
 
     /// Mip level for a footprint of `dt` stop units.
@@ -796,11 +799,23 @@ pub fn draw_shaded_rounded_rect(
                 let max = (table.len() - 1) as i32;
                 let du = (du * 65536.0) as i32;
                 let mut u = (u_box * 65536.0) as i32 + (span_lo - box_left) * du;
-                fill_span(buffer, idx, stride, (span_hi - span_lo) as usize, shader.colors.opaque, move || {
-                    let color = table[(u >> 16).clamp(0, max) as usize];
-                    u += du;
-                    color
-                });
+                let len = (span_hi - span_lo) as usize;
+                let row = match stride {
+                    1 => usize::try_from(idx).ok().and_then(|idx| buffer.get_mut(idx..)?.get_mut(..len)),
+                    _ => None,
+                };
+                // Pixels per run of one color, on average: runs of a few
+                // pixels are cheaper to step through.
+                let run_pixels = table.len() as f32 / shader.colors.runs[level] as f32 * 65536.0 / (du.unsigned_abs() as f32).max(1.0);
+                if let Some(row) = row.filter(|_| run_pixels >= 8.0) {
+                    fill_linear_runs(row, table, u, du, shader.colors.opaque);
+                } else {
+                    fill_span(buffer, idx, stride, len, shader.colors.opaque, move || {
+                        let color = table[(u >> 16).clamp(0, max) as usize];
+                        u += du;
+                        color
+                    });
+                }
             } else {
                 for px in span_lo..span_hi {
                     let color = shader.color_at(px as f32 + 0.5, fy, level);
@@ -814,6 +829,65 @@ pub fn draw_shaded_rounded_rect(
         for px in span_hi.max(row_lo)..row_hi {
             edge_pixel(buffer, px, py, fy, qy);
         }
+    }
+}
+
+/// Fills `row` with a linear gradient: pixel `k` gets
+/// `table[clamp((u + k * du) >> 16)]`. Smooth gradients repeat each color
+/// over many pixels; each such run is found in the table and written at
+/// once.
+fn fill_linear_runs(row: &mut [u32], table: &[u32], mut u: i32, du: i32, opaque: bool) {
+    let max = table.len() as i32 - 1;
+    // Run lengths come from a float estimate made exact with integer steps;
+    // 32-bit ARM has no fast divide. Indices stay below 2^15 cells and rows
+    // are short, so `n * du` fits an i32.
+    let inv_du = if du != 0 { 1.0 / du.unsigned_abs() as f32 } else { 0.0 };
+    let step = du.unsigned_abs() as i32;
+    // The fewest pixels `n >= 0` with `n * step >= reach`.
+    let pixels_to = |reach: i32| {
+        let mut n = (reach as f32 * inv_du) as i32;
+        while n * step < reach {
+            n += 1;
+        }
+        while n > 0 && (n - 1) * step >= reach {
+            n -= 1;
+        }
+        n
+    };
+    let mut k = 0;
+    while k < row.len() {
+        let i = (u >> 16).clamp(0, max);
+        let color = table[i as usize];
+        // Pixels left in this color: until the index leaves the run of
+        // cells with it, in the direction it moves.
+        let left = (row.len() - k) as i32;
+        let n = if du > 0 {
+            let mut end = i + 1;
+            while end <= max && table[end as usize] == color {
+                end += 1;
+            }
+            if end > max { left } else { pixels_to((end << 16) - u) }
+        } else if du < 0 {
+            let mut start = i;
+            while start > 0 && table[start as usize - 1] == color {
+                start -= 1;
+            }
+            // While `u` stays at or above the run's first cell.
+            if start == 0 { left } else { pixels_to(u - (start << 16) + 1) }
+        } else {
+            left
+        };
+        let n = n.clamp(1, left);
+        let run = &mut row[k..k + n as usize];
+        if opaque {
+            run.fill(color);
+        } else {
+            for dst in run {
+                blend_pixel(dst, color);
+            }
+        }
+        u += du * n;
+        k += n as usize;
     }
 }
 
@@ -988,5 +1062,30 @@ fn draw_conic_blocks(
             bx = bx1;
         }
         by = by1;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::fill_linear_runs;
+
+    /// Runs give every pixel the color the per-pixel loop gives it, both
+    /// ways along the table and past its ends.
+    #[test]
+    fn linear_runs_match_stepping_pixels() {
+        // Runs of 1 to 7 cells, a color that comes back, and a single cell.
+        let mut table = Vec::new();
+        for (i, len) in [3, 1, 7, 2, 5, 1, 4, 6].iter().enumerate() {
+            table.extend(core::iter::repeat_n(0xff00_0000 | (i as u32 % 3), *len));
+        }
+        let max = table.len() as i32 - 1;
+        for &du in &[1, 977, 0x8000, 0x1_0000, 0x1_8001, -1, -977, -0x8000, -0x1_0000, -0x2_3456, 0] {
+            for &u in &[-0x3_0000, -1, 0, 0x7fff, 0x2_0000, 0x5_4321, (max << 16) + 0xffff, 0x40_0000] {
+                let mut runs = vec![0u32; 300];
+                fill_linear_runs(&mut runs, &table, u, du, true);
+                let stepped: Vec<u32> = (0..300).map(|k| table[((u + k * du) >> 16).clamp(0, max) as usize]).collect();
+                assert_eq!(runs, stepped, "u {u:#x}, du {du:#x}");
+            }
+        }
     }
 }
