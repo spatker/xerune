@@ -581,6 +581,8 @@ pub fn draw_box_shadow(
     let packed = pack_color(shadow_color, swap_rb);
     let base_a = ((packed >> 24) & 0xff) as f32;
 
+    // A radius beyond half the box (`9999px` for a circle) means half of it.
+    let radius = radius.min(orig_rw / 2.0).min(orig_rh / 2.0).max(0.0);
     let orig_left = orig_rx + radius;
     let orig_right = orig_rx + orig_rw - radius;
     let orig_top = orig_ry + radius;
@@ -591,6 +593,8 @@ pub fn draw_box_shadow(
     let b_right = sx + sw - box_r;
     let b_top = sy + box_r;
     let b_bottom = sy + sh - box_r;
+    // How far beyond its shape the shadow reaches.
+    let reach = if blur <= 0.5 { 0.0 } else { blur };
 
     // The shadow's color at `dist_from_edge` from its shape.
     let shade = |dist_from_edge: f32| -> Option<u32> {
@@ -619,53 +623,73 @@ pub fn draw_box_shadow(
         let y_f = py as f32 + 0.5;
         let ody = if y_f < orig_top { orig_top - y_f } else if y_f > orig_bottom { y_f - orig_bottom } else { 0.0 };
         let dy = if y_f < b_top { b_top - y_f } else if y_f > b_bottom { y_f - b_bottom } else { 0.0 };
+
+        // The pixels whose centers are inside the element, as a span
+        // `inside.0..inside.1` of the row: an outer shadow skips them, an
+        // inset one shades only them.
+        let half = if ody > 0.0 { (radius * radius - ody * ody).max(-1.0) } else { 0.0 };
+        let inside = if y_f < orig_ry || y_f > orig_ry + orig_rh || half < 0.0 {
+            (end_x, end_x)
+        } else {
+            let (from, to) = if ody > 0.0 {
+                let half = half.sqrt();
+                (orig_left - half, orig_right + half)
+            } else {
+                (orig_rx, orig_rx + orig_rw)
+            };
+            // Centers `px + 0.5` in `from..=to`.
+            let first = ((from - 0.5).ceil() as i32).clamp(start_x, end_x);
+            let end = ((to - 0.5).floor() as i32 + 1).clamp(first, end_x);
+            (first, end)
+        };
+
+        // The columns to shade: an outer shadow's, out to where it fades
+        // (a circle of `box_r + reach` in the corner rows).
+        let (row_from, row_to) = if inset {
+            inside
+        } else if dy > 0.0 {
+            let outer = box_r + reach;
+            if dy >= outer {
+                continue;
+            }
+            let half = (outer * outer - dy * dy).sqrt();
+            (((b_left - half).floor() as i32).max(start_x), ((b_right + half).ceil() as i32).min(end_x))
+        } else {
+            (((sx - reach).floor() as i32).max(start_x), ((sx + sw + reach).ceil() as i32).min(end_x))
+        };
+        let spans = if inset {
+            [(row_from, row_to), (0, 0)]
+        } else {
+            [(row_from, inside.0.min(row_to)), (inside.1.max(row_from), row_to)]
+        };
+
         // Beyond the shape's top or bottom edge, between its corners, the
         // shadow depends on the row only.
         let mut edge_color = None;
-        let mut px = start_x;
-        while px < end_x {
-            let x_f = px as f32 + 0.5;
+        for (from, to) in spans {
+            for px in from..to {
+                let x_f = px as f32 + 0.5;
+                let dx = if x_f < b_left { b_left - x_f } else if x_f > b_right { x_f - b_right } else { 0.0 };
 
-            // Check if inside the original element border box
-            let odx = if x_f < orig_left { orig_left - x_f } else if x_f > orig_right { x_f - orig_right } else { 0.0 };
-            let is_inside_element = if odx > 0.0 && ody > 0.0 {
-                (odx * odx + ody * ody) <= radius * radius
-            } else {
-                x_f >= orig_rx && x_f <= orig_rx + orig_rw && y_f >= orig_ry && y_f <= orig_ry + orig_rh
-            };
+                let color = if dx > 0.0 && dy > 0.0 {
+                    shade((dx * dx + dy * dy).sqrt() - box_r)
+                } else if dx > 0.0 {
+                    *side_colors[(px - start_x) as usize].get_or_insert_with(|| shade(dx - box_r))
+                } else if dy > 0.0 {
+                    *edge_color.get_or_insert_with(|| shade(dy - box_r))
+                } else {
+                    let d_left = x_f - sx;
+                    let d_right = (sx + sw) - x_f;
+                    let d_top = y_f - sy;
+                    let d_bottom = (sy + sh) - y_f;
+                    shade(-d_left.min(d_right).min(d_top).min(d_bottom))
+                };
 
-            if !inset && is_inside_element {
-                // Pixels before the element's right edge (or before its
-                // right corner, in a corner row) are inside it too.
-                let inside_to = if ody > 0.0 { orig_right } else { orig_rx + orig_rw };
-                px = if odx > 0.0 { px + 1 } else { (px + 1).max((inside_to - 0.5).floor() as i32) };
-                continue;
-            }
-            px += 1;
-            if inset && !is_inside_element {
-                continue;
-            }
-
-            let dx = if x_f < b_left { b_left - x_f } else if x_f > b_right { x_f - b_right } else { 0.0 };
-
-            let color = if dx > 0.0 && dy > 0.0 {
-                shade((dx * dx + dy * dy).sqrt() - box_r)
-            } else if dx > 0.0 {
-                *side_colors[(px - 1 - start_x) as usize].get_or_insert_with(|| shade(dx - box_r))
-            } else if dy > 0.0 {
-                *edge_color.get_or_insert_with(|| shade(dy - box_r))
-            } else {
-                let d_left = x_f - sx;
-                let d_right = (sx + sw) - x_f;
-                let d_top = y_f - sy;
-                let d_bottom = (sy + sh) - y_f;
-                shade(-d_left.min(d_right).min(d_top).min(d_bottom))
-            };
-
-            if let Some(pixel_color) = color {
-                let idx = calc_pixel_index(px - 1, py, rotation, physical_w, logical_w, logical_h);
-                if idx < buffer.len() {
-                    blend_pixel(&mut buffer[idx], pixel_color);
+                if let Some(pixel_color) = color {
+                    let idx = calc_pixel_index(px, py, rotation, physical_w, logical_w, logical_h);
+                    if idx < buffer.len() {
+                        blend_pixel(&mut buffer[idx], pixel_color);
+                    }
                 }
             }
         }

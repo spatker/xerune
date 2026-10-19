@@ -1898,6 +1898,32 @@ mod tests {
         }
     }
 
+    /// A round element's outer shadow is outside the circle only, also for a
+    /// radius beyond half its size, and fades out within the blur radius.
+    #[test]
+    fn round_shadow_is_outside_the_circle() {
+        let white = xerune::Color::new(255, 255, 255, 255);
+        let commands = [DrawCommand::DrawBoxShadow {
+            rect: Rect::new(10.0, 10.0, 40.0, 40.0),
+            border_radius: 9999.0,
+            offset_x: 0.0,
+            offset_y: 0.0,
+            blur_radius: 8.0,
+            spread_radius: 0.0,
+            color: white,
+            inset: false,
+        }];
+        let buffer = draw(60, 60, 0, &commands, Rect::new(0.0, 0.0, 60.0, 60.0));
+        let at = |x: usize, y: usize| buffer[y * 60 + x] & 0xffffff;
+        for (x, y) in [(30, 30), (17, 17), (42, 42), (11, 30)] {
+            assert_eq!(at(x, y), 0, "({x}, {y}) is inside the circle");
+        }
+        for (x, y) in [(8, 30), (30, 51), (13, 13)] {
+            assert_ne!(at(x, y), 0, "({x}, {y}) is in the shadow");
+        }
+        assert_eq!(at(0, 0), 0, "the corner is beyond the blur");
+    }
+
     #[test]
     fn dirty_culling_preserves_clip_stack() {
         let commands = [
