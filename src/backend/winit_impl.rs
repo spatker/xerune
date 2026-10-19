@@ -6,6 +6,9 @@ use std::num::NonZeroU32;
 use crate::{Model, InputEvent, Runtime, TextMeasurer};
 use super::{Backend, EventProxy, BackendError, SendError};
 
+/// The touch id the left mouse button presses as.
+const MOUSE_TOUCH_ID: u64 = u64::MAX;
+
 /// Proxy struct to dispatch user messages from winit events into the MVU event loop.
 #[derive(Clone)]
 pub struct WinitProxy {
@@ -80,6 +83,9 @@ impl Backend for WinitBackend {
         let window_clone = window.clone();
         let mut mouse_x = 0.0;
         let mut mouse_y = 0.0;
+        // The left button held: the mouse acts as a touch (drags ranges,
+        // scrolls, clicks on release), like a touch screen on the board.
+        let mut mouse_down = false;
         // When to poll the runtime next; `None`: only after input.
         let mut next_trigger = Some(std::time::Instant::now());
         let mut app_buffer: Vec<u32> = Vec::new();
@@ -161,17 +167,26 @@ impl Backend for WinitBackend {
                         WindowEvent::CursorMoved { position, .. } => {
                             mouse_x = position.x as f32;
                             mouse_y = position.y as f32;
-                            if runtime.handle_event(InputEvent::Hover { x: mouse_x, y: mouse_y }) {
+                            let event = if mouse_down {
+                                InputEvent::TouchMove { id: MOUSE_TOUCH_ID, x: mouse_x, y: mouse_y }
+                            } else {
+                                InputEvent::Hover { x: mouse_x, y: mouse_y }
+                            };
+                            if runtime.handle_event(event) {
                                 next_trigger = Some(std::time::Instant::now());
                                 window_clone.request_redraw();
                             }
                         },
                         WindowEvent::MouseInput { state, button: MouseButton::Left, .. } => {
-                            if state == ElementState::Pressed {
-                                 if runtime.handle_event(InputEvent::Click { x: mouse_x, y: mouse_y }) {
-                                    next_trigger = Some(std::time::Instant::now());
-                                    window_clone.request_redraw();
-                                 }
+                            let event = match state {
+                                ElementState::Pressed if !mouse_down => Some(InputEvent::TouchStart { id: MOUSE_TOUCH_ID, x: mouse_x, y: mouse_y }),
+                                ElementState::Released if mouse_down => Some(InputEvent::TouchEnd { id: MOUSE_TOUCH_ID, x: mouse_x, y: mouse_y }),
+                                _ => None,
+                            };
+                            mouse_down = state == ElementState::Pressed;
+                            if event.is_some_and(|event| runtime.handle_event(event)) {
+                                next_trigger = Some(std::time::Instant::now());
+                                window_clone.request_redraw();
                             }
                         },
                         WindowEvent::MouseWheel { delta, .. } => {
