@@ -95,6 +95,106 @@ pub struct ConicGradient {
     pub repeating: bool,
 }
 
+impl ConicGradient {
+    /// What the gradient paints of `rect`: the sectors its non-transparent
+    /// stops cover, boxed, with a margin for anti-aliasing. `None` when
+    /// nothing is painted.
+    fn painted_bounds(&self, rect: &Rect) -> Option<Rect> {
+        let (x1, y1) = (rect.x + rect.width, rect.y + rect.height);
+        let (cx, cy) = (rect.x + self.center.0 * rect.width, rect.y + self.center.1 * rect.height);
+        if self.repeating || !(rect.x < cx && cx < x1 && rect.y < cy && cy < y1) {
+            return Some(*rect);
+        }
+
+        // Painted ranges of the turn, from `from`. Positions only ever
+        // increase; before the first stop and after the last one, their
+        // colors continue.
+        let mut ranges: Vec<(f32, f32)> = Vec::new();
+        let mut add = |lo: f32, hi: f32| match ranges.last_mut() {
+            Some(last) if last.1 >= lo => last.1 = last.1.max(hi),
+            _ => ranges.push((lo, hi)),
+        };
+        let mut at = 0.0f32;
+        let mut previous: Option<Color> = None;
+        for &(color, pos) in self.stops.iter() {
+            let pos = pos.clamp(at, 1.0);
+            if previous.unwrap_or(color).a != 0 || color.a != 0 {
+                add(at, pos);
+            }
+            (at, previous) = (pos, Some(color));
+        }
+        if previous.is_some_and(|c| c.a != 0) {
+            add(at, 1.0);
+        }
+
+        // The box of each sector within `rect`: the center, where its edges
+        // leave the rect and the corners between them.
+        let corners = [(rect.x, rect.y), (x1, rect.y), (x1, y1), (rect.x, y1)];
+        let from = self.from / 360.0;
+        let mut bounds: Option<Rect> = None;
+        for (lo, hi) in ranges {
+            // A pixel blends the colors of up to about a pixel around it.
+            const SLACK: f32 = 1.0 / 512.0;
+            let (lo, hi) = (lo - SLACK, hi + SLACK);
+            let (mut min_x, mut min_y, mut max_x, mut max_y) = (cx, cy, cx, cy);
+            let mut include = |(x, y): (f32, f32)| {
+                (min_x, min_y, max_x, max_y) = (min_x.min(x), min_y.min(y), max_x.max(x), max_y.max(y));
+            };
+            for turn in [lo, hi] {
+                // Clockwise from 12 o'clock.
+                let angle = (turn + from) * core::f32::consts::TAU;
+                let (dx, dy) = (approx_sin(angle), -approx_sin(angle + core::f32::consts::FRAC_PI_2));
+                let reach = |d: f32, near: f32, far: f32| if d > 1e-6 { far / d } else if d < -1e-6 { near / d } else { f32::INFINITY };
+                let s = reach(dx, rect.x - cx, x1 - cx).min(reach(dy, rect.y - cy, y1 - cy));
+                include((cx + dx * s, cy + dy * s));
+            }
+            for (x, y) in corners {
+                let turn = approx_atan2(x - cx, cy - y) / core::f32::consts::TAU - from;
+                let turn = turn - libm_floor(turn - lo);
+                if turn <= hi {
+                    include((x, y));
+                }
+            }
+            let sector = Rect::new(min_x, min_y, max_x - min_x, max_y - min_y);
+            bounds = Some(bounds.map_or(sector, |b| b.expand(sector)));
+        }
+        bounds.map(|b| Rect::new(b.x - 2.0, b.y - 2.0, b.width + 4.0, b.height + 4.0))
+    }
+}
+
+/// `x.floor()`, which `core` lacks.
+fn libm_floor(x: f32) -> f32 {
+    let i = x as i32 as f32;
+    if i > x { i - 1.0 } else { i }
+}
+
+/// sin within about 1e-3, without libm.
+fn approx_sin(x: f32) -> f32 {
+    use core::f32::consts::{PI, TAU};
+    let x = x - TAU * libm_floor((x + PI) / TAU);
+    let y = 4.0 / PI * x - 4.0 / (PI * PI) * x * x.abs();
+    0.225 * (y * y.abs() - y) + y
+}
+
+/// atan2 within about 1e-5 rad, without libm.
+fn approx_atan2(y: f32, x: f32) -> f32 {
+    let (ax, ay) = (x.abs(), y.abs());
+    let mx = ax.max(ay);
+    if mx == 0.0 {
+        return 0.0;
+    }
+    let a = ax.min(ay) / mx;
+    let s = a * a;
+    let mut r = ((-0.046_496_475 * s + 0.159_314_22) * s - 0.327_622_76) * s * a + a;
+    if ay > ax {
+        r = core::f32::consts::FRAC_PI_2 - r;
+    }
+    if x < 0.0 {
+        r = core::f32::consts::PI - r;
+    }
+    if y < 0.0 { -r } else { r }
+}
+
 /// Any CSS gradient image usable as a background.
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
@@ -539,7 +639,17 @@ impl DrawCommand {
                     height: rect.height + expand * 2.0,
                 })
             }
-            DrawCommand::DrawRect { rect, .. } => Some(apply_pad(*rect)),
+            // A box is drawn inside its rect, anti-aliased edges included;
+            // a conic gradient often only in some sectors of it.
+            DrawCommand::DrawRect { rect, color, gradient, border, .. } => {
+                let outer = Rect { x: rect.x - 1.0, y: rect.y - 1.0, width: rect.width + 2.0, height: rect.height + 2.0 };
+                match gradient {
+                    Some(Gradient::Conic(g)) if color.is_none_or(|c| c.a == 0) && !border.is_visible() => {
+                        Some(g.painted_bounds(rect).and_then(|r| r.intersect(&outer)).unwrap_or(Rect::new(rect.x, rect.y, 0.0, 0.0)))
+                    }
+                    _ => Some(outer),
+                }
+            }
             DrawCommand::DrawText { rect, .. } => Some(apply_pad(*rect)),
             DrawCommand::DrawImage { rect, .. } => Some(apply_pad(*rect)),
             DrawCommand::DrawCheckMark { rect, .. } => Some(apply_pad(*rect)),
@@ -786,7 +896,45 @@ impl CommandProfile {
 
 #[cfg(test)]
 mod tests {
-    use super::Rect;
+    use super::{Color, ConicGradient, DrawCommand, Gradient, Rect};
+
+    fn conic(from: f32, stops: &[(Color, f32)]) -> DrawCommand {
+        DrawCommand::DrawRect {
+            rect: Rect::new(0.0, 0.0, 100.0, 100.0),
+            color: None,
+            gradient: Some(Gradient::Conic(ConicGradient { from, center: (0.5, 0.5), stops: stops.into(), repeating: false })),
+            border_radius: 50.0,
+            border: crate::style::Borders::NONE,
+        }
+    }
+
+    const WHITE: Color = Color { r: 255, g: 255, b: 255, a: 255 };
+    const CLEAR: Color = Color { r: 0, g: 0, b: 0, a: 0 };
+
+    /// A gauge needle, `conic-gradient(from 90deg, white 0deg 3deg,
+    /// transparent 3deg)`, changes a thin box, not the whole dial.
+    #[test]
+    fn a_conic_wedge_is_bounded_by_its_sector() {
+        let bounds = conic(90.0, &[(WHITE, 0.0), (WHITE, 3.0 / 360.0), (CLEAR, 3.0 / 360.0)]).bounds().unwrap();
+        // From the center to the right edge, 50 * tan(3deg) = 2.6 px down.
+        assert!(bounds.x <= 48.0 && bounds.x + bounds.width >= 100.0, "{bounds:?}");
+        assert!(bounds.y <= 48.0 && bounds.y + bounds.height >= 52.6 && bounds.height < 10.0, "{bounds:?}");
+    }
+
+    /// Corners between a sector's edges are in its box; transparent stops
+    /// paint nothing.
+    #[test]
+    fn a_conic_sector_includes_its_corners() {
+        // 12 o'clock to 6 o'clock clockwise: the right half.
+        let half = conic(0.0, &[(WHITE, 0.0), (WHITE, 0.5), (CLEAR, 0.5)]).bounds().unwrap();
+        assert!(half.x <= 48.0 && half.x >= 45.0 && half.width >= 52.0, "{half:?}");
+        assert!(half.y <= 0.0 && half.y + half.height >= 100.0, "{half:?}");
+        // Transparent until 3 o'clock, then painted into the top-left corner.
+        let wrap = conic(0.0, &[(CLEAR, 0.25), (WHITE, 0.25)]).bounds().unwrap();
+        assert!(wrap.x <= 0.0 && wrap.y <= 0.0 && wrap.x + wrap.width >= 100.0 && wrap.y + wrap.height >= 100.0, "{wrap:?}");
+        let none = conic(0.0, &[(CLEAR, 0.0), (CLEAR, 1.0)]).bounds().unwrap();
+        assert!(none.is_empty(), "{none:?}");
+    }
 
     #[test]
     fn empty_rects_do_not_grow_a_union() {
