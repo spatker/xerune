@@ -754,7 +754,10 @@ or `DrmBackend::new().run(...)` / `LinuxFbBackend::new().run(...)`.
 
 The display's size comes from its mode. For a display mounted rotated,
 export `XERUNE_ROTATION=90` (or 180, 270); fbdev also rotates a portrait
-framebuffer by itself. Touch input is mapped to the rotated UI.
+framebuffer by itself. Touch input is mapped to the rotated UI. Frames
+are drawn upright and turned as they are copied to the display
+(`Rotation::copy_frame`), so a rotated display draws as fast as an
+upright one; a backend of your own can do the same.
 
 ---
 

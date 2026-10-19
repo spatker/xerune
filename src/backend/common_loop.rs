@@ -72,10 +72,9 @@ where
 
         // Render and present
         if dirty {
-            // The presenter copies these pixels as they are: draw them in
-            // the display's orientation.
-            let rotation = crate::Rotation::from_degrees(surface.rotation).unwrap_or_default();
-            let mut target = crate::Surface::new(crate::Pixels::Xrgb8888(&mut local_buffer), w, h).with_rotation(rotation);
+            // Drawn upright; the presenter turns it for the display as it
+            // copies it, which costs far less than drawing turned.
+            let mut target = crate::Surface::new(crate::Pixels::Xrgb8888(&mut local_buffer), w, h);
             let damage = runtime.render(&mut renderer, &mut target);
             // Presenters copy one rectangle (`None`: everything); an empty one
             // when nothing changed.

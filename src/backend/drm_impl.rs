@@ -68,41 +68,6 @@ fn wait_for_page_flip(card: &Card) -> Result<(), BackendError> {
     }
 }
 
-fn logical_rect_to_phys_bounds(r: &crate::graphics::Rect, surface: &SurfaceInfo) -> (usize, usize, usize, usize) {
-    let disp_w = surface.disp_w as usize;
-    let disp_h = surface.disp_h as usize;
-    match surface.rotation {
-        90 => {
-            let p_min_y = (r.x.max(0.0) as usize).min(disp_h);
-            let p_max_y = ((r.x + r.width).ceil().max(0.0) as usize).min(disp_h);
-            let p_min_x = disp_w.saturating_sub((r.y + r.height).ceil().max(0.0) as usize).min(disp_w);
-            let p_max_x = disp_w.saturating_sub(r.y.max(0.0) as usize).min(disp_w);
-            (p_min_x, p_min_y, p_max_x, p_max_y)
-        }
-        180 => {
-            let p_min_x = disp_w.saturating_sub((r.x + r.width).ceil().max(0.0) as usize).min(disp_w);
-            let p_max_x = disp_w.saturating_sub(r.x.max(0.0) as usize).min(disp_w);
-            let p_min_y = disp_h.saturating_sub((r.y + r.height).ceil().max(0.0) as usize).min(disp_h);
-            let p_max_y = disp_h.saturating_sub(r.y.max(0.0) as usize).min(disp_h);
-            (p_min_x, p_min_y, p_max_x, p_max_y)
-        }
-        270 => {
-            let p_min_x = (r.y.max(0.0) as usize).min(disp_w);
-            let p_max_x = ((r.y + r.height).ceil().max(0.0) as usize).min(disp_w);
-            let p_min_y = disp_h.saturating_sub((r.x + r.width).ceil().max(0.0) as usize).min(disp_h);
-            let p_max_y = disp_h.saturating_sub(r.x.max(0.0) as usize).min(disp_h);
-            (p_min_x, p_min_y, p_max_x, p_max_y)
-        }
-        _ => {
-            let p_min_x = (r.x.max(0.0) as usize).min(disp_w);
-            let p_max_x = ((r.x + r.width).ceil().max(0.0) as usize).min(disp_w);
-            let p_min_y = (r.y.max(0.0) as usize).min(disp_h);
-            let p_max_y = ((r.y + r.height).ceil().max(0.0) as usize).min(disp_h);
-            (p_min_x, p_min_y, p_max_x, p_max_y)
-        }
-    }
-}
-
 struct DrmPresenter<M1, M2> {
     card: Card,
     crtc_handle: drm::control::crtc::Handle,
@@ -163,26 +128,10 @@ where
         };
         self.prev_damage = damage;
 
-        let local_bytes: &[u8] = bytemuck::cast_slice(local_buffer);
-        let disp_w = surface.disp_w as usize;
-
-        if let Some(ref rect) = combined_damage {
-            let (min_x, min_y, max_x, max_y) = logical_rect_to_phys_bounds(rect, surface);
-            if min_x < max_x && min_y < max_y {
-                let row_bytes = (max_x - min_x) * 4;
-                let stride_bytes = disp_w * 4;
-                for y in min_y..max_y {
-                    let row_offset = y * stride_bytes + min_x * 4;
-                    if row_offset + row_bytes <= draw_slice.len() && row_offset + row_bytes <= local_bytes.len() {
-                        draw_slice[row_offset..row_offset + row_bytes]
-                            .copy_from_slice(&local_bytes[row_offset..row_offset + row_bytes]);
-                    }
-                }
-            }
-        } else {
-            let copy_len = local_bytes.len().min(draw_slice.len());
-            draw_slice[..copy_len].copy_from_slice(&local_bytes[..copy_len]);
-        }
+        let screen = crate::graphics::Rect::new(0.0, 0.0, surface.logical_w as f32, surface.logical_h as f32);
+        let rotation = crate::Rotation::from_degrees(surface.rotation).unwrap_or_default();
+        let display: &mut [u32] = bytemuck::cast_slice_mut(draw_slice);
+        rotation.copy_frame(local_buffer, surface.logical_w, surface.logical_h, combined_damage.unwrap_or(screen), display, |p| p);
 
         loop {
             match self.card.page_flip(self.crtc_handle, target_fb, drm::control::PageFlipFlags::EVENT, None) {

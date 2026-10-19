@@ -17,41 +17,6 @@ impl LinuxFbBackend {
     }
 }
 
-fn logical_rect_to_phys_bounds(r: &crate::graphics::Rect, surface: &SurfaceInfo) -> (usize, usize, usize, usize) {
-    let disp_w = surface.disp_w as usize;
-    let disp_h = surface.disp_h as usize;
-    match surface.rotation {
-        90 => {
-            let p_min_y = (r.x.max(0.0) as usize).min(disp_h);
-            let p_max_y = ((r.x + r.width).ceil().max(0.0) as usize).min(disp_h);
-            let p_min_x = disp_w.saturating_sub((r.y + r.height).ceil().max(0.0) as usize).min(disp_w);
-            let p_max_x = disp_w.saturating_sub(r.y.max(0.0) as usize).min(disp_w);
-            (p_min_x, p_min_y, p_max_x, p_max_y)
-        }
-        180 => {
-            let p_min_x = disp_w.saturating_sub((r.x + r.width).ceil().max(0.0) as usize).min(disp_w);
-            let p_max_x = disp_w.saturating_sub(r.x.max(0.0) as usize).min(disp_w);
-            let p_min_y = disp_h.saturating_sub((r.y + r.height).ceil().max(0.0) as usize).min(disp_h);
-            let p_max_y = disp_h.saturating_sub(r.y.max(0.0) as usize).min(disp_h);
-            (p_min_x, p_min_y, p_max_x, p_max_y)
-        }
-        270 => {
-            let p_min_x = (r.y.max(0.0) as usize).min(disp_w);
-            let p_max_x = ((r.y + r.height).ceil().max(0.0) as usize).min(disp_w);
-            let p_min_y = disp_h.saturating_sub((r.x + r.width).ceil().max(0.0) as usize).min(disp_h);
-            let p_max_y = disp_h.saturating_sub(r.x.max(0.0) as usize).min(disp_h);
-            (p_min_x, p_min_y, p_max_x, p_max_y)
-        }
-        _ => {
-            let p_min_x = (r.x.max(0.0) as usize).min(disp_w);
-            let p_max_x = ((r.x + r.width).ceil().max(0.0) as usize).min(disp_w);
-            let p_min_y = (r.y.max(0.0) as usize).min(disp_h);
-            let p_max_y = ((r.y + r.height).ceil().max(0.0) as usize).min(disp_h);
-            (p_min_x, p_min_y, p_max_x, p_max_y)
-        }
-    }
-}
-
 struct LinuxFbPresenter<M> {
     fb: Framebuffer,
     fb_mmap: M,
@@ -95,6 +60,10 @@ where
         };
         self.prev_damage = damage;
 
+        // The frame is upright; the display may be mounted turned.
+        let screen = crate::graphics::Rect::new(0.0, 0.0, surface.logical_w as f32, surface.logical_h as f32);
+        let rotation = crate::Rotation::from_degrees(surface.rotation).unwrap_or_default();
+
         if self.bytes_per_pixel == 4 {
             let page_size = (self.fb_w * self.fb_h * 4) as usize;
             let mmap_len = self.fb_mmap.len();
@@ -112,26 +81,8 @@ where
                 &mut self.fb_mmap[0..page_size]
             };
 
-            let local_bytes: &[u8] = bytemuck::cast_slice(local_buffer);
-            let disp_w = surface.disp_w as usize;
-
-            if let Some(ref rect) = combined_damage {
-                let (min_x, min_y, max_x, max_y) = logical_rect_to_phys_bounds(rect, surface);
-                if min_x < max_x && min_y < max_y {
-                    let row_bytes = (max_x - min_x) * 4;
-                    let stride_bytes = disp_w * 4;
-                    for y in min_y..max_y {
-                        let row_offset = y * stride_bytes + min_x * 4;
-                        if row_offset + row_bytes <= draw_slice.len() && row_offset + row_bytes <= local_bytes.len() {
-                            draw_slice[row_offset..row_offset + row_bytes]
-                                .copy_from_slice(&local_bytes[row_offset..row_offset + row_bytes]);
-                        }
-                    }
-                }
-            } else {
-                let copy_len = local_bytes.len().min(draw_slice.len());
-                draw_slice[..copy_len].copy_from_slice(&local_bytes[..copy_len]);
-            }
+            let display: &mut [u32] = bytemuck::cast_slice_mut(draw_slice);
+            rotation.copy_frame(local_buffer, surface.logical_w, surface.logical_h, combined_damage.unwrap_or(screen), display, |p| p);
 
             if self.double_buffered && mmap_len >= page_size * 2 {
                 if let Err(e) = self.fb.set_offset(0, y_offset) {
@@ -143,42 +94,12 @@ where
                 let _ = self.fb.set_offset(0, 0);
             }
         } else if self.bytes_per_pixel == 2 {
-            let dest_ptr = self.fb_mmap.as_mut_ptr();
-            let fb_w = self.fb_w as usize;
-            let fb_h = self.fb_h as usize;
-
-            if let Some(ref rect) = combined_damage {
-                let (min_x, min_y, max_x, max_y) = logical_rect_to_phys_bounds(rect, surface);
-                for y in min_y..max_y.min(fb_h) {
-                    for x in min_x..max_x.min(fb_w) {
-                        let idx = y * fb_w + x;
-                        if idx < local_buffer.len() {
-                            unsafe {
-                                let pixel = local_buffer[idx];
-                                let r = ((pixel >> 16) & 0xFF) as u16;
-                                let g = ((pixel >> 8) & 0xFF) as u16;
-                                let b = (pixel & 0xFF) as u16;
-                                let rgb565 = ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3);
-                                let d = dest_ptr.add(idx * 2) as *mut u16;
-                                d.write_unaligned(rgb565);
-                            }
-                        }
-                    }
-                }
-            } else {
-                let total_pixels = fb_w * fb_h;
-                for i in 0..total_pixels.min(local_buffer.len()) {
-                    unsafe {
-                        let pixel = local_buffer[i];
-                        let r = ((pixel >> 16) & 0xFF) as u16;
-                        let g = ((pixel >> 8) & 0xFF) as u16;
-                        let b = (pixel & 0xFF) as u16;
-                        let rgb565 = ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3);
-                        let d = dest_ptr.add(i * 2) as *mut u16;
-                        d.write_unaligned(rgb565);
-                    }
-                }
-            }
+            let page = (self.fb_w * self.fb_h * 2) as usize;
+            let display: &mut [u16] = bytemuck::cast_slice_mut(&mut self.fb_mmap[..page]);
+            rotation.copy_frame(local_buffer, surface.logical_w, surface.logical_h, combined_damage.unwrap_or(screen), display, |pixel| {
+                let (r, g, b) = ((pixel >> 16) & 0xff, (pixel >> 8) & 0xff, pixel & 0xff);
+                (((r & 0xf8) << 8) | ((g & 0xfc) << 3) | (b >> 3)) as u16
+            });
             let _ = self.fb.set_offset(0, 0);
         }
 
