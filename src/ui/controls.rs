@@ -178,23 +178,26 @@ fn paint_part(commands: &mut Vec<DrawCommand>, rect: Rect, part: &PartStyle) {
     });
 }
 
-/// A range input: a thin track across the control, accent-filled up to the
-/// thumb, and a round thumb that travels within the track's ends.
-/// `fraction` is the value's position between `min` and `max`. Without
-/// its appearance only the thumb is left.
-///
-/// Styled parts are laid out as in Chromium: the track spans the control,
-/// centered, as tall as the thumb unless sized; the thumb travels along the
-/// track's content box, centered on it, or at its top (plus `margin-top`)
-/// once it has `appearance: none`; the fill runs from the track's start to
-/// the thumb's middle.
-pub(crate) fn slider(commands: &mut Vec<DrawCommand>, c: Rect, fraction: f32, style: &ContainerStyle, parts: Option<&ControlParts>) {
-    let fraction = fraction.clamp(0.0, 1.0);
-    let accent = accent(style);
-    let (track_css, thumb_css, fill_css) = match parts {
+/// Where a range's parts go: see [`slider`].
+struct SliderGeometry {
+    /// The track's border box.
+    track: Rect,
+    /// The track's content box, which the thumb travels along.
+    inner: Rect,
+    thumb: Rect,
+}
+
+fn slider_parts(parts: Option<&ControlParts>) -> (Option<&PartStyle>, Option<&PartStyle>, Option<&PartStyle>) {
+    match parts {
         Some(p) => (p.get(ControlPart::SliderTrack), p.get(ControlPart::SliderThumb), p.get(ControlPart::SliderFill)),
         None => (None, None, None),
-    };
+    }
+}
+
+/// Lays out a range whose content box is `c` with its value at `fraction`.
+fn slider_geometry(c: Rect, fraction: f32, style: &ContainerStyle, parts: Option<&ControlParts>) -> SliderGeometry {
+    let fraction = fraction.clamp(0.0, 1.0);
+    let (track_css, thumb_css, _) = slider_parts(parts);
     let native_track = track_css.is_none() && !style.appearance_none;
 
     let (thumb_w, thumb_h) = match thumb_css {
@@ -226,7 +229,33 @@ pub(crate) fn slider(commands: &mut Vec<DrawCommand>, c: Rect, fraction: f32, st
     };
     // A CSS thumb is a layout box, snapped to whole pixels like Chromium's.
     let thumb_x = if thumb_css.is_some() { crate::graphics::floor(thumb_x + 0.5) } else { thumb_x };
-    let thumb = Rect { x: thumb_x, y: thumb_y, width: thumb_w, height: thumb_h };
+    SliderGeometry { track, inner, thumb: Rect { x: thumb_x, y: thumb_y, width: thumb_w, height: thumb_h } }
+}
+
+/// The fraction (0 to 1) of a range whose content box is `c` that puts the
+/// middle of its thumb at `x`, as pressing or dragging there does.
+pub(crate) fn slider_fraction_at(c: Rect, x: f32, style: &ContainerStyle, parts: Option<&ControlParts>) -> f32 {
+    let start = slider_geometry(c, 0.0, style, parts).thumb;
+    let end = slider_geometry(c, 1.0, style, parts).thumb;
+    let travel = end.x - start.x;
+    if travel > 0.0 { ((x - start.x - start.width / 2.0) / travel).clamp(0.0, 1.0) } else { 0.0 }
+}
+
+/// A range input: a thin track across the control, accent-filled up to the
+/// thumb, and a round thumb that travels within the track's ends.
+/// `fraction` is the value's position between `min` and `max`. Without
+/// its appearance only the thumb is left.
+///
+/// Styled parts are laid out as in Chromium: the track spans the control,
+/// centered, as tall as the thumb unless sized; the thumb travels along the
+/// track's content box, centered on it, or at its top (plus `margin-top`)
+/// once it has `appearance: none`; the fill runs from the track's start to
+/// the thumb's middle.
+pub(crate) fn slider(commands: &mut Vec<DrawCommand>, c: Rect, fraction: f32, style: &ContainerStyle, parts: Option<&ControlParts>) {
+    let accent = accent(style);
+    let (track_css, thumb_css, fill_css) = slider_parts(parts);
+    let native_track = track_css.is_none() && !style.appearance_none;
+    let SliderGeometry { track, inner, thumb } = slider_geometry(c, fraction, style, parts);
 
     match track_css {
         Some(t) => paint_part(commands, track, t),

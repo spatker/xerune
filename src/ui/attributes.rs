@@ -12,12 +12,8 @@ use super::Interaction;
 #[derive(Clone)]
 pub struct ParsedAttributes {
     pub element_type: defaults::ElementType,
-    /// A range's `value`; `None` is the middle of `min`..`max`.
-    pub slider_value: Option<f32>,
-    pub slider_min: f32,
-    pub slider_max: f32,
-    /// A range's `step`; `None` is `step="any"`.
-    pub slider_step: Option<f32>,
+    /// A range's `min`, `max`, `step` and `value`.
+    pub range: crate::style::Range,
     pub progress_value: f32,
     pub progress_max: f32,
     pub checkbox_checked: bool,
@@ -26,6 +22,8 @@ pub struct ParsedAttributes {
     pub hover: super::HoverHandlers,
     /// `data-on-transitionrun` and the other transition events.
     pub transition: super::TransitionHandlers,
+    /// `data-on-input` and `data-on-change`.
+    pub value: super::ValueHandlers,
     pub image_src: String,
     pub canvas_id: String,
     pub element_id: Option<String>,
@@ -37,16 +35,14 @@ impl ParsedAttributes {
     pub fn new(element_type: defaults::ElementType) -> Self {
         Self {
             element_type,
-            slider_value: None,
-            slider_min: 0.0,
-            slider_max: 100.0,
-            slider_step: Some(1.0),
+            range: crate::style::Range::default(),
             progress_value: 0.0,
             progress_max: 1.0,
             checkbox_checked: false,
             interaction_id: None,
             hover: super::HoverHandlers::default(),
             transition: super::TransitionHandlers::default(),
+            value: super::ValueHandlers::default(),
             image_src: String::new(),
             canvas_id: String::new(),
             element_id: None,
@@ -91,7 +87,7 @@ pub fn parse_attributes_generic<'a>(
             },
             "value" => {
                 if let Ok(v) = value.parse::<f32>() {
-                    parsed.slider_value = Some(v);
+                    parsed.range.value = Some(v);
                     parsed.progress_value = v;
                 }
                 parsed.text_input_text = Some(value.to_string());
@@ -99,17 +95,17 @@ pub fn parse_attributes_generic<'a>(
             "max" => {
                 if let Ok(v) = value.parse::<f32>() {
                     parsed.progress_max = v;
-                    parsed.slider_max = v;
+                    parsed.range.max = v;
                 }
             },
             "placeholder" => parsed.placeholder = Some(value.to_string()),
             "min" => {
                 if let Ok(v) = value.parse::<f32>() {
-                    parsed.slider_min = v;
+                    parsed.range.min = v;
                 }
             },
             "step" => {
-                parsed.slider_step = match value.parse::<f32>() {
+                parsed.range.step = match value.parse::<f32>() {
                     Ok(v) if v > 0.0 => Some(v),
                     _ if value.eq_ignore_ascii_case("any") => None,
                     _ => Some(1.0),
@@ -148,6 +144,18 @@ pub fn parse_attributes_generic<'a>(
                      parsed.hover.enter = handler;
                  } else {
                      parsed.hover.leave = handler;
+                 }
+             }
+             "data-on-input" | "data-on-change" => {
+                 // The input's value follows: `seek` sends `seek:42`.
+                 if !message_validator(&format!("{value}:")) {
+                     log::warn!("Invalid message in {}: {}", name, value);
+                 }
+                 let handler = Some(value.to_string());
+                 if name == "data-on-input" {
+                     parsed.value.input = handler;
+                 } else {
+                     parsed.value.change = handler;
                  }
              }
              "data-on-transitionrun" | "data-on-transitionstart" | "data-on-transitionend" | "data-on-transitioncancel" => {
@@ -189,22 +197,6 @@ pub fn parse_attribute_slice(
     );
 }
 
-/// Where a range's value sits between its `min` and `max`, from 0 to 1,
-/// after HTML's value sanitization: the value defaults to the middle, is
-/// clamped to the range and snapped to a `step` from `min`.
-fn range_fraction(parsed: &ParsedAttributes) -> f32 {
-    let min = parsed.slider_min;
-    let max = parsed.slider_max.max(min);
-    let mut value = parsed.slider_value.unwrap_or(min + (max - min) / 2.0).clamp(min, max);
-    if let Some(step) = parsed.slider_step {
-        value = min + crate::graphics::floor((value - min) / step + 0.5) * step;
-        if value > max {
-            value -= step;
-        }
-    }
-    if max > min { (value - min) / (max - min) } else { 0.0 }
-}
-
 pub(crate) fn process_element_type(
     id: NodeId,
     parsed: &ParsedAttributes,
@@ -216,7 +208,7 @@ pub(crate) fn process_element_type(
         defaults::ElementType::Checkbox => RenderKind::Checkbox(parsed.checkbox_checked),
         defaults::ElementType::Slider => {
             let parts = super::controls::resolve_parts(&current_style, &[ControlPart::SliderTrack, ControlPart::SliderThumb, ControlPart::SliderFill]);
-            RenderKind::Slider(range_fraction(parsed), parts)
+            RenderKind::Slider(parsed.range, parts)
         }
         defaults::ElementType::Progress => {
             let parts = super::controls::resolve_parts(&current_style, &[ControlPart::ProgressBar, ControlPart::ProgressValue]);

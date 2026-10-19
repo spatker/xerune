@@ -349,6 +349,82 @@ impl ControlParts {
     }
 }
 
+/// An `<input type="range">`'s `min`, `max`, `step` and `value`, read
+/// as HTML reads them.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Range {
+    /// The lowest value.
+    pub min: f32,
+    /// The highest value; below `min` it is `min`.
+    pub max: f32,
+    /// What values snap to, from `min`; `None` is `step="any"`.
+    pub step: Option<f32>,
+    /// The `value` attribute; `None` is the middle of the range.
+    pub value: Option<f32>,
+}
+
+impl Default for Range {
+    fn default() -> Self {
+        Self { min: 0.0, max: 100.0, step: Some(1.0), value: None }
+    }
+}
+
+impl Range {
+    fn max(&self) -> f32 {
+        self.max.max(self.min)
+    }
+
+    /// `value` after HTML's sanitization: clamped to the range and snapped
+    /// to a step from `min` (a step past `max` goes back one).
+    pub fn sanitize(&self, value: f32) -> f32 {
+        let (min, max) = (self.min, self.max());
+        let mut value = value.clamp(min, max);
+        if let Some(step) = self.step {
+            value = min + crate::graphics::floor((value - min) / step + 0.5) * step;
+            if value > max {
+                value -= step;
+            }
+        }
+        value
+    }
+
+    /// The value the input shows: its `value`, or the middle, sanitized.
+    pub fn current(&self) -> f32 {
+        self.sanitize(self.value.unwrap_or(self.min + (self.max() - self.min) / 2.0))
+    }
+
+    /// Where the current value sits between `min` and `max`, from 0 to 1.
+    pub fn fraction(&self) -> f32 {
+        let span = self.max() - self.min;
+        if span > 0.0 { (self.current() - self.min) / span } else { 0.0 }
+    }
+
+    /// The sanitized value at `fraction` (0 to 1) of the way from `min` to `max`.
+    pub fn value_at(&self, fraction: f32) -> f32 {
+        self.sanitize(self.min + fraction.clamp(0.0, 1.0) * (self.max() - self.min))
+    }
+
+    /// `value` as text, as the input's `value` property gives it: no more
+    /// decimals than the step has (`0.1` steps give `0.3`, not
+    /// `0.30000001`), and none for whole numbers.
+    pub fn format(&self, value: f32) -> String {
+        let decimals = match self.step {
+            Some(step) => (0..6).find(|&d| {
+                let scaled = step * pow10(d);
+                (scaled - crate::graphics::floor(scaled + 0.5)).abs() < 1e-3
+            }).unwrap_or(6),
+            None => 6,
+        };
+        let text = format!("{:.*}", decimals as usize, value);
+        let text = if text.contains('.') { text.trim_end_matches('0').trim_end_matches('.') } else { &text };
+        if text == "-0" { "0".to_string() } else { text.to_string() }
+    }
+}
+
+fn pow10(exponent: i32) -> f32 {
+    (0..exponent).fold(1.0, |acc, _| acc * 10.0)
+}
+
 /// The resolved styling properties of an HTML container element.
 #[derive(Debug, Clone)]
 pub struct ContainerStyle {
@@ -555,8 +631,8 @@ pub enum RenderKind {
     Image(String),
     /// Checkbox control (checked).
     Checkbox(bool),
-    /// Range input (position of the value from 0 to 1, styled parts).
-    Slider(f32, Option<Box<ControlParts>>),
+    /// Range input (its value and bounds, styled parts).
+    Slider(Range, Option<Box<ControlParts>>),
     /// Progress bar (value, max, styled parts).
     Progress(f32, f32, Option<Box<ControlParts>>),
     /// Canvas, by id.

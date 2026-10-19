@@ -72,6 +72,8 @@ Templates are precompiled at compile time via `#[derive(XeruneTemplate)]` and bi
 
 `data-on-hover` and `data-on-hover-out` take messages the same way and send them when the pointer enters and leaves the element (entering a child doesn't leave its parent). To only restyle what is under the pointer, `:hover` in CSS needs no messages.
 
+A range input sends its value with `data-on-input` (while it is dragged: pressing it moves the middle of the thumb under the pointer, and each new value is sent) and `data-on-change` (once it is let go of, if the value changed), after the DOM's `input` and `change` events. The attribute is a message prefix and the value is appended: `data-on-input="seek"` sends `seek:42` to `Seek(u32)`, `data-on-input="band:{{ loop.index0 }}"` sends `band:2:-3` to `#[xerune(prefix = "band:")] Band(BandGain)` whose `BandGain` parses `2:-3`. The value is written with no more decimals than `step` has, so a whole-number step fits an integer field. The model owns the value: the template binds `value="{{ position }}"`, and a range whose messages the model ignores doesn't move. A dragged range takes the touch: it doesn't scroll its container, and letting go doesn't click. With a mouse (the desktop backend), the left button drags like a finger.
+
 A message is named after its variant in snake_case: `add` for `Add`,
 `toggle:` followed by the argument for `Toggle(usize)` (`#[xerune(rename =
 "...")]` and `#[xerune(prefix = "...")]` change that). The template builds
@@ -789,7 +791,8 @@ a value of your own type needs a field or method that gives one of those.
 To run your own app, export a class with `xerune::export_browser_app!(MyApp, MyModel)`
 (feature `browser`) and hand it to `initXeruneApp` from `xerune.js` with
 the template's URL (see `studio/src/lib.rs` and `examples/standalone.html`).
-Clicks, hover (`data-on-hover`/`-out`) and keys go to `update` as text.
+Clicks, hover (`data-on-hover`/`-out`), range values (`data-on-input`/`-change`)
+and keys go to `update` as text.
 Transition messages come from the runtime, which follows the transitions
 of the compiled template.
 

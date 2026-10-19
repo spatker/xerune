@@ -28,6 +28,7 @@ pub struct UiBuilder {
     pub pointer: PointerState,
     pub hover_handlers: NodeMap<super::HoverHandlers>,
     pub transition_handlers: NodeMap<super::TransitionHandlers>,
+    pub value_handlers: NodeMap<super::ValueHandlers>,
     /// The keys of the view this one replaces, to tell new elements:
     /// `@starting-style` rules are computed for those. `None` computes none.
     pub previous_keys: Option<HashSet<u64>>,
@@ -110,6 +111,7 @@ impl UiBuilder {
             pointer: PointerState::default(),
             hover_handlers: NodeMap::new(),
             transition_handlers: NodeMap::new(),
+            value_handlers: NodeMap::new(),
             previous_keys: None,
             starting_styles: NodeMap::new(),
             uses_starting_style: false,
@@ -416,6 +418,9 @@ impl UiBuilder {
         if !el.parsed.transition.is_empty() {
             self.transition_handlers.insert(node, core::mem::take(&mut el.parsed.transition));
         }
+        if !el.parsed.value.is_empty() {
+            self.value_handlers.insert(node, core::mem::take(&mut el.parsed.value));
+        }
         let generated = super::style_resolution::finalize_node_style(
             node,
             el.tag,
@@ -550,6 +555,16 @@ pub struct ElementStyle {
     parsed: super::attributes::ParsedAttributes,
 }
 
+/// The message prefix of a `data-on-input` / `data-on-change` (`attribute`),
+/// if `M` takes it with a value.
+fn value_handler<M: core::str::FromStr>(attribute: &str, prefix: &str) -> Option<String> {
+    if format!("{prefix}:0").parse::<M>().is_err() {
+        crate::diag::warn_once(&format!("{attribute} is not a message prefix of the model that takes a value"), prefix);
+        return None;
+    }
+    Some(prefix.to_string())
+}
+
 impl ElementStyle {
     /// Clicking the element sends `message` (a compiled `data-on-click`).
     pub fn on_click<M: 'static>(&mut self, message: M) {
@@ -648,6 +663,20 @@ impl ElementStyle {
             Ok(message) => self.on_transitioncancel(message),
             Err(_) => crate::diag::warn_once("data-on-transitioncancel is not a message of the model", message),
         }
+    }
+
+    /// Dragging the element (a range input) sends `prefix:<value>` parsed
+    /// as `M` for each new value (a `data-on-input`). Checked now with the
+    /// value `0`, so a prefix the model doesn't take is reported when the
+    /// view is built.
+    pub fn on_input<M: core::str::FromStr + 'static>(&mut self, prefix: &str) {
+        self.parsed.value.input = value_handler::<M>("data-on-input", prefix);
+    }
+
+    /// Letting go of the element (a range input) with a new value sends
+    /// `prefix:<value>` parsed as `M` (a `data-on-change`); see [`Self::on_input`].
+    pub fn on_change<M: core::str::FromStr + 'static>(&mut self, prefix: &str) {
+        self.parsed.value.change = value_handler::<M>("data-on-change", prefix);
     }
 
     /// Starts from the default style of `tag`, inheriting from `parent_style`.

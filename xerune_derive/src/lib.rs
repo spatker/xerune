@@ -970,6 +970,13 @@ fn compile_node(
                     click.extend(handler);
                     continue;
                 }
+                if let Some(method) = value_message_method(key) {
+                    // A prefix the runtime appends the value to, so always text.
+                    let set = syn::Ident::new(method, proc_macro2::Span::call_site());
+                    let text = generate_attr_string_code(&attr_parts(attr), local_vars);
+                    click.extend(quote! { el.#set::<<Self as ::xerune::Model>::Message>(&#text); });
+                    continue;
+                }
                 if attr.is_dynamic() {
                     let val_tokens = generate_attr_string_code(&attr_parts(attr), local_vars);
                     let var_name = syn::Ident::new(&format!("_dyn_attr_{}", idx), proc_macro2::Span::call_site());
@@ -1069,6 +1076,16 @@ fn message_method(attribute: &str) -> Option<&'static str> {
         "data-on-transitionstart" => Some("on_transitionstart"),
         "data-on-transitionend" => Some("on_transitionend"),
         "data-on-transitioncancel" => Some("on_transitioncancel"),
+        _ => None,
+    }
+}
+
+/// The `ElementStyle` method that sets a message attribute whose message
+/// takes the element's value (`data-on-input`, `data-on-change`).
+fn value_message_method(attribute: &str) -> Option<&'static str> {
+    match attribute {
+        "data-on-input" => Some("on_input"),
+        "data-on-change" => Some("on_change"),
         _ => None,
     }
 }
@@ -1324,11 +1341,16 @@ fn expand_template(input: &DeriveInput, template: &TemplateRef) -> proc_macro2::
     // Collect data-on-click action strings
     let mut raw_actions = Vec::new();
     // Not inside template blocks, whose content html5ever kept apart.
-    fn collect_actions(tpl: &Template, id: NodeId, actions: &mut Vec<String>) {
+    // Each as (the message text to check, what to call it in an error).
+    fn collect_actions(tpl: &Template, id: NodeId, actions: &mut Vec<(String, Option<String>)>) {
         if let Kind::Element { attrs, .. } = &tpl.node(id).kind {
             for attr in attrs {
                 if message_method(&attr.name).is_some() {
-                    actions.push(attr.value.clone());
+                    actions.push((attr.value.clone(), None));
+                } else if value_message_method(&attr.name).is_some() {
+                    // `seek` sends `seek:<value>`.
+                    let described = format!("{}=\"{}\" (sends '{}:<value>')", attr.name, attr.value, attr.value);
+                    actions.push((format!("{}:", attr.value), Some(described)));
                 }
             }
         }
@@ -1342,11 +1364,14 @@ fn expand_template(input: &DeriveInput, template: &TemplateRef) -> proc_macro2::
     collect_actions(&tpl, Template::ROOT, &mut raw_actions);
 
     let mut check_calls = Vec::new();
-    for action in raw_actions {
+    for (action, described) in raw_actions {
         if let Some(idx) = action.find("{{").or_else(|| action.find("{%")) {
             let prefix = &action[..idx];
             if !prefix.is_empty() {
-                let panic_msg = format!("Invalid action prefix '{}' in HTML template", prefix);
+                let panic_msg = match &described {
+                    Some(described) => format!("Invalid message in {described} in HTML template"),
+                    None => format!("Invalid action prefix '{}' in HTML template", prefix),
+                };
                 check_calls.push(quote! {
                     {
                         let mut found = false;
@@ -1365,7 +1390,10 @@ fn expand_template(input: &DeriveInput, template: &TemplateRef) -> proc_macro2::
                 });
             }
         } else {
-            let panic_msg = format!("Invalid action '{}' in HTML template", action);
+            let panic_msg = match &described {
+                Some(described) => format!("Invalid message in {described} in HTML template"),
+                None => format!("Invalid action '{}' in HTML template", action),
+            };
             check_calls.push(quote! {
                 {
                     let mut found = false;

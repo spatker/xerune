@@ -1779,6 +1779,84 @@ mod controls {
         assert_eq!(thumbs, [at(0.5), at(0.5), at(0.3), at(0.5), at(0.0), at(0.333), at(1.0)]);
     }
 
+    #[derive(Debug, Clone, PartialEq, XeruneMessage)]
+    enum RangeMsg {
+        #[xerune(prefix = "set:")]
+        Set(f32),
+        #[xerune(prefix = "done:")]
+        Done(f32),
+        Clicked,
+    }
+
+    /// A range whose value the model owns, as in the music player's seek bar.
+    #[derive(XeruneTemplate)]
+    #[template(source = r#"<style>
+        body { margin: 0px; }
+        .list { height: 100px; overflow: scroll; display: flex; flex-direction: column; }
+        .tall { height: 300px; flex-shrink: 0; }
+        input { flex-shrink: 0; align-self: flex-start; }
+    </style>
+    <body><div class="list" data-on-click="clicked">
+        <input type="range" min="0" max="10" value="{{ value }}" data-on-input="set" data-on-change="done">
+        <div class="tall"></div>
+    </div></body>"#)]
+    struct Seek {
+        value: f32,
+        sent: Vec<RangeMsg>,
+    }
+    impl Model for Seek {
+        type Message = RangeMsg;
+        fn update(&mut self, msg: RangeMsg, _context: &mut Context<Self::Message>) {
+            if let RangeMsg::Set(value) = msg {
+                self.value = value;
+            }
+            self.sent.push(msg);
+        }
+    }
+
+    /// Pressing a range moves its thumb's middle under the pointer and
+    /// dragging keeps it there, within the ends, sending `data-on-input`
+    /// with each new value; letting go sends `data-on-change`. The touch
+    /// neither scrolls nor clicks.
+    #[test]
+    fn dragging_a_range_sends_its_value() {
+        let mut rt = Runtime::new(Seek { value: 5.0, sent: Vec::new() }, NoText);
+        crate::set_size(&mut rt, 400.0, 300.0);
+        // The 129px range's thumb middle travels from 11 to 122 (see
+        // `range_value_follows_min_max_and_step`).
+        let x = |value: f32| 11.0 + value / 10.0 * 111.0;
+        rt.handle_event(InputEvent::TouchStart { id: 1, x: x(3.0), y: 10.0 });
+        assert_eq!(rt.model().sent, [RangeMsg::Set(3.0)]);
+        rt.handle_event(InputEvent::TouchMove { id: 1, x: x(3.2), y: 60.0 });
+        assert_eq!(rt.model().sent, [RangeMsg::Set(3.0)], "the same step");
+        rt.handle_event(InputEvent::TouchMove { id: 1, x: 390.0, y: 60.0 });
+        rt.handle_event(InputEvent::TouchMove { id: 1, x: 395.0, y: 80.0 });
+        rt.handle_event(InputEvent::TouchEnd { id: 1, x: 395.0, y: 80.0 });
+        assert_eq!(rt.model().sent, [RangeMsg::Set(3.0), RangeMsg::Set(10.0), RangeMsg::Done(10.0)]);
+        assert_eq!(rt.ui.scroll_offsets.iter().next().map(|(_, offset)| *offset), None, "no scrolling");
+
+        // Pressing the thumb where it is changes nothing; a tap off the range clicks.
+        rt.model_mut().sent.clear();
+        rt.handle_event(InputEvent::TouchStart { id: 2, x: x(10.0), y: 10.0 });
+        rt.handle_event(InputEvent::TouchEnd { id: 2, x: x(10.0), y: 10.0 });
+        rt.handle_event(InputEvent::TouchStart { id: 3, x: 300.0, y: 50.0 });
+        rt.handle_event(InputEvent::TouchEnd { id: 3, x: 300.0, y: 50.0 });
+        assert_eq!(rt.model().sent, [RangeMsg::Clicked]);
+    }
+
+    /// A range's value as text has the step's decimals at most.
+    #[test]
+    fn range_values_are_formatted_by_step() {
+        let range = |step| style::Range { min: 0.0, max: 1.0, step, value: None };
+        assert_eq!(range(Some(0.1)).format(range(Some(0.1)).value_at(0.3)), "0.3");
+        assert_eq!(range(Some(1.0)).format(1.0), "1");
+        assert_eq!(range(Some(0.25)).format(0.5), "0.5");
+        assert_eq!(range(None).format(0.123456), "0.123456");
+        let gain = style::Range { min: -12.0, max: 12.0, step: Some(1.0), value: None };
+        assert_eq!(gain.format(gain.value_at(0.25)), "-6");
+        assert_eq!(gain.format(gain.value_at(0.5)), "0");
+    }
+
     #[derive(XeruneTemplate)]
     #[template(source = r#"<style>
         body { margin: 0px; }

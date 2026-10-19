@@ -115,6 +115,24 @@ pub struct TransitionHandlers {
     pub cancel: Option<Interaction>,
 }
 
+/// The messages a range input sends as its value changes: while it is
+/// dragged (`data-on-input`) and once it is let go of with a new value
+/// (`data-on-change`), after the DOM's events. Each is a message prefix the
+/// value is appended to: `data-on-input="seek"` sends `seek:42`.
+#[derive(Debug, Clone, Default)]
+pub struct ValueHandlers {
+    /// Sent with each new value while the input is dragged.
+    pub input: Option<String>,
+    /// Sent with the final value when the drag ends, if it changed.
+    pub change: Option<String>,
+}
+
+impl ValueHandlers {
+    pub(crate) fn is_empty(&self) -> bool {
+        self.input.is_none() && self.change.is_none()
+    }
+}
+
 impl TransitionHandlers {
     pub(crate) fn is_empty(&self) -> bool {
         self.run.is_none() && self.start.is_none() && self.end.is_none() && self.cancel.is_none()
@@ -164,6 +182,8 @@ pub struct Ui {
     pub hover_handlers: NodeMap<HoverHandlers>,
     /// The `data-on-transition*` messages of elements.
     pub transition_handlers: NodeMap<TransitionHandlers>,
+    /// The `data-on-input` / `data-on-change` messages of range inputs.
+    pub value_handlers: NodeMap<ValueHandlers>,
     /// Whether any rule uses `:active`.
     pub uses_active: bool,
     /// The styles elements that are new in this view start from, by
@@ -318,6 +338,7 @@ impl Ui {
                     &builder.pointer,
                     &mut builder.hover_handlers,
                     &mut builder.transition_handlers,
+                    &mut builder.value_handlers,
                     &mut base_styles,
                     &mut *style_cache,
                 );
@@ -359,6 +380,7 @@ impl Ui {
             uses_active,
             hover_handlers: builder.hover_handlers,
             transition_handlers: builder.transition_handlers,
+            value_handlers: builder.value_handlers,
             starting_styles: builder.starting_styles,
             uses_starting_style: builder.uses_starting_style,
         })
@@ -635,6 +657,59 @@ impl Ui {
         }
         commands.extend(content);
         commands
+    }
+
+    /// The node of the element with `key`, if it is in the view.
+    pub fn node_with_key(&self, key: u64) -> Option<NodeId> {
+        self.keys.iter().find(|&(_, &k)| k == key).map(|(node, _)| node)
+    }
+
+    /// `node`'s border box on screen: its layout position plus its
+    /// ancestors', less what scrolled ancestors scrolled by, as hit testing
+    /// places it.
+    pub fn absolute_rect(&self, node: NodeId) -> Option<Rect> {
+        let layout = self.taffy.layout(node).ok()?;
+        let (mut x, mut y) = (layout.location.x, layout.location.y);
+        let mut current = node;
+        while let Some(parent) = self.taffy.parent(current) {
+            let parent_layout = self.taffy.layout(parent).ok()?;
+            x += parent_layout.location.x;
+            y += parent_layout.location.y;
+            let scrolls = self.render_data.get(parent).is_some_and(|data| {
+                matches!(data.kind, RenderKind::Container | RenderKind::TextInput(..)) && data.style.overflow == Overflow::Scroll
+            });
+            if let Some((sx, sy)) = self.scroll_offsets.get(parent).filter(|_| scrolls) {
+                x -= sx;
+                y -= sy;
+            }
+            current = parent;
+        }
+        Some(Rect { x, y, width: layout.size.width, height: layout.size.height })
+    }
+
+    /// The range input at (`x`, `y`) that sends messages as it changes
+    /// (`data-on-input` / `data-on-change`), if there is one.
+    pub fn range_at(&self, x: f32, y: f32) -> Option<NodeId> {
+        let node = hit_test_recursive(&self.taffy, self.root, &self.scroll_offsets, &self.render_data, x, y, 0.0, 0.0)?;
+        let is_range = matches!(self.render_data.get(node)?.kind, RenderKind::Slider(..));
+        (is_range && self.value_handlers.get(node).is_some()).then_some(node)
+    }
+
+    /// The bounds and value of the range input `node`.
+    pub fn range(&self, node: NodeId) -> Option<crate::style::Range> {
+        match self.render_data.get(node)?.kind {
+            RenderKind::Slider(range, _) => Some(range),
+            _ => None,
+        }
+    }
+
+    /// The value pressing the range input `node` at `x` gives: the one that
+    /// puts the middle of its thumb there.
+    pub fn range_value_at(&self, node: NodeId, x: f32) -> Option<f32> {
+        let data = self.render_data.get(node)?;
+        let RenderKind::Slider(range, parts) = &data.kind else { return None };
+        let content = controls::content_box(self.absolute_rect(node)?, &data.style);
+        Some(range.value_at(controls::slider_fraction_at(content, x, &data.style, parts.as_deref())))
     }
 
     /// Performs a hit test check for coordinates (x, y) and returns the corresponding interaction
@@ -1052,8 +1127,8 @@ fn traverse_layout(
                 });
             },
             RenderKind::Checkbox(checked) => controls::checkbox(commands, rect, *checked, style),
-            RenderKind::Slider(fraction, parts) => {
-                controls::slider(commands, controls::content_box(rect, style), *fraction, style, parts.as_deref());
+            RenderKind::Slider(range, parts) => {
+                controls::slider(commands, controls::content_box(rect, style), range.fraction(), style, parts.as_deref());
             }
             RenderKind::Progress(value, max, parts) => {
                 let fraction = if *max > 0.0 { value / max } else { 0.0 };

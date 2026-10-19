@@ -239,6 +239,7 @@ pub(crate) fn resolve_styles(
     pointer: &super::builder::PointerState,
     hover_handlers: &mut NodeMap<super::HoverHandlers>,
     transition_handlers: &mut NodeMap<super::TransitionHandlers>,
+    value_handlers: &mut NodeMap<super::ValueHandlers>,
     base_styles: &mut NodeMap<(Style, ContainerStyle)>,
     style_cache: &mut HashMap<StyleCacheKey, (Style, ContainerStyle)>,
 ) {
@@ -277,7 +278,7 @@ pub(crate) fn resolve_styles(
         parsed.checkbox_checked = checked;
     }
     if let Some(slider_value) = meta.slider_value {
-        parsed.slider_value = Some(slider_value);
+        parsed.range.value = Some(slider_value);
     }
     if let Some(progress_value) = meta.progress_value {
         parsed.progress_value = progress_value;
@@ -459,6 +460,7 @@ pub(crate) fn resolve_styles(
             pointer,
             hover_handlers,
             transition_handlers,
+            value_handlers,
             base_styles,
             style_cache,
         );
@@ -469,6 +471,9 @@ pub(crate) fn resolve_styles(
     }
     if !parsed.transition.is_empty() {
         transition_handlers.insert(node, parsed.transition.clone());
+    }
+    if !parsed.value.is_empty() {
+        value_handlers.insert(node, parsed.value.clone());
     }
     let generated = finish_node(node, tag, &parent_style, layout_style, current_style, &parsed, taffy, render_data, interactions, base_styles);
     if let Some(&key) = keys.get(node) {

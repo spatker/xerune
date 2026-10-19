@@ -12,7 +12,8 @@
 // Every element carries a key in `data-xk`: re-renders patch the document by
 // key instead of replacing it, so transitions, :hover, focus and scroll
 // positions survive. Messages go back to the app as text: the elements'
-// `data-on-click`, `data-on-hover` and `data-on-hover-out`, and keys.
+// `data-on-click`, `data-on-hover`, `data-on-hover-out`, `data-on-input`
+// and `data-on-change`, and keys.
 
 /**
  * @param {Object} config
@@ -164,6 +165,17 @@ export function initXeruneApp({ app, templatePath, doc = document, onStateUpdate
                 send(message);
             }
         }, true);
+    }
+
+    // Range inputs: `data-on-input="seek"` sends `seek:<value>` while the
+    // thumb moves, `data-on-change` once it is let go of.
+    for (const type of ["input", "change"]) {
+        listen(doc, type, (event) => {
+            const prefix = event.target.getAttribute?.(`data-on-${type}`);
+            if (prefix) {
+                send(`${prefix}:${event.target.value}`);
+            }
+        });
     }
 
     // Text inputs: the model owns their text.

@@ -56,6 +56,15 @@ pub struct TouchState {
     pub scroll_node: Option<NodeId>,
 }
 
+/// A range input being dragged: its element's key, and its value when
+/// the drag started and now.
+#[derive(Debug, Clone, Copy)]
+struct RangeDrag {
+    key: u64,
+    start: f32,
+    value: f32,
+}
+
 /// The on-screen keyboard while it is open: its state, how to tell the
 /// model the result, and the model's scroll positions to go back to.
 struct KeyboardSession<Msg> {
@@ -104,6 +113,8 @@ pub struct Runtime<M: Model, R> {
     /// Messages of `data-on-transition*` events, for the next poll.
     transition_messages: Vec<Interaction>,
     pub(crate) touch_state: Option<TouchState>,
+    /// The range input the pointer pressed, while it is held.
+    range_drag: Option<RangeDrag>,
     images: ImageStore,
     /// Where the pointer was last seen, and whether it is pressed.
     pointer: Option<(f32, f32)>,
@@ -180,6 +191,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
              transitions: HashMap::new(),
              transition_messages: Vec::new(),
              touch_state: None,
+             range_drag: None,
              images,
              pointer: None,
              pressed: false,
@@ -495,7 +507,13 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
                     has_scrolled: false,
                     scroll_node: None,
                 });
-                self.move_pointer(x, y, true)
+                let redraw = self.move_pointer(x, y, true);
+                self.start_range_drag(x, y) || redraw
+            }
+            InputEvent::TouchMove { id, x, y } if self.range_drag.is_some() && self.touch_state.is_some_and(|t| t.id == id) => {
+                // A dragged range takes the touch: it doesn't scroll.
+                let redraw = self.move_pointer(x, y, self.pressed);
+                self.move_range_drag(x) || redraw
             }
             InputEvent::TouchMove { id, x, y } => {
                 let mut redraw = false;
@@ -535,6 +553,10 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
             InputEvent::TouchEnd { id, x, y } => {
                 // Hover stays where the touch ended, as in mobile browsers.
                 let mut redraw = self.move_pointer(x, y, false);
+                if self.range_drag.is_some() && self.touch_state.is_some_and(|t| t.id == id) {
+                    self.touch_state = None;
+                    return self.end_range_drag() || redraw;
+                }
                 if let Some(state) = self.touch_state.take() {
                     if state.id == id {
                         let moved_x = (x - state.start_x).abs();
@@ -550,11 +572,55 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
                 if let Some(state) = self.touch_state.as_ref() {
                     if state.id == id {
                         self.touch_state = None;
+                        self.range_drag = None;
                     }
                 }
                 self.move_pointer(x, y, false)
             }
         }
+    }
+
+    /// Starts dragging the range input at (`x`, `y`), if there is one that
+    /// sends messages, and moves its thumb there. Returns true if the view
+    /// changed.
+    fn start_range_drag(&mut self, x: f32, y: f32) -> bool {
+        let Some(node) = self.ui.range_at(x, y) else { return false };
+        let (Some(&key), Some(range)) = (self.ui.keys.get(node), self.ui.range(node)) else { return false };
+        let start = range.current();
+        self.range_drag = Some(RangeDrag { key, start, value: start });
+        self.move_range_drag(x)
+    }
+
+    /// Moves the dragged range's thumb to `x`: sends its `data-on-input`
+    /// message if that changes the value. Returns true if the view changed.
+    fn move_range_drag(&mut self, x: f32) -> bool {
+        let Some(mut drag) = self.range_drag else { return false };
+        let Some(value) = self.ui.node_with_key(drag.key).and_then(|node| self.ui.range_value_at(node, x)) else { return false };
+        if value == drag.value {
+            return false;
+        }
+        drag.value = value;
+        self.range_drag = Some(drag);
+        self.send_range_value(drag.key, value, |handlers| &handlers.input)
+    }
+
+    /// Lets go of the dragged range: sends its `data-on-change` message if
+    /// its value changed. Returns true if the view changed.
+    fn end_range_drag(&mut self) -> bool {
+        match self.range_drag.take() {
+            Some(drag) if drag.value != drag.start => self.send_range_value(drag.key, drag.value, |handlers| &handlers.change),
+            _ => false,
+        }
+    }
+
+    /// Sends the message `handler` picks of the range with `key`, with
+    /// `value` appended. Returns true if the view changed.
+    fn send_range_value(&mut self, key: u64, value: f32, handler: fn(&crate::ui::ValueHandlers) -> &Option<String>) -> bool {
+        let Some(node) = self.ui.node_with_key(key) else { return false };
+        let (Some(range), Some(handlers)) = (self.ui.range(node), self.ui.value_handlers.get(node)) else { return false };
+        let Some(prefix) = handler(handlers) else { return false };
+        let message = format!("{prefix}:{}", range.format(value));
+        self.process_message_str(&message)
     }
 
     /// Feeds multiple text messages into the update loop. Returns true if the view changes.

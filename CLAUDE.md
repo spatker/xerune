@@ -54,8 +54,10 @@ Modules:
 
 Templates: `{{ expr }}`, `{% if %}/{% elif %}/{% else %}`, `{% if let %}`,
 `{% for x in xs %}` with `loop.index`/`loop.index0`, `data-on-click="msg:{{ arg }}"`
-(message strings parsed by `XeruneMessage`), also `data-on-hover(-out)` and
-`data-on-transition{run,start,end,cancel}`. Selectors are matched when the
+(message strings parsed by `XeruneMessage`), also `data-on-hover(-out)`,
+`data-on-transition{run,start,end,cancel}` and, on ranges, `data-on-input` /
+`data-on-change` (a prefix; the runtime appends `:<value>` while dragging and
+on release, `Runtime::start_range_drag`; the desktop mouse is a touch). Selectors are matched when the
 derive runs; classes set by `{% if %}` (on the element or an ancestor) become
 runtime conditions. `tests/template_grammar.html` is
 the grammar regression fixture; extend it when touching the template parser
