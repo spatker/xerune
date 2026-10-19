@@ -2231,6 +2231,7 @@ mod known_gaps {
     gap_model!(Order, "tests/gaps/order.html");
     gap_model!(InlineWrap, "tests/gaps/inline_wrap.html");
     gap_model!(GposKerning, "tests/gaps/gpos_kerning.html");
+    gap_model!(ControlMinHeight, "tests/gaps/control_min_height.html");
 
     fn runtime<M: Model + ui::TemplateLayout + 'static>(model: M, w: f32, h: f32) -> Runtime<M, CharMeasurer> {
         let mut runtime = Runtime::new(model, CharMeasurer);
@@ -2261,6 +2262,17 @@ mod known_gaps {
             .collect();
         assert!(lines.iter().all(|r| r.width <= 100.0), "a line overflows the 100px box: {lines:?}");
         assert!(lines.len() > 1, "expected the sentence on several lines");
+    }
+
+    #[test]
+    #[ignore = "FIXME: form controls have no automatic minimum size: a range and a checkbox shrink to 0px in an overflowing flex column"]
+    fn controls_keep_their_height_in_a_shrinking_column() {
+        let rt = runtime(ControlMinHeight, 400.0, 300.0);
+        let heights: Vec<f32> = rt.ui.render_data.iter()
+            .filter(|(_, data)| matches!(data.kind, style::RenderKind::Slider(..) | style::RenderKind::Progress(..) | style::RenderKind::Checkbox(_)))
+            .map(|(node, _)| rt.ui.taffy.layout(node).unwrap().size.height)
+            .collect();
+        assert_eq!(heights, [16.0, 0.0, 13.0]);
     }
 
     #[test]

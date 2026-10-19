@@ -1,0 +1,12 @@
+<!-- Measured in Chromium 154: the range stays 16px and the checkbox 13px
+     in an overflowing flex column (their automatic minimum height); the
+     progress bar shrinks to 0. -->
+<style>
+    body { margin: 0px; }
+    .list { height: 100px; overflow: scroll; display: flex; flex-direction: column; }
+    .tall { height: 300px; flex-shrink: 0; }
+</style>
+<body><div class="list">
+    <input type="range"><progress></progress><input type="checkbox">
+    <div class="tall"></div>
+</div></body>
