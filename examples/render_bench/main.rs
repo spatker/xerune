@@ -19,6 +19,9 @@
 //! plugin, the difference divided by `N` is the per-iteration instruction count
 //! on ARM.
 
+#[path = "../animation/animation_impl.rs"]
+#[allow(dead_code)]
+mod animation_impl;
 #[path = "../calculator/calculator_impl.rs"]
 #[allow(dead_code)]
 mod calculator_impl;
@@ -182,7 +185,7 @@ fn main() {
         )
         .unwrap(),
     };
-    let scenes = std::env::var("RENDER_BENCH_SCENES").unwrap_or_else(|_| "todo,calculator,showcase,music_player".into());
+    let scenes = std::env::var("RENDER_BENCH_SCENES").unwrap_or_else(|_| "todo,calculator,showcase,vehicle,music_player,animation".into());
 
     println!("render_bench: {width}x{height}, {} iterations, medians", bench.iters);
     for scene in scenes.split(',') {
@@ -190,6 +193,8 @@ fn main() {
             "todo" => bench.run(scene, todo_impl::TodoList::default(), ["toggle:0", "toggle:0"]),
             "calculator" => bench.run(scene, calculator_impl::CalculatorModel::default(), ["digit:7", "clear"]),
             "showcase" => bench.run(scene, showcase_impl::ShowcaseModel::default(), ["toggle_wifi", "toggle_wifi"]),
+            "animation" => bench.run(scene, animation_impl::AnimationModel::new(100), ["frame:0.0166", "frame:0.0166"]),
+            "vehicle" => bench.run(scene, showcase_impl::ShowcaseModel { active_tab: 2, ..Default::default() }, ["tick", "tick"]),
             "music_player" => bench.run(scene, music_player_impl::MusicPlayerModel::new(None), ["hover_track:2", "unhover_track"]),
             other => eprintln!("unknown scene {other}"),
         }
