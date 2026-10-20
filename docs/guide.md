@@ -89,6 +89,9 @@ parsed with the derived `FromStr`.
 A variant marked `#[xerune(skip)]` has no string form: only Rust code
 builds it, e.g. a subscription with `Stats(FrameStats)`, and its payload
 needs no `FromStr`.
+A model whose `Message` is `String` gets every message as the text the
+template wrote (`buy:{{ id }}` sends `buy:7`), unchecked: the C API's
+compiled templates (§14) pass them on this way.
 
 To scroll an element into view, give it an `id` and call
 `context.scroll_into_view("item-3")` from `update`:

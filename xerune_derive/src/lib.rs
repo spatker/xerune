@@ -1111,8 +1111,21 @@ fn compile_message(attr: &Attr, method: &str, local_vars: &HashSet<String>) -> p
         if !prefix.is_empty() && prefix.trim() == prefix {
             let constructor = message_constructor(prefix);
             let expr: proc_macro2::TokenStream = format_expr(expr, local_vars).parse().unwrap();
+            // A message enum's constructor is inherent, so it is found
+            // before this trait's, which only `String` messages use.
             return quote! {
-                el.#set(#message_type::#constructor(::xerune::__private::message_arg(&(#expr))));
+                el.#set({
+                    #[allow(non_camel_case_types, dead_code)]
+                    trait __XeruneStringMessage {
+                        fn #constructor(value: ::xerune::__private::MessageText) -> Self;
+                    }
+                    impl __XeruneStringMessage for ::xerune::__private::String {
+                        fn #constructor(value: ::xerune::__private::MessageText) -> Self {
+                            ::xerune::__private::string_message(#prefix, value)
+                        }
+                    }
+                    #message_type::#constructor(::xerune::__private::message_arg(&(#expr)))
+                });
             };
         }
     }
@@ -1494,7 +1507,9 @@ fn expand_template(input: &DeriveInput, template: &TemplateRef) -> proc_macro2::
                     let exact = <MsgType as ::xerune::XeruneMessage>::VALID_EXACT;
                     let prefixes = <MsgType as ::xerune::XeruneMessage>::VALID_PREFIXES;
 
-                    #(#check_calls)*
+                    if !<MsgType as ::xerune::XeruneMessage>::ANY {
+                        #(#check_calls)*
+                    }
                 };
 
                 #keyframes_init

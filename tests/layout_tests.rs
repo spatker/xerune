@@ -669,6 +669,31 @@ fn test_html_root_fills_viewport_width() {
 }
 
 #[derive(XeruneTemplate)]
+#[template(source = r#"<style>body { margin: 0 }</style><div style="width: 50px; height: 20px" data-on-click="buy:{{ id }}"></div>"#)]
+struct StringMessageModel {
+    id: i64,
+    got: Vec<String>,
+}
+
+impl Model for StringMessageModel {
+    type Message = String;
+    fn update(&mut self, msg: String, _context: &mut Context<String>) {
+        self.got.push(msg);
+    }
+}
+
+#[test]
+fn string_messages_take_template_arguments() {
+    // `prefix:{{ expr }}` is a typed constructor for a message enum; for
+    // `String` messages it is the text.
+    let mut runtime = Runtime::new(StringMessageModel { id: 7, got: Vec::new() }, MockMeasurer);
+    crate::set_size(&mut runtime, 100.0, 100.0);
+    runtime.handle_event(InputEvent::TouchStart { id: 1, x: 10.0, y: 10.0 });
+    runtime.handle_event(InputEvent::TouchEnd { id: 1, x: 10.0, y: 10.0 });
+    assert_eq!(runtime.model().got, ["buy:7"]);
+}
+
+#[derive(XeruneTemplate)]
 #[template(source = r#"<html><head><style>
   html { font-size: 10px }
   body { margin: 0 }

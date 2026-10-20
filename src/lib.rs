@@ -120,7 +120,7 @@ macro_rules! __if_interpret {
 /// the exact version of `xerune`.
 #[doc(hidden)]
 pub mod __private {
-    pub use crate::alloc_prelude::Cow;
+    pub use crate::alloc_prelude::{Cow, String};
     pub use crate::css::media::{matches_query, Feature, FeatureGroup};
     pub use crate::css::parse_keyframes;
     pub use crate::css::declared::Declarations;
@@ -169,6 +169,25 @@ pub mod __private {
         fn to_message_arg(&self) -> crate::alloc_prelude::String {
             crate::alloc_prelude::ToString::to_string(**self)
         }
+    }
+
+    /// A `data-on-click` argument shown as text, for models whose messages
+    /// are strings (see [`string_message`]).
+    pub struct MessageText(crate::alloc_prelude::String);
+
+    impl<A: ToDisplayString + ?Sized> MessageArg<MessageText> for A {
+        fn to_message_arg(&self) -> MessageText {
+            MessageText(self.to_display_string().into_owned())
+        }
+    }
+
+    /// The string message `prefix:{{ expr }}` sends, for models whose
+    /// messages are strings: the derive gives `String` a constructor that
+    /// calls this where a message enum has a typed one.
+    pub fn string_message(prefix: &str, arg: MessageText) -> crate::alloc_prelude::String {
+        let mut message = crate::alloc_prelude::String::from(prefix);
+        message.push_str(&arg.0);
+        message
     }
 
     /// Calls [`MessageArg::to_message_arg`]; generated code passes `&(expr)`.

@@ -7,6 +7,8 @@ pub trait XeruneMessage: core::str::FromStr {
     const VALID_PREFIXES: &'static [&'static str];
     /// List of valid exact match message strings.
     const VALID_EXACT: &'static [&'static str];
+    /// Any message is valid (`String`): templates' messages aren't checked.
+    const ANY: bool = false;
 }
 
 /// Trait defining an application Model in the Model-View-Update (Elm) architecture.
@@ -170,6 +172,7 @@ pub enum InputEvent {
 impl XeruneMessage for String {
     const VALID_PREFIXES: &'static [&'static str] = &[];
     const VALID_EXACT: &'static [&'static str] = &[];
+    const ANY: bool = true;
 }
 
 /// A no-op message type for models that do not process any interaction messages.
