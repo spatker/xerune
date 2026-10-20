@@ -756,6 +756,32 @@ fn z_index_orders_painting_and_hit_testing() {
 }
 
 #[derive(XeruneTemplate)]
+#[template(source = r#"<style>body { margin: 0; }</style>
+<div style="height: 0">
+  <div style="position: absolute; left: 10px; top: 10px; width: 50px; height: 50px; background: #ff0000" data-on-click="tick"></div>
+</div>
+<div style="position: absolute; left: 100px; top: 0; width: 20px; height: 20px; overflow: hidden">
+  <div style="position: absolute; left: 0; top: 30px; width: 50px; height: 50px" data-on-click="tick"></div>
+</div>"#)]
+struct OverflowHitModel;
+
+impl Model for OverflowHitModel {
+    type Message = MockMsg;
+    fn update(&mut self, _msg: Self::Message, _context: &mut Context<Self::Message>) {}
+}
+
+/// Elements outside their parent's box are clicked as they are painted:
+/// unless the parent clips them.
+#[test]
+fn overflowing_elements_are_hit_unless_clipped() {
+    let mut runtime = Runtime::new(OverflowHitModel, MockMeasurer);
+    crate::set_size(&mut runtime, 800.0, 600.0);
+    let clickable = |x, y| runtime.ui.hit_test(x, y).is_some_and(|(interaction, _)| interaction.is_some());
+    assert!(clickable(30.0, 30.0), "outside a parent of no height");
+    assert!(!clickable(110.0, 40.0), "clipped by overflow: hidden");
+}
+
+#[derive(XeruneTemplate)]
 #[template(source = r#"<div style="display: flex">
   <div style="order: 2; width: 10px; height: 10px; background: #ff0000"></div>
   <div style="order: 3; width: 10px; height: 10px; background: #00ff00"></div>

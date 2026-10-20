@@ -1462,37 +1462,38 @@ pub fn hit_test_recursive(
     let width = layout.size.width;
     let height = layout.size.height;
 
-    if x >= left && x <= left + width && y >= top && y <= top + height {
-        let mut child_abs_x = left;
-        let mut child_abs_y = top;
-
-        if let Some(data) = render_data.get(&root) {
-            // Like painting: no box, no hit.
-            if data.style.display == crate::style::Display::None {
-                return None;
-            }
-
-            let overflow = match data.kind {
-                RenderKind::Container | RenderKind::TextInput(..) => data.style.overflow,
-                _ => Overflow::Visible,
-            };
-
-            if overflow == Overflow::Scroll {
-                if let Some((sx, sy)) = scroll_offsets.get(&root) {
-                    child_abs_x -= sx;
-                    child_abs_y -= sy;
-                }
+    let inside = x >= left && x <= left + width && y >= top && y <= top + height;
+    let mut child_abs_x = left;
+    let mut child_abs_y = top;
+    let mut overflow = Overflow::Visible;
+    if let Some(data) = render_data.get(&root) {
+        // Like painting: no box, no hit.
+        if data.style.display == crate::style::Display::None {
+            return None;
+        }
+        if let RenderKind::Container | RenderKind::TextInput(..) = data.kind {
+            overflow = data.style.overflow;
+        }
+        if overflow == Overflow::Scroll {
+            if let Some((sx, sy)) = scroll_offsets.get(&root) {
+                child_abs_x -= sx;
+                child_abs_y -= sy;
             }
         }
-
-        if let Ok(children) = taffy.children(root) {
-             for child in paint_order(children, root, render_data).iter().rev() {
-                 if let Some(hit) = hit_test_recursive(taffy, *child, scroll_offsets, render_data, x, y, child_abs_x, child_abs_y) {
-                     return Some(hit);
-                 }
-             }
-        }
-        return Some(root);
     }
-    None
+    // Like painting, children overflowing the box are hit too, unless the
+    // box clips them: absolutely positioned elements in a body of no
+    // height, a dropdown hanging out of its button.
+    if !inside && overflow != Overflow::Visible {
+        return None;
+    }
+
+    if let Ok(children) = taffy.children(root) {
+         for child in paint_order(children, root, render_data).iter().rev() {
+             if let Some(hit) = hit_test_recursive(taffy, *child, scroll_offsets, render_data, x, y, child_abs_x, child_abs_y) {
+                 return Some(hit);
+             }
+         }
+    }
+    inside.then_some(root)
 }
