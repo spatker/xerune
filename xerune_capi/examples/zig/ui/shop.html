@@ -1,0 +1,43 @@
+<html>
+<head>
+<style>
+    body { margin: 0; background: #14161c; color: #e8e6e3; font-size: 16px; }
+    .panel { display: flex; flex-direction: column; gap: 10px; padding: 20px; }
+    header { display: flex; justify-content: space-between; align-items: center; }
+    h1 { margin: 0; font-size: 26px; }
+    .gold { color: #f5c542; font-weight: bold; font-size: 20px; }
+    .item { display: flex; align-items: center; gap: 12px; padding: 10px 14px; background: #1f2330; border-radius: 8px; }
+    .item .name { flex-grow: 1; }
+    .item .price { color: #f5c542; width: 70px; text-align: right; }
+    .buy { padding: 6px 16px; background: #3d7be0; border-radius: 6px; color: #ffffff; font-weight: bold; transition: background-color 0.15s; }
+    .buy:hover { background: #5b93ee; }
+    .buy.poor { background: #3a3f4d; color: #8a8f9c; }
+    .owned { color: #6cc070; width: 80px; text-align: center; }
+    .note { color: #8a8f9c; font-size: 14px; }
+</style>
+</head>
+<body>
+<div class="panel">
+    <header>
+        <h1>Shop</h1>
+        <span class="gold">{{ gold }} gold</span>
+    </header>
+    {% for item in items %}
+    <div class="item">
+        <span class="name">{{ item.name }}</span>
+        <span class="price">{{ item.price }}</span>
+        {% if item.owned %}
+        <span class="owned">Owned</span>
+        {% else %}
+        <span class="buy{% if item.price > gold %} poor{% endif %}" data-on-click="buy:{{ item.id }}">Buy</span>
+        {% endif %}
+    </div>
+    {% endfor %}
+    {% if let Some(message) = last_purchase %}
+    <span class="note">Bought {{ message }}. {{ "{:.0}"|format(owned_share * 100.0) }}% of the shop is yours.</span>
+    {% else %}
+    <span class="note">Click Buy to spend your gold.</span>
+    {% endif %}
+</div>
+</body>
+</html>
