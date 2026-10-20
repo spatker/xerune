@@ -834,3 +834,48 @@ Needs Node 22+ and `chromium` (or `$CHROMIUM`). How it works:
 - **Skipped**: tests that need JavaScript, `reftest-wait`, iframes, SVG, canvas, video, animations or paging. They are reported but not part of the pass rate.
 - **Expectations**: `wpt_runner/expectations.txt` lists the tests that fail; every other test that runs is expected to pass, and its header has the pass rate per suite. A run exits with an error when a test fails that isn't listed, and lists tests that newly pass. After an engine fix, run with `--update` and commit the file along with the fix.
 - **Images**: `--images` writes Xerune's render, Chromium's reference and a diff for each failure to `target/wpt/images/failures/<test>/`, and for each anti-aliasing pass to `target/wpt/images/antialiasing/<test>/`.
+
+---
+
+## 14. C API (C, C++, Zig)
+
+`xerune_capi` renders a template from other languages. It doesn't compile the template: it reads the HTML file when the program runs, as the studio does. The model is JSON, and the view's messages come back as strings. The program owns the loop. It forwards input, moves time on and gets the pixels drawn into its own buffer, e.g. to upload into a texture. The API is `xerune_capi/include/xerune.h`, generated from `xerune_capi/src/lib.rs` by cbindgen; its comments are the reference.
+
+```sh
+cargo build --release -p xerune_capi   # target/release/libxerune_capi.a (and .so)
+cargo zigbuild --release -p xerune_capi --target x86_64-pc-windows-gnu   # Windows
+```
+
+Link the static library together with the system libraries Rust's standard library needs (`cargo rustc -p xerune_capi -- --print native-static-libs` lists them). On Linux these are `-lgcc_s -lutil -lrt -lpthread -lm -ldl`. `xerune_capi/examples/zig` is a complete Zig sample for Linux and Windows. Its `build.zig` translates the header and links the library, and `src/main.zig` renders a shop, clicks Buy, handles the message and writes the frame out:
+
+```sh
+cd xerune_capi/examples/zig && zig build run   # writes shop.ppm
+```
+
+A frame:
+
+```c
+XrUi *ui = xr_new(NULL, 0);                 // bundled Roboto; or XrFont[] with fallbacks
+xr_load_template(ui, "ui/hud.html");
+xr_set_model(ui, "{\"score\": 0, \"player\": null}");
+xr_set_size(ui, 1280, 720);
+// every frame:
+xr_pointer_move(ui, x, y);                  // and xr_pointer_down/up, xr_scroll, xr_key_down/up, xr_text_input
+for (const char *m; (m = xr_next_message(ui));) {
+    // "buy:3" for data-on-click="buy:{{ item.id }}": update your model, then
+    xr_set_model(ui, json);
+}
+xr_tick(ui, now_ms);
+XrRect damage;
+if (xr_render(ui, pixels, stride, XR_PIXELS_XBGR8888, &damage)) { /* upload damage */ }
+xr_free(ui);
+```
+
+- **Model**: JSON fields are what the template reads. Integers are 64-bit, `null` is `None` (`{% if let Some(p) = player %}`), and conditions must be booleans. Set the whole model each time. There are no model methods, so compute values like `owned_share` yourself and put them in the JSON.
+- **Messages**: `data-on-click`, `data-on-input`/`-change` (ranges append `:<value>`), `data-on-hover`, transition events, `keydown:<code>` / `keyup:<code>` with `KeyboardEvent.code` names, and `<id>:text:<text>` for a focused text input.
+- **Rendering**: `xr_render` draws only what changed. It expects the buffer to still hold the last frame; call `xr_repaint_all` when it doesn't. Output is opaque, either XRGB8888 or XBGR8888. Use `xr_hit(ui, x, y)` to decide whether the pointer goes to the UI or to the game underneath.
+- **Errors**: failing calls return -1, false or NULL, and `xr_last_error()` says why. A failed `xr_load_template` or `xr_set_model` keeps the previous view. Panics never unwind into the caller.
+- **Threads**: use a UI from one thread at a time. The viewport is still global in xerune (`xerune::screen`), so UIs of different sizes must not render concurrently.
+- **Images**: `<img>` paths are relative to the template. They load in the background; `xr_wait_for_images` waits for them, e.g. before a screenshot.
+
+CI runs the Zig sample on Linux, and the cross-built `shop.exe` on Windows.
