@@ -2107,6 +2107,43 @@ mod controls {
         assert_eq!(text(&typed, "hello"), Some((rgb(0x000000), 16.0)));
     }
 
+    #[derive(XeruneTemplate)]
+    #[template(source = r#"<input value="{{ text }}" placeholder="Type here">"#)]
+    struct UntypedInput {
+        text: String,
+    }
+
+    impl Model for UntypedInput {
+        type Message = String;
+        fn update(&mut self, _msg: String, _context: &mut Context<Self::Message>) {}
+    }
+
+    /// An `<input>` without a `type` is a text input, as in HTML: compiled
+    /// and built at runtime.
+    #[test]
+    fn untyped_inputs_are_text_inputs() {
+        assert_eq!(text(&commands(UntypedInput { text: String::new() }), "Type here"), Some((rgb(0x757575), 16.0)));
+        assert_eq!(text(&commands(UntypedInput { text: "hi".into() }), "hi"), Some((rgb(0x000000), 16.0)));
+
+        struct Runtime;
+        impl Model for Runtime {
+            type Message = String;
+            fn update(&mut self, _msg: String, _context: &mut Context<Self::Message>) {}
+        }
+        impl ui::TemplateLayout for Runtime {
+            fn stylesheet(&self) -> &'static str {
+                ""
+            }
+            fn build_ui(&self, builder: &mut ui::UiBuilder, _: &impl TextMeasurer, _: &style::ContainerStyle, _: &impl Fn(&str) -> bool) -> taffy::NodeId {
+                let body = builder.create_element("body", &[]);
+                let input = builder.create_input_text("", &[("placeholder", "Type here")]);
+                builder.append_child(body, input);
+                body
+            }
+        }
+        assert_eq!(text(&commands(Runtime), "Type here"), Some((rgb(0x757575), 16.0)));
+    }
+
     /// Runtime stylesheets (no compiled template) must not reset an
     /// `<input>`'s size to its type's defaults after CSS set it.
     #[test]

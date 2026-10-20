@@ -34,8 +34,9 @@ pub fn input_defaults_key(input_type: &str) -> Option<&'static str> {
 
 /// The [`get_default_style`] key of an element: an `<input>` by its `type`,
 /// so CSS applied on top of the defaults isn't overwritten by them later.
+/// An `<input>` without a `type` is a text input, as in HTML.
 pub fn element_defaults_key<'a>(tag: &'a str, input_type: Option<&str>) -> &'a str {
-    match input_type.and_then(input_defaults_key) {
+    match input_defaults_key(input_type.unwrap_or("text")) {
         Some(key) if tag == "input" => key,
         _ => tag,
     }

@@ -997,10 +997,14 @@ fn compile_node(
             }
 
             // A literal input `type` picks the widget defaults up front, so
-            // the CSS rules below apply on top of them.
-            let static_input_type = attrs.iter()
-                .find(|a| tag == "input" && a.name == "type" && !a.is_dynamic())
-                .map(|a| a.value.clone());
+            // the CSS rules below apply on top of them. Without a `type` an
+            // input is a text input, as in HTML.
+            let input_type = attrs.iter().find(|a| tag == "input" && a.name == "type");
+            let static_input_type = match input_type {
+                Some(a) if !a.is_dynamic() => Some(a.value.clone()),
+                None if tag == "input" => Some("text".to_string()),
+                _ => None,
+            };
             let element_style = match static_input_type {
                 Some(input_type) => quote! { ::xerune::__private::ElementStyle::new_input(#input_type, &parent_style) },
                 None => quote! { ::xerune::__private::ElementStyle::new(#tag, &parent_style) },
