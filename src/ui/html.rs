@@ -8,7 +8,9 @@ use super::UiBuilder;
 
 /// Builds `handle` (a document or element) and its descendants with
 /// `builder`; `<head>`, `<style>`, `<script>` and whitespace-only text are
-/// skipped. Returns the root of what was built.
+/// skipped. Elements keep the keys of their `data-xk` (hex), which the
+/// template interpreter writes; others are keyed by their place among their
+/// siblings. Returns the root of what was built.
 pub fn build_document(handle: &Handle, builder: &mut UiBuilder) -> Option<NodeId> {
     match &handle.data {
         NodeData::Document => handle.children.borrow().iter().find_map(|child| build_document(child, builder)),
@@ -17,7 +19,15 @@ pub fn build_document(handle: &Handle, builder: &mut UiBuilder) -> Option<NodeId
             if matches!(tag, "style" | "script" | "head" | "link" | "meta" | "title") {
                 return None;
             }
+            let mut key = None;
             let owned: Vec<(String, String)> = attrs.borrow().iter()
+                .filter(|a| match a.name.local.as_ref() {
+                    "data-xk" => {
+                        key = u64::from_str_radix(&a.value, 16).ok();
+                        false
+                    }
+                    _ => true,
+                })
                 .map(|a| (a.name.local.to_string(), a.value.to_string())).collect();
             let attrs: Vec<_> = owned.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
             let get = |key: &str| attrs.iter().find(|(k, _)| *k == key).map(|(_, v)| *v);
@@ -31,6 +41,11 @@ pub fn build_document(handle: &Handle, builder: &mut UiBuilder) -> Option<NodeId
                 _ => builder.create_element(tag, &attrs),
             };
             builder.node_to_handle.insert(node, handle.clone());
+            // The interpreter's key: the element's place in the template,
+            // as in a compiled view, so it stays when siblings come and go.
+            if let Some(key) = key {
+                builder.keys.insert(node, key);
+            }
             if let Some(meta) = builder.node_metadata.get_mut(&node) {
                 meta.attrs = owned;
             }
@@ -96,6 +111,20 @@ mod tests {
         texts.sort();
         assert_eq!(texts, [("hi", 255), ("x", 255)]);
         assert!(ui.body.is_some());
+    }
+
+    /// An element with a `data-xk` keeps that key when a sibling appears
+    /// before it; one without is keyed by its index, which moves.
+    #[test]
+    fn data_xk_keys_elements() {
+        let key_of = |html: &str, text: &str| {
+            let ui = super::super::Ui::new(html, &NoText, ContainerStyle::default(), &|_| true).unwrap();
+            let text_node = ui.render_data.iter().find(|(_, d)| matches!(&d.kind, RenderKind::Text(t) if t == text)).map(|(n, _)| n).unwrap();
+            ui.keys.get(ui.taffy.parent(text_node).unwrap()).copied().unwrap()
+        };
+        assert_eq!(key_of("<p data-xk=\"2a\">b</p>", "b"), 0x2a);
+        assert_eq!(key_of("<p>a</p><p data-xk=\"2a\">b</p>", "b"), 0x2a);
+        assert_ne!(key_of("<p>b</p>", "b"), key_of("<p>a</p><p>b</p>", "b"));
     }
 
     /// A runtime stylesheet is parsed once; its `@media` blocks are
