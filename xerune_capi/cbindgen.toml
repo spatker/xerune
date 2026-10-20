@@ -1,0 +1,31 @@
+language = "C"
+include_guard = "XERUNE_H"
+header = """/* xerune: HTML/CSS user interfaces drawn into a pixel buffer.
+ *
+ * Generated from xerune_capi/src/lib.rs by cbindgen; don't edit. To update:
+ *   XERUNE_UPDATE_HEADER=1 cargo test -p xerune_capi --test header
+ *
+ * Usage:
+ *   XrUi *ui = xr_new(NULL, 0);                    // bundled Roboto
+ *   xr_load_template(ui, "ui/hud.html");
+ *   xr_set_model(ui, "{\\"score\\": 0}");
+ *   xr_set_size(ui, 1280, 720);
+ *   every frame:
+ *     forward input: xr_pointer_move/down/up, xr_scroll, xr_key_down, ...
+ *     for (const char *m; (m = xr_next_message(ui));) { handle m, xr_set_model(...) }
+ *     xr_tick(ui, now_ms);
+ *     if (xr_render(ui, pixels, stride, XR_PIXELS_XBGR8888, &damage)) upload damage
+ *   xr_free(ui);
+ *
+ * Functions that can fail return -1 (or false, or NULL) and set
+ * xr_last_error(). Strings are UTF-8 and NUL-terminated.
+ */"""
+cpp_compat = true
+documentation_style = "c99"
+style = "type"
+sys_includes = ["stdbool.h", "stddef.h", "stdint.h"]
+no_includes = true
+usize_is_size_t = true
+
+[export]
+include = ["XrRect"]
