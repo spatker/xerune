@@ -123,6 +123,11 @@ pub fn main(init: std.process.Init) !void {
         }
     }
     std.debug.print("gold left: {d}\n", .{model.gold});
+    // CI runs the sample: the click must have reached the Buy button.
+    if (model.last_purchase == null) {
+        std.debug.print("the click bought nothing\n", .{});
+        return error.NothingBought;
+    }
 
     try writePpm(init.io, gpa, out, pixels);
     std.debug.print("wrote {s}\n", .{out});
