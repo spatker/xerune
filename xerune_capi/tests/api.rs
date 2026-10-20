@@ -295,3 +295,30 @@ fn arguments_needn_t_outlive_the_call() {
         xr_free(ui);
     }
 }
+
+#[test]
+fn programs_draw_into_canvases() {
+    let template = r#"<style>body { margin: 0; background: #000000; } canvas { position: absolute; left: 4px; top: 4px; }</style>
+        <canvas id="map" width="8" height="4"></canvas>"#;
+    let ui = ui(template, "{}", 20, 20);
+    let mut frame = Frame::new(20, 20);
+    frame.render(ui);
+    let (mut width, mut height) = (0, 0);
+    let pixels = unsafe { xr_canvas(ui, c("map").as_ptr(), &mut width, &mut height) };
+    assert!(!pixels.is_null(), "{}", last_error());
+    assert_eq!((width, height), (8, 4));
+    let pixels = unsafe { std::slice::from_raw_parts_mut(pixels, (width * height * 4) as usize) };
+    for (i, pixel) in pixels.chunks_mut(4).enumerate() {
+        // The left half red, the right half transparent.
+        let alpha = if i % 8 < 4 { 255 } else { 0 };
+        pixel.copy_from_slice(&[255, 0, 0, alpha]);
+    }
+    assert_eq!(frame.render(ui), Some(XrRect { x: 4, y: 4, width: 8, height: 4 }), "the canvas is drawn");
+    assert_eq!((frame.at(5, 5), frame.at(10, 5), frame.at(5, 10)), (0xff0000, 0x000000, 0x000000));
+    assert_eq!(frame.render(ui), None, "until it is drawn into again");
+    unsafe {
+        assert!(xr_canvas(ui, c("minimap").as_ptr(), null_mut(), null_mut()).is_null());
+        assert!(last_error().contains("minimap"), "{}", last_error());
+        xr_free(ui);
+    }
+}

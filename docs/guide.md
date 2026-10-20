@@ -876,6 +876,7 @@ xr_free(ui);
 - **Rendering**: `xr_render` draws only what changed. It expects the buffer to still hold the last frame; call `xr_repaint_all` when it doesn't. Output is opaque, either XRGB8888 or XBGR8888. Use `xr_hit(ui, x, y)` to decide whether the pointer goes to the UI or to the game underneath.
 - **Errors**: failing calls return -1, false or NULL, and `xr_last_error()` says why. A failed `xr_load_template` or `xr_set_model` keeps the previous view. Panics never unwind into the caller.
 - **Threads**: use a UI from one thread at a time. The viewport is still global in xerune (`xerune::screen`), so UIs of different sizes must not render concurrently.
+- **Canvas**: `xr_canvas(ui, "map", &w, &h)` returns the RGBA pixels (R, G, B, A in memory, straight alpha) of the view's `<canvas id="map" width="256" height="256">`, for the program to draw into; the next `xr_render` draws it, scaled to the element's box. Call it each frame the canvas changes: the pointer is valid until the next call on the UI.
 - **Images**: `<img>` paths are relative to the template. They load in the background; `xr_wait_for_images` waits for them, e.g. before a screenshot.
 
 CI runs the Zig sample on Linux, and the cross-built `shop.exe` on Windows.

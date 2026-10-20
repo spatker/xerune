@@ -14,7 +14,7 @@ use markup5ever_rcdom::RcDom;
 use xerune::images::{DefaultImageLoader, ImageError, ImageLoader, is_remote};
 use xerune::style::ContainerStyle;
 use xerune::ui::{TemplateLayout, UiBuilder};
-use xerune::{Context, Damage, InputEvent, Model, Runtime, Surface, TextMeasurer};
+use xerune::{Canvas, Context, Damage, InputEvent, Model, Runtime, Surface, TextMeasurer};
 use xerune_render::{Fonts, SoftwareRenderer};
 use xerune_template::{File, Template, Value};
 
@@ -50,6 +50,9 @@ pub trait Engine {
     /// Whether (`x`, `y`) is on an element the view shows or that takes
     /// input, rather than on the bare page.
     fn hit(&self, x: f32, y: f32) -> bool;
+    /// The `<canvas id>` of the view, marked changed: the caller draws
+    /// into it.
+    fn canvas(&mut self, id: &str) -> Option<&mut Canvas>;
 }
 
 /// The caller's clock: [`Engine::tick`] sets the time, in milliseconds
@@ -178,6 +181,12 @@ impl<M: JsonModel> Engine for Ui<M> {
             Some((None, node)) => node != ui.root && Some(node) != ui.body,
             None => false,
         }
+    }
+
+    fn canvas(&mut self, id: &str) -> Option<&mut Canvas> {
+        let canvas = self.runtime.context_mut().canvas_mut(id)?;
+        canvas.dirty = true;
+        Some(canvas)
     }
 }
 

@@ -345,6 +345,40 @@ pub unsafe extern "C" fn xr_repaint_all(ui: *mut XrUi) {
     })
 }
 
+/// The pixels of the view's `<canvas id="...">`, for the program to draw
+/// into: `*width` x `*height` pixels of 4 bytes, R, G, B, A in memory
+/// (straight alpha; transparent pixels show what is behind the canvas),
+/// rows `*width * 4` bytes apart. The next `xr_render` draws the canvas,
+/// scaled to the element's box. NULL if the view has no such canvas
+/// (`xr_last_error`).
+///
+/// The canvas's size is its `width` and `height` attributes (or its CSS
+/// size in px; 200 x 200 without either) when the view first showed it.
+/// The canvas keeps its pixels between frames; the pointer is valid until
+/// the next call on `ui`, so call this each frame the canvas changes.
+///
+/// # Safety
+/// `ui` must be from `xr_new`; `id` a NUL-terminated string; `width` and
+/// `height` NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn xr_canvas(ui: *mut XrUi, id: *const c_char, width: *mut u32, height: *mut u32) -> *mut u8 {
+    guard(std::ptr::null_mut(), || {
+        let ui = self::ui(ui)?;
+        let id = str_arg(id, "the canvas id")?;
+        let canvas = ui.engine.canvas(id).ok_or_else(|| format!("the view has no <canvas id=\"{id}\">"))?;
+        // SAFETY: the caller passes NULL or writable sizes.
+        unsafe {
+            if let Some(width) = width.as_mut() {
+                *width = canvas.width;
+            }
+            if let Some(height) = height.as_mut() {
+                *height = canvas.height;
+            }
+        }
+        Ok(canvas.data.as_mut_ptr())
+    })
+}
+
 /// The pointer (mouse or touch, in pixels) moved to (`x`, `y`): hover,
 /// dragging a slider, scrolling by dragging while down. Returns true if
 /// the UI changed.

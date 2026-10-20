@@ -164,6 +164,23 @@ bool xr_render(XrUi *ui, uint32_t *pixels, size_t stride, uint32_t format, XrRec
 // `ui` must be from `xr_new`.
 void xr_repaint_all(XrUi *ui);
 
+// The pixels of the view's `<canvas id="...">`, for the program to draw
+// into: `*width` x `*height` pixels of 4 bytes, R, G, B, A in memory
+// (straight alpha; transparent pixels show what is behind the canvas),
+// rows `*width * 4` bytes apart. The next `xr_render` draws the canvas,
+// scaled to the element's box. NULL if the view has no such canvas
+// (`xr_last_error`).
+//
+// The canvas's size is its `width` and `height` attributes (or its CSS
+// size in px; 200 x 200 without either) when the view first showed it.
+// The canvas keeps its pixels between frames; the pointer is valid until
+// the next call on `ui`, so call this each frame the canvas changes.
+//
+// # Safety
+// `ui` must be from `xr_new`; `id` a NUL-terminated string; `width` and
+// `height` NULL or writable.
+uint8_t *xr_canvas(XrUi *ui, const char *id, uint32_t *width, uint32_t *height);
+
 // The pointer (mouse or touch, in pixels) moved to (`x`, `y`): hover,
 // dragging a slider, scrolling by dragging while down. Returns true if
 // the UI changed.
