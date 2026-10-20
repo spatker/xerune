@@ -1,15 +1,10 @@
 #[cfg(feature = "winit")]
 pub(crate) mod winit_impl;
 
-#[cfg(all(
-    not(target_arch = "wasm32"),
-    any(feature = "winit", all(target_os = "linux", feature = "evdev", any(feature = "drm", feature = "linuxfb")))
-))]
+// Without a display backend, an `App` still renders snapshots.
+#[cfg(not(target_arch = "wasm32"))]
 mod app;
-#[cfg(all(
-    not(target_arch = "wasm32"),
-    any(feature = "winit", all(target_os = "linux", feature = "evdev", any(feature = "drm", feature = "linuxfb")))
-))]
+#[cfg(not(target_arch = "wasm32"))]
 pub use app::{App, BackendKind};
 
 /// Hardware input abstraction interface.
@@ -44,7 +39,9 @@ pub use linuxfb_impl::LinuxFbBackend;
 #[cfg(all(target_os = "linux", feature = "drm", feature = "evdev"))]
 pub use drm_impl::DrmBackend;
 
-/// What other threads send a running app through a [`Messenger`].
+/// What other threads send a running app through a [`Messenger`]. Only
+/// the display backends run one.
+#[cfg_attr(not(any(feature = "winit", all(target_os = "linux", feature = "evdev", any(feature = "drm", feature = "linuxfb")))), allow(dead_code))]
 pub(crate) enum Command<M: crate::Model> {
     /// A message for [`Model::update`](crate::Model::update), parsed like a
     /// template's `data-on-click` message.
@@ -71,6 +68,7 @@ impl<M: crate::Model> Clone for Messenger<M> {
 
 impl<M: crate::Model> Messenger<M> {
     /// A messenger handing its commands to `send`, which wakes the loop.
+    #[cfg_attr(not(any(feature = "winit", all(target_os = "linux", feature = "evdev", any(feature = "drm", feature = "linuxfb")))), allow(dead_code))]
     pub(crate) fn new(send: impl Fn(Command<M>) -> Result<(), SendError> + Send + Sync + 'static) -> Self {
         Self(std::sync::Arc::new(send))
     }

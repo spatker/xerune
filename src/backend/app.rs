@@ -143,6 +143,8 @@ where
     }
 
     /// Runs the app on a specific backend.
+    // Without display backends only the error arm uses nothing.
+    #[cfg_attr(not(any(feature = "winit", all(target_os = "linux", feature = "evdev", any(feature = "drm", feature = "linuxfb")))), allow(unused_variables))]
     pub fn run_on(self, kind: BackendKind, renderer: impl Renderer + 'static) -> Result<(), BackendError> {
         let App { runtime, title, size: (width, height), on_start } = self;
         let start = move |messenger: Messenger<M>| {

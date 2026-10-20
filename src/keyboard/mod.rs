@@ -155,7 +155,7 @@ fn upper_case(c: char) -> String {
 
 /// Whether `message` is one of the keyboard's (`kb:...`), which
 /// [`crate::Runtime::handle_messages`] sends to it while it is open.
-#[cfg(all(not(target_arch = "wasm32"), any(feature = "winit", feature = "linuxfb", feature = "drm", feature = "browser")))]
+#[cfg(all(feature = "std", not(target_arch = "wasm32")))]
 pub(crate) fn is_keyboard_message(message: &str) -> bool {
     <KeyboardMsg as core::str::FromStr>::from_str(message).is_ok()
 }

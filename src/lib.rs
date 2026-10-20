@@ -74,12 +74,9 @@ pub mod font;
 mod diag;
 
 /// System-specific backends for windowing and hardware displays.
-#[cfg(any(feature = "winit", feature = "linuxfb", feature = "drm", feature = "browser"))]
+#[cfg(feature = "std")]
 pub mod backend;
-#[cfg(all(
-    not(target_arch = "wasm32"),
-    any(feature = "winit", all(target_os = "linux", feature = "evdev", any(feature = "drm", feature = "linuxfb")))
-))]
+#[cfg(all(feature = "std", not(target_arch = "wasm32")))]
 pub use backend::App;
 
 pub use graphics::{Color, Gradient, LinearGradient, RadialGradient, RadialShape, RadialExtent, ConicGradient, Rect, Damage, Canvas, Context, DrawCommand, TextMeasurer, Renderer, CommandProfile, RenderResources, Surface, Pixels, Rotation};
