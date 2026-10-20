@@ -1084,6 +1084,13 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
         damage
     }
 
+    /// Makes the next [`render`](Self::render) draw the whole screen: for a
+    /// target that no longer holds the previous frame (a new or reused
+    /// buffer, a lost GPU texture).
+    pub fn repaint_all(&mut self) {
+        self.full_repaint = true;
+    }
+
     /// Set the fixed dimensions of the layout viewport.
     ///
     /// When the size actually changes this updates the global viewport state
