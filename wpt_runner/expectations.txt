@@ -30,7 +30,7 @@
 # css/css-conditional                   17     2   114    13%     34
 # css/css-display                        3     3    39     7%     38
 # css/css-flexbox                      263   222   520    34%    189
-# css/css-images                        29     4   168    15%    199
+# css/css-images                        29     4   166    15%    201
 # css/css-overflow                      31    17   114    21%    278
 # css/css-position                       5     3    79     6%     66
 # css/css-sizing                        29    21   356     8%    146
@@ -39,8 +39,8 @@
 # css/css-values                        17    11   135    11%     59
 # css/css-variables                     16    16   164     9%      2
 # css/mediaqueries                       0     0    47     0%     11
-# css/selectors                         32    27    58    36%    135
-# total                               1206   939  7239    14%   1979
+# css/selectors                         32    29    58    36%    135
+# total                               1206   941  7237    14%   1981
 FAIL css/CSS2/abspos/abspos-containing-block-initial-004a.xht
 FAIL css/CSS2/abspos/abspos-containing-block-initial-004b.xht
 FAIL css/CSS2/abspos/abspos-containing-block-initial-004c.xht
@@ -5433,8 +5433,6 @@ FAIL css/css-images/svg-script-is-ignored.html
 FAIL css/css-images/tiled-conic-gradients.html
 FAIL css/css-images/tiled-gradients.html
 FAIL css/css-images/tiled-radial-gradients.html
-FAIL css/css-images/tools/template-object-fit-test.html
-FAIL css/css-images/tools/template-object-position-test.html
 FAIL css/css-overflow/button-with-scrollable-descendant.html
 FAIL css/css-overflow/clip-002.html
 FAIL css/css-overflow/clip-003.html

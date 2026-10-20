@@ -370,6 +370,13 @@ fn cli() -> Result<(), String> {
             results.insert(path, Status::Skip(r));
             continue;
         }
+        // Test generators' templates name references that don't exist
+        // (`REPLACEME_REFERENCE_FILENAME`); without this every run would
+        // start Chromium to screenshot them.
+        if let Some(reference) = document.references.iter().find(|r| !root.join(&r.path).is_file()) {
+            results.insert(path, Status::Skip(format!("missing reference: {}", reference.path.display())));
+            continue;
+        }
         tests.push(Test { path, references: document.references });
     }
     screenshots.ensure(
