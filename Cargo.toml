@@ -118,3 +118,7 @@ debug = false
 [[test]]
 name = "interpret_tests"
 required-features = ["interpret"]
+
+[[test]]
+name = "runtime_html_tests"
+required-features = ["interpret", "dynamic-parser"]
