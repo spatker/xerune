@@ -3,8 +3,17 @@
 
 use std::ffi::{CStr, CString, c_char};
 use std::ptr::{null, null_mut};
+use std::sync::{Mutex, MutexGuard};
 
 use xerune_capi::*;
+
+/// FIXME: xerune's viewport is global (`xerune::screen`), so UIs of
+/// different sizes must not be used at once, and tests run in parallel.
+/// Each test holds this while it runs.
+fn one_at_a_time() -> MutexGuard<'static, ()> {
+    static VIEWPORT: Mutex<()> = Mutex::new(());
+    VIEWPORT.lock().unwrap_or_else(|e| e.into_inner())
+}
 
 fn c(s: &str) -> CString {
     CString::new(s).unwrap()
@@ -67,6 +76,7 @@ const SHOP: &str = r#"<html><head><style>
 
 #[test]
 fn clicks_send_messages_and_the_model_changes_the_view() {
+    let _viewport = one_at_a_time();
     let ui = ui(SHOP, r#"{"gold": 30, "items": [{"id": 7, "sold": false}, {"id": 9, "sold": false}]}"#, 320, 200);
     let mut frame = Frame::new(320, 200);
     assert_eq!(frame.render(ui), Some(XrRect { x: 0, y: 0, width: 320, height: 200 }), "the first frame draws all");
@@ -90,6 +100,7 @@ fn clicks_send_messages_and_the_model_changes_the_view() {
 
 #[test]
 fn a_dragged_pointer_is_no_click() {
+    let _viewport = one_at_a_time();
     let ui = ui(SHOP, r#"{"gold": 0, "items": [{"id": 1, "sold": false}]}"#, 320, 200);
     unsafe {
         xr_pointer_down(ui, 50.0, 30.0);
@@ -102,6 +113,7 @@ fn a_dragged_pointer_is_no_click() {
 
 #[test]
 fn bad_models_are_errors_and_keep_the_view() {
+    let _viewport = one_at_a_time();
     let ui = ui(SHOP, r#"{"gold": 30, "items": []}"#, 320, 200);
     let mut frame = Frame::new(320, 200);
     frame.render(ui);
@@ -121,6 +133,7 @@ fn bad_models_are_errors_and_keep_the_view() {
 
 #[test]
 fn bad_templates_are_errors_and_keep_the_template() {
+    let _viewport = one_at_a_time();
     let ui = ui(SHOP, r#"{"gold": 30, "items": []}"#, 320, 200);
     unsafe {
         assert_eq!(xr_load_template_source(ui, c("<p>{% if %}</p>").as_ptr(), null()), -1);
@@ -136,6 +149,7 @@ fn bad_templates_are_errors_and_keep_the_template() {
 
 #[test]
 fn misuse_is_an_error_not_a_crash() {
+    let _viewport = one_at_a_time();
     let mut pixels = vec![0u32; 16];
     unsafe {
         assert!(!xr_render(null_mut(), pixels.as_mut_ptr(), 4, XR_PIXELS_XRGB8888, null_mut()));
@@ -162,6 +176,7 @@ fn misuse_is_an_error_not_a_crash() {
 
 #[test]
 fn both_pixel_formats() {
+    let _viewport = one_at_a_time();
     let ui = ui("<style>body { margin: 0; background: #102030; }</style>", "{}", 8, 8);
     let mut pixels = vec![0u32; 64];
     unsafe {
@@ -176,6 +191,7 @@ fn both_pixel_formats() {
 
 #[test]
 fn rows_can_be_longer_than_the_ui() {
+    let _viewport = one_at_a_time();
     let ui = ui("<style>body { margin: 0; background: #ffffff; }</style>", "{}", 4, 2);
     let mut pixels = vec![0u32; 6 * 2];
     unsafe { xr_render(ui, pixels.as_mut_ptr(), 6, XR_PIXELS_XRGB8888, null_mut()) };
@@ -185,6 +201,7 @@ fn rows_can_be_longer_than_the_ui() {
 
 #[test]
 fn ticks_run_transitions_on_the_callers_clock() {
+    let _viewport = one_at_a_time();
     let template = r#"<style>
         body { margin: 0; background: #000000; }
         .light { width: 10px; height: 10px; background: #000000; transition: background-color 1s linear; }
@@ -207,6 +224,7 @@ fn ticks_run_transitions_on_the_callers_clock() {
 
 #[test]
 fn text_inputs_and_keys_send_messages() {
+    let _viewport = one_at_a_time();
     let template = r#"<style>body { margin: 0; } input { width: 100px; height: 30px; }</style>
         <input id="name" value="{{ name }}">"#;
     let ui = ui(template, r#"{"name": ""}"#, 200, 100);
@@ -223,6 +241,7 @@ fn text_inputs_and_keys_send_messages() {
 
 #[test]
 fn hit_tells_the_ui_from_the_bare_page() {
+    let _viewport = one_at_a_time();
     let ui = ui(SHOP, r#"{"gold": 0, "items": [{"id": 1, "sold": false}]}"#, 320, 200);
     let mut frame = Frame::new(320, 200);
     frame.render(ui);
@@ -235,6 +254,7 @@ fn hit_tells_the_ui_from_the_bare_page() {
 
 #[test]
 fn several_uis_have_their_own_viewports() {
+    let _viewport = one_at_a_time();
     let template = "<style>body { margin: 0; background: #000000; } @media (min-width: 100px) { body { background: #ffffff; } }</style>";
     let (small, large) = (ui(template, "{}", 50, 50), ui(template, "{}", 200, 50));
     let (mut a, mut b) = (Frame::new(50, 50), Frame::new(200, 50));
@@ -250,6 +270,7 @@ fn several_uis_have_their_own_viewports() {
 
 #[test]
 fn templates_from_files_find_includes_and_images_next_to_them() {
+    let _viewport = one_at_a_time();
     let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("capi_files");
     std::fs::create_dir_all(dir.join("parts")).unwrap();
     std::fs::write(dir.join("main.html"), r#"<style>body { margin: 0; } img { width: 4px; height: 4px; }</style>{% include "parts/logo.html" %}"#).unwrap();
@@ -280,6 +301,7 @@ fn templates_from_files_find_includes_and_images_next_to_them() {
 /// Strings from C are borrowed only during the call.
 #[test]
 fn arguments_needn_t_outlive_the_call() {
+    let _viewport = one_at_a_time();
     let ui = unsafe { xr_new(null(), 0) };
     {
         let source: Vec<c_char> = b"<p>{{ a }}</p>\0".iter().map(|&b| b as c_char).collect();
@@ -298,6 +320,7 @@ fn arguments_needn_t_outlive_the_call() {
 
 #[test]
 fn programs_draw_into_canvases() {
+    let _viewport = one_at_a_time();
     let template = r#"<style>body { margin: 0; background: #000000; } canvas { position: absolute; left: 4px; top: 4px; }</style>
         <canvas id="map" width="8" height="4"></canvas>"#;
     let ui = ui(template, "{}", 20, 20);
