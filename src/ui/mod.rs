@@ -321,7 +321,15 @@ impl Ui {
             let root_key = builder.keys.get(root).copied().unwrap_or(0);
             assign_keys(&builder.taffy, root, root_key, &builder.node_metadata, &mut builder.keys);
             let mut style_cache = cached.style_cache.borrow_mut();
-            
+            // New elements get their `@starting-style` styles, as in a
+            // compiled template.
+            let has_starting = cached.sheet.rules.iter().any(|rule| rule.starting);
+            builder.uses_starting_style |= has_starting;
+            let mut starting = has_starting.then(|| style_resolution::Starting {
+                previous_keys: builder.previous_keys.as_ref(),
+                styles: &mut builder.starting_styles,
+            });
+
             {
                 style_resolution::resolve_styles(
                     &mut builder.taffy,
@@ -341,6 +349,7 @@ impl Ui {
                     &mut builder.value_handlers,
                     &mut base_styles,
                     &mut *style_cache,
+                    &mut starting,
                 );
             }
             keyframes = cached.keyframes.clone();

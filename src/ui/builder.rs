@@ -36,6 +36,13 @@ pub struct UiBuilder {
     pub uses_starting_style: bool,
 }
 
+/// Whether the element with `key` is new: not among `previous_keys`, the
+/// keys of the view before, which are there when `@starting-style` styles
+/// are wanted.
+pub(crate) fn is_new(previous_keys: Option<&HashSet<u64>>, key: u64) -> bool {
+    previous_keys.is_some_and(|keys| !keys.contains(&key))
+}
+
 /// Gives an element's `::before` / `::after` boxes keys from its own `key`.
 pub(crate) fn key_generated_boxes(keys: &mut NodeMap<u64>, key: u64, (before, after): super::style_resolution::GeneratedBoxes) {
     // Sites far from any template's.
@@ -126,21 +133,20 @@ impl UiBuilder {
     /// Whether the element with `key` is new in this view and its
     /// `@starting-style` style is wanted.
     pub fn is_new(&self, key: u64) -> bool {
-        self.previous_keys.as_ref().is_some_and(|keys| !keys.contains(&key))
+        is_new(self.previous_keys.as_ref(), key)
     }
 
     /// Reads `attrs` into the starting style `el` of a new element, as
     /// [`Self::begin_element`] does for its style.
     #[inline(never)]
     pub fn starting_attributes(&self, el: &mut ElementStyle, attrs: &[(Cow<'static, str>, Cow<'_, str>)], message_validator: &dyn Fn(&str) -> bool) {
-        super::attributes::parse_attribute_slice(el.tag, attrs, &mut el.style, &mut el.layout, &mut el.parsed, message_validator);
+        el.read_attributes(attrs.iter().map(|(k, v)| (k.as_ref(), v.as_ref())), message_validator);
     }
 
     /// Keeps `el`, the style `node` starts from by `@starting-style`.
     #[inline(never)]
-    pub fn set_starting_style(&mut self, node: NodeId, mut el: ElementStyle, parent_style: &crate::style::ContainerStyle) {
-        super::style_resolution::resolve_box(parent_style, &mut el.layout, &mut el.style);
-        self.starting_styles.insert(node, (el.layout, el.style));
+    pub fn set_starting_style(&mut self, node: NodeId, el: ElementStyle, parent_style: &crate::style::ContainerStyle) {
+        self.starting_styles.insert(node, el.into_box(parent_style));
     }
 
     /// The [`PointerLevel`] of the element with `key`, whose parent's is
@@ -385,7 +391,7 @@ impl UiBuilder {
         message_validator: &dyn Fn(&str) -> bool,
         key: u64,
     ) -> NodeId {
-        super::attributes::parse_attribute_slice(el.tag, attrs, &mut el.style, &mut el.layout, &mut el.parsed, message_validator);
+        el.read_attributes(attrs.iter().map(|(k, v)| (k.as_ref(), v.as_ref())), message_validator);
         // `finish_element` sets the layout; nothing reads it before.
         let node = self.taffy.new_leaf(Style::default()).unwrap();
         self.keys.insert(node, key);
@@ -396,7 +402,7 @@ impl UiBuilder {
         if let Some((_, lang)) = attrs.iter().find(|(name, _)| name == "lang") {
             self.langs.push((node, lang.clone().into_owned()));
         }
-        self.note_root_element(el.tag, node);
+        self.note_root_element(&el.tag, node);
         node
     }
 
@@ -423,7 +429,7 @@ impl UiBuilder {
         }
         let generated = super::style_resolution::finalize_node_style(
             node,
-            el.tag,
+            &el.tag,
             parent_style,
             el.layout,
             el.style,
@@ -548,7 +554,7 @@ impl<'a> xerune_css::selector::Element for TaffyElementWrapper<'a> {
 /// every element in the template.
 #[derive(Clone)]
 pub struct ElementStyle {
-    tag: &'static str,
+    tag: Cow<'static, str>,
     layout: Style,
     /// The element's computed style; its children inherit from this.
     pub style: crate::style::ContainerStyle,
@@ -682,13 +688,32 @@ impl ElementStyle {
     /// Starts from the default style of `tag`, inheriting from `parent_style`.
     #[inline(never)]
     pub fn new(tag: &'static str, parent_style: &crate::style::ContainerStyle) -> Self {
-        let defaults = crate::defaults::get_default_style(tag, parent_style);
+        Self::with_defaults(Cow::Borrowed(tag), tag, parent_style)
+    }
+
+    /// An element `tag` (of a tree built at runtime) starting from the
+    /// defaults [`get_default_style`](crate::defaults::get_default_style)
+    /// has for `defaults_key`.
+    pub(crate) fn with_defaults(tag: Cow<'static, str>, defaults_key: &str, parent_style: &crate::style::ContainerStyle) -> Self {
+        let defaults = crate::defaults::get_default_style(defaults_key, parent_style);
         Self {
             tag,
             layout: defaults.taffy_style,
             style: defaults.container_style,
             parsed: super::attributes::ParsedAttributes::new(defaults.element_type),
         }
+    }
+
+    /// Reads the element's attributes (`style`, `type`, `value`, ...).
+    pub(crate) fn read_attributes<'a>(&mut self, attrs: impl IntoIterator<Item = (&'a str, &'a str)>, message_validator: &dyn Fn(&str) -> bool) {
+        super::attributes::parse_attributes_generic(&self.tag, attrs, &mut self.style, &mut self.layout, &mut self.parsed, &message_validator);
+    }
+
+    /// The element's layout and style once its box is resolved: what a
+    /// new element starts from by `@starting-style`.
+    pub(crate) fn into_box(mut self, parent_style: &crate::style::ContainerStyle) -> (Style, crate::style::ContainerStyle) {
+        super::style_resolution::resolve_box(parent_style, &mut self.layout, &mut self.style);
+        (self.layout, self.style)
     }
 
     /// Like [`ElementStyle::new`] for an `<input>` with a literal `type`:
@@ -721,8 +746,13 @@ impl ElementStyle {
     /// `attrs`, after the stylesheet's.
     pub fn apply_important_style(&mut self, attrs: &[(Cow<'static, str>, Cow<'_, str>)]) {
         if let Some((_, style)) = attrs.iter().find(|(name, _)| name == "style") {
-            crate::css::parse_inline_style_important(style, &mut self.style, &mut self.layout);
+            self.apply_important_inline(style);
         }
+    }
+
+    /// Applies the `!important` declarations of a `style` attribute.
+    pub(crate) fn apply_important_inline(&mut self, style: &str) {
+        crate::css::parse_inline_style_important(style, &mut self.style, &mut self.layout);
     }
 
     /// Applies CSS declarations for the element's pseudo-element `part`

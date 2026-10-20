@@ -223,6 +223,54 @@ pub(crate) fn apply_block_display(
     }
 }
 
+/// Where runtime styling puts the `@starting-style` styles of new
+/// elements, for a stylesheet that has any.
+#[cfg(feature = "std")]
+pub(crate) struct Starting<'a> {
+    /// The keys of the view before (see [`super::builder::is_new`]).
+    pub previous_keys: Option<&'a std::collections::HashSet<u64>>,
+    pub styles: &'a mut NodeMap<(Style, ContainerStyle)>,
+}
+
+/// The attributes of an element built at runtime, `style` included.
+#[cfg(feature = "std")]
+fn element_attrs(meta: &NodeMetadata) -> Vec<(&str, &str)> {
+    match &meta.other_attrs {
+        Some(other) => meta.style.as_deref().map(|style| ("style", style)).into_iter().chain(other.iter().map(|(k, v)| (k.as_str(), v.as_str()))).collect(),
+        None => meta.attrs.iter().filter(|(k, _)| k != "class").map(|(k, v)| (k.as_str(), v.as_str())).collect(),
+    }
+}
+
+/// The style a new element starts from by `@starting-style`: its matched
+/// `rules`, the starting ones among them, applied as a compiled template
+/// applies them (see `xerune_derive`'s starting styles), with the same
+/// [`super::builder::ElementStyle`] steps.
+#[cfg(feature = "std")]
+fn starting_style(
+    meta: &NodeMetadata,
+    defaults_key: &str,
+    parent_style: &ContainerStyle,
+    stylesheet: &xerune_css::sheet::StyleSheet,
+    rules: &[usize],
+    message_validator: &dyn Fn(&str) -> bool,
+) -> (Style, ContainerStyle) {
+    let mut el = super::builder::ElementStyle::with_defaults(meta.tag.clone(), defaults_key, parent_style);
+    let declarations = |important: bool| rules.iter().map(|&i| &stylesheet.rules[i]).filter(|rule| rule.selector.pseudo_element().is_none())
+        .map(move |rule| rule.declarations.iter().filter(|d| d.important == important).map(|d| (d.name.as_str(), d.value.as_str())).collect::<Vec<_>>());
+    for declarations in declarations(false) {
+        el.apply(&declarations);
+    }
+    let attrs = element_attrs(meta);
+    el.read_attributes(attrs.iter().copied(), message_validator);
+    for declarations in declarations(true) {
+        el.apply(&declarations);
+    }
+    if let Some((_, style)) = attrs.iter().find(|(k, _)| *k == "style") {
+        el.apply_important_inline(style);
+    }
+    el.into_box(parent_style)
+}
+
 #[cfg(feature = "std")]
 pub(crate) fn resolve_styles(
     taffy: &mut TaffyTree,
@@ -242,6 +290,7 @@ pub(crate) fn resolve_styles(
     value_handlers: &mut NodeMap<super::ValueHandlers>,
     base_styles: &mut NodeMap<(Style, ContainerStyle)>,
     style_cache: &mut HashMap<StyleCacheKey, (Style, ContainerStyle)>,
+    starting: &mut Option<Starting<'_>>,
 ) {
     let meta = match node_metadata.get(&node) {
         Some(m) => m,
@@ -307,10 +356,15 @@ pub(crate) fn resolve_styles(
         keys: &*keys,
         pointer,
     };
+    let matches = |rule: &xerune_css::sheet::Rule| rule.media.is_none_or(|m| media[m]) && rule.selector.matches(&el_wrapper);
     let matched_rules = stylesheet.rules.iter().enumerate()
-        // `@starting-style` rules aren't computed for HTML parsed at runtime.
-        .filter_map(|(index, rule)| (!rule.starting && rule.media.is_none_or(|m| media[m]) && rule.selector.matches(&el_wrapper)).then_some(index))
+        .filter_map(|(index, rule)| (!rule.starting && matches(rule)).then_some(index))
         .collect();
+    // A new element's rules with the `@starting-style` ones, if it has any.
+    let starting_rules = starting.as_ref()
+        .filter(|starting| keys.get(node).is_some_and(|&key| super::builder::is_new(starting.previous_keys, key)))
+        .map(|_| stylesheet.rules.iter().enumerate().filter_map(|(index, rule)| matches(rule).then_some(index)).collect::<Vec<_>>())
+        .filter(|rules| rules.iter().any(|&index| stylesheet.rules[index].starting));
     let cache_key = StyleCacheKey {
         tag: meta.tag.clone(),
         class: meta.class.clone(),
@@ -442,6 +496,9 @@ pub(crate) fn resolve_styles(
     }
 
     resolve_box(&parent_style, &mut layout_style, &mut current_style);
+    if let (Some(rules), Some(starting)) = (starting_rules, starting.as_mut()) {
+        starting.styles.insert(node, starting_style(meta, defaults_key, &parent_style, stylesheet, &rules, message_validator));
+    }
 
     let children = &meta.children;
     for &child in children {
@@ -463,6 +520,7 @@ pub(crate) fn resolve_styles(
             value_handlers,
             base_styles,
             style_cache,
+            starting,
         );
     }
 
