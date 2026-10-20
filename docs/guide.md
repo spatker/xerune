@@ -915,4 +915,34 @@ xr_app_free(app);                           // ends the app
 
 `xerune_capi/examples/c/app.c` is the shop as an app (`make run-app`). It waits in `poll` for messages and for gold that comes in each second.
 
-CI runs both samples on Linux (the app as a snapshot), and the C sample's cross-built `shop.exe` on Windows.
+### Compiled templates
+
+An interpreted template is evaluated to HTML and parsed again on every model change. A compiled one is Rust code made when the program is built, as in a Rust app: nothing is parsed while it runs, and a template that reads a field the model lacks fails the build. The program still uses the same API: JSON in, message strings out. Only the constructor differs. The template lives in a small Rust crate:
+
+```rust
+use serde::Deserialize;
+use xerune::XeruneTemplate;
+
+#[derive(XeruneTemplate, Deserialize)]
+#[template(path = "ui/main.html")]
+pub struct Player {
+    title: String,
+    position: i64,
+    cover: Option<String>,   // null or missing: None
+    tracks: Vec<Track>,
+}
+
+#[derive(Deserialize)]
+pub struct Track { name: String, length: i64 }
+
+// Exports xr_new_player (an XrUi) and xr_app_new_player (an XrApp).
+xerune_capi::compiled_ui!(Player, ui: xr_new_player, app: xr_app_new_player);
+```
+
+Its `Cargo.toml` makes a `staticlib` and depends on `xerune`, `xerune_capi` (with the display features) and `serde` (`derive`). The library has every `xr_` function of `xerune_capi` too, so the program links only it and declares the two constructors next to `xerune.h`. Integers are `i64`, numbers with decimals `f64`, as in the interpreter. The struct's fields are what the template reads, and `set_model` errors when the JSON doesn't fit them. The model's messages are strings (`compiled_ui!` makes them so), sent as the template writes them.
+
+`xerune_capi/examples/compiled` is the shop compiled (`shop_ui`). Its test checks that it draws the interpreted shop's pixels and sends its messages. `make run-app-compiled` in `examples/c` runs `app.c` with it. Its `update_bench` example times a model update both ways. On ARM (qemu instruction counts), an update of the shop costs 1.16M instructions interpreted and 0.64M compiled, and the gap grows with the template.
+
+A statically linked program keeps only what it calls (`-Wl,--gc-sections`): with a compiled template the interpreter is left out. The shop app for ARM is 3.6 MB compiled, 4.5 MB interpreted (stripped).
+
+CI runs both samples on Linux (the app as a snapshot, interpreted and compiled), and the C sample's cross-built `shop.exe` on Windows.

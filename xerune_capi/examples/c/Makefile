@@ -10,6 +10,8 @@
 #   make shop.exe   # Windows, cross-compiled with zig cc (or set WINCC to MinGW's gcc)
 #   make run-app    # Linux: builds ./app and runs it; build the library with
 #                   # displays: --features winit,drm,linuxfb
+#   make run-app-compiled   # the same with the template compiled in:
+#                   # cargo build --release -p shop_ui --features winit,drm,linuxfb
 # or point XERUNE_LIB at a libxerune_capi.a built elsewhere.
 
 ROOT := ../../..
@@ -20,6 +22,9 @@ XERUNE_LIB ?= $(ROOT)/target/release/libxerune_capi.a
 # What the Rust standard library needs from the system
 # (`cargo rustc -p xerune_capi -- --print native-static-libs`).
 LIBS := -lgcc_s -lutil -lrt -lpthread -lm -ldl
+
+# The shop compiled into a library (../compiled), with the rest of the API.
+SHOP_LIB ?= $(ROOT)/target/release/libshop_ui.a
 
 XERUNE_WIN_LIB ?= $(ROOT)/target/x86_64-pc-windows-gnu/release/libxerune_capi.a
 WINCC ?= zig cc -target x86_64-windows-gnu
@@ -36,6 +41,9 @@ shop.exe: shop.c ../../include/xerune.h $(XERUNE_WIN_LIB)
 app: app.c ../../include/xerune.h $(XERUNE_LIB)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ app.c $(XERUNE_LIB) $(LIBS)
 
+app-compiled: app.c ../compiled/include/shop.h ../../include/xerune.h $(SHOP_LIB)
+	$(CC) $(CPPFLAGS) -I../compiled/include -DSHOP_COMPILED $(CFLAGS) -o $@ app.c $(SHOP_LIB) $(LIBS)
+
 # The template's path in shop.c and app.c is relative to this directory.
 run: shop
 	./shop
@@ -43,7 +51,10 @@ run: shop
 run-app: app
 	./app
 
-clean:
-	rm -f shop shop.exe shop.pdb shop.lib shop.ppm app app.png
+run-app-compiled: app-compiled
+	./app-compiled
 
-.PHONY: run run-app clean
+clean:
+	rm -f shop shop.exe shop.pdb shop.lib shop.ppm app app-compiled app.png
+
+.PHONY: run run-app run-app-compiled clean

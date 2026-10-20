@@ -1,0 +1,24 @@
+[package]
+name = "shop_ui"
+version = "0.1.0"
+edition = "2024"
+description = "The C API's shop sample with its template compiled into the library"
+license = "MIT"
+rust-version = "1.85"
+publish = false
+
+[lib]
+# staticlib for the C program (it has every xr_ function of xerune_capi
+# too); rlib for the tests.
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+xerune = { path = "../../..", default-features = false, features = ["std"] }
+xerune_capi = { path = "../.." }
+serde = { version = "1.0", features = ["derive"] }
+
+[features]
+# The displays an app can show itself on, as in xerune_capi.
+drm = ["xerune_capi/drm"]
+linuxfb = ["xerune_capi/linuxfb"]
+winit = ["xerune_capi/winit"]

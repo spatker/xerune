@@ -19,6 +19,7 @@ xerune_render = { path = "../xerune_render" }
 xerune_template = { path = "../xerune_template", features = ["interpret"] }
 html5ever = "0.36.1"
 markup5ever_rcdom = "0.36.0"
+serde = "1.0"
 serde_json = "1.0"
 taffy = { version = "0.9.2", default-features = false }
 

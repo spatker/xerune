@@ -8,6 +8,7 @@
 //! (`xr_last_error`), never as an unwind into the caller.
 
 mod app;
+mod compiled;
 mod engine;
 
 use std::cell::RefCell;
@@ -20,6 +21,7 @@ use xerune::{InputEvent, Pixels, Surface};
 use xerune_render::Fonts;
 
 pub use app::*;
+pub use compiled::Compiled;
 pub use engine::{Engine, JsonModel, Outbox, Page, Ui};
 
 /// Pixels are 32-bit words `0xXXRRGGBB` (blue in the low byte; the top

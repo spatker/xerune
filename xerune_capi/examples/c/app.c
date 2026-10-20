@@ -13,6 +13,10 @@
  * ends, as CI runs it.
  *
  * Linux only: the messages come through a file descriptor.
+ *
+ * Built with -DSHOP_COMPILED (make run-app-compiled), it uses the shop
+ * compiled into libshop_ui.a (../compiled) instead of reading the
+ * template: nothing else changes.
  */
 
 #include <poll.h>
@@ -21,7 +25,11 @@
 #include <string.h>
 #include <time.h>
 
+#ifdef SHOP_COMPILED
+#include "shop.h"
+#else
 #include "xerune.h"
+#endif
 
 struct item {
     int id;
@@ -88,13 +96,19 @@ static long now_ms(void) {
 }
 
 int main(int argc, char **argv) {
+#ifdef SHOP_COMPILED
+    (void)argc, (void)argv;
+    XrApp *app = xr_app_new_shop(NULL, 0);
+    if (!app)
+        fail("xr_app_new_shop");
+#else
     const char *template = argc > 1 ? argv[1] : "../ui/shop.html";
-
     XrApp *app = xr_app_new(NULL, 0);
     if (!app)
         fail("xr_app_new");
     if (xr_app_load_template(app, template) != 0)
         fail("xr_app_load_template");
+#endif
     struct model model = {
         .gold = 100,
         .items = {

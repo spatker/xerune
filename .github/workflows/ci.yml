@@ -80,6 +80,12 @@ jobs:
         env:
           XERUNE_SNAPSHOT: app.png
           XERUNE_SNAPSHOT_MESSAGES: buy:2
+      - run: cargo build --release -p shop_ui
+      - run: make run-app-compiled
+        working-directory: xerune_capi/examples/c
+        env:
+          XERUNE_SNAPSHOT: app.png
+          XERUNE_SNAPSHOT_MESSAGES: buy:2
       - run: zig build run
         working-directory: xerune_capi/examples/zig
       # Windows: cross-built here, run on a Windows runner below.
