@@ -3422,6 +3422,7 @@ dependencies = [
  "markup5ever",
  "markup5ever_rcdom",
  "serde",
+ "serde_json",
 ]
 
 [[package]]

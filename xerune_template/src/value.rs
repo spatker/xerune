@@ -448,3 +448,72 @@ impl ser::SerializeStructVariant for StructBuilder {
         Ok(self.finish())
     }
 }
+
+/// A [`Value`] read from data that carries no Rust types, as JSON does
+/// (`serde_json::from_str::<Value>`), for models that aren't Rust structs:
+/// the C API's. `null` is `None` (see the patterns in `render_html`),
+/// integers are `i64` (`u64` above its range), other numbers `f64`, and
+/// objects are structs with their fields in order.
+impl<'de> serde::Deserialize<'de> for Value {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Value, D::Error> {
+        deserializer.deserialize_any(ValueVisitor)
+    }
+}
+
+struct ValueVisitor;
+
+impl<'de> serde::de::Visitor<'de> for ValueVisitor {
+    type Value = Value;
+
+    fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("a value")
+    }
+    fn visit_bool<E>(self, v: bool) -> Result<Value, E> {
+        Ok(Value::Bool(v))
+    }
+    fn visit_i64<E>(self, v: i64) -> Result<Value, E> {
+        Ok(Value::Int(v.into(), IntType::I64))
+    }
+    fn visit_u64<E>(self, v: u64) -> Result<Value, E> {
+        Ok(match i64::try_from(v) {
+            Ok(v) => Value::Int(v.into(), IntType::I64),
+            Err(_) => Value::Int(v.into(), IntType::U64),
+        })
+    }
+    fn visit_f64<E>(self, v: f64) -> Result<Value, E> {
+        Ok(Value::Float(v, FloatType::F64))
+    }
+    fn visit_str<E>(self, v: &str) -> Result<Value, E> {
+        Ok(Value::Str(v.to_string()))
+    }
+    fn visit_string<E>(self, v: String) -> Result<Value, E> {
+        Ok(Value::Str(v))
+    }
+    fn visit_unit<E>(self) -> Result<Value, E> {
+        Ok(Value::Option(None))
+    }
+    fn visit_none<E>(self) -> Result<Value, E> {
+        Ok(Value::Option(None))
+    }
+    fn visit_some<D: serde::Deserializer<'de>>(self, deserializer: D) -> Result<Value, D::Error> {
+        serde::Deserialize::deserialize(deserializer)
+    }
+    fn visit_seq<A: serde::de::SeqAccess<'de>>(self, mut seq: A) -> Result<Value, A::Error> {
+        let mut items = Vec::with_capacity(seq.size_hint().unwrap_or(0));
+        while let Some(item) = seq.next_element()? {
+            items.push(item);
+        }
+        Ok(Value::List(items))
+    }
+    fn visit_map<A: serde::de::MapAccess<'de>>(self, mut map: A) -> Result<Value, A::Error> {
+        let mut fields: Vec<(String, Value)> = Vec::with_capacity(map.size_hint().unwrap_or(0));
+        while let Some((key, value)) = map.next_entry::<String, Value>()? {
+            // A repeated key replaces the earlier one, as in JavaScript.
+            match fields.iter_mut().find(|(k, _)| *k == key) {
+                Some(field) => field.1 = value,
+                None => fields.push((key, value)),
+            }
+        }
+        Ok(Value::Struct(fields))
+    }
+}

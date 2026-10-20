@@ -439,6 +439,9 @@ fn builtin(receiver: &Value, name: &str, args: &[Value]) -> Option<R<Value>> {
         (Value::Str(s), "is_empty", []) => Value::Bool(s.is_empty()),
         (Value::Option(o), "is_some", []) => Value::Bool(o.is_some()),
         (Value::Option(o), "is_none", []) => Value::Bool(o.is_none()),
+        // A non-`null` value of a model from JSON (see `bind`).
+        (_, "is_some", []) => Value::Bool(true),
+        (_, "is_none", []) => Value::Bool(false),
         (value, "to_string", []) => return Some(value.display().map(Value::Str)),
         (value, "clone" | "iter", []) => value.clone(),
         _ => return None,
@@ -466,6 +469,7 @@ fn bind(pattern: &Pattern, value: Value, scopes: &mut Vec<(String, Value)>) -> b
         }
         Pattern::Path(path) => match (path.last().map(String::as_str), &value) {
             (Some("None"), Value::Option(o)) => o.is_none(),
+            (Some("None"), _) => false,
             (Some(name), Value::Variant(variant, _)) => name == variant,
             _ => false,
         },
@@ -473,6 +477,10 @@ fn bind(pattern: &Pattern, value: Value, scopes: &mut Vec<(String, Value)>) -> b
             let items = match (path.last().map(String::as_str), value) {
                 (None, Value::Tuple(items) | Value::List(items)) => items,
                 (Some("Some"), Value::Option(Some(inner))) => vec![*inner],
+                (Some("Some"), Value::Option(None)) => return false,
+                // A model from JSON has no `Option`s, only `null`s: any
+                // other value is `Some` of itself.
+                (Some("Some"), value) => vec![value],
                 (Some(name), Value::Variant(variant, payload)) if *name == variant => match *payload {
                     Value::Tuple(items) if patterns.len() != 1 => items,
                     payload => vec![payload],
@@ -510,6 +518,11 @@ fn equal(l: &Value, r: &Value) -> R<bool> {
         (Value::Option(a), Value::Option(b)) => match (a, b) {
             (Some(a), Some(b)) => equal(a, b)?,
             (a, b) => a.is_none() && b.is_none(),
+        },
+        // `x == None` for a value of a model from JSON (see `bind`).
+        (Value::Option(o), _) | (_, Value::Option(o)) => match o {
+            Some(inner) => equal(inner, if matches!(l, Value::Option(_)) { r } else { l })?,
+            None => false,
         },
         (Value::List(a) | Value::Tuple(a), Value::List(b) | Value::Tuple(b)) => {
             a.len() == b.len() && a.iter().zip(b).map(|(a, b)| equal(a, b)).collect::<R<Vec<_>>>()?.into_iter().all(|e| e)
