@@ -227,14 +227,16 @@ cargo run --release --example todo
 Custom canvas allows you to directly manipulate raw pixel colors:
 
 ```rust
-// 1. Declare <canvas id="my_canvas"> in HTML template
-// 2. Access and draw onto the canvas inside update loop:
+// 1. Declare <canvas id="my_canvas" width="200" height="200"> in the template.
+//    Its pixels are that size (or the CSS size in px; 200x200 without
+//    either) from when the view first shows it, scaled to the element's box.
+// 2. Draw onto the canvas in update:
 fn update(&mut self, msg: Self::Message, ctx: &mut Context<Self::Message>) {
-    if let Some(canvas) = ctx.get_canvas_mut("my_canvas", 200, 200) {
+    if let Some(canvas) = ctx.canvas_mut("my_canvas") {
         // Clear canvas with white color
         canvas.data.fill(255);
         // Paint a blue pixel at (50, 50)
-        let idx = (50 * 200 + 50) * 4;
+        let idx = ((50 * canvas.width + 50) * 4) as usize;
         canvas.data[idx] = 0;     // Red
         canvas.data[idx + 1] = 0; // Green
         canvas.data[idx + 2] = 255; // Blue
