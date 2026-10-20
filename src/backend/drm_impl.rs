@@ -1,6 +1,6 @@
 use crate::{Model, Runtime, TextMeasurer};
 use super::{
-    Backend, BackendError, MpscProxy,
+    Backend, BackendError, Messenger, channel_messenger,
     input::{EvdevInputSource, SurfaceInfo},
     common_loop::{FramePresenter, run_embedded_event_loop},
 };
@@ -165,8 +165,6 @@ impl DrmBackend {
 }
 
 impl Backend for DrmBackend {
-    type Proxy = MpscProxy;
-
     fn run<M, TM, R>(
         self,
         title: &str,
@@ -174,7 +172,7 @@ impl Backend for DrmBackend {
         height: u32,
         runtime: Runtime<M, TM>,
         renderer: R,
-        setup: impl FnOnce(Self::Proxy) + 'static,
+        setup: impl FnOnce(Messenger<M>) + 'static,
     ) -> Result<(), BackendError>
     where
         M: Model + crate::ui::TemplateLayout + 'static,
@@ -248,9 +246,9 @@ impl Backend for DrmBackend {
         card.set_crtc(crtc_handle, Some(fb1), (0, 0), &[connector.handle()], Some(mode))
             .map_err(|e| BackendError::Init(format!("Failed to perform initial modeset: {:?}", e)))?;
             
-        let (msg_tx, msg_rx) = channel::<String>();
+        let (msg_tx, msg_rx) = channel::<super::Command<M>>();
         let event_loop_thread = thread::current();
-        setup(MpscProxy { sender: msg_tx, event_loop_thread: event_loop_thread.clone() });
+        setup(channel_messenger(msg_tx, event_loop_thread.clone()));
         
         let input_source = EvdevInputSource::with_waker(Some(event_loop_thread));
         let presenter = DrmPresenter {

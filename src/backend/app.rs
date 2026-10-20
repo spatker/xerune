@@ -19,33 +19,8 @@
 //!    fbdev framebuffer. One binary can thus run on a desktop and on the
 //!    device.
 
-use std::sync::Arc;
-
-use super::{Backend, BackendError, EventProxy, SendError};
+use super::{Backend, BackendError, Messenger};
 use crate::{Model, Renderer, Runtime, TextMeasurer, TemplateLayout};
-
-/// Sends messages into a running app from other threads (sensor readers,
-/// network clients), as if they came from the UI.
-#[derive(Clone)]
-pub struct Messenger(Arc<dyn Fn(String) -> Result<(), SendError> + Send + Sync>);
-
-impl Messenger {
-    fn from_proxy(proxy: impl EventProxy) -> Self {
-        Self(Arc::new(move |message| proxy.send_message(message)))
-    }
-
-    /// Queues `message` for [`Model::update`]; it is parsed like a template's
-    /// `data-on-click` message.
-    pub fn send(&self, message: impl Into<String>) -> Result<(), SendError> {
-        (self.0)(message.into())
-    }
-}
-
-impl EventProxy for Messenger {
-    fn send_message(&self, message: String) -> Result<(), SendError> {
-        self.send(message)
-    }
-}
 
 /// A display backend [`App::run`] can use.
 #[non_exhaustive]
@@ -106,7 +81,7 @@ pub struct App<M: Model, TM> {
     runtime: Runtime<M, TM>,
     title: String,
     size: (u32, u32),
-    on_start: Option<Box<dyn FnOnce(Messenger)>>,
+    on_start: Option<Box<dyn FnOnce(Messenger<M>)>>,
 }
 
 impl<M, TM> App<M, TM>
@@ -148,9 +123,9 @@ where
     }
 
     /// Runs `f` once the app is running, with a [`Messenger`] to send it
-    /// messages from other threads. Not called for snapshots, which must be
+    /// messages and changes from other threads, or to end it. Not called for snapshots, which must be
     /// deterministic: reach a state with `XERUNE_SNAPSHOT_MESSAGES` instead.
-    pub fn on_start(mut self, f: impl FnOnce(Messenger) + 'static) -> Self {
+    pub fn on_start(mut self, f: impl FnOnce(Messenger<M>) + 'static) -> Self {
         self.on_start = Some(Box::new(f));
         self
     }
@@ -170,18 +145,18 @@ where
     /// Runs the app on a specific backend.
     pub fn run_on(self, kind: BackendKind, renderer: impl Renderer + 'static) -> Result<(), BackendError> {
         let App { runtime, title, size: (width, height), on_start } = self;
-        let start = move |proxy: Messenger| {
+        let start = move |messenger: Messenger<M>| {
             if let Some(f) = on_start {
-                f(proxy)
+                f(messenger)
             }
         };
         match kind {
             #[cfg(feature = "winit")]
-            BackendKind::Winit => super::WinitBackend::new().run(&title, width, height, runtime, renderer, |p| start(Messenger::from_proxy(p))),
+            BackendKind::Winit => super::WinitBackend::new().run(&title, width, height, runtime, renderer, start),
             #[cfg(all(target_os = "linux", feature = "drm", feature = "evdev"))]
-            BackendKind::Drm => super::DrmBackend::new().run(&title, width, height, runtime, renderer, |p| start(Messenger::from_proxy(p))),
+            BackendKind::Drm => super::DrmBackend::new().run(&title, width, height, runtime, renderer, start),
             #[cfg(all(target_os = "linux", feature = "linuxfb", feature = "evdev"))]
-            BackendKind::LinuxFb => super::LinuxFbBackend::new().run(&title, width, height, runtime, renderer, |p| start(Messenger::from_proxy(p))),
+            BackendKind::LinuxFb => super::LinuxFbBackend::new().run(&title, width, height, runtime, renderer, start),
             #[allow(unreachable_patterns)]
             other => Err(BackendError::Init(format!("the {} backend is not compiled in", other.name()))),
         }

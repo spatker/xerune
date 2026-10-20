@@ -1,12 +1,14 @@
 use super::*;
 use crate::{ContainerStyle, Context, TemplateLayout, UiBuilder};
-use crate::backend::{EventProxy, MpscProxy};
+use crate::backend::{Messenger, channel_messenger};
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}, mpsc::{channel, Sender}};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 enum Event {
     Updated,
+    /// A `Messenger::update` ran.
+    Changed,
     Presented(Instant),
 }
 
@@ -94,10 +96,13 @@ impl FramePresenter for Presenter {
 }
 
 struct TestLoop {
-    proxy: MpscProxy,
+    messenger: Messenger<TestModel>,
+    loop_thread: thread::Thread,
     events: Receiver<Event>,
     stop: Arc<AtomicBool>,
-    thread: Option<JoinHandle<()>>,
+    events_tx: Sender<Event>,
+    /// Whether the loop ended without an error.
+    thread: Option<JoinHandle<bool>>,
 }
 
 impl TestLoop {
@@ -106,13 +111,14 @@ impl TestLoop {
         let (proxy_tx, proxy_rx) = channel();
         let stop = Arc::new(AtomicBool::new(false));
         let thread_stop = stop.clone();
+        let loop_events = events_tx.clone();
         let thread = thread::spawn(move || {
             let (sender, messages) = channel();
-            let proxy = MpscProxy { sender, event_loop_thread: thread::current() };
+            let messenger = channel_messenger(sender, thread::current());
             for _ in 0..queued_messages {
-                proxy.send_message("update".into()).unwrap();
+                messenger.send("update").unwrap();
             }
-            proxy_tx.send(proxy).unwrap();
+            proxy_tx.send(messenger).unwrap();
             let model = TestModel { events: events_tx.clone(), animate };
             let mut runtime = Runtime::new(model, Measurer);
             runtime.set_target_fps(25);
@@ -120,11 +126,12 @@ impl TestLoop {
             let surface = SurfaceInfo {
                 logical_w: 1, logical_h: 1, disp_w: 1, disp_h: 1, rotation: 0,
             };
-            let _ = run_embedded_event_loop(
+            run_embedded_event_loop(
                 runtime, NoRenderer, NoInput, presenter, surface, messages,
-            );
+            ).is_ok()
         });
-        Self { proxy: proxy_rx.recv().unwrap(), events, stop, thread: Some(thread) }
+        let loop_thread = thread.thread().clone();
+        Self { messenger: proxy_rx.recv().unwrap(), loop_thread, events, events_tx: loop_events, stop, thread: Some(thread) }
     }
 
     fn next_event(&self) -> Event {
@@ -135,8 +142,10 @@ impl TestLoop {
 impl Drop for TestLoop {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Relaxed);
-        self.proxy.event_loop_thread.unpark();
-        let _ = self.thread.take().unwrap().join();
+        self.loop_thread.unpark();
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
     }
 }
 
@@ -146,7 +155,7 @@ fn proxy_wakes_idle_loop_without_hardware_input() {
     assert!(matches!(event_loop.next_event(), Event::Presented(_)));
     // Allow the loop to enter its idle wait; the next event must come from the proxy.
     assert!(event_loop.events.recv_timeout(Duration::from_millis(20)).is_err());
-    event_loop.proxy.send_message("update".into()).unwrap();
+    event_loop.messenger.send("update").unwrap();
     assert!(matches!(event_loop.next_event(), Event::Updated));
     assert!(matches!(event_loop.next_event(), Event::Presented(_)));
 }
@@ -169,4 +178,37 @@ fn dirty_animation_frames_obey_frame_deadline() {
     let Event::Presented(second) = event_loop.next_event() else { panic!("Expected a frame") };
     // 25 FPS requests 40 ms; leave a little tolerance for work preceding presentation.
     assert!(second.duration_since(first) >= Duration::from_millis(30));
+}
+
+#[test]
+fn updates_run_between_messages_in_order() {
+    let event_loop = TestLoop::start(false, 0);
+    assert!(matches!(event_loop.next_event(), Event::Presented(_)));
+    event_loop.messenger.send("update").unwrap();
+    let events = event_loop.events_tx.clone();
+    event_loop.messenger.update(move |_, _| events.send(Event::Changed).unwrap()).unwrap();
+    event_loop.messenger.send("update").unwrap();
+    let mut seen = Vec::new();
+    while seen.len() < 3 {
+        match event_loop.next_event() {
+            Event::Updated => seen.push("update"),
+            Event::Changed => seen.push("change"),
+            Event::Presented(_) => {}
+        }
+    }
+    assert_eq!(seen, ["update", "change", "update"]);
+}
+
+#[test]
+fn quit_ends_the_loop() {
+    let mut event_loop = TestLoop::start(false, 0);
+    assert!(matches!(event_loop.next_event(), Event::Presented(_)));
+    event_loop.messenger.quit().unwrap();
+    let thread = event_loop.thread.take().unwrap();
+    let start = Instant::now();
+    while !thread.is_finished() {
+        assert!(start.elapsed() < Duration::from_secs(2), "the loop didn't end");
+        thread::yield_now();
+    }
+    assert!(thread.join().unwrap(), "the loop ended with an error");
 }

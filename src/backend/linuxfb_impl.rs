@@ -1,6 +1,6 @@
 use crate::{Model, Runtime, TextMeasurer};
 use super::{
-    Backend, BackendError, MpscProxy,
+    Backend, BackendError, Messenger, channel_messenger,
     input::{EvdevInputSource, SurfaceInfo},
     common_loop::{FramePresenter, run_embedded_event_loop},
 };
@@ -108,8 +108,6 @@ where
 }
 
 impl Backend for LinuxFbBackend {
-    type Proxy = MpscProxy;
-
     fn run<M, TM, R>(
         self,
         title: &str,
@@ -117,7 +115,7 @@ impl Backend for LinuxFbBackend {
         height: u32,
         runtime: Runtime<M, TM>,
         renderer: R,
-        setup: impl FnOnce(Self::Proxy) + 'static,
+        setup: impl FnOnce(Messenger<M>) + 'static,
     ) -> Result<(), BackendError>
     where
         M: Model + crate::ui::TemplateLayout + 'static,
@@ -159,9 +157,9 @@ impl Backend for LinuxFbBackend {
             .map_err(|e| BackendError::Init(format!("Failed to map framebuffer: {:?}", e)))?;
         let _ = fb.set_offset(0, 0);
 
-        let (msg_tx, msg_rx) = channel::<String>();
+        let (msg_tx, msg_rx) = channel::<super::Command<M>>();
         let event_loop_thread = std::thread::current();
-        setup(MpscProxy { sender: msg_tx, event_loop_thread: event_loop_thread.clone() });
+        setup(channel_messenger(msg_tx, event_loop_thread.clone()));
 
         let input_source = EvdevInputSource::with_waker(Some(event_loop_thread));
         let presenter = LinuxFbPresenter {

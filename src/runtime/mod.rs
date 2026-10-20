@@ -30,10 +30,6 @@ use crate::model::{InputEvent, Model};
 use crate::ui::{Interaction, Ui, NodeMap};
 use crate::keyboard::{Keyboard, KeyboardMsg, OnText, TextRequest};
 
-/// Message a backend's event proxy can send purely to wake the event loop (e.g. when a
-/// background image load completes). It is not forwarded to the model.
-pub const WAKE_MESSAGE: &str = "\u{0}xerune:wake";
-
 /// Placeholder box used for images without an explicit size until they have loaded.
 const IMAGE_PLACEHOLDER_SIZE: f32 = 100.0;
 
@@ -454,12 +450,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
                 let old_focus = self.focused_id.take();
                 return old_focus.is_some() || restyled;
             }
-            InputEvent::Message(msg_str) => {
-                if msg_str == WAKE_MESSAGE {
-                    return false;
-                }
-                self.process_message_str(&msg_str)
-            }
+            InputEvent::Message(msg_str) => self.process_message_str(&msg_str),
             InputEvent::Scroll { x, y, delta_x, delta_y } => {
                 if self.ui.handle_scroll(x, y, delta_x, delta_y) {
                     self.scroll_offsets = self.ui.scroll_offsets.clone();
@@ -664,9 +655,22 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
 
     /// Hands the model `msg`, timed.
     fn update(&mut self, msg: M::Message) {
+        self.update_model(|model, context| model.update(msg, context));
+    }
+
+    /// Runs `f` on the model, timed.
+    fn update_model(&mut self, f: impl FnOnce(&mut M, &mut Context<M::Message>)) {
         let start = self.stats.start();
-        self.model.update(msg, &mut self.context);
+        f(&mut self.model, &mut self.context);
         self.stats.stop(Phase::Update, start);
+    }
+
+    /// Changes the model with `f` as an `update` would (`f` gets the
+    /// context for timers, canvases, the keyboard), then syncs the view.
+    /// Returns true if the view changed.
+    pub fn update_with(&mut self, f: impl FnOnce(&mut M, &mut Context<M::Message>)) -> bool {
+        self.update_model(f);
+        self.sync_view_inner(true)
     }
 
     fn process_message_str(&mut self, msg_str: &str) -> bool {

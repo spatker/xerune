@@ -1,7 +1,7 @@
 use std::time::Instant;
 use std::sync::mpsc::Receiver;
 use crate::{Model, Runtime, TextMeasurer, graphics::Rect};
-use super::{BackendError, input::{InputSource, SurfaceInfo}};
+use super::{BackendError, Command, input::{InputSource, SurfaceInfo}};
 
 /// Trait defining a display surface frame presenter.
 pub trait FramePresenter {
@@ -14,15 +14,16 @@ pub trait FramePresenter {
     fn present(&mut self, local_buffer: &[u32], surface: &SurfaceInfo, damage: Option<Rect>) -> Result<(), BackendError>;
 }
 
-/// Generic event loop for embedded Linux backends.
-/// Input and message producers must unpark this thread after queuing events.
+/// Generic event loop for embedded Linux backends, until a
+/// [`Command::Quit`]. Input and message producers must unpark this thread
+/// after queuing events.
 pub fn run_embedded_event_loop<M, TM, R, I, P>(
     mut runtime: Runtime<M, TM>,
     mut renderer: R,
     mut input_source: I,
     mut presenter: P,
     surface: SurfaceInfo,
-    msg_rx: Receiver<String>,
+    msg_rx: Receiver<Command<M>>,
 ) -> Result<(), BackendError>
 where
     M: Model + crate::ui::TemplateLayout + 'static,
@@ -53,15 +54,25 @@ where
         // Poll & dispatch hardware input
         dirty |= input_source.dispatch_events(&mut runtime, &surface)?;
 
-        // Process custom proxy messages
+        // Messages and changes from other threads, in order.
         let mut messages = Vec::new();
-        while let Ok(msg) = msg_rx.try_recv() {
-            messages.push(msg);
-            if messages.len() > 300 {
-                break;
+        let mut received = 0;
+        while received <= 300 {
+            let Ok(command) = msg_rx.try_recv() else { break };
+            received += 1;
+            match command {
+                Command::Message(message) => messages.push(message),
+                Command::Update(f) => {
+                    if !messages.is_empty() {
+                        dirty |= runtime.handle_messages(messages.drain(..));
+                    }
+                    dirty |= runtime.update_with(f);
+                }
+                Command::Wake => {}
+                Command::Quit => return Ok(()),
             }
         }
-        let batch_full = messages.len() > 300;
+        let batch_full = received > 300;
         if !messages.is_empty() {
             dirty |= runtime.handle_messages(messages);
         }

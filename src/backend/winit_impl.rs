@@ -1,26 +1,13 @@
 use winit::event::{Event, WindowEvent, ElementState, MouseButton, MouseScrollDelta};
-use winit::event_loop::{ControlFlow, EventLoopProxy};
+use winit::event_loop::ControlFlow;
 use winit::window::WindowBuilder;
 use std::rc::Rc;
 use std::num::NonZeroU32;
 use crate::{Model, InputEvent, Runtime, TextMeasurer};
-use super::{Backend, EventProxy, BackendError, SendError};
+use super::{Backend, BackendError, Command, Messenger, SendError};
 
 /// The touch id the left mouse button presses as.
 const MOUSE_TOUCH_ID: u64 = u64::MAX;
-
-/// Proxy struct to dispatch user messages from winit events into the MVU event loop.
-#[derive(Clone)]
-pub struct WinitProxy {
-    proxy: EventLoopProxy<String>,
-}
-
-impl EventProxy for WinitProxy {
-    fn send_message(&self, message: String) -> Result<(), SendError> {
-        self.proxy.send_event(message)
-            .map_err(|e| SendError(e.to_string()))
-    }
-}
 
 /// Backend implementation for winit window environments.
 pub struct WinitBackend;
@@ -33,8 +20,6 @@ impl WinitBackend {
 }
 
 impl Backend for WinitBackend {
-    type Proxy = WinitProxy;
-
     fn run<M, TM, R>(
         self,
         title: &str,
@@ -42,7 +27,7 @@ impl Backend for WinitBackend {
         height: u32,
         mut runtime: Runtime<M, TM>,
         mut renderer: R,
-        setup: impl FnOnce(Self::Proxy) + 'static,
+        setup: impl FnOnce(Messenger<M>) + 'static,
     ) -> Result<(), BackendError>
     where
         M: Model + crate::ui::TemplateLayout + 'static,
@@ -53,19 +38,31 @@ impl Backend for WinitBackend {
         if let Some(snapshot) = super::SnapshotBackend::from_env() {
             return snapshot?.run(title, width, height, runtime, renderer, |_| {});
         }
-        let event_loop = winit::event_loop::EventLoopBuilder::<String>::with_user_event().build()
-            .map_err(|e| BackendError::Init(e.to_string()))?;
+        let mut builder = winit::event_loop::EventLoopBuilder::<Command<M>>::with_user_event();
+        // The app may run on a thread of its own (the C API runs it beside
+        // the caller's loop). macOS can't.
+        #[cfg(target_os = "linux")]
+        {
+            winit::platform::x11::EventLoopBuilderExtX11::with_any_thread(&mut builder, true);
+            winit::platform::wayland::EventLoopBuilderExtWayland::with_any_thread(&mut builder, true);
+        }
+        #[cfg(windows)]
+        winit::platform::windows::EventLoopBuilderExtWindows::with_any_thread(&mut builder, true);
+        let event_loop = builder.build().map_err(|e| BackendError::Init(e.to_string()))?;
         let proxy = event_loop.create_proxy();
         {
             // Background image loads wake the loop; `poll()` then applies them.
             let wake_proxy = std::sync::Mutex::new(proxy.clone());
             runtime.set_image_waker(move || {
                 if let Ok(p) = wake_proxy.lock() {
-                    let _ = p.send_event(crate::runtime::WAKE_MESSAGE.to_string());
+                    let _ = p.send_event(Command::Wake);
                 }
             });
         }
-        setup(WinitProxy { proxy });
+        let proxy = std::sync::Mutex::new(proxy);
+        setup(Messenger::new(move |command| {
+            proxy.lock().map_err(|e| SendError(e.to_string()))?.send_event(command).map_err(|e| SendError(e.to_string()))
+        }));
         
         let window = Rc::new(WindowBuilder::new()
             .with_title(title)
@@ -105,12 +102,19 @@ impl Backend for WinitBackend {
                         None => ControlFlow::Wait,
                     });
                 }
-                Event::UserEvent(msg) => {
-                    if msg == crate::runtime::WAKE_MESSAGE {
-                        // Poll in the upcoming AboutToWait.
-                        next_trigger = Some(std::time::Instant::now());
-                    } else if runtime.handle_event(InputEvent::Message(msg)) {
-                        next_trigger = Some(std::time::Instant::now());
+                Event::UserEvent(command) => {
+                    let changed = match command {
+                        Command::Message(msg) => runtime.handle_event(InputEvent::Message(msg)),
+                        Command::Update(f) => runtime.update_with(f),
+                        Command::Wake => false,
+                        Command::Quit => {
+                            target.exit();
+                            return;
+                        }
+                    };
+                    // Poll in the upcoming AboutToWait.
+                    next_trigger = Some(std::time::Instant::now());
+                    if changed {
                         window_clone.request_redraw();
                     }
                 },

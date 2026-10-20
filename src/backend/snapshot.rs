@@ -29,7 +29,7 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use super::{Backend, BackendError, EventProxy, SendError};
+use super::{Backend, BackendError, Messenger};
 use crate::{Model, Runtime, TextMeasurer};
 use crate::runtime::Clock;
 
@@ -217,21 +217,7 @@ pub fn write_png(path: &std::path::Path, pixels: &[u32], width: u32, height: u32
     writer.write_image_data(&rgb).map_err(|e| err(&e))
 }
 
-/// Proxy handed to nothing: snapshot mode does not run the app's `setup`
-/// callback (it typically spawns producers that would make the output
-/// nondeterministic). Use `XERUNE_SNAPSHOT_MESSAGES` to reach a state instead.
-#[derive(Clone, Debug)]
-pub struct SnapshotProxy;
-
-impl EventProxy for SnapshotProxy {
-    fn send_message(&self, _message: String) -> Result<(), SendError> {
-        Err(SendError("snapshot mode has no event loop".to_string()))
-    }
-}
-
 impl Backend for SnapshotBackend {
-    type Proxy = SnapshotProxy;
-
     fn run<M, TM, R>(
         self,
         _title: &str,
@@ -239,7 +225,9 @@ impl Backend for SnapshotBackend {
         height: u32,
         mut runtime: Runtime<M, TM>,
         mut renderer: R,
-        _setup: impl FnOnce(Self::Proxy) + 'static,
+        // Not run: producers it starts would make the output
+        // nondeterministic. `XERUNE_SNAPSHOT_MESSAGES` reaches a state instead.
+        _setup: impl FnOnce(Messenger<M>) + 'static,
     ) -> Result<(), BackendError>
     where
         M: Model + crate::ui::TemplateLayout + 'static,

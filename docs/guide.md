@@ -212,8 +212,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 a window (`winit`) in a desktop session, else DRM/KMS, else the fbdev
 framebuffer; `XERUNE_BACKEND=winit|drm|fbdev` overrides it. So one binary
 built with `winit,drm,evdev` runs on a desktop and on the device.
-`App::on_start` receives a `Messenger` for sending messages from other
-threads. `Fonts::bitmap(&xerune::font::DEFAULT_ROBOTO)` uses the bundled
+`App::on_start` receives a `Messenger` for other threads: `send` queues a
+message, `update(|model, ctx| ...)` changes the model in the app's thread
+(the view follows), and `quit` ends the app (`run` returns). The app may run
+on a thread of its own, also with `winit` on Linux and Windows. `Fonts::bitmap(&xerune::font::DEFAULT_ROBOTO)` uses the bundled
 prerasterized fonts instead of TrueType.
 
 ```bash
