@@ -80,7 +80,7 @@ fn writePpm(io: std.Io, gpa: std.mem.Allocator, path: []const u8, pixels: []cons
 pub fn main(init: std.process.Init) !void {
     const gpa = init.gpa;
     const args = try init.minimal.args.toSlice(init.arena.allocator());
-    const template: [:0]const u8 = if (args.len > 1) args[1] else "ui/shop.html";
+    const template: [:0]const u8 = if (args.len > 1) args[1] else "../ui/shop.html";
     const out: []const u8 = if (args.len > 2) args[2] else "shop.ppm";
 
     std.debug.print("xerune {s}\n", .{std.mem.span(xr.xr_version())});

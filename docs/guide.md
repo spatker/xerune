@@ -839,7 +839,7 @@ Needs Node 22+ and `chromium` (or `$CHROMIUM`). How it works:
 
 ---
 
-## 14. C API (C, C++, Zig)
+## 14. C API (C, C++, Zig, ...)
 
 `xerune_capi` renders a template from other languages. It doesn't compile the template: it reads the HTML file when the program runs, as the studio does. The model is JSON, and the view's messages come back as strings. The program owns the loop. It forwards input, moves time on and gets the pixels drawn into its own buffer, e.g. to upload into a texture. The API is `xerune_capi/include/xerune.h`, generated from `xerune_capi/src/lib.rs` by cbindgen; its comments are the reference.
 
@@ -848,11 +848,15 @@ cargo build --release -p xerune_capi   # target/release/libxerune_capi.a (and .s
 cargo zigbuild --release -p xerune_capi --target x86_64-pc-windows-gnu   # Windows
 ```
 
-Link the static library together with the system libraries Rust's standard library needs (`cargo rustc -p xerune_capi -- --print native-static-libs` lists them). On Linux these are `-lgcc_s -lutil -lrt -lpthread -lm -ldl`. `xerune_capi/examples/zig` is a complete Zig sample for Linux and Windows. Its `build.zig` translates the header and links the library, and `src/main.zig` renders a shop, clicks Buy, handles the message and writes the frame out:
+Link the static library together with the system libraries Rust's standard library needs (`cargo rustc -p xerune_capi -- --print native-static-libs` lists them). On Linux these are `-lgcc_s -lutil -lrt -lpthread -lm -ldl`. `xerune_capi/examples/c` is a complete C sample for Linux and Windows. `shop.c` renders a shop, clicks Buy, handles the message and writes the frame out:
 
 ```sh
-cd xerune_capi/examples/zig && zig build run   # writes shop.ppm
+cd xerune_capi/examples/c
+make run        # Linux: writes shop.ppm
+make shop.exe   # Windows, cross-compiled with zig cc
 ```
+
+Other languages use the same header. `xerune_capi/examples/zig` is the same sample in Zig, which imports the header (`addTranslateC` in its `build.zig`; `zig build run`). Rust, Go, C# or Python bind the same functions. With `zig cc` or Zig's linker on Windows, also link `-lunwind`. Rust's windows-gnu standard library calls libgcc's `_Unwind_*` functions, and Zig provides them from LLVM's libunwind.
 
 A frame:
 
@@ -881,4 +885,4 @@ xr_free(ui);
 - **Canvas**: `xr_canvas(ui, "map", &w, &h)` returns the RGBA pixels (R, G, B, A in memory, straight alpha) of the view's `<canvas id="map" width="256" height="256">`, for the program to draw into; the next `xr_render` draws it, scaled to the element's box. Call it each frame the canvas changes: the pointer is valid until the next call on the UI.
 - **Images**: `<img>` paths are relative to the template. They load in the background; `xr_wait_for_images` waits for them, e.g. before a screenshot.
 
-CI runs the Zig sample on Linux, and the cross-built `shop.exe` on Windows.
+CI runs both samples on Linux, and the C sample's cross-built `shop.exe` on Windows.

@@ -53,8 +53,8 @@ jobs:
           # As on the boards (build_arm.sh); without +neon the NEON blend paths are not compiled.
           RUSTFLAGS: -C target-feature=+neon,+vfp4,+d32
 
-  # The C API from Zig, as the game using it builds it. The library's own
-  # tests (and the header check) run with the workspace in `test`.
+  # The C and Zig samples of the C API. The library's own tests (and the
+  # header check) run with the workspace in `test`.
   capi:
     runs-on: ubuntu-latest
     steps:
@@ -71,18 +71,20 @@ jobs:
         with:
           tool: cargo-zigbuild@0.23.4
       - run: cargo build --release -p xerune_capi
+      - run: make run
+        working-directory: xerune_capi/examples/c
       - run: zig build run
         working-directory: xerune_capi/examples/zig
       # Windows: cross-built here, run on a Windows runner below.
       - run: cargo zigbuild --release -p xerune_capi --target x86_64-pc-windows-gnu
-      - run: zig build -Dtarget=x86_64-windows-gnu --prefix windows
-        working-directory: xerune_capi/examples/zig
+      - run: make shop.exe
+        working-directory: xerune_capi/examples/c
       - uses: actions/upload-artifact@v4
         with:
           name: shop-windows
           path: |
-            xerune_capi/examples/zig/windows/bin/shop.exe
-            xerune_capi/examples/zig/ui/
+            xerune_capi/examples/c/shop.exe
+            xerune_capi/examples/ui/
 
   capi-windows:
     needs: capi
@@ -91,7 +93,9 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: shop-windows
-      - run: ./windows/bin/shop.exe
+      # From its directory: the template is ../ui/shop.html.
+      - run: ./shop.exe
+        working-directory: c
 
   wasm:
     runs-on: ubuntu-latest
