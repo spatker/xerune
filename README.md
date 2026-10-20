@@ -16,6 +16,17 @@ Every example targets an 800x480 panel and has a portrait layout. The clips
 are rendered headlessly by Xerune itself, frame by frame on a simulated clock
 (`tools/record-demos.sh`), with the same renderer the boards use.
 
+### In a game, through the C API
+
+![A web shop drawn by Xerune on the screen of an in-game PC](docs/img/pc.webp)
+
+A C program shows a web shop on an in-game PC. Xerune renders the page into
+a texture and reports which part changed. The crosshair's hit on the screen
+becomes pointer input, and Buy sends `buy:<id>` back to the program, which
+updates its JSON model. The room is drawn by [raylib](https://www.raylib.com)
+on the GPU; the screen's content is Xerune. Source:
+[`xerune_capi/examples/raylib`](xerune_capi/examples/raylib/pc.c).
+
 ## Features
 
 - **Model-View-Update (MVU) Architecture**: Elm-style design providing predictable state transitions and unidirectional data flow.
@@ -31,6 +42,7 @@ are rendered headlessly by Xerune itself, frame by frame on a simulated clock
 - **Responsive Layout**: `@media` queries (width/height/orientation), `vw`/`vh`/`vmin`/`vmax` viewport units, automatic `Model::on_resize` notification, and breakpoint helpers — compiled into cheap static guards for embedded targets.
 - **Fingerprint Gating**: Opt-in `Model::view_fingerprint` lets the runtime skip full view rebuilds when a message changes no rendered state.
 - **Canvas APIs**: Support for custom user-drawn Canvas pixel buffers.
+- **C API**: Templates read at run time, models as JSON and messages as strings, drawn into the caller's pixel buffer; for C, C++, Zig and anything that calls C (guide §14).
 - **Headless snapshots and recordings**: Any app renders to PNGs instead of a window (`XERUNE_SNAPSHOT`), driven by scripted messages, for tests, CI and AI agents.
 
 ## Documentation
