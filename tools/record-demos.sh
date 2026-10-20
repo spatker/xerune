@@ -6,7 +6,10 @@
 # clips are deterministic and need no screen recorder. Needs ffmpeg with
 # libwebp.
 #
-#   tools/record-demos.sh [NAME...]    # default: all demos
+#   tools/record-demos.sh [NAME...]    # default: all demos but pc
+#
+# `pc` is the C API's raylib example (xerune_capi/examples/raylib): a 3D
+# room, so it needs raylib and a display, and records itself (--record).
 set -eu
 
 cd "$(dirname "$0")/.."
@@ -44,9 +47,19 @@ record() {
     echo "  $OUT/$name.webp: $(du -k "$OUT/$name.webp" | cut -f1) KB"
 }
 
+# The in-game PC: the raylib example plays its scripted visit.
+record_pc() {
+    echo "recording pc"
+    nice cargo build -j4 --release -p xerune_capi
+    make -s -C xerune_capi/examples/raylib pc
+    (cd xerune_capi/examples/raylib && ./pc --record "../../../$OUT/pc.webp" >/dev/null)
+    echo "  $OUT/pc.webp: $(du -k "$OUT/pc.webp" | cut -f1) KB"
+}
+
 demos=${*:-animation animation_css breakout music_player showcase todo}
+examples=$(for d in $demos; do [ "$d" = pc ] || printf -- '--example %s ' "$d"; done)
 # shellcheck disable=SC2086
-nice cargo build -j4 --release $(for d in $demos; do printf -- '--example %s ' "$d"; done)
+[ -z "$examples" ] || nice cargo build -j4 --release $examples
 
 for demo in $demos; do
     case $demo in
@@ -65,6 +78,7 @@ for demo in $demos; do
         record showcase 10 "@1000;increment_progress;@1700;toggle_maintenance;@2500;select_tab:2;@3200;increment_speed;@3500;increment_speed;@3800;increment_speed;@5000;select_tab:3;@7000;select_tab:4;@7700;toggle_wifi;@8300;toggle_bluetooth;@9200;select_tab:1" ;;
     todo)
         record todo 9 "$(type_todo 700 'Ship the demo clips')@2700;add;@3400;toggle:0;@4000;toggle:3;@4800;remove:2;@6000;lang:de;@7500;lang:ko" ;;
+    pc) record_pc ;;
     *) echo "unknown demo $demo" >&2; exit 1 ;;
     esac
 done

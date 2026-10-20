@@ -1,0 +1,96 @@
+<html>
+<head>
+<style>
+    body { margin: 0; background: #0f1117; color: #e8e6e3; font-size: 16px; display: flex; flex-direction: column; height: 100%; }
+
+    /* The browser around the page. */
+    .tabs { display: flex; align-items: flex-end; height: 38px; padding: 0 10px; background: #1b1d24; }
+    .tab { display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 14px; background: #2a2d37; border-radius: 8px 8px 0 0; font-size: 14px; }
+    .favicon { width: 12px; height: 12px; border-radius: 3px; background: linear-gradient(135deg, #f5c542, #e0603d); }
+    .tab.other { background: transparent; color: #7d8291; }
+    .bar { display: flex; align-items: center; gap: 12px; height: 42px; padding: 0 12px; background: #2a2d37; border-bottom: 1px solid #000000; }
+    .nav { color: #7d8291; font-size: 18px; font-weight: bold; }
+    .url { flex-grow: 1; height: 28px; padding: 0 14px; display: flex; align-items: center; background: #15171d; border-radius: 14px; font-size: 14px; color: #a9aebb; }
+    .url b { color: #e8e6e3; font-weight: normal; }
+
+    /* The page. */
+    .page { flex-grow: 1; padding: 20px 24px; display: flex; flex-direction: column; gap: 16px; }
+    header { display: flex; justify-content: space-between; align-items: center; }
+    .logo { font-size: 26px; font-weight: bold; color: #f5c542; }
+    .logo span { color: #e8e6e3; margin-left: 9px; }
+    .purse { padding: 6px 14px; border-radius: 16px; background: #2a2416; color: #f5c542; font-weight: bold; font-size: 18px; transition: background-color 0.4s; }
+    .purse.spent { background: #4a3a14; }
+    .grid { display: flex; flex-wrap: wrap; gap: 16px; }
+    .card { width: 250px; height: 120px; display: flex; flex-direction: column; justify-content: space-between; padding: 14px; background: #1c1f29; border-radius: 10px; border: 1px solid #262a36; }
+    .top { display: flex; gap: 12px; align-items: center; }
+    .icon { width: 52px; height: 52px; border-radius: 10px; }
+    .name { font-size: 18px; font-weight: bold; }
+    .kind { font-size: 13px; color: #7d8291; }
+    .bottom { display: flex; justify-content: space-between; align-items: center; }
+    .price { color: #f5c542; font-size: 20px; font-weight: bold; }
+    .buy { padding: 8px 22px; background: #3d7be0; border-radius: 8px; color: #ffffff; font-weight: bold; transition: background-color 0.2s; }
+    .buy:hover { background: #6aa0f5; }
+    .buy.poor { background: #343846; color: #7d8291; }
+    .owned { padding: 8px 14px; color: #6cc070; font-weight: bold; }
+    .note { color: #7d8291; font-size: 14px; }
+
+    /* Live parts: they move on xr_tick, without a new model. */
+    .online { display: flex; align-items: center; gap: 8px; color: #7d8291; font-size: 13px; }
+    .dot { width: 8px; height: 8px; border-radius: 4px; background: #6cc070; animation: blink 1.6s ease-in-out infinite; }
+    @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.25; } 100% { opacity: 1; } }
+    .delivery { display: flex; align-items: center; gap: 14px; padding: 10px 14px; width: 844px; background: #1c1f29; border-radius: 10px; border: 1px solid #262a36; }
+    .delivery .text { width: 380px; font-size: 14px; }
+    .track { flex-grow: 1; height: 8px; border-radius: 4px; background: #2a2d37; }
+    .progress { height: 8px; width: 0%; border-radius: 4px; background: linear-gradient(90deg, #3d7be0, #6cc070); animation: ride 2.4s linear infinite; }
+    @keyframes ride { from { width: 4%; } to { width: 100%; } }
+</style>
+</head>
+<body>
+<div class="tabs">
+    <div class="tab"><div class="favicon"></div>Dragon Market</div>
+    <div class="tab other">Guild mail (3)</div>
+    <div class="tab other">Weather in Ravenmere</div>
+</div>
+<div class="bar">
+    <span class="nav">&lt;</span><span class="nav">&gt;</span>
+    <div class="url">https://<b>dragon.market</b>/armory</div>
+</div>
+<div class="page">
+    <header>
+        <div class="logo">DRAGON <span>MARKET</span></div>
+        <div class="online"><div class="dot"></div>3 traders online
+            <div class="purse{% if spent %} spent{% endif %}">{{ gold }} gold</div>
+        </div>
+    </header>
+    <div class="grid">
+        {% for item in items %}
+        <div class="card">
+            <div class="top">
+                <div class="icon" style="background: linear-gradient(135deg, {{ item.color }}, #1c1f29)"></div>
+                <div>
+                    <div class="name">{{ item.name }}</div>
+                    <div class="kind">{{ item.kind }}</div>
+                </div>
+            </div>
+            <div class="bottom">
+                <span class="price">{{ item.price }} g</span>
+                {% if item.owned %}
+                <span class="owned">Owned</span>
+                {% else %}
+                <span class="buy{% if item.price > gold %} poor{% endif %}" data-on-click="buy:{{ item.id }}">Buy</span>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% if let Some(name) = last_purchase %}
+    <div class="delivery">
+        <span class="text">Courier on the way to Highmoor with your {{ name }}</span>
+        <div class="track"><div class="progress"></div></div>
+    </div>
+    {% else %}
+    <span class="note">Free delivery anywhere in the valley.</span>
+    {% endif %}
+</div>
+</body>
+</html>

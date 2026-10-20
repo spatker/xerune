@@ -856,6 +856,8 @@ make run        # Linux: writes shop.ppm
 make shop.exe   # Windows, cross-compiled with zig cc
 ```
 
+`xerune_capi/examples/raylib` puts the UI into a game: a web shop on the screen of a PC in a 3D room, with the crosshair's hit on the screen as pointer input and the damaged rect uploaded into the screen's texture (raylib; `make run`).
+
 Other languages use the same header. `xerune_capi/examples/zig` is the same sample in Zig, which imports the header (`addTranslateC` in its `build.zig`; `zig build run`). Rust, Go, C# or Python bind the same functions. With `zig cc` or Zig's linker on Windows, also link `-lunwind`. Rust's windows-gnu standard library calls libgcc's `_Unwind_*` functions, and Zig provides them from LLVM's libunwind.
 
 A frame:
