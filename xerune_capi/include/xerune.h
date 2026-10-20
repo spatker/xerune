@@ -15,6 +15,18 @@
  *     if (xr_render(ui, pixels, stride, XR_PIXELS_XBGR8888, &damage)) upload damage
  *   xr_free(ui);
  *
+ * Or an app, which shows itself (DRM/KMS, fbdev, a desktop window) and
+ * reads the input devices on a thread of its own:
+ *   XrApp *app = xr_app_new(NULL, 0);
+ *   xr_app_load_template(app, "ui/main.html");
+ *   xr_app_set_model(app, json);
+ *   xr_app_start(app, "Player", 800, 480);
+ *   when xr_app_message_fd(app) is readable (poll, epoll, any event loop):
+ *     for (const char *m; (m = xr_app_next_message(app));) { handle m, xr_app_set_model(...) }
+ *     for (const char *e; (e = xr_app_next_error(app));) { report e }
+ *     if (!xr_app_running(app)) the app ended
+ *   xr_app_free(app);
+ *
  * Functions that can fail return -1 (or false, or NULL) and set
  * xr_last_error(). Strings are UTF-8 and NUL-terminated.
  */
@@ -35,6 +47,12 @@
 // is not written): in memory on little-endian machines R, G, B, X, as
 // `GL_RGBA` / `GL_UNSIGNED_BYTE` reads them.
 #define XR_PIXELS_XBGR8888 1
+
+// A UI that shows itself on the display and reads the input devices, on a
+// thread of its own. The program sets its model and takes its messages,
+// from one thread at a time. Create one with `xr_app_new`, free it with
+// `xr_app_free`.
+typedef struct XrApp XrApp;
 
 // A UI: a template, the model it shows, and its state between frames
 // (scroll positions, animations, the previous frame). Create one with
@@ -265,6 +283,113 @@ const char *xr_next_message(XrUi *ui);
 // # Safety
 // `ui` must be from `xr_new`.
 bool xr_wait_for_images(XrUi *ui, uint32_t timeout_ms);
+
+// A new app drawing text with `fonts` (as `xr_new`). NULL on an error.
+//
+// It shows nothing until it is started (`xr_app_start`), usually after
+// `xr_app_load_template` and `xr_app_set_model`.
+//
+// # Safety
+// `fonts` must be NULL or point to `count` valid `XrFont`s.
+XrApp *xr_app_new(const XrFont *fonts, size_t count);
+
+// Ends the app if it runs (the display is left as it was) and frees it
+// (NULL is fine). Strings it returned are gone with it.
+//
+// # Safety
+// `app` must be NULL or from `xr_app_new`, and not freed already.
+void xr_app_free(XrApp *app);
+
+// Shows the template in the file at `path` (as `xr_load_template`),
+// before the app starts or while it runs.
+//
+// 0 on success; -1 if the template can't be read or parsed
+// (`xr_last_error`). Whether it fits the model is found on the app's
+// thread: see `xr_app_next_error`.
+//
+// # Safety
+// `app` must be from `xr_app_new`; `path` a NUL-terminated string.
+int32_t xr_app_load_template(XrApp *app, const char *path);
+
+// Like `xr_app_load_template`, with the template's text in `source`;
+// includes and images are found relative to `base_dir` (NULL: the working
+// directory).
+//
+// # Safety
+// `app` must be from `xr_app_new`; `source` and `base_dir` NUL-terminated
+// strings (`base_dir` may be NULL).
+int32_t xr_app_load_template_source(XrApp *app, const char *source, const char *base_dir);
+
+// Sets the model the template shows (a JSON object, as `xr_set_model`),
+// before the app starts or while it runs. Set the whole model each time.
+// The app takes it on its own thread soon after; when the model is set
+// again before that, it shows only the latest.
+//
+// 0 on success; -1 if the app has ended (`xr_last_error`). An error in
+// the model (not JSON, a field the template lacks) is found on the app's
+// thread: see `xr_app_next_error`; the app shows what it showed before.
+//
+// # Safety
+// `app` must be from `xr_app_new`; `json` a NUL-terminated string.
+int32_t xr_app_set_model(XrApp *app, const char *json);
+
+// Starts the app on a thread of its own: it shows the template and model
+// set so far on the display and reads the input devices. The display is
+// picked when it starts: a window of `width` x `height` titled `title`
+// (NULL: "xerune") in a desktop session, else DRM/KMS at the display's
+// size, else the fbdev framebuffer; the environment variable
+// `XERUNE_BACKEND=winit|drm|fbdev` picks one. Only the displays the
+// library was built with are there (Cargo features `drm`, `linuxfb`,
+// `winit`). With `XERUNE_SNAPSHOT=out.png` it renders a screenshot
+// instead and ends.
+//
+// An app starts once. 0 on success; -1 if it can't start (no display,
+// no template, a model that doesn't fit it: `xr_last_error`).
+//
+// # Safety
+// `app` must be from `xr_app_new`; `title` NULL or a NUL-terminated
+// string.
+int32_t xr_app_start(XrApp *app, const char *title, uint32_t width, uint32_t height);
+
+// Whether the app runs: false before `xr_app_start` and once it ended (its
+// window was closed, or its display failed: `xr_app_next_error`).
+//
+// # Safety
+// `app` must be from `xr_app_new`.
+bool xr_app_running(XrApp *app);
+
+// A file descriptor that is readable while messages or errors wait
+// (`xr_app_next_message`, `xr_app_next_error`), and once when the app
+// ends: for `poll`, `epoll` or any event loop that watches descriptors.
+// Taking everything that waits makes it unreadable again. The app owns
+// it: don't read or close it. -1 where there is none (only Linux has
+// one).
+//
+// # Safety
+// `app` must be from `xr_app_new`.
+int32_t xr_app_message_fd(XrApp *app);
+
+// The next message the UI sent (as `xr_next_message`), oldest first, or
+// NULL when there is none. Handle each by setting the model
+// (`xr_app_set_model`).
+//
+// The string is valid until the next call of `xr_app_next_message` or
+// `xr_app_free`.
+//
+// # Safety
+// `app` must be from `xr_app_new`.
+const char *xr_app_next_message(XrApp *app);
+
+// The next error found on the app's thread, oldest first, or NULL when
+// there is none: a model or template that doesn't fit (the app shows what
+// it showed before), or why the app ended.
+//
+// The string is valid until the next call of `xr_app_next_error` or
+// `xr_app_free`.
+//
+// # Safety
+// `app` must be from `xr_app_new`.
+const char *xr_app_next_error(XrApp *app);
 
 #ifdef __cplusplus
 }  // extern "C"

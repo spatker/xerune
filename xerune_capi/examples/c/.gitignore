@@ -3,3 +3,5 @@ shop.exe
 shop.pdb
 shop.lib
 *.ppm
+app
+*.png

@@ -1,4 +1,5 @@
-# Builds the shop sample against xerune's C API.
+# Builds the shop samples against xerune's C API: shop (the program draws
+# the UI into its buffer) and app (Linux: the UI shows itself).
 #
 # Build the Rust library first, for the same target, from the repository
 # root:
@@ -7,6 +8,8 @@
 # then here:
 #   make run        # Linux: builds ./shop and runs it
 #   make shop.exe   # Windows, cross-compiled with zig cc (or set WINCC to MinGW's gcc)
+#   make run-app    # Linux: builds ./app and runs it; build the library with
+#                   # displays: --features winit,drm,linuxfb
 # or point XERUNE_LIB at a libxerune_capi.a built elsewhere.
 
 ROOT := ../../..
@@ -30,11 +33,17 @@ shop: shop.c ../../include/xerune.h $(XERUNE_LIB)
 shop.exe: shop.c ../../include/xerune.h $(XERUNE_WIN_LIB)
 	$(WINCC) $(CPPFLAGS) $(CFLAGS) -o $@ shop.c $(XERUNE_WIN_LIB) $(WINLIBS)
 
-# The template's path in shop.c is relative to this directory.
+app: app.c ../../include/xerune.h $(XERUNE_LIB)
+	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ app.c $(XERUNE_LIB) $(LIBS)
+
+# The template's path in shop.c and app.c is relative to this directory.
 run: shop
 	./shop
 
-clean:
-	rm -f shop shop.exe shop.pdb shop.lib shop.ppm
+run-app: app
+	./app
 
-.PHONY: run clean
+clean:
+	rm -f shop shop.exe shop.pdb shop.lib shop.ppm app app.png
+
+.PHONY: run run-app clean

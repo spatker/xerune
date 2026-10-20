@@ -7,6 +7,7 @@
 //! Every function catches Rust panics: a bug in xerune shows as an error
 //! (`xr_last_error`), never as an unwind into the caller.
 
+mod app;
 mod engine;
 
 use std::cell::RefCell;
@@ -18,7 +19,8 @@ use std::time::Duration;
 use xerune::{InputEvent, Pixels, Surface};
 use xerune_render::Fonts;
 
-pub use engine::{Engine, JsonModel, Page, Ui};
+pub use app::*;
+pub use engine::{Engine, JsonModel, Outbox, Page, Ui};
 
 /// Pixels are 32-bit words `0xXXRRGGBB` (blue in the low byte; the top
 /// byte is not written): DRM/fbdev XRGB8888, `GL_BGRA` with

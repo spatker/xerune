@@ -3437,6 +3437,7 @@ version = "0.1.0"
 dependencies = [
  "cbindgen",
  "html5ever",
+ "libc",
  "markup5ever_rcdom",
  "serde_json",
  "taffy",

@@ -73,6 +73,13 @@ jobs:
       - run: cargo build --release -p xerune_capi
       - run: make run
         working-directory: xerune_capi/examples/c
+      # The app sample shows itself; headless here: one frame after the
+      # message, which must reach the program.
+      - run: make run-app
+        working-directory: xerune_capi/examples/c
+        env:
+          XERUNE_SNAPSHOT: app.png
+          XERUNE_SNAPSHOT_MESSAGES: buy:2
       - run: zig build run
         working-directory: xerune_capi/examples/zig
       # Windows: cross-built here, run on a Windows runner below.

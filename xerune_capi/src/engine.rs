@@ -1,12 +1,13 @@
 //! What an `XrUi` handle holds: a xerune [`Runtime`] for a model that the
 //! caller sets as JSON, and its renderer. [`Engine`] hides the model's
 //! type, so a crate of compiled templates can hand out the same handles as
-//! the interpreter ([`Page`]).
+//! the interpreter ([`Page`]). The models are those of `XrApp`s too
+//! (`crate::app`).
 
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, PoisonError, RwLock};
 use std::time::{Duration, Instant};
 
 use html5ever::tendril::TendrilSink;
@@ -25,13 +26,148 @@ pub trait JsonModel: Model + TemplateLayout {
     /// was.
     fn set_json(&mut self, json: &str) -> Result<(), String>;
 
-    /// The oldest message the view sent that the caller hasn't taken.
-    fn next_message(&mut self) -> Option<String>;
+    /// Where `update` puts the messages of the view for the caller. An app
+    /// replaces it with one its caller's thread reads.
+    fn outbox(&mut self) -> &mut Outbox;
 
     /// Shows `template` from now on, its images found relative to
     /// `base_dir`. Only an interpreted model can.
     fn set_template(&mut self, _template: Template, _base_dir: &Path) -> Result<(), String> {
         Err("this UI's templates are compiled into it".to_string())
+    }
+
+    /// Shows `template` for the model in `json`, both new: each is checked
+    /// against the other, not against what the model had. On an error the
+    /// model is as it was.
+    fn set_template_and_json(&mut self, template: Template, base_dir: &Path, json: &str) -> Result<(), String> {
+        self.set_template(template, base_dir)?;
+        self.set_json(json)
+    }
+}
+
+/// Messages of a view, and errors, waiting for the caller. Clones share
+/// the queue: an app's model fills it on the app's thread while the caller
+/// takes from it on its own.
+#[derive(Clone, Default)]
+pub struct Outbox(Arc<Mutex<Mail>>);
+
+#[derive(Default)]
+struct Mail {
+    messages: VecDeque<String>,
+    errors: VecDeque<String>,
+    /// Readable while anything waits, or the app ended unseen.
+    signal: Option<Arc<Signal>>,
+    raised: bool,
+}
+
+impl Outbox {
+    /// Queues a message of the view.
+    pub fn push(&self, message: String) {
+        self.with(|mail| mail.messages.push_back(message));
+    }
+
+    /// The oldest message the caller hasn't taken.
+    pub fn pop(&self) -> Option<String> {
+        self.with(|mail| mail.messages.pop_front())
+    }
+
+    pub(crate) fn push_error(&self, error: String) {
+        self.with(|mail| mail.errors.push_back(error));
+    }
+
+    pub(crate) fn pop_error(&self) -> Option<String> {
+        self.with(|mail| mail.errors.pop_front())
+    }
+
+    /// Raises `signal` while anything waits, from now on.
+    pub(crate) fn signal_with(&self, signal: Arc<Signal>) {
+        self.with(|mail| mail.signal = Some(signal));
+    }
+
+    /// Raises the signal although nothing waits (the app ended); the next
+    /// `pop` lowers it.
+    pub(crate) fn notify(&self) {
+        let mut mail = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some(signal) = &mail.signal {
+            signal.raise();
+            mail.raised = true;
+        }
+    }
+
+    fn with<T>(&self, f: impl FnOnce(&mut Mail) -> T) -> T {
+        let mut mail = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        let result = f(&mut mail);
+        let waiting = !mail.messages.is_empty() || !mail.errors.is_empty();
+        if let Some(signal) = &mail.signal {
+            if waiting != mail.raised {
+                if waiting { signal.raise() } else { signal.lower() }
+                mail.raised = waiting;
+            }
+        }
+        result
+    }
+}
+
+/// A file descriptor that is readable while it is raised, for the caller's
+/// `poll` or event loop: an eventfd.
+#[cfg(target_os = "linux")]
+pub(crate) struct Signal(std::os::fd::OwnedFd);
+
+#[cfg(target_os = "linux")]
+impl Signal {
+    pub(crate) fn new() -> Result<Self, String> {
+        use std::os::fd::FromRawFd;
+        // SAFETY: eventfd takes no pointers; a valid fd is ours to own.
+        let fd = unsafe { libc::eventfd(0, libc::EFD_CLOEXEC | libc::EFD_NONBLOCK) };
+        if fd < 0 {
+            return Err(format!("eventfd: {}", std::io::Error::last_os_error()));
+        }
+        // SAFETY: `fd` is a new descriptor nothing else owns.
+        Ok(Self(unsafe { std::os::fd::OwnedFd::from_raw_fd(fd) }))
+    }
+
+    pub(crate) fn fd(&self) -> i32 {
+        use std::os::fd::AsRawFd;
+        self.0.as_raw_fd()
+    }
+
+    fn raise(&self) {
+        use std::os::fd::AsRawFd;
+        let one = 1u64;
+        // SAFETY: writes the 8 bytes of `one` to our eventfd. It can't
+        // overflow: raises alternate with lowers.
+        unsafe { libc::write(self.0.as_raw_fd(), (&one as *const u64).cast(), 8) };
+    }
+
+    fn lower(&self) {
+        use std::os::fd::AsRawFd;
+        let mut count = 0u64;
+        // SAFETY: reads 8 bytes into `count`; resets the counter, or fails
+        // with EAGAIN when it is 0 already.
+        unsafe { libc::read(self.0.as_raw_fd(), (&mut count as *mut u64).cast(), 8) };
+    }
+}
+
+/// No signal outside Linux: `xr_app_message_fd` is -1 there.
+#[cfg(not(target_os = "linux"))]
+pub(crate) enum Signal {}
+
+#[cfg(not(target_os = "linux"))]
+impl Signal {
+    pub(crate) fn new() -> Result<Self, String> {
+        Err("there is no message fd on this system".to_string())
+    }
+
+    pub(crate) fn fd(&self) -> i32 {
+        match *self {}
+    }
+
+    fn raise(&self) {
+        match *self {}
+    }
+
+    fn lower(&self) {
+        match *self {}
     }
 }
 
@@ -71,9 +207,18 @@ impl xerune::runtime::Clock for CallerClock {
 
 /// Finds images relative to the template's directory, as a browser finds
 /// them relative to the page; URLs and absolute paths as they are.
-struct TemplateDirLoader {
+pub(crate) struct TemplateDirLoader {
     dir: Arc<RwLock<PathBuf>>,
     default: DefaultImageLoader,
+}
+
+impl TemplateDirLoader {
+    /// A loader, and the directory it reads, for setting when the template
+    /// changes.
+    pub(crate) fn new() -> (Self, Arc<RwLock<PathBuf>>) {
+        let dir = Arc::new(RwLock::new(PathBuf::new()));
+        (Self { dir: dir.clone(), default: DefaultImageLoader::default() }, dir)
+    }
 }
 
 impl ImageLoader for TemplateDirLoader {
@@ -101,8 +246,8 @@ impl<M: JsonModel> Ui<M> {
         let mut runtime = Runtime::new(model, fonts.clone());
         let clock = CallerClock { start: Instant::now(), elapsed_ms: Arc::default() };
         runtime.set_clock(clock.clone());
-        let image_dir = Arc::new(RwLock::new(PathBuf::new()));
-        runtime.set_image_loader(TemplateDirLoader { dir: image_dir.clone(), default: DefaultImageLoader::default() });
+        let (loader, image_dir) = TemplateDirLoader::new();
+        runtime.set_image_loader(loader);
         Self { runtime, renderer: SoftwareRenderer::new(fonts), size: (0, 0), clock, first_tick: None, image_dir }
     }
 
@@ -166,7 +311,7 @@ impl<M: JsonModel> Engine for Ui<M> {
     }
 
     fn next_message(&mut self) -> Option<String> {
-        self.runtime.model_mut().next_message()
+        self.runtime.model_mut().outbox().pop()
     }
 
     fn wait_for_images(&mut self, timeout: Duration) -> bool {
@@ -203,16 +348,31 @@ pub struct Page {
     dom: RcDom,
     /// Changes with every new view, for [`Model::view_fingerprint`].
     generation: u64,
-    messages: VecDeque<String>,
+    outbox: Outbox,
 }
 
 impl Default for Page {
     fn default() -> Self {
-        Self { template: None, css: "", model: None, dom: RcDom::default(), generation: 0, messages: VecDeque::new() }
+        Self { template: None, css: "", model: None, dom: RcDom::default(), generation: 0, outbox: Outbox::default() }
     }
 }
 
 impl Page {
+    fn parse_model(json: &str) -> Result<Value, String> {
+        let model: Value = serde_json::from_str(json).map_err(|e| format!("the model isn't JSON: {e}"))?;
+        if !matches!(model, Value::Struct(_)) {
+            return Err(format!("the model must be a JSON object, not a {}", model.kind()));
+        }
+        Ok(model)
+    }
+
+    /// Takes `template`, whose view is made.
+    fn show(&mut self, template: Template) {
+        self.css = Box::leak(template.css.clone().into_boxed_str());
+        self.template = Some(template);
+        self.generation += 1;
+    }
+
     /// Makes the view of `template` for `model`, or says why it can't.
     fn view(template: &Template, model: &Value) -> Result<RcDom, String> {
         let html = xerune_template::render_html(template, model, &()).map_err(|e| e.to_string())?;
@@ -224,7 +384,7 @@ impl Model for Page {
     type Message = String;
 
     fn update(&mut self, msg: String, _context: &mut Context<String>) {
-        self.messages.push_back(msg);
+        self.outbox.push(msg);
     }
 
     /// The view changes only when the caller sets the model or the
@@ -246,10 +406,7 @@ impl TemplateLayout for Page {
 
 impl JsonModel for Page {
     fn set_json(&mut self, json: &str) -> Result<(), String> {
-        let model: Value = serde_json::from_str(json).map_err(|e| format!("the model isn't JSON: {e}"))?;
-        if !matches!(model, Value::Struct(_)) {
-            return Err(format!("the model must be a JSON object, not a {}", model.kind()));
-        }
+        let model = Self::parse_model(json)?;
         if let Some(template) = &self.template {
             self.dom = Self::view(template, &model)?;
             self.generation += 1;
@@ -258,8 +415,8 @@ impl JsonModel for Page {
         Ok(())
     }
 
-    fn next_message(&mut self) -> Option<String> {
-        self.messages.pop_front()
+    fn outbox(&mut self) -> &mut Outbox {
+        &mut self.outbox
     }
 
     fn set_template(&mut self, template: Template, _base_dir: &Path) -> Result<(), String> {
@@ -267,9 +424,15 @@ impl JsonModel for Page {
         if let Some(model) = &self.model {
             self.dom = Self::view(&template, model)?;
         }
-        self.css = Box::leak(template.css.clone().into_boxed_str());
-        self.template = Some(template);
-        self.generation += 1;
+        self.show(template);
+        Ok(())
+    }
+
+    fn set_template_and_json(&mut self, template: Template, _base_dir: &Path, json: &str) -> Result<(), String> {
+        let model = Self::parse_model(json)?;
+        self.dom = Self::view(&template, &model)?;
+        self.model = Some(model);
+        self.show(template);
         Ok(())
     }
 }

@@ -17,6 +17,18 @@ header = """/* xerune: HTML/CSS user interfaces drawn into a pixel buffer.
  *     if (xr_render(ui, pixels, stride, XR_PIXELS_XBGR8888, &damage)) upload damage
  *   xr_free(ui);
  *
+ * Or an app, which shows itself (DRM/KMS, fbdev, a desktop window) and
+ * reads the input devices on a thread of its own:
+ *   XrApp *app = xr_app_new(NULL, 0);
+ *   xr_app_load_template(app, "ui/main.html");
+ *   xr_app_set_model(app, json);
+ *   xr_app_start(app, "Player", 800, 480);
+ *   when xr_app_message_fd(app) is readable (poll, epoll, any event loop):
+ *     for (const char *m; (m = xr_app_next_message(app));) { handle m, xr_app_set_model(...) }
+ *     for (const char *e; (e = xr_app_next_error(app));) { report e }
+ *     if (!xr_app_running(app)) the app ended
+ *   xr_app_free(app);
+ *
  * Functions that can fail return -1 (or false, or NULL) and set
  * xr_last_error(). Strings are UTF-8 and NUL-terminated.
  */"""

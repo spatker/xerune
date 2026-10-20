@@ -889,4 +889,27 @@ xr_free(ui);
 - **Canvas**: `xr_canvas(ui, "map", &w, &h)` returns the RGBA pixels (R, G, B, A in memory, straight alpha) of the view's `<canvas id="map" width="256" height="256">`, for the program to draw into; the next `xr_render` draws it, scaled to the element's box. Call it each frame the canvas changes: the pointer is valid until the next call on the UI.
 - **Images**: `<img>` paths are relative to the template. They load in the background; `xr_wait_for_images` waits for them, e.g. before a screenshot.
 
-CI runs both samples on Linux, and the C sample's cross-built `shop.exe` on Windows.
+### Apps: the UI shows itself
+
+A program that has no drawing of its own, e.g. a daemon on a device with a display, lets xerune show the UI instead: an `XrApp` runs its model on a thread of its own in an `App`. That app draws to the display (DRM/KMS, fbdev, or a window in a desktop session) and reads the input devices (evdev: touch, keys, the D-pad, the on-screen keyboard), as the Rust examples do. The program only sets the model and takes the messages, from its own thread and event loop:
+
+```c
+XrApp *app = xr_app_new(NULL, 0);
+xr_app_load_template(app, "ui/main.html");
+xr_app_set_model(app, json);
+xr_app_start(app, "Player", 800, 480);      // the window's title and size; a display uses its mode
+int fd = xr_app_message_fd(app);            // readable while messages or errors wait
+// in the program's loop (poll, epoll, glib, libuv, ...), when fd is readable:
+for (const char *m; (m = xr_app_next_message(app));) { /* update the model */ xr_app_set_model(app, json); }
+for (const char *e; (e = xr_app_next_error(app));) { /* a model that didn't fit */ }
+if (!xr_app_running(app)) { /* the window was closed */ }
+xr_app_free(app);                           // ends the app
+```
+
+- **Displays**: build the library with those to use: `cargo build --release -p xerune_capi --features drm,linuxfb,winit`. The display is picked as for `App::run` (§1); `XERUNE_BACKEND=winit|drm|fbdev` overrides it. `XERUNE_SNAPSHOT=out.png` (with `XERUNE_SNAPSHOT_MESSAGES`) renders one frame and ends the app, also without any display compiled in.
+- **Model**: `xr_app_set_model` returns at once; the app takes the model on its thread. When the program sets it again before that, the app shows only the latest one, so a program can set it on every change. Errors in the model are found there too and wait in `xr_app_next_error`; the app keeps showing the previous model. A template loaded while the app runs is shown with the model set with it.
+- **Messages**: the same strings as `xr_next_message`, including `keydown:<code>` for the keys the app reads. The fd is an eventfd (Linux only; -1 elsewhere). It stays readable until everything waiting is taken, and becomes readable once more when the app ends.
+
+`xerune_capi/examples/c/app.c` is the shop as an app (`make run-app`). It waits in `poll` for messages and for gold that comes in each second.
+
+CI runs both samples on Linux (the app as a snapshot), and the C sample's cross-built `shop.exe` on Windows.
