@@ -229,6 +229,15 @@ bool xr_pointer_up(XrUi *ui, float x, float y);
 // `ui` must be from `xr_new`.
 bool xr_scroll(XrUi *ui, float x, float y, float dx, float dy);
 
+// Scrolls the element with the `id` attribute into view, in its nearest
+// scrollable ancestor (as the DOM's `element.scrollIntoView()`): e.g. the
+// row a D-pad selected. Nothing happens if there is no such element.
+// Returns true if the UI changed.
+//
+// # Safety
+// `ui` must be from `xr_new`; `id` a NUL-terminated string.
+bool xr_scroll_into_view(XrUi *ui, const char *id);
+
 // Whether (`x`, `y`) is on the UI rather than on the bare page: on an
 // element that takes clicks or any element inside `<body>`. A game
 // drawing the UI over its scene sends the pointer to the UI only where
@@ -350,6 +359,16 @@ int32_t xr_app_set_model(XrApp *app, const char *json);
 // `app` must be from `xr_app_new`; `title` NULL or a NUL-terminated
 // string.
 int32_t xr_app_start(XrApp *app, const char *title, uint32_t width, uint32_t height);
+
+// Scrolls the element with the `id` attribute into view (as
+// `xr_scroll_into_view`), on the app's thread, after the models set
+// before: set the model that selects a row, then scroll to it.
+//
+// 0 on success; -1 if the app isn't running (`xr_last_error`).
+//
+// # Safety
+// `app` must be from `xr_app_new`; `id` a NUL-terminated string.
+int32_t xr_app_scroll_into_view(XrApp *app, const char *id);
 
 // Whether the app runs: false before `xr_app_start` and once it ended (its
 // window was closed, or its display failed: `xr_app_next_error`).

@@ -189,6 +189,8 @@ pub trait Engine {
     /// The `<canvas id>` of the view, marked changed: the caller draws
     /// into it.
     fn canvas(&mut self, id: &str) -> Option<&mut Canvas>;
+    /// Scrolls the element with `id` into view; true if the view changed.
+    fn scroll_into_view(&mut self, id: &str) -> bool;
 }
 
 /// The caller's clock: [`Engine::tick`] sets the time, in milliseconds
@@ -326,6 +328,11 @@ impl<M: JsonModel> Engine for Ui<M> {
             Some((None, node)) => node != ui.root && Some(node) != ui.body,
             None => false,
         }
+    }
+
+    fn scroll_into_view(&mut self, id: &str) -> bool {
+        self.enter();
+        self.runtime.update_with(|_, context| context.scroll_into_view(id))
     }
 
     fn canvas(&mut self, id: &str) -> Option<&mut Canvas> {

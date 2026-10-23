@@ -99,6 +99,35 @@ fn clicks_send_messages_and_the_model_changes_the_view() {
 }
 
 #[test]
+fn scroll_into_view_shows_the_row() {
+    let _viewport = one_at_a_time();
+    let list = r#"<html><head><style>
+        body { margin: 0; }
+        .list { height: 40px; overflow: scroll; }
+        .row { height: 20px; }
+    </style></head><body><div class="list">
+        {% for row in rows %}<div class="row" id="row-{{ row }}" data-on-click="pick:{{ row }}"></div>{% endfor %}
+    </div></body></html>"#;
+    let ui = ui(list, r#"{"rows": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]}"#, 100, 100);
+    let pick = |y: f32| unsafe {
+        xr_pointer_down(ui, 10.0, y);
+        xr_pointer_up(ui, 10.0, y);
+        message(ui)
+    };
+    assert_eq!(pick(30.0).as_deref(), Some("pick:1"));
+    // The row ends at the list's bottom edge.
+    assert!(unsafe { xr_scroll_into_view(ui, c("row-9").as_ptr()) });
+    assert_eq!(pick(30.0).as_deref(), Some("pick:9"));
+    // Up again: the row starts at the top.
+    assert!(unsafe { xr_scroll_into_view(ui, c("row-2").as_ptr()) });
+    assert_eq!(pick(10.0).as_deref(), Some("pick:2"));
+    // No such row: nothing moves.
+    unsafe { xr_scroll_into_view(ui, c("row-42").as_ptr()) };
+    assert_eq!(pick(10.0).as_deref(), Some("pick:2"));
+    unsafe { xr_free(ui) };
+}
+
+#[test]
 fn a_dragged_pointer_is_no_click() {
     let _viewport = one_at_a_time();
     let ui = ui(SHOP, r#"{"gold": 0, "items": [{"id": 1, "sold": false}]}"#, 320, 200);

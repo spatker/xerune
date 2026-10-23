@@ -443,6 +443,21 @@ pub unsafe extern "C" fn xr_scroll(ui: *mut XrUi, x: f32, y: f32, dx: f32, dy: f
     guard(false, || Ok(self::ui(ui)?.engine.handle(InputEvent::Scroll { x, y, delta_x: dx, delta_y: dy })))
 }
 
+/// Scrolls the element with the `id` attribute into view, in its nearest
+/// scrollable ancestor (as the DOM's `element.scrollIntoView()`): e.g. the
+/// row a D-pad selected. Nothing happens if there is no such element.
+/// Returns true if the UI changed.
+///
+/// # Safety
+/// `ui` must be from `xr_new`; `id` a NUL-terminated string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn xr_scroll_into_view(ui: *mut XrUi, id: *const c_char) -> bool {
+    guard(false, || {
+        let ui = self::ui(ui)?;
+        Ok(ui.engine.scroll_into_view(str_arg(id, "the id")?))
+    })
+}
+
 /// Whether (`x`, `y`) is on the UI rather than on the bare page: on an
 /// element that takes clicks or any element inside `<body>`. A game
 /// drawing the UI over its scene sends the pointer to the UI only where

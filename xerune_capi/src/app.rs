@@ -39,6 +39,7 @@ trait AppEngine {
     fn running(&self) -> bool;
     fn outbox(&self) -> &Outbox;
     fn fd(&self) -> i32;
+    fn scroll_into_view(&mut self, id: String) -> Result<(), String>;
 }
 
 /// What the program set that the model hasn't taken yet. Only the latest
@@ -213,6 +214,14 @@ impl<M: JsonModel + 'static> AppEngine for AppOf<M> {
     fn fd(&self) -> i32 {
         self.signal.as_ref().map_or(-1, |signal| signal.fd())
     }
+
+    fn scroll_into_view(&mut self, id: String) -> Result<(), String> {
+        let Some(messenger) = self.messenger.as_ref().filter(|_| self.alive.load(Ordering::Acquire)) else {
+            return Err("the app isn't running".to_string());
+        };
+        // After the models set before it, which are queued first.
+        messenger.update(move |_, context| context.scroll_into_view(&id)).map_err(|e| e.to_string())
+    }
 }
 
 /// Marks the app ended when its thread is done, even by a panic, and tells
@@ -373,6 +382,23 @@ pub unsafe extern "C" fn xr_app_start(app: *mut XrApp, title: *const c_char, wid
         let app = self::app(app)?;
         let title = if title.is_null() { "xerune" } else { str_arg(title, "the title")? };
         app.app.start(title.to_string(), width, height)?;
+        Ok(0)
+    })
+}
+
+/// Scrolls the element with the `id` attribute into view (as
+/// `xr_scroll_into_view`), on the app's thread, after the models set
+/// before: set the model that selects a row, then scroll to it.
+///
+/// 0 on success; -1 if the app isn't running (`xr_last_error`).
+///
+/// # Safety
+/// `app` must be from `xr_app_new`; `id` a NUL-terminated string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn xr_app_scroll_into_view(app: *mut XrApp, id: *const c_char) -> i32 {
+    guard(-1, || {
+        let app = self::app(app)?;
+        app.app.scroll_into_view(str_arg(id, "the id")?.to_string())?;
         Ok(0)
     })
 }
