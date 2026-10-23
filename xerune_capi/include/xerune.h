@@ -80,6 +80,24 @@ typedef struct {
   int32_t height;
 } XrRect;
 
+// What the on-screen keyboard asks for (`xr_edit_text`). A zeroed
+// request is an empty text with no title.
+typedef struct {
+  // Shown above the text, e.g. "Wi-Fi password"; NULL for none.
+  const char *title;
+  // The text to start from; NULL for empty.
+  const char *text;
+  // Shows the text as dots, with a key to reveal it.
+  bool password;
+  // OK does nothing until there are this many characters.
+  uint32_t min_len;
+  // At most this many characters; 0 for no limit.
+  uint32_t max_len;
+  // The keyboard's language: "en", "de", "ko" (two-set Hangul); NULL
+  // for English.
+  const char *lang;
+} XrTextRequest;
+
 #ifdef __cplusplus
 extern "C" {
 #endif // __cplusplus
@@ -238,6 +256,18 @@ bool xr_scroll(XrUi *ui, float x, float y, float dx, float dy);
 // `ui` must be from `xr_new`; `id` a NUL-terminated string.
 bool xr_scroll_into_view(XrUi *ui, const char *id);
 
+// Opens the on-screen keyboard over the view, for a device without a
+// keyboard (driven by touch, or by the arrow keys, Enter and Escape
+// through `xr_key_down`). When it closes the UI sends the message
+// "<id>:done:<text>" (confirmed) or "<id>:cancel"; `id` names the
+// request, e.g. "wifi". Asking again while it is open replaces the
+// request. Returns true if the UI changed.
+//
+// # Safety
+// `ui` must be from `xr_new`; `id` a NUL-terminated string; `request`
+// a valid `XrTextRequest`.
+bool xr_edit_text(XrUi *ui, const char *id, const XrTextRequest *request);
+
 // Whether (`x`, `y`) is on the UI rather than on the bare page: on an
 // element that takes clicks or any element inside `<body>`. A game
 // drawing the UI over its scene sends the pointer to the UI only where
@@ -369,6 +399,18 @@ int32_t xr_app_start(XrApp *app, const char *title, uint32_t width, uint32_t hei
 // # Safety
 // `app` must be from `xr_app_new`; `id` a NUL-terminated string.
 int32_t xr_app_scroll_into_view(XrApp *app, const char *id);
+
+// Opens the on-screen keyboard over the app's view (as `xr_edit_text`),
+// which the app drives with the touch screen or the keys it reads. Its
+// result comes as the message "<id>:done:<text>" or "<id>:cancel".
+//
+// 0 on success; -1 if the app isn't running or the request is invalid
+// (`xr_last_error`).
+//
+// # Safety
+// `app` must be from `xr_app_new`; `id` a NUL-terminated string;
+// `request` a valid `XrTextRequest`.
+int32_t xr_app_edit_text(XrApp *app, const char *id, const XrTextRequest *request);
 
 // Whether the app runs: false before `xr_app_start` and once it ended (its
 // window was closed, or its display failed: `xr_app_next_error`).

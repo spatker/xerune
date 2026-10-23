@@ -58,6 +58,46 @@ pub struct XrFont {
     pub bold_len: usize,
 }
 
+/// What the on-screen keyboard asks for (`xr_edit_text`). A zeroed
+/// request is an empty text with no title.
+#[repr(C)]
+pub struct XrTextRequest {
+    /// Shown above the text, e.g. "Wi-Fi password"; NULL for none.
+    pub title: *const c_char,
+    /// The text to start from; NULL for empty.
+    pub text: *const c_char,
+    /// Shows the text as dots, with a key to reveal it.
+    pub password: bool,
+    /// OK does nothing until there are this many characters.
+    pub min_len: u32,
+    /// At most this many characters; 0 for no limit.
+    pub max_len: u32,
+    /// The keyboard's language: "en", "de", "ko" (two-set Hangul); NULL
+    /// for English.
+    pub lang: *const c_char,
+}
+
+fn text_request(request: *const XrTextRequest) -> Result<xerune::keyboard::TextRequest, String> {
+    // SAFETY: the caller passes NULL or a valid request.
+    let request = unsafe { request.as_ref() }.ok_or_else(|| "the request is NULL".to_string())?;
+    let optional = |s: *const c_char, what| if s.is_null() { Ok(None) } else { str_arg(s, what).map(Some) };
+    let mut text_request = xerune::keyboard::TextRequest::new(optional(request.title, "the title")?.unwrap_or(""));
+    if let Some(text) = optional(request.text, "the text")? {
+        text_request = text_request.text(text);
+    }
+    if request.password {
+        text_request = text_request.password();
+    }
+    text_request = text_request.min_len(request.min_len as usize);
+    if request.max_len > 0 {
+        text_request = text_request.max_len(request.max_len as usize);
+    }
+    if let Some(lang) = optional(request.lang, "the language")? {
+        text_request = text_request.lang(lang);
+    }
+    Ok(text_request)
+}
+
 /// A rectangle in pixels.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -455,6 +495,26 @@ pub unsafe extern "C" fn xr_scroll_into_view(ui: *mut XrUi, id: *const c_char) -
     guard(false, || {
         let ui = self::ui(ui)?;
         Ok(ui.engine.scroll_into_view(str_arg(id, "the id")?))
+    })
+}
+
+/// Opens the on-screen keyboard over the view, for a device without a
+/// keyboard (driven by touch, or by the arrow keys, Enter and Escape
+/// through `xr_key_down`). When it closes the UI sends the message
+/// "<id>:done:<text>" (confirmed) or "<id>:cancel"; `id` names the
+/// request, e.g. "wifi". Asking again while it is open replaces the
+/// request. Returns true if the UI changed.
+///
+/// # Safety
+/// `ui` must be from `xr_new`; `id` a NUL-terminated string; `request`
+/// a valid `XrTextRequest`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn xr_edit_text(ui: *mut XrUi, id: *const c_char, request: *const XrTextRequest) -> bool {
+    guard(false, || {
+        let ui = self::ui(ui)?;
+        let id = str_arg(id, "the id")?;
+        let request = text_request(request)?;
+        Ok(ui.engine.edit_text(id, request))
     })
 }
 

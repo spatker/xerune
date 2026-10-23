@@ -12,12 +12,13 @@ use std::sync::{Arc, Mutex, PoisonError, RwLock};
 use std::thread::JoinHandle;
 
 use xerune::backend::Messenger;
+use xerune::keyboard::TextRequest;
 use xerune::{App, Runtime};
 use xerune_render::{Fonts, SoftwareRenderer};
 use xerune_template::Template;
 
 use crate::engine::{self, JsonModel, Outbox, Page, Signal, TemplateDirLoader};
-use crate::{XrFont, guard, str_arg};
+use crate::{XrFont, XrTextRequest, guard, str_arg, text_request};
 
 /// A UI that shows itself on the display and reads the input devices, on a
 /// thread of its own. The program sets its model and takes its messages,
@@ -40,6 +41,7 @@ trait AppEngine {
     fn outbox(&self) -> &Outbox;
     fn fd(&self) -> i32;
     fn scroll_into_view(&mut self, id: String) -> Result<(), String>;
+    fn edit_text(&mut self, id: String, request: TextRequest) -> Result<(), String>;
 }
 
 /// What the program set that the model hasn't taken yet. Only the latest
@@ -222,6 +224,15 @@ impl<M: JsonModel + 'static> AppEngine for AppOf<M> {
         // After the models set before it, which are queued first.
         messenger.update(move |_, context| context.scroll_into_view(&id)).map_err(|e| e.to_string())
     }
+
+    fn edit_text(&mut self, id: String, request: TextRequest) -> Result<(), String> {
+        let Some(messenger) = self.messenger.as_ref().filter(|_| self.alive.load(Ordering::Acquire)) else {
+            return Err("the app isn't running".to_string());
+        };
+        messenger
+            .update(move |_, context| context.edit_text(request, move |text| engine::text_result(&id, text)))
+            .map_err(|e| e.to_string())
+    }
 }
 
 /// Marks the app ended when its thread is done, even by a panic, and tells
@@ -399,6 +410,27 @@ pub unsafe extern "C" fn xr_app_scroll_into_view(app: *mut XrApp, id: *const c_c
     guard(-1, || {
         let app = self::app(app)?;
         app.app.scroll_into_view(str_arg(id, "the id")?.to_string())?;
+        Ok(0)
+    })
+}
+
+/// Opens the on-screen keyboard over the app's view (as `xr_edit_text`),
+/// which the app drives with the touch screen or the keys it reads. Its
+/// result comes as the message "<id>:done:<text>" or "<id>:cancel".
+///
+/// 0 on success; -1 if the app isn't running or the request is invalid
+/// (`xr_last_error`).
+///
+/// # Safety
+/// `app` must be from `xr_app_new`; `id` a NUL-terminated string;
+/// `request` a valid `XrTextRequest`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn xr_app_edit_text(app: *mut XrApp, id: *const c_char, request: *const XrTextRequest) -> i32 {
+    guard(-1, || {
+        let app = self::app(app)?;
+        let id = str_arg(id, "the id")?.to_string();
+        let request = text_request(request)?;
+        app.app.edit_text(id, request)?;
         Ok(0)
     })
 }

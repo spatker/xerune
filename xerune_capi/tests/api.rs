@@ -128,6 +128,38 @@ fn scroll_into_view_shows_the_row() {
 }
 
 #[test]
+fn the_keyboard_edits_text() {
+    let _viewport = one_at_a_time();
+    let ui = ui(SHOP, r#"{"gold": 0, "items": []}"#, 480, 320);
+    let mut frame = Frame::new(480, 320);
+    frame.render(ui);
+    let before = frame.pixels.clone();
+    let (title, text) = (c("Name"), c("abc"));
+    let request = XrTextRequest { title: title.as_ptr(), text: text.as_ptr(), password: false, min_len: 0, max_len: 0, lang: null() };
+    let key = |name: &str| unsafe { xr_key_down(ui, c(name).as_ptr()) };
+
+    assert!(unsafe { xr_edit_text(ui, c("name").as_ptr(), &request) });
+    frame.render(ui);
+    assert_ne!(frame.pixels, before, "the keyboard shows");
+    // Enter is OK while no key has the focus.
+    key("Enter");
+    assert_eq!(message(ui).as_deref(), Some("name:done:abc"));
+    frame.render(ui);
+    assert_eq!(frame.pixels, before, "the keyboard is gone");
+
+    // Too short to confirm: Enter does nothing, Escape cancels.
+    let request = XrTextRequest { min_len: 8, ..request };
+    unsafe { xr_edit_text(ui, c("wifi").as_ptr(), &request) };
+    key("Enter");
+    assert_eq!(message(ui), None);
+    key("Escape");
+    assert_eq!(message(ui).as_deref(), Some("wifi:cancel"));
+    assert!(!unsafe { xr_edit_text(ui, c("x").as_ptr(), null()) });
+    assert!(last_error().contains("NULL"), "{}", last_error());
+    unsafe { xr_free(ui) };
+}
+
+#[test]
 fn a_dragged_pointer_is_no_click() {
     let _viewport = one_at_a_time();
     let ui = ui(SHOP, r#"{"gold": 0, "items": [{"id": 1, "sold": false}]}"#, 320, 200);

@@ -891,6 +891,7 @@ xr_free(ui);
 - **Threads**: use a UI from one thread at a time. The viewport is still global in xerune (`xerune::screen`), so UIs of different sizes must not render concurrently.
 - **Canvas**: `xr_canvas(ui, "map", &w, &h)` returns the RGBA pixels (R, G, B, A in memory, straight alpha) of the view's `<canvas id="map" width="256" height="256">`, for the program to draw into; the next `xr_render` draws it, scaled to the element's box. Call it each frame the canvas changes: the pointer is valid until the next call on the UI.
 - **Scrolling**: `xr_scroll_into_view(ui, "row-9")` scrolls the element with that `id` into view in its nearest scrollable ancestor, e.g. the row a D-pad selected (`context.scroll_into_view` in Rust).
+- **On-screen keyboard**: `xr_edit_text(ui, "wifi", &request)` opens the keyboard over the view (`XrTextRequest`: title, initial text, password, minimum and maximum length, language), for devices without a keyboard. Touch, or the arrow keys, Enter and Escape through `xr_key_down`, drive it. When it closes, the UI sends `wifi:done:<text>` or `wifi:cancel`.
 - **Images**: `<img>` paths are relative to the template. They load in the background; `xr_wait_for_images` waits for them, e.g. before a screenshot.
 
 ### Apps: the UI shows itself
@@ -912,6 +913,7 @@ xr_app_free(app);                           // ends the app
 
 - **Displays**: build the library with those to use: `cargo build --release -p xerune_capi --features drm,linuxfb,winit`. The display is picked as for `App::run` (§1); `XERUNE_BACKEND=winit|drm|fbdev` overrides it. `XERUNE_SNAPSHOT=out.png` (with `XERUNE_SNAPSHOT_MESSAGES`) renders one frame and ends the app, also without any display compiled in.
 - **Model**: `xr_app_set_model` returns at once; the app takes the model on its thread. When the program sets it again before that, the app shows only the latest one, so a program can set it on every change. Errors in the model are found there too and wait in `xr_app_next_error`; the app keeps showing the previous model. A template loaded while the app runs is shown with the model set with it.
+- **On-screen keyboard**: `xr_app_edit_text(app, id, &request)` opens it as `xr_edit_text` does; the app drives it with the touch screen or the keys it reads, and the result comes as a message.
 - **Scrolling**: `xr_app_scroll_into_view(app, id)` runs after the models set before it, so a program sets the model that selects a row and then scrolls to it.
 - **Messages**: the same strings as `xr_next_message`, including `keydown:<code>` for the keys the app reads. The fd is an eventfd (Linux only; -1 elsewhere). It stays readable until everything waiting is taken, and becomes readable once more when the app ends.
 

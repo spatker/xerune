@@ -15,13 +15,14 @@ use markup5ever_rcdom::RcDom;
 use xerune::images::{DefaultImageLoader, ImageError, ImageLoader, is_remote};
 use xerune::style::ContainerStyle;
 use xerune::ui::{TemplateLayout, UiBuilder};
+use xerune::keyboard::TextRequest;
 use xerune::{Canvas, Context, Damage, InputEvent, Model, Runtime, Surface, TextMeasurer};
 use xerune_render::{Fonts, SoftwareRenderer};
 use xerune_template::{File, Template, Value};
 
 /// A model the C API drives: its data comes as JSON, and the messages of
 /// its view queue up for the caller to take.
-pub trait JsonModel: Model + TemplateLayout {
+pub trait JsonModel: Model<Message = String> + TemplateLayout {
     /// Takes the model's data from `json`. On an error the model is as it
     /// was.
     fn set_json(&mut self, json: &str) -> Result<(), String>;
@@ -171,6 +172,15 @@ impl Signal {
     }
 }
 
+/// The message the keyboard opened for `id` sends: `<id>:done:<text>`
+/// when it is confirmed, `<id>:cancel` when it is cancelled.
+pub(crate) fn text_result(id: &str, text: Option<String>) -> String {
+    match text {
+        Some(text) => format!("{id}:done:{text}"),
+        None => format!("{id}:cancel"),
+    }
+}
+
 /// An `XrUi`'s runtime, whatever its model.
 pub trait Engine {
     fn set_size(&mut self, width: u32, height: u32);
@@ -191,6 +201,9 @@ pub trait Engine {
     fn canvas(&mut self, id: &str) -> Option<&mut Canvas>;
     /// Scrolls the element with `id` into view; true if the view changed.
     fn scroll_into_view(&mut self, id: &str) -> bool;
+    /// Opens the on-screen keyboard for `request`; its result comes as the
+    /// message [`text_result`] makes. True if the view changed.
+    fn edit_text(&mut self, id: &str, request: TextRequest) -> bool;
 }
 
 /// The caller's clock: [`Engine::tick`] sets the time, in milliseconds
@@ -333,6 +346,12 @@ impl<M: JsonModel> Engine for Ui<M> {
     fn scroll_into_view(&mut self, id: &str) -> bool {
         self.enter();
         self.runtime.update_with(|_, context| context.scroll_into_view(id))
+    }
+
+    fn edit_text(&mut self, id: &str, request: TextRequest) -> bool {
+        self.enter();
+        let id = id.to_string();
+        self.runtime.update_with(move |_, context| context.edit_text(request, move |text| text_result(&id, text)))
     }
 
     fn canvas(&mut self, id: &str) -> Option<&mut Canvas> {
