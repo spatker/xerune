@@ -168,10 +168,8 @@ its own:
 
 | Font | Where | License |
 |---|---|---|
-| Roboto (bitmap, in `src/roboto_*.rs`) | the `xerune` crate | `resources/fonts/Roboto-LICENSE.txt` |
 | Roboto Regular/Bold | the examples, tests | `resources/fonts/Roboto-LICENSE.txt` |
 | Xerune Hangul (Source Han Sans KR subset) | the examples (on 32-bit ARM with `--features hangul`) | `resources/fonts/XeruneHangul-LICENSE.txt` |
 | Noto Color Emoji | the examples with `--features emoji` | `resources/fonts/NotoColorEmoji-LICENSE.txt` |
 
-So the `xerune` crate is `MIT AND OFL-1.1`, for its bitmap Roboto; an app
-using its own fonts with `xerune_render` (MIT) doesn't ship Roboto.
+The crates embed no fonts: an app ships the fonts it loads.

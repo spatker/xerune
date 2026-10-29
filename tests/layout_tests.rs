@@ -427,11 +427,11 @@ fn test_tiled_rendering_identity() {
 }
 
 #[test]
-fn test_bitmap_font_rendering() {
+fn test_text_rendering() {
     use std::collections::HashMap;
     use xerune_render::SoftwareRenderer;
 
-    let fonts = xerune_render::Fonts::bitmap(&xerune::font::DEFAULT_ROBOTO);
+    let fonts = roboto();
 
     let commands = vec![
         DrawCommand::DrawText {
@@ -451,7 +451,7 @@ fn test_bitmap_font_rendering() {
 
     // Verify that some pixels are drawn (not all zeros)
     let non_zero_count = buffer.iter().filter(|&&pixel| pixel != 0).count();
-    assert!(non_zero_count > 0, "Bitmap font should have rasterized some non-zero pixels onto the buffer");
+    assert!(non_zero_count > 0, "Text should have rasterized some non-zero pixels onto the buffer");
 }
 
 #[test]
@@ -574,7 +574,7 @@ fn test_dirty_rect_rasterization_culling() {
     use std::collections::HashMap;
     use xerune_render::SoftwareRenderer;
 
-    let fonts = xerune_render::Fonts::bitmap(&xerune::font::DEFAULT_ROBOTO);
+    let fonts = roboto();
 
     let commands = vec![
         DrawCommand::DrawRect {

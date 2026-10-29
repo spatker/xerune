@@ -3457,7 +3457,6 @@ dependencies = [
  "drm-fourcc",
  "env_logger",
  "evdev",
- "fontdue",
  "html5ever",
  "libc",
  "linuxfb",

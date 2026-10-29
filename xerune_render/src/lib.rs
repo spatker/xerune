@@ -5,7 +5,7 @@
 //!
 //! [`SoftwareRenderer`] is the [`xerune::Renderer`] and owns the glyph and
 //! image caches; [`Fonts`] (TrueType/OpenType, shaped by harfrust and
-//! rasterized by fontdue, or bitmap fonts) is both its glyph source and the runtime's
+//! rasterized by fontdue) is both its glyph source and the runtime's
 //! [`xerune::TextMeasurer`], so text is measured and drawn with the same
 //! fonts:
 //!
@@ -29,13 +29,6 @@ use xerune::text::{FontFeatures, LineMetrics, ShapedGlyph, ShapedText};
 use blitter::{pack_color, blend_solid_rect, blend_pixel, blend_glyph_span, div_255, calc_pixel_index};
 use rounded_rect::{draw_rounded_rect, draw_rounded_border, draw_border_sides, draw_box_shadow, draw_check_mark};
 
-/// The fonts of a [`Fonts`], borrowed for shaping or one render call.
-#[derive(Clone, Copy)]
-enum FontSource<'a> {
-    Ttf(&'a TtfFaces),
-    Bitmap(&'a [xerune::font::BitmapFont]),
-}
-
 /// TrueType/OpenType faces: the text font's (regular, then bold if there
 /// is one), then the fallback fonts'. A shaped glyph names its face by its
 /// index here.
@@ -51,9 +44,8 @@ struct TtfFaces {
 }
 
 /// The fonts text is shaped and drawn with: TrueType/OpenType faces (regular
-/// and bold, with `std`) or prerasterized bitmap fonts. Shared by the
-/// runtime, which measures text with it, and the [`SoftwareRenderer`], which
-/// draws it; clones are cheap.
+/// and bold, and fallbacks). Shared by the runtime, which measures text with
+/// it, and the [`SoftwareRenderer`], which draws it; clones are cheap.
 #[derive(Clone)]
 pub struct Fonts(Arc<FontSet>);
 
@@ -61,13 +53,8 @@ pub struct Fonts(Arc<FontSet>);
 struct FontSet {
     /// Distinguishes font sets in the thread-wide shaping caches.
     id: u32,
-    kind: FontKind,
-}
-
-#[derive(Clone)]
-enum FontKind {
-    Ttf { faces: TtfFaces, color_emoji: Option<Cow<'static, [u8]>> },
-    Bitmap(&'static [xerune::font::BitmapFont]),
+    faces: TtfFaces,
+    color_emoji: Option<Cow<'static, [u8]>>,
 }
 
 /// A font file that could not be parsed.
@@ -83,10 +70,10 @@ impl core::fmt::Display for FontError {
 impl std::error::Error for FontError {}
 
 impl Fonts {
-    fn new(kind: FontKind) -> Self {
+    fn new(faces: TtfFaces, color_emoji: Option<Cow<'static, [u8]>>) -> Self {
         static NEXT_ID: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
         let id = NEXT_ID.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-        Self(Arc::new(FontSet { id, kind }))
+        Self(Arc::new(FontSet { id, faces, color_emoji }))
     }
 
     /// TrueType/OpenType fonts: `regular` for normal text and `bold` for
@@ -98,7 +85,7 @@ impl Fonts {
             faces.push(bold)?;
         }
         faces.primary = faces.faces.len();
-        Ok(Self::new(FontKind::Ttf { faces, color_emoji: None }))
+        Ok(Self::new(faces, None))
     }
 
     /// Draws characters the fonts so far lack from this font, `regular` for
@@ -106,69 +93,32 @@ impl Fonts {
     /// the text font doesn't cover, like Hangul with Roboto. Lines with such
     /// characters are as tall as this font needs, as in browsers.
     pub fn with_fallback(self, regular: &[u8], bold: Option<&[u8]>) -> Result<Self, FontError> {
-        let mut set = Arc::unwrap_or_clone(self.0);
-        if let FontKind::Ttf { faces, .. } = &mut set.kind {
-            let regular_index = faces.push(regular)?;
-            let bold_index = match bold {
-                Some(bold) => faces.push(bold)?,
-                None => regular_index,
-            };
-            faces.fallbacks.push((regular_index, bold_index));
-        }
+        let FontSet { mut faces, color_emoji, .. } = Arc::unwrap_or_clone(self.0);
+        let regular_index = faces.push(regular)?;
+        let bold_index = match bold {
+            Some(bold) => faces.push(bold)?,
+            None => regular_index,
+        };
+        faces.fallbacks.push((regular_index, bold_index));
         // A new id: shaping caches are per font set.
-        Ok(Self::new(set.kind))
+        Ok(Self::new(faces, color_emoji))
     }
 
     /// Draws characters the fonts lack from this color emoji font (bitmap
     /// glyphs, like NotoColorEmoji).
     pub fn with_color_emoji(self, font: impl Into<Cow<'static, [u8]>>) -> Self {
         let mut set = Arc::unwrap_or_clone(self.0);
-        if let FontKind::Ttf { color_emoji, .. } = &mut set.kind {
-            *color_emoji = Some(font.into());
-        }
+        set.color_emoji = Some(font.into());
         Self(Arc::new(set))
-    }
-
-    /// Prerasterized bitmap fonts (no TrueType parsing or rasterizing), as
-    /// [`xerune::font::DEFAULT_ROBOTO`]. Text uses the font of its weight
-    /// (1 for bold) and size, or else the first of its weight.
-    pub fn bitmap(fonts: &'static [xerune::font::BitmapFont]) -> Self {
-        Self::new(FontKind::Bitmap(fonts))
     }
 
     fn id(&self) -> u32 {
         self.0.id
     }
 
-    fn source(&self) -> FontSource<'_> {
-        match &self.0.kind {
-            FontKind::Ttf { faces, .. } => FontSource::Ttf(faces),
-            FontKind::Bitmap(fonts) => FontSource::Bitmap(fonts),
-        }
-    }
-
     fn color_emoji(&self) -> Option<&[u8]> {
-        match &self.0.kind {
-            FontKind::Ttf { color_emoji, .. } => color_emoji.as_deref(),
-            FontKind::Bitmap(_) => None,
-        }
+        self.0.color_emoji.as_deref()
     }
-}
-
-pub fn find_best_bitmap_font<'a>(fonts: &'a [xerune::font::BitmapFont], target_size: f32, target_weight: u16) -> Option<&'a xerune::font::BitmapFont> {
-    if fonts.is_empty() {
-        return None;
-    }
-    // Try to find exact size and weight
-    if let Some(f) = fonts.iter().find(|f| (f.size - target_size).abs() < 0.1 && f.weight == target_weight) {
-        return Some(f);
-    }
-    // Try to find matching weight
-    if let Some(f) = fonts.iter().find(|f| f.weight == target_weight) {
-        return Some(f);
-    }
-    // Fallback to first
-    Some(&fonts[0])
 }
 
 const fn parse_usize_opt(opt: Option<&'static str>, default: usize) -> usize {
@@ -289,89 +239,73 @@ fn rounded_metrics(ascent: f32, descent: f32, line_gap: f32) -> LineMetrics {
 }
 
 impl Fonts {
-    // Bitmap fonts set the metrics themselves; only TrueType reads the default.
     fn shape_uncached(&self, text: &str, font_size: f32, weight: u16, features: FontFeatures) -> ShapedText {
         let mut glyphs = Vec::with_capacity(text.len());
         let mut metrics = LineMetrics::default();
-        match &self.source() {
-            FontSource::Ttf(ttf_fonts) => {
-                let Some(font_index) = ttf_font_index(ttf_fonts, weight) else {
-                    return ShapedText::default();
-                };
-                let font = &ttf_fonts.faces[font_index];
-                if let Some(m) = font.horizontal_line_metrics(font_size) {
-                    metrics = rounded_metrics(m.ascent, -m.descent, m.line_gap);
+        let ttf_fonts = &self.0.faces;
+        let Some(font_index) = ttf_font_index(ttf_fonts, weight) else {
+            return ShapedText::default();
+        };
+        let font = &ttf_fonts.faces[font_index];
+        if let Some(m) = font.horizontal_line_metrics(font_size) {
+            metrics = rounded_metrics(m.ascent, -m.descent, m.line_gap);
+        }
+        // The fallback faces glyphs came from, whose metrics the line takes too.
+        let mut used_fallbacks: Vec<usize> = Vec::new();
+        // Each character goes to the first face that has it; a run of
+        // characters in one face is shaped as a whole: the face and
+        // where the run started.
+        let mut run: Option<(usize, usize)> = None;
+        for (i, c) in text.char_indices() {
+            // Newlines are line breaks, not glyphs.
+            if c == '\u{fe0f}' || c.is_control() {
+                if let Some((face, start)) = run.take() {
+                    ttf_fonts.shape_run(self.id(), face, text, start..i, font_size, features, &mut glyphs);
                 }
-                // The fallback faces glyphs came from, whose metrics the line takes too.
-                let mut used_fallbacks: Vec<usize> = Vec::new();
-                // Each character goes to the first face that has it; a run of
-                // characters in one face is shaped as a whole: the face and
-                // where the run started.
-                let mut run: Option<(usize, usize)> = None;
-                for (i, c) in text.char_indices() {
-                    // Newlines are line breaks, not glyphs.
-                    if c == '\u{fe0f}' || c.is_control() {
-                        if let Some((face, start)) = run.take() {
-                            ttf_fonts.shape_run(self.id(), face, text, start..i, font_size, features, &mut glyphs);
-                        }
-                        continue;
-                    }
-                    let mut face = font_index;
-                    let mut id = font.lookup_glyph_index(c);
-                    if id == 0 && (c as u32) < 0x1F000 {
-                        if let Some((fallback, fallback_id)) = ttf_fonts.fallback_glyph(c, weight) {
-                            (face, id) = (fallback, fallback_id);
-                            if !used_fallbacks.contains(&face) {
-                                used_fallbacks.push(face);
-                            }
-                        }
-                    }
-                    if is_emoji(c, id) {
-                        if let Some((face, start)) = run.take() {
-                            ttf_fonts.shape_run(self.id(), face, text, start..i, font_size, features, &mut glyphs);
-                        }
-                        // Characters no font has are drawn as color emoji
-                        // when an emoji font is available (see the renderer),
-                        // a bit wider than the font's missing-glyph box.
-                        let advance = ttf_fonts.faces[face].metrics_indexed(id, font_size).advance_width;
-                        glyphs.push(ShapedGlyph { cluster: i as u32, font: EMOJI_FONT, id, advance: advance + font_size * 0.85 });
-                        continue;
-                    }
-                    match run {
-                        Some((run_face, _)) if run_face == face => {}
-                        _ => {
-                            if let Some((face, start)) = run.take() {
-                                ttf_fonts.shape_run(self.id(), face, text, start..i, font_size, features, &mut glyphs);
-                            }
-                            run = Some((face, i));
-                        }
-                    }
-                }
-                if let Some((face, start)) = run {
-                    ttf_fonts.shape_run(self.id(), face, text, start..text.len(), font_size, features, &mut glyphs);
-                }
-                for &face in &used_fallbacks {
-                    if let Some(m) = ttf_fonts.faces[face].horizontal_line_metrics(font_size) {
-                        let m = rounded_metrics(m.ascent, -m.descent, m.line_gap);
-                        metrics.ascent = metrics.ascent.max(m.ascent);
-                        metrics.descent = metrics.descent.max(m.descent);
+                continue;
+            }
+            let mut face = font_index;
+            let mut id = font.lookup_glyph_index(c);
+            if id == 0 && (c as u32) < 0x1F000 {
+                if let Some((fallback, fallback_id)) = ttf_fonts.fallback_glyph(c, weight) {
+                    (face, id) = (fallback, fallback_id);
+                    if !used_fallbacks.contains(&face) {
+                        used_fallbacks.push(face);
                     }
                 }
             }
-            FontSource::Bitmap(bitmap_fonts) => {
-                let Some(font) = find_best_bitmap_font(bitmap_fonts, font_size, weight) else {
-                    return ShapedText::default();
-                };
-                metrics = LineMetrics { ascent: font.line_height, descent: 0.0, line_gap: 0.0 };
-                for (i, c) in text.char_indices().filter(|(_, c)| !c.is_control()) {
-                    let (id, advance) = match font.glyphs.binary_search_by_key(&c, |g| g.character) {
-                        Ok(idx) => (idx as u16, font.glyphs[idx].x_advance as f32),
-                        Err(_) => (u16::MAX, 0.0),
-                    };
-                    glyphs.push(ShapedGlyph { cluster: i as u32, font: 0, id, advance });
+            if is_emoji(c, id) {
+                if let Some((face, start)) = run.take() {
+                    ttf_fonts.shape_run(self.id(), face, text, start..i, font_size, features, &mut glyphs);
+                }
+                // Characters no font has are drawn as color emoji
+                // when an emoji font is available (see the renderer),
+                // a bit wider than the font's missing-glyph box.
+                let advance = ttf_fonts.faces[face].metrics_indexed(id, font_size).advance_width;
+                glyphs.push(ShapedGlyph { cluster: i as u32, font: EMOJI_FONT, id, advance: advance + font_size * 0.85 });
+                continue;
+            }
+            match run {
+                Some((run_face, _)) if run_face == face => {}
+                _ => {
+                    if let Some((face, start)) = run.take() {
+                        ttf_fonts.shape_run(self.id(), face, text, start..i, font_size, features, &mut glyphs);
+                    }
+                    run = Some((face, i));
                 }
             }
         }
+        if let Some((face, start)) = run {
+            ttf_fonts.shape_run(self.id(), face, text, start..text.len(), font_size, features, &mut glyphs);
+        }
+        for &face in &used_fallbacks {
+            if let Some(m) = ttf_fonts.faces[face].horizontal_line_metrics(font_size) {
+                let m = rounded_metrics(m.ascent, -m.descent, m.line_gap);
+                metrics.ascent = metrics.ascent.max(m.ascent);
+                metrics.descent = metrics.descent.max(m.descent);
+            }
+        }
+
         ShapedText::new(text, glyphs, metrics)
     }
 }
@@ -801,7 +735,7 @@ impl Renderer for SoftwareRenderer {
             height,
             physical_width,
             physical_height,
-            fonts: self.fonts.source(),
+            fonts: &self.fonts.0.faces,
             color_emoji: self.fonts.color_emoji(),
             clip_stack: &mut self.clip_stack,
             profile: self.profile.as_mut(),
@@ -827,8 +761,7 @@ struct Frame<'a> {
     physical_width: u32,
     #[allow(dead_code)]
     physical_height: u32,
-    fonts: FontSource<'a>,
-    // Color emoji and rasterized glyphs come from TrueType fonts (std).
+    fonts: &'a TtfFaces,
     color_emoji: Option<&'a [u8]>,
     clip_stack: &'a mut Vec<Rect>,
     profile: Option<&'a mut CommandTimes>,
@@ -1044,146 +977,63 @@ impl Frame<'_> {
                         (0, 0, self.width as i32, self.height as i32)
                     };
 
-                    match &self.fonts {
-                        FontSource::Ttf(faces) => {
-                            let Some(font_index) = ttf_font_index(faces, *weight) else {
-                                continue;
-                            };
-                            let ttf_fonts: &[Font] = &faces.faces;
-                            let target = GlyphTarget {
-                                clip: (clip_x1, clip_y1, clip_x2, clip_y2),
-                                packed_color,
-                                swap_rb: self.swap_rb,
-                                rotation: self.rotation,
-                                physical_width: self.physical_width,
-                                width: self.width,
-                                height: self.height,
-                            };
-                            let px = *font_size;
-                            let sub_px = (px * 16.0) as u32;
+                    let faces = self.fonts;
+                    let Some(font_index) = ttf_font_index(faces, *weight) else {
+                        continue;
+                    };
+                    let ttf_fonts: &[Font] = &faces.faces;
+                    let target = GlyphTarget {
+                        clip: (clip_x1, clip_y1, clip_x2, clip_y2),
+                        packed_color,
+                        swap_rb: self.swap_rb,
+                        rotation: self.rotation,
+                        physical_width: self.physical_width,
+                        width: self.width,
+                        height: self.height,
+                    };
+                    let px = *font_size;
+                    let sub_px = (px * 16.0) as u32;
 
-                            // A command without a run shapes its text here, as
-                            // one line.
-                            let unshaped;
-                            let run = match run {
-                                Some(run) => run,
-                                None => {
-                                    let shaped = self.measurer.shape(text, px, *weight, FontFeatures::NONE);
-                                    let (end, baseline) = (shaped.glyphs.len() as u32, shaped.metrics.ascent);
-                                    unshaped = xerune::text::GlyphRun { shaped, start: 0, end, text_start: 0, baseline };
-                                    &unshaped
-                                }
-                            };
-                            // Shaped glyphs: positions are the advances.
-                            let baseline = round_i32(local_rect.y + run.baseline);
-                            let emoji_top = floor_i32(local_rect.y + run.baseline - run.shaped.metrics.ascent + px * 0.10);
-                            let mut pen = local_rect.x;
-                            let glyphs = run.shaped.glyphs.get(run.start as usize..run.end as usize).unwrap_or(&[]);
-                            for glyph in glyphs {
-                                let x = round_i32(pen);
-                                pen += glyph.advance;
-                                let (key, fallback_font, emoji) = if glyph.font == EMOJI_FONT {
-                                    let c = text
-                                        .get(glyph.cluster.saturating_sub(run.text_start) as usize..)
-                                        .and_then(|s| s.chars().next())
-                                        .unwrap_or('\u{fffd}');
-                                    (emoji_cache_key(c, sub_px), font_index, Some(c))
-                                } else {
-                                    ((glyph.font as usize, glyph.id, sub_px), glyph.font as usize, None)
-                                };
-                                let Some(cached) = cached_glyph(self.glyph_cache, ttf_fonts, self.color_emoji, key, fallback_font, glyph.id, px, emoji) else {
-                                    continue;
-                                };
-                                let (gx, gy) = if cached.is_color {
-                                    (x, emoji_top)
-                                } else {
-                                    (x + cached.xmin, baseline - cached.ymin - cached.height as i32)
-                                };
-                                blit_glyph(self.buffer, cached, gx, gy, px, &target);
-                            }
+                    // A command without a run shapes its text here, as
+                    // one line.
+                    let unshaped;
+                    let run = match run {
+                        Some(run) => run,
+                        None => {
+                            let shaped = self.measurer.shape(text, px, *weight, FontFeatures::NONE);
+                            let (end, baseline) = (shaped.glyphs.len() as u32, shaped.metrics.ascent);
+                            unshaped = xerune::text::GlyphRun { shaped, start: 0, end, text_start: 0, baseline };
+                            &unshaped
                         }
-                        FontSource::Bitmap(bitmap_fonts) => {
-                            let font = match find_best_bitmap_font(bitmap_fonts, *font_size, *weight) {
-                                Some(f) => f,
-                                None => continue,
-                            };
-
-                            let color_a = (packed_color >> 24) & 0xff;
-                            let r = (packed_color >> 16) & 0xff;
-                            let g = (packed_color >> 8) & 0xff;
-                            let b = packed_color & 0xff;
-
-                            let mut pen_x = local_rect.x;
-                            let mut pen_y = local_rect.y;
-
-                            for c in text.chars() {
-                                if c == '\n' {
-                                    pen_x = local_rect.x;
-                                    pen_y += font.line_height;
-                                    continue;
-                                }
-
-                                if let Some(glyph) = font.lookup_glyph(c) {
-                                    if glyph.width > 0 && glyph.height > 0 {
-                                        let gx = floor_i32(pen_x + glyph.x_offset as f32);
-                                        let gy = floor_i32(pen_y + glyph.y_offset as f32);
-                                        let gw = glyph.width as i32;
-                                        let gh = glyph.height as i32;
-
-                                        let start_x = gx.max(clip_x1);
-                                        let start_y = gy.max(clip_y1);
-                                        let end_x = (gx + gw).min(clip_x2);
-                                        let end_y = (gy + gh).min(clip_y2);
-
-                                        if start_x < end_x && start_y < end_y {
-                                            if self.rotation != 0 {
-                                                for y in start_y..end_y {
-                                                    let src_y = (y - gy) as usize;
-                                                    let src_row_offset = src_y * glyph.width as usize;
-                                                    for x in start_x..end_x {
-                                                        let src_x = (x - gx) as usize;
-                                                        let cov = glyph.bitmap[src_row_offset + src_x];
-                                                        if cov > 0 {
-                                                            let a = div_255(color_a * cov as u32);
-                                                            if a > 0 {
-                                                                let idx = calc_pixel_index(x, y, self.rotation, self.physical_width, self.width, self.height);
-                                                                if idx < self.buffer.len() {
-                                                                    let inv_a = 255 - a;
-                                                                    let d = self.buffer[idx];
-                                                                    let dst_a = (d >> 24) & 0xff;
-                                                                    let dst_r = (d >> 16) & 0xff;
-                                                                    let dst_g = (d >> 8) & 0xff;
-                                                                    let dst_b = d & 0xff;
-                                                                    
-                                                                    let res_r = div_255(r * a + dst_r * inv_a);
-                                                                    let res_g = div_255(g * a + dst_g * inv_a);
-                                                                    let res_b = div_255(b * a + dst_b * inv_a);
-                                                                    let res_a = a + div_255(dst_a * inv_a);
-                                                                    self.buffer[idx] = (res_a << 24) | (res_r << 16) | (res_g << 8) | res_b;
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            } else {
-                                                for y in start_y..end_y {
-                                                    let src_y = (y - gy) as usize;
-                                                    let dst_row_start = (y * self.physical_width as i32 + start_x) as usize;
-                                                    let draw_w = (end_x - start_x) as usize;
-                                                    
-                                                    let src_x_start = (start_x - gx) as usize;
-                                                    let glyph_span = &glyph.bitmap[src_y * glyph.width as usize + src_x_start..src_y * glyph.width as usize + src_x_start + draw_w];
-                                                    let dst_span = &mut self.buffer[dst_row_start..dst_row_start + draw_w];
-                                                    blend_glyph_span(dst_span, glyph_span, packed_color);
-                                                }
-                                            }
-                                        }
-                                    }
-                                    pen_x += glyph.x_advance as f32;
-                                }
-                            }
-                        }
+                    };
+                    // Shaped glyphs: positions are the advances.
+                    let baseline = round_i32(local_rect.y + run.baseline);
+                    let emoji_top = floor_i32(local_rect.y + run.baseline - run.shaped.metrics.ascent + px * 0.10);
+                    let mut pen = local_rect.x;
+                    let glyphs = run.shaped.glyphs.get(run.start as usize..run.end as usize).unwrap_or(&[]);
+                    for glyph in glyphs {
+                        let x = round_i32(pen);
+                        pen += glyph.advance;
+                        let (key, fallback_font, emoji) = if glyph.font == EMOJI_FONT {
+                            let c = text
+                                .get(glyph.cluster.saturating_sub(run.text_start) as usize..)
+                                .and_then(|s| s.chars().next())
+                                .unwrap_or('\u{fffd}');
+                            (emoji_cache_key(c, sub_px), font_index, Some(c))
+                        } else {
+                            ((glyph.font as usize, glyph.id, sub_px), glyph.font as usize, None)
+                        };
+                        let Some(cached) = cached_glyph(self.glyph_cache, ttf_fonts, self.color_emoji, key, fallback_font, glyph.id, px, emoji) else {
+                            continue;
+                        };
+                        let (gx, gy) = if cached.is_color {
+                            (x, emoji_top)
+                        } else {
+                            (x + cached.xmin, baseline - cached.ymin - cached.height as i32)
+                        };
+                        blit_glyph(self.buffer, cached, gx, gy, px, &target);
                     }
+
                 }
                 DrawCommand::DrawImage {
                     src,
@@ -1600,7 +1450,7 @@ mod tests {
         let mut buffer = vec![background; (width * height) as usize];
         let (canvases, images) = no_resources();
         let mut target = Surface::new(Pixels::Xrgb8888(&mut buffer), width, height);
-        SoftwareRenderer::new(Fonts::bitmap(&[])).render(&mut target, commands, &RenderResources::new(&canvases, &images), area);
+        SoftwareRenderer::new(roboto()).render(&mut target, commands, &RenderResources::new(&canvases, &images), area);
         buffer
     }
 
@@ -1717,7 +1567,7 @@ mod tests {
         let full = draw(width, height, 0, &commands, Rect::new(0.0, 0.0, width as f32, height as f32));
 
         // As on a microcontroller: one 7-row band buffer, flushed after each band.
-        let mut renderer = SoftwareRenderer::new(Fonts::bitmap(&[]));
+        let mut renderer = SoftwareRenderer::new(roboto());
         let (canvases, images) = no_resources();
         let mut screen = vec![0u32; (width * height) as usize];
         let mut band = vec![0u32; (width * 7) as usize];
@@ -1746,7 +1596,7 @@ mod tests {
         let mut padded = vec![pad; stride * height as usize];
         let mut target = Surface::new(Pixels::Xrgb8888(&mut padded), width, height).with_stride(stride);
         let area = target.area();
-        SoftwareRenderer::new(Fonts::bitmap(&[])).render(&mut target, &commands, &RenderResources::new(&canvases, &images), area);
+        SoftwareRenderer::new(roboto()).render(&mut target, &commands, &RenderResources::new(&canvases, &images), area);
         for y in 0..height as usize {
             assert_eq!(&padded[y * stride..y * stride + width as usize], &full[y * width as usize..(y + 1) * width as usize], "row {y}");
             assert!(padded[y * stride + width as usize..(y + 1) * stride].iter().all(|p| *p == pad), "padding of row {y} was written");
@@ -1755,7 +1605,7 @@ mod tests {
 
     #[test]
     fn image_cache_follows_image_store_evictions() {
-        let mut renderer = SoftwareRenderer::new(Fonts::bitmap(&[]));
+        let mut renderer = SoftwareRenderer::new(roboto());
         renderer.image_cache.insert("gone.png".to_string(), (1, 1, vec![0xffffffff]));
         let mut buffer = vec![0; 4];
         let (canvases, images) = no_resources();
@@ -1935,24 +1785,12 @@ mod tests {
 
     #[test]
     fn font_sets_do_not_share_cached_shapes() {
-        static BITMAP: [xerune::font::BitmapFont; 1] = [xerune::font::DEFAULT_ROBOTO_REGULAR];
-        let (ttf, bitmap) = (roboto(), Fonts::bitmap(&BITMAP));
-        let a = ttf.shape("same text", 14.0, 0, FontFeatures::NONE);
-        let b = bitmap.shape("same text", 14.0, 0, FontFeatures::NONE);
+        let bold = include_bytes!("../../resources/fonts/Roboto-Bold.ttf");
+        let (regular, bold) = (roboto(), Fonts::ttf(bold, None).unwrap());
+        let a = regular.shape("same text", 14.0, 0, FontFeatures::NONE);
+        let b = bold.shape("same text", 14.0, 0, FontFeatures::NONE);
         assert!(!Arc::ptr_eq(&a, &b));
         assert_ne!(a.width(), b.width());
-        assert_ne!(ttf.measure_text("same text", 14.0, 0), bitmap.measure_text("same text", 14.0, 0));
-    }
-
-    #[test]
-    fn shape_bitmap_fonts() {
-        static FONTS: [xerune::font::BitmapFont; 1] = [xerune::font::DEFAULT_ROBOTO_REGULAR];
-        let fonts = &FONTS;
-        let measurer = Fonts::bitmap(fonts);
-        let shaped = measurer.shape("Hi you", 14.0, 0, FontFeatures::NONE);
-        let font = &fonts[0];
-        let expected: f32 = "Hi you".chars().map(|c| font.lookup_glyph(c).unwrap().x_advance as f32).sum();
-        assert_eq!(shaped.width(), expected);
-        assert_eq!(shaped.metrics.normal_line_height(), font.line_height);
+        assert_ne!(regular.measure_text("same text", 14.0, 0), bold.measure_text("same text", 14.0, 0));
     }
 }

@@ -51,8 +51,6 @@ pub mod i18n;
 /// Default styles for standard HTML element tags. Internal.
 #[doc(hidden)]
 pub mod defaults;
-/// Font rasterizer representation and precompiled bitmap fonts.
-pub mod font;
 mod diag;
 
 /// System-specific backends for windowing and hardware displays.
@@ -74,7 +72,6 @@ pub use ui::{Interaction, Ui, UiBuilder};
 #[doc(hidden)]
 pub use ui::{cache_config, stylesheet_cache_len};
 pub use runtime::{Runtime, Subscriptions, TimerId, FrameStats, PhaseTime};
-pub use font::{BitmapGlyph, BitmapFont};
 pub use xerune_derive::{XeruneTemplate, XeruneMessage};
 
 /// Its input, with the `interpret` feature: the derive wraps the studio's

@@ -7,16 +7,14 @@ name = "xerune"
 version = "0.1.0"
 edition = "2024"
 description = "A lightweight, CPU-only native HTML renderer designed for embedded Linux environments"
-# The code is MIT; the bitmap Roboto in src/roboto_*.rs is font data under
-# the SIL Open Font License (resources/fonts/Roboto-LICENSE.txt).
-license = "MIT AND OFL-1.1"
+license = "MIT"
 repository = "https://github.com/spatker/xerune"
 readme = "README.md"
 keywords = ["html", "renderer", "embedded", "mvu", "gui"]
 categories = ["embedded", "gui", "rendering"]
 rust-version = "1.85"
 # Examples, docs (videos), fonts and test fixtures stay in the repository.
-include = ["/src", "/README.md", "/LICENSE", "/resources/fonts/Roboto-LICENSE.txt"]
+include = ["/src", "/README.md", "/LICENSE"]
 
 [package.metadata.docs.rs]
 # Document the embedded Linux backends too, not only winit.
@@ -84,7 +82,6 @@ ureq = { version = "2", optional = true }
 # No "regex": env_logger falls back to substring matching for RUST_LOG filters.
 env_logger = { version = "0.11", default-features = false, features = ["auto-color", "humantime"] }
 tiny-skia = "0.12.0"
-fontdue = "0.9.3"
 xerune_render = { path = "xerune_render" }
 
 

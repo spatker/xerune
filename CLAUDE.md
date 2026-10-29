@@ -44,14 +44,13 @@ Modules:
 - `runtime/`: `poll` (timers, subscriptions, frames at `target_fps`, returns `Wake`), `Clock`, keyframe animations (by key), transitions (by key + property, `runtime/transition.rs`), fingerprint gating, frame stats (`runtime/stats.rs`: phase times while `Subscriptions::stats` or `XERUNE_PROFILE=1` asks), `XERUNE_VERIFY` (`runtime/verify.rs`).
 - `ui/`: `builder` (tree building), `attributes`, `style_resolution` (+ style cache), `metadata` (`NodeMetadata`), `node_map`.
 - `style.rs`: `ContainerStyle` and CSS enums. `graphics.rs`: `Color`, `Canvas`, `Context`, `DrawCommand`, `TextMeasurer`, `Renderer`, `Surface` (pixels, stride, rotation, origin: a band or the whole screen), `Damage`.
-- `xerune_render`: `SoftwareRenderer` (owns glyph/image caches) and `Fonts` (TTF shaped by harfrust and rasterized by fontdue, or bitmap fonts; the runtime's `TextMeasurer`).
+- `xerune_render`: `SoftwareRenderer` (owns glyph/image caches) and `Fonts` (TTF shaped by harfrust and rasterized by fontdue; the runtime's `TextMeasurer`).
 - `css/`: values/properties parser, gradients (linear/radial/conic), `@keyframes`, `transition`, `media` (`@media` evaluation; `xerune_css::sheet` records which blocks each rule is in).
 - `screen.rs`: global viewport (two atomics) + `Breakpoint`. `Runtime::set_size` → `Model::on_resize` → rebuild.
 - `keyboard/`: on-screen keyboard (`Context::edit_text(TextRequest, on_done)`). A derived template inside the crate (`extern crate self as xerune`); while open the runtime builds its tree instead of the model's (`KeyboardSession`), routes clicks/keys/`kb:*` messages to it, and restores the model's scroll offsets on close. Opt-in `Runtime::set_input_keyboard` (`XERUNE_INPUT_KEYBOARD=1`) opens it on tapping a text input and sends `<id>:value:<text>`. `keys.rs`: `KeyMap` (backend key names → `KeyAction`). Keyboard languages are `i18n` catalogs (`src/keyboard/en.txt`, `de.txt`: letter rows + labels), picked by `TextRequest::lang` or the input's inherited `lang` attribute (`Ui::lang`). Korean (`ko.txt`, `compose = hangul`, `shift_rowN`) composes jamo into syllables (`keyboard/hangul.rs`).
 - `i18n.rs`: `Catalog` (`key = value` text) and `Translations` (`t(lang, key)`, fallback to the first catalog). The language is a plain model field; templates call a model method `self.t("key")` (guide §9).
 - `backend/`: `winit_impl` (desktop), `linuxfb_impl`, `drm_impl`, `input/evdev`, `browser_impl`, `snapshot`, `common_loop`.
 - `text.rs`: `ShapedText` (glyphs, advances, UAX #14 break segments via `unicode-linebreak`), line breaking, `GlyphRun`. Shaping is `TextMeasurer::shape` (harfrust in `xerune_render::Fonts`, per run of characters in one face, cached per font set; `TEXT_BENCH_COLD=1` times it); layout measures text leaves with a taffy measure function (`Ui::compute_layout`).
-- `font.rs`, `roboto_*.rs`: embedded bitmap fonts (`no_std` path).
 
 Templates: `{{ expr }}`, `{% if %}/{% elif %}/{% else %}`, `{% if let %}`,
 `{% for x in xs %}` with `loop.index`/`loop.index0`, `data-on-click="msg:{{ arg }}"`
