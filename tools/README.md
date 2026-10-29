@@ -48,6 +48,13 @@ these make that cheap.
   `text_layout::line_breaks_match_chromium` come from
   `tests/text/reference.html`, and those of
   `korean_line_breaks_match_chromium` from `tests/text/korean.html`.
+- `tools/chromium-shot.sh PAGE.html OUT.png [800x480]`: a screenshot of
+  a page in Chromium with the same fonts (both scripts get them from
+  `tools/chromium-page.sh`). `tests/text/glyphs-chromium.png` is
+  `tests/text/glyphs.html` this way: `text_raster::glyphs_match_chromium`
+  compares xerune's glyphs with it row by row (shift, error, ink, pixels
+  off; `-- --nocapture` prints them, `target/tmp/text_raster/` keeps the
+  images). Lower its `MAX_ERROR` when glyphs get closer.
 - `wpt_runner` compares WPT reftests with Chromium screenshots (see
   `docs/guide.md` §13).
 

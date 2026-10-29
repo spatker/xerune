@@ -12,25 +12,10 @@ set -eu
 root=$(cd "$(dirname "$0")/.." && pwd)
 page=$1
 size=${2:-800x480}
-fonts=$root/resources/fonts
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
-{
-    cat <<EOF
-<style>
-@font-face { font-family: XeruneRoboto; src: url("file://$fonts/Roboto-Regular.ttf"); font-weight: 400; }
-@font-face { font-family: XeruneRoboto; src: url("file://$fonts/Roboto-Bold.ttf"); font-weight: 700; }
-@font-face { font-family: XeruneHangul; src: url("file://$fonts/XeruneHangul-Regular.otf"); font-weight: 400; }
-@font-face { font-family: XeruneHangul; src: url("file://$fonts/XeruneHangul-Bold.otf"); font-weight: 700; }
-* { font-family: XeruneRoboto, XeruneHangul !important; }
-</style>
-EOF
-    cat "$page"
-    printf '<script>\n'
-    cat "$root/tests/text/chromium_lines.js"
-    printf '</script>\n'
-} > "$tmp/page.html"
+"$root/tools/chromium-page.sh" "$page" "$root/tests/text/chromium_lines.js" > "$tmp/page.html"
 
 chromium --headless --disable-gpu --allow-file-access-from-files \
     --window-size="$(echo "$size" | tr x ,)" --virtual-time-budget=5000 \
