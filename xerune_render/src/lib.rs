@@ -671,6 +671,12 @@ impl SoftwareRenderer {
             profile: None,
         }
     }
+
+    /// Forgets the rasterized glyphs, so the next frame rasterizes all its
+    /// text again: for benchmarking rasterizing.
+    pub fn clear_glyph_cache(&mut self) {
+        self.glyph_cache.clear();
+    }
 }
 
 /// The kinds of draw commands profiled, in [`CommandTimes`] order.

@@ -15,6 +15,9 @@
 //! RENDER_BENCH_SCENES=todo,calculator RENDER_BENCH_ITERS=200 cargo run --release --example render_bench
 //! ```
 //!
+//! `RENDER_BENCH_COLD_GLYPHS=1` empties the glyph cache before every
+//! repaint of the `raster` phase, so it times rasterizing the glyphs too.
+//!
 //! `RENDER_BENCH_PHASE=raster|frame` runs only one phase; with
 //! `RENDER_BENCH_ITERS=0` and `N` under `qemu-arm` and an instruction-counting
 //! plugin, the difference divided by `N` is the per-iteration instruction count
@@ -101,6 +104,8 @@ struct Bench {
     rotation: Rotation,
     iters: usize,
     phase: Option<String>,
+    /// Rasterize the glyphs again for every `raster` repaint.
+    cold_glyphs: bool,
     fonts: Fonts,
 }
 
@@ -150,6 +155,9 @@ impl Bench {
             let resources = RenderResources::new(&runtime.context().canvases, runtime.images());
             let mut samples = Vec::with_capacity(self.iters);
             for _ in 0..self.iters {
+                if self.cold_glyphs {
+                    renderer.clear_glyph_cache();
+                }
                 let t = Instant::now();
                 let mut target = Surface::new(Pixels::Xrgb8888(&mut buffer), width, height);
                 let area = target.area();
@@ -229,6 +237,7 @@ fn main() {
         rotation: Rotation::from_degrees(env_or("RENDER_BENCH_ROTATION", 0)).expect("RENDER_BENCH_ROTATION is 0, 90, 180 or 270"),
         iters: env_or("RENDER_BENCH_ITERS", 100),
         phase: std::env::var("RENDER_BENCH_PHASE").ok(),
+        cold_glyphs: env_or("RENDER_BENCH_COLD_GLYPHS", 0) != 0,
         fonts: xerune_render::Fonts::ttf(
             include_bytes!("../../resources/fonts/Roboto-Regular.ttf"),
             Some(include_bytes!("../../resources/fonts/Roboto-Bold.ttf")),
