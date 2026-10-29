@@ -6,8 +6,8 @@ radial and conic gradients, images and text) into a pixel buffer on the
 CPU, with SSE2 and NEON fast paths. Made for boards without a GPU.
 
 `SoftwareRenderer` is the `xerune::Renderer` and owns the glyph and
-image caches; `Fonts` (TrueType/OpenType through fontdue, or bitmap
-fonts without `std`) is both its glyph source and the runtime's
+image caches; `Fonts` (TrueType/OpenType, shaped by harfrust and
+rasterized by fontdue, or bitmap fonts without `std`) is both its glyph source and the runtime's
 `xerune::TextMeasurer`, so text is measured and drawn with the same
 fonts:
 

@@ -297,7 +297,7 @@ CSS is resolved at **compile time**: selectors are matched against the template 
 
 Not supported, among others: `font-family` (fonts are compiled bitmap fonts), `transform`, `transition`, `display: grid`, `z-index`.
 
-**Text layout.** Text wraps to its container like in a browser: lines break at Unicode (UAX #14) break opportunities, so spaces, hyphens and between CJK characters; `text-align` aligns each line. A run of text and `{{ }}` values (`Hello {{ name }}, you have {{ n }} messages`) is one paragraph and wraps as a whole. Limits: inline elements (`<b>`, `<span>`, `<a>`) are separate boxes rather than part of the surrounding paragraph, so text after one starts a new box; there is no OpenType shaping (Roboto's kerning, ligatures, font features such as `font-variant-numeric: proportional-nums`, Arabic or Indic scripts). Roboto's digits are tabular, so right-aligned numbers move as digits with different side bearings appear (a lone `1` ends short of the edge), exactly as in Chromium; Thai, Lao, Khmer and Myanmar break only at spaces. For truncated single lines, use `white-space: nowrap; overflow: hidden; text-overflow: ellipsis` on the element holding the text.
+**Text layout.** Text wraps to its container like in a browser: lines break at Unicode (UAX #14) break opportunities, so spaces, hyphens and between CJK characters; `text-align` aligns each line. A run of text and `{{ }}` values (`Hello {{ name }}, you have {{ n }} messages`) is one paragraph and wraps as a whole. Limits: inline elements (`<b>`, `<span>`, `<a>`) are separate boxes rather than part of the surrounding paragraph, so text after one starts a new box; text is shaped with the font's default OpenType features (kerning, ligatures), but CSS can't change them (`font-variant-numeric: proportional-nums`, `font-feature-settings`), and without bidi, Arabic and Hebrew don't work. Roboto's digits are tabular, so right-aligned numbers move as digits with different side bearings appear (a lone `1` ends short of the edge), exactly as in Chromium; Thai, Lao, Khmer and Myanmar break only at spaces. For truncated single lines, use `white-space: nowrap; overflow: hidden; text-overflow: ellipsis` on the element holding the text.
 
 **Page background.** As in browsers, the background of `<html>` (or, if it has none, of `<body>`) paints the whole viewport, behind everything. Without one, the viewport is white, or `#121212` with `html { color-scheme: dark; }`. Every frame repaints from this canvas, so a translucent background never shows the previous frame. If an opaque, square-cornered box already covers the viewport (a full-screen `.app` div, as in the examples), no canvas fill is drawn at all.
 
@@ -718,7 +718,7 @@ syllables, or only between words with `word-break: keep-all` (the examples set
 it on their root; it doesn't change Latin text), all as in Chromium. To keep
 ARM binaries small, the examples embed the Hangul font and offer Korean on
 32-bit ARM only with `--features hangul`. Right-to-left and complex scripts
-don't work yet (no bidi or shaping), and Chinese and Japanese would need their
+don't work yet (no bidi; marks aren't positioned), and Chinese and Japanese would need their
 own font.
 
 ---

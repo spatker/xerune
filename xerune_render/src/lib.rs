@@ -4,8 +4,8 @@
 //! CPU, with SSE2 and NEON fast paths. Made for boards without a GPU.
 //!
 //! [`SoftwareRenderer`] is the [`xerune::Renderer`] and owns the glyph and
-//! image caches; [`Fonts`] (TrueType/OpenType through fontdue, or bitmap
-//! fonts without `std`) is both its glyph source and the runtime's
+//! image caches; [`Fonts`] (TrueType/OpenType, shaped by harfrust and
+//! rasterized by fontdue, or bitmap fonts without `std`) is both its glyph source and the runtime's
 //! [`xerune::TextMeasurer`], so text is measured and drawn with the same
 //! fonts:
 //!
@@ -53,6 +53,8 @@ enum FontSource<'a> {
 #[derive(Clone)]
 struct TtfFaces {
     faces: Vec<Font>,
+    /// The same faces for harfrust, which shapes text with them.
+    shaping: Vec<harfrust::Font>,
     /// How many of `faces` are the text font's (1 or 2).
     primary: usize,
     /// The fallback fonts, as their (regular, bold) faces' indices.
@@ -105,13 +107,13 @@ impl Fonts {
     /// bold text (`regular` if `None`).
     #[cfg(feature = "std")]
     pub fn ttf(regular: &[u8], bold: Option<&[u8]>) -> Result<Self, FontError> {
-        let face = |bytes: &[u8]| Font::from_bytes(bytes, fontdue::FontSettings::default()).map_err(FontError);
-        let mut faces = vec![face(regular)?];
+        let mut faces = TtfFaces { faces: Vec::new(), shaping: Vec::new(), primary: 0, fallbacks: Vec::new() };
+        faces.push(regular)?;
         if let Some(bold) = bold {
-            faces.push(face(bold)?);
+            faces.push(bold)?;
         }
-        let primary = faces.len();
-        Ok(Self::new(FontKind::Ttf { faces: TtfFaces { faces, primary, fallbacks: Vec::new() }, color_emoji: None }))
+        faces.primary = faces.faces.len();
+        Ok(Self::new(FontKind::Ttf { faces, color_emoji: None }))
     }
 
     /// Draws characters the fonts so far lack from this font, `regular` for
@@ -120,16 +122,11 @@ impl Fonts {
     /// characters are as tall as this font needs, as in browsers.
     #[cfg(feature = "std")]
     pub fn with_fallback(self, regular: &[u8], bold: Option<&[u8]>) -> Result<Self, FontError> {
-        let face = |bytes: &[u8]| Font::from_bytes(bytes, fontdue::FontSettings::default()).map_err(FontError);
         let mut set = Arc::unwrap_or_clone(self.0);
         if let FontKind::Ttf { faces, .. } = &mut set.kind {
-            let regular_index = faces.faces.len();
-            faces.faces.push(face(regular)?);
+            let regular_index = faces.push(regular)?;
             let bold_index = match bold {
-                Some(bold) => {
-                    faces.faces.push(face(bold)?);
-                    regular_index + 1
-                }
+                Some(bold) => faces.push(bold)?,
                 None => regular_index,
             };
             faces.fallbacks.push((regular_index, bold_index));
@@ -294,7 +291,15 @@ thread_local! {
         std::cell::RefCell::new(BoundedMeasureCache::new(MAX_MEASURE_CACHE_ENTRIES));
     static SHAPE_CACHE: std::cell::RefCell<ShapeCache> =
         std::cell::RefCell::new(ShapeCache::new(MAX_SHAPE_CACHE_ENTRIES));
+    /// harfrust's compiled feature lookups, by font set, face and script.
+    static SHAPE_PLANS: std::cell::RefCell<Vec<((u32, usize, Option<harfrust::Script>), harfrust::ShapePlan)>> =
+        const { std::cell::RefCell::new(Vec::new()) };
 }
+
+/// How many shape plans [`SHAPE_PLANS`] keeps before starting over: a few
+/// faces times the scripts they show.
+#[cfg(feature = "std")]
+const MAX_SHAPE_PLANS: usize = 32;
 
 /// How many shaped runs [`Fonts`] keep (thread-wide), oldest evicted first.
 /// Every text run of a view is shaped on each rebuild, so this should exceed
@@ -392,9 +397,16 @@ impl Fonts {
                 }
                 // The fallback faces glyphs came from, whose metrics the line takes too.
                 let mut used_fallbacks: Vec<usize> = Vec::new();
+                // Each character goes to the first face that has it; a run of
+                // characters in one face is shaped as a whole: the face and
+                // where the run started.
+                let mut run: Option<(usize, usize)> = None;
                 for (i, c) in text.char_indices() {
                     // Newlines are line breaks, not glyphs.
                     if c == '\u{fe0f}' || c.is_control() {
+                        if let Some((face, start)) = run.take() {
+                            ttf_fonts.shape_run(self.id(), face, text, start..i, font_size, &mut glyphs);
+                        }
                         continue;
                     }
                     let mut face = font_index;
@@ -407,16 +419,29 @@ impl Fonts {
                             }
                         }
                     }
-                    let advance = ttf_fonts.faces[face].metrics_indexed(id, font_size).advance_width;
-                    // Characters no font has are drawn as color emoji when
-                    // an emoji font is available (see the renderer), a bit
-                    // wider than the font's missing-glyph box.
-                    let (font, advance) = if is_emoji(c, id) {
-                        (EMOJI_FONT, advance + font_size * 0.85)
-                    } else {
-                        (face as u16, advance)
-                    };
-                    glyphs.push(ShapedGlyph { cluster: i as u32, font, id, advance });
+                    if is_emoji(c, id) {
+                        if let Some((face, start)) = run.take() {
+                            ttf_fonts.shape_run(self.id(), face, text, start..i, font_size, &mut glyphs);
+                        }
+                        // Characters no font has are drawn as color emoji
+                        // when an emoji font is available (see the renderer),
+                        // a bit wider than the font's missing-glyph box.
+                        let advance = ttf_fonts.faces[face].metrics_indexed(id, font_size).advance_width;
+                        glyphs.push(ShapedGlyph { cluster: i as u32, font: EMOJI_FONT, id, advance: advance + font_size * 0.85 });
+                        continue;
+                    }
+                    match run {
+                        Some((run_face, _)) if run_face == face => {}
+                        _ => {
+                            if let Some((face, start)) = run.take() {
+                                ttf_fonts.shape_run(self.id(), face, text, start..i, font_size, &mut glyphs);
+                            }
+                            run = Some((face, i));
+                        }
+                    }
+                }
+                if let Some((face, start)) = run {
+                    ttf_fonts.shape_run(self.id(), face, text, start..text.len(), font_size, &mut glyphs);
                 }
                 for &face in &used_fallbacks {
                     if let Some(m) = ttf_fonts.faces[face].horizontal_line_metrics(font_size) {
@@ -455,6 +480,61 @@ fn ttf_font_index(fonts: &TtfFaces, weight: u16) -> Option<usize> {
 
 #[cfg(feature = "std")]
 impl TtfFaces {
+    /// Adds the face in `bytes`, returning its index.
+    fn push(&mut self, bytes: &[u8]) -> Result<usize, FontError> {
+        let face = Font::from_bytes(bytes, fontdue::FontSettings::default()).map_err(FontError)?;
+        let shaping = harfrust::Font::new(bytes.to_vec(), 0).ok_or(FontError("not an OpenType font"))?;
+        self.faces.push(face);
+        self.shaping.push(shaping);
+        Ok(self.faces.len() - 1)
+    }
+
+    /// Shapes `text[range]`, all of whose characters `face` has, onto
+    /// `glyphs`: kerning, ligatures and the font's other default features.
+    /// `set` is the font set's id, for the plan cache.
+    fn shape_run(&self, set: u32, face: usize, text: &str, range: core::ops::Range<usize>, font_size: f32, glyphs: &mut Vec<ShapedGlyph>) {
+        let font = &self.shaping[face];
+        let mut buffer = harfrust::Buffer::new();
+        buffer.push_str(&text[range.clone()]);
+        // The text around the run, which contextual features may look at.
+        buffer.set_pre_context(&text[..range.start]);
+        buffer.set_post_context(&text[range.end..]);
+        // No bidi yet: everything runs left to right, which keeps clusters
+        // in text order as line breaking needs.
+        buffer.set_direction(harfrust::Direction::LeftToRight);
+        buffer.guess_segment_properties();
+        let shaper = harfrust::ShaperFont::new(font);
+        let result = SHAPE_PLANS.with(|plans| {
+            let mut plans = plans.borrow_mut();
+            let key = (set, face, buffer.script());
+            let plan = match plans.iter().position(|(k, _)| *k == key) {
+                Some(index) => &plans[index].1,
+                None => {
+                    if plans.len() >= MAX_SHAPE_PLANS {
+                        plans.clear();
+                    }
+                    let plan = harfrust::ShapePlan::new(font, buffer.direction(), buffer.script(), None, &[]);
+                    plans.push((key, plan));
+                    &plans.last().unwrap().1
+                }
+            };
+            harfrust::shape(&shaper, &mut buffer, harfrust::ShapeOptions::new().plan(Some(plan)))
+        });
+        if let Err(error) = result {
+            log::warn!("shaping {:?} failed: {error:?}", &text[range]);
+            return;
+        }
+        let scale = font_size / f32::from(font.units_per_em());
+        for (info, position) in buffer.glyph_infos().iter().zip(buffer.glyph_positions()) {
+            glyphs.push(ShapedGlyph {
+                cluster: (range.start as u32) + info.cluster,
+                font: face as u16,
+                id: info.glyph_id as u16,
+                advance: position.x_advance as f32 * scale,
+            });
+        }
+    }
+
     /// The first fallback face of `weight` with a glyph for `c`, and the glyph.
     fn fallback_glyph(&self, c: char, weight: u16) -> Option<(usize, u16)> {
         self.fallbacks.iter().find_map(|&(regular, bold)| {

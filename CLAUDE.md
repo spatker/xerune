@@ -44,13 +44,13 @@ Modules:
 - `runtime/`: `poll` (timers, subscriptions, frames at `target_fps`, returns `Wake`), `Clock`, keyframe animations (by key), transitions (by key + property, `runtime/transition.rs`), fingerprint gating, frame stats (`runtime/stats.rs`: phase times while `Subscriptions::stats` or `XERUNE_PROFILE=1` asks), `XERUNE_VERIFY` (`runtime/verify.rs`).
 - `ui/`: `builder` (tree building), `attributes`, `style_resolution` (+ style cache), `metadata` (`NodeMetadata`), `node_map`.
 - `style.rs`: `ContainerStyle` and CSS enums. `graphics.rs`: `Color`, `Canvas`, `Context`, `DrawCommand`, `TextMeasurer`, `Renderer`, `Surface` (pixels, stride, rotation, origin: a band or the whole screen), `Damage`.
-- `xerune_render`: `SoftwareRenderer` (owns glyph/image caches) and `Fonts` (TTF via fontdue or bitmap fonts; the runtime's `TextMeasurer`).
+- `xerune_render`: `SoftwareRenderer` (owns glyph/image caches) and `Fonts` (TTF shaped by harfrust and rasterized by fontdue, or bitmap fonts; the runtime's `TextMeasurer`).
 - `css/`: values/properties parser, gradients (linear/radial/conic), `@keyframes`, `transition`, `media` (`@media` evaluation; `xerune_css::sheet` records which blocks each rule is in).
 - `screen.rs`: global viewport (two atomics) + `Breakpoint`. `Runtime::set_size` → `Model::on_resize` → rebuild.
 - `keyboard/`: on-screen keyboard (`Context::edit_text(TextRequest, on_done)`). A derived template inside the crate (`extern crate self as xerune`); while open the runtime builds its tree instead of the model's (`KeyboardSession`), routes clicks/keys/`kb:*` messages to it, and restores the model's scroll offsets on close. Opt-in `Runtime::set_input_keyboard` (`XERUNE_INPUT_KEYBOARD=1`) opens it on tapping a text input and sends `<id>:value:<text>`. `keys.rs`: `KeyMap` (backend key names → `KeyAction`). Keyboard languages are `i18n` catalogs (`src/keyboard/en.txt`, `de.txt`: letter rows + labels), picked by `TextRequest::lang` or the input's inherited `lang` attribute (`Ui::lang`). Korean (`ko.txt`, `compose = hangul`, `shift_rowN`) composes jamo into syllables (`keyboard/hangul.rs`).
 - `i18n.rs`: `Catalog` (`key = value` text) and `Translations` (`t(lang, key)`, fallback to the first catalog). The language is a plain model field; templates call a model method `self.t("key")` (guide §9).
 - `backend/`: `winit_impl` (desktop), `linuxfb_impl`, `drm_impl`, `input/evdev`, `browser_impl`, `snapshot`, `common_loop`.
-- `text.rs`: `ShapedText` (glyphs, advances, UAX #14 break segments via `unicode-linebreak`), line breaking, `GlyphRun`. Shaping is `TextMeasurer::shape` (fontdue advances in `xerune_render::Fonts`, cached per font set); layout measures text leaves with a taffy measure function (`Ui::compute_layout`).
+- `text.rs`: `ShapedText` (glyphs, advances, UAX #14 break segments via `unicode-linebreak`), line breaking, `GlyphRun`. Shaping is `TextMeasurer::shape` (harfrust in `xerune_render::Fonts`, per run of characters in one face, cached per font set; `TEXT_BENCH_COLD=1` times it); layout measures text leaves with a taffy measure function (`Ui::compute_layout`).
 - `font.rs`, `roboto_*.rs`: embedded bitmap fonts (`no_std` path).
 
 Templates: `{{ expr }}`, `{% if %}/{% elif %}/{% else %}`, `{% if let %}`,
@@ -150,7 +150,7 @@ not gcc-arm or `cargo check`: it links against the boards' glibc 2.39):
 
 ## Known weak spots
 
-- Text: inline elements (`<b>`, `<span>`) are separate flex items, not one inline formatting context (`known_gaps::text_flows_around_inline_elements`). No OpenType shaping: fontdue ignores GPOS kerning (`known_gaps::gpos_kerning_narrows_lines`) and font features (`proportional-nums`; the calculator's right-aligned tabular digits shift as in Chromium), no complex scripts or bidi; `harfrust` is the planned shaper behind `TextMeasurer::shape`. Thai/Lao/Khmer/Myanmar break only at spaces.
+- Text: inline elements (`<b>`, `<span>`) are separate flex items, not one inline formatting context (`known_gaps::text_flows_around_inline_elements`). harfrust shapes with the fonts' default features (kerning, ligatures), but CSS can't set features (`proportional-nums`; the calculator's right-aligned tabular digits shift as in Chromium), glyph offsets (marks) aren't drawn, and there is no bidi: every run is shaped left to right. Thai/Lao/Khmer/Myanmar break only at spaces.
 - Sibling and structural selectors (`+`, `~`, `:nth-child`, `:last-child`) don't see through `{% for %}` / `{% if %}` in templates, so they never match inside a loop body.
 - Images: PNG only.
 - Borders: per-side width/color/style, but every style is drawn solid (no

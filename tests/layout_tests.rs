@@ -1360,6 +1360,24 @@ mod text_layout {
     }
 
     #[derive(XeruneTemplate)]
+    #[template(path = "tests/text/kerning.html")]
+    struct Kerning;
+    impl Model for Kerning {
+        type Message = String;
+        fn update(&mut self, _msg: String, _context: &mut Context<Self::Message>) {}
+    }
+
+    /// Roboto kerns with OpenType GPOS, which the shaper applies: Chromium
+    /// fits "min-" on the first line thanks to it.
+    #[test]
+    fn gpos_kerning_narrows_lines() {
+        assert_eq!(
+            crate::roboto_lines(Kerning, 800.0, 480.0),
+            ["A body paragraph in a flex column with min-", "width zero, which wraps."]
+        );
+    }
+
+    #[derive(XeruneTemplate)]
     #[template(path = "tests/text/mixed_run.html")]
     struct MixedRun {
         name: String,
@@ -2318,7 +2336,6 @@ mod known_gaps {
     gap_model!(CanvasResize, "tests/gaps/canvas_resize.html");
     gap_model!(Order, "tests/gaps/order.html");
     gap_model!(InlineWrap, "tests/gaps/inline_wrap.html");
-    gap_model!(GposKerning, "tests/gaps/gpos_kerning.html");
     gap_model!(ControlMinHeight, "tests/gaps/control_min_height.html");
 
     fn runtime<M: Model + ui::TemplateLayout + 'static>(model: M, w: f32, h: f32) -> Runtime<M, CharMeasurer> {
@@ -2375,16 +2392,6 @@ mod known_gaps {
         let words = text_rect(&commands, "words");
         assert_eq!(words.y, bold.y, "text after </b> must stay on its line");
         assert!(bold.x >= some.x + some.width + 8.0, "the space before <b> must remain");
-    }
-
-    #[test]
-    #[ignore = "FIXME: Roboto kerns with OpenType GPOS, which fontdue can't read; needs a shaper (harfrust)"]
-    fn gpos_kerning_narrows_lines() {
-        // Chromium fits "min-" on the first line thanks to kerning.
-        assert_eq!(
-            crate::roboto_lines(GposKerning, 800.0, 480.0),
-            ["A body paragraph in a flex column with min-", "width zero, which wraps."]
-        );
     }
 
     #[test]

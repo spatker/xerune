@@ -15,10 +15,11 @@ include = ["/src", "/README.md", "/LICENSE"]
 xerune = { version = "0.1.0", path = "../", default-features = false }
 fontdue = { version = "0.9.3", optional = true }
 ttf-parser = { version = "0.20", optional = true }
+harfrust = { version = "0.15", optional = true }
 png = { version = "0.17", optional = true }
 log = "0.4"
 hashbrown = { version = "0.14", default-features = false, features = ["ahash", "inline-more"] }
 
 [features]
 default = ["std"]
-std = ["xerune/std", "dep:fontdue", "dep:ttf-parser", "dep:png"]
+std = ["xerune/std", "dep:fontdue", "dep:ttf-parser", "dep:harfrust", "dep:png"]
