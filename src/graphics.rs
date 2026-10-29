@@ -550,7 +550,7 @@ pub enum DrawCommand {
         /// Font weight (0 for Regular, 1 for Bold).
         weight: u16,
         /// The shaped glyphs of `text`, positioned by layout. Without it the
-        /// renderer lays `text` out itself (text inputs).
+        /// renderer shapes `text` itself, as one line.
         run: Option<crate::text::GlyphRun>,
     },
     /// Draw a PNG image.

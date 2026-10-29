@@ -213,14 +213,6 @@ const fn parse_usize_opt(opt: Option<&'static str>, default: usize) -> usize {
     }
 }
 
-/// Compile-time cache capacity limits for text measurement in embedded environments.
-///
-/// Can be configured at compile time via `XERUNE_RENDER_MAX_MEASURE_CACHE` (default: 64).
-/// Set to 0 to disable text measurement caching.
-#[cfg(feature = "std")]
-pub const MAX_MEASURE_CACHE_ENTRIES: usize =
-    parse_usize_opt(option_env!("XERUNE_RENDER_MAX_MEASURE_CACHE"), 64);
-
 /// How many rasterized glyphs (font, glyph, size) the glyph cache keeps
 /// before it is emptied. Every distinct font size adds entries, so without a
 /// limit an animated `font-size` grows the cache forever.
@@ -232,63 +224,7 @@ pub const MAX_GLYPH_CACHE_ENTRIES: usize =
     parse_usize_opt(option_env!("XERUNE_RENDER_MAX_GLYPH_CACHE"), 2048);
 
 #[cfg(feature = "std")]
-struct BoundedMeasureCache {
-    entries: HashMap<String, Vec<(u32, u32, u16, f32, f32)>>,
-    order: std::collections::VecDeque<String>,
-    max_entries: usize,
-}
-
-#[cfg(feature = "std")]
-impl BoundedMeasureCache {
-    fn new(max_entries: usize) -> Self {
-        Self {
-            entries: HashMap::with_capacity(max_entries),
-            order: std::collections::VecDeque::with_capacity(max_entries),
-            max_entries,
-        }
-    }
-
-    fn get(&self, text: &str, font: u32, font_size_bits: u32, weight: u16) -> Option<(f32, f32)> {
-        if self.max_entries == 0 {
-            return None;
-        }
-        if let Some(entries) = self.entries.get(text) {
-            for &(f, sz, wt, w, h) in entries {
-                if f == font && sz == font_size_bits && wt == weight {
-                    return Some((w, h));
-                }
-            }
-        }
-        None
-    }
-
-    fn insert(&mut self, text: &str, font: u32, font_size_bits: u32, weight: u16, dims: (f32, f32)) {
-        if self.max_entries == 0 {
-            return;
-        }
-        if let Some(list) = self.entries.get_mut(text) {
-            if !list.iter().any(|&(f, sz, wt, _, _)| f == font && sz == font_size_bits && wt == weight) {
-                list.push((font, font_size_bits, weight, dims.0, dims.1));
-            }
-            return;
-        }
-        if self.entries.len() >= self.max_entries {
-            if let Some(oldest) = self.order.pop_front() {
-                self.entries.remove(&oldest);
-            }
-        }
-        self.order.push_back(text.to_string());
-        self.entries.insert(
-            text.to_string(),
-            vec![(font, font_size_bits, weight, dims.0, dims.1)],
-        );
-    }
-}
-
-#[cfg(feature = "std")]
 thread_local! {
-    static MEASURE_CACHE: std::cell::RefCell<BoundedMeasureCache> =
-        std::cell::RefCell::new(BoundedMeasureCache::new(MAX_MEASURE_CACHE_ENTRIES));
     static SHAPE_CACHE: std::cell::RefCell<ShapeCache> =
         std::cell::RefCell::new(ShapeCache::new(MAX_SHAPE_CACHE_ENTRIES));
     /// harfrust's compiled feature lookups.
@@ -559,11 +495,6 @@ fn is_emoji(c: char, glyph_index: u16) -> bool {
     (c as u32) >= 0x1F000 || glyph_index == 0
 }
 
-#[cfg(feature = "std")]
-pub fn measure_cache_len() -> usize {
-    MEASURE_CACHE.with(|cache| cache.borrow().entries.len())
-}
-
 impl TextMeasurer for Fonts {
     fn shape(&self, text: &str, font_size: f32, weight: u16, features: FontFeatures) -> Arc<ShapedText> {
         #[cfg(feature = "std")]
@@ -580,109 +511,15 @@ impl TextMeasurer for Fonts {
         Arc::new(self.shape_uncached(text, font_size, weight, features))
     }
 
+    /// The width of `text`'s widest line and the height of its lines, as
+    /// [`shape`](Self::shape) shapes it.
     fn measure_text(&self, text: &str, font_size: f32, weight: u16) -> (f32, f32) {
         if text.trim().is_empty() {
             return (0.0, 0.0);
         }
-
-        #[cfg(feature = "std")]
-        let font_size_bits = font_size.to_bits();
-        #[cfg(feature = "std")]
-        let cached = MEASURE_CACHE.with(|cache| cache.borrow().get(text, self.id(), font_size_bits, weight));
-        #[cfg(not(feature = "std"))]
-        let cached = None;
-
-        if let Some(dims) = cached {
-            return dims;
-        }
-
-        let result = match &self.source() {
-            #[cfg(feature = "std")]
-            FontSource::Ttf(faces) => {
-                let Some(font_index) = ttf_font_index(faces, weight) else {
-                    return (0.0, 0.0);
-                };
-                let ttf_fonts = &faces.faces[..];
-
-                let mut layout = fontdue::layout::Layout::new(fontdue::layout::CoordinateSystem::PositiveYDown);
-                layout.reset(&fontdue::layout::LayoutSettings::default());
-                layout.append(ttf_fonts, &fontdue::layout::TextStyle::new(text, font_size, font_index));
-
-                let mut min_x = f32::MAX;
-                let mut min_y = f32::MAX;
-                let mut max_x = f32::MIN;
-                let mut max_y = f32::MIN;
-
-                let mut extra_x = 0.0f32;
-                for glyph in layout.glyphs() {
-                    if glyph.parent == '\u{fe0f}' {
-                        continue;
-                    }
-                    let is_emoji = is_emoji(glyph.parent, glyph.key.glyph_index);
-                    let gx = glyph.x + extra_x;
-                    let gy = glyph.y;
-                    let mut gw = glyph.width as f32;
-                    let mut gh = glyph.height as f32;
-                    if is_emoji {
-                        let target_sz = glyph.key.px;
-                        gw = target_sz;
-                        gh = target_sz;
-                        extra_x += target_sz * 0.85;
-                    }
-
-                    if gx < min_x { min_x = gx; }
-                    if gy < min_y { min_y = gy; }
-                    if gx + gw > max_x { max_x = gx + gw; }
-                    if gy + gh > max_y { max_y = gy + gh; }
-                }
-
-                let mut width = if max_x > min_x { max_x - min_x } else { 0.0 };
-                // Ink bounds ignore a trailing space, but it must still
-                // separate this text from whatever box follows.
-                if text.ends_with(' ') {
-                    width += ttf_fonts[font_index].metrics(' ', font_size).advance_width;
-                }
-
-                let height = if let Some(metrics) = ttf_fonts[font_index].horizontal_line_metrics(font_size) {
-                    metrics.new_line_size
-                } else {
-                    if max_y > min_y { max_y - min_y } else { 20.0 }
-                };
-
-                (width, height)
-            }
-            FontSource::Bitmap(bitmap_fonts) => {
-                let font = match find_best_bitmap_font(bitmap_fonts, font_size, weight) {
-                    Some(f) => f,
-                    None => return (0.0, 0.0),
-                };
-
-                let mut max_w: f32 = 0.0;
-                let mut current_w: f32 = 0.0;
-                let mut lines = 1;
-                for c in text.chars() {
-                    if c == '\n' {
-                        max_w = max_w.max(current_w);
-                        current_w = 0.0;
-                        lines += 1;
-                        continue;
-                    }
-                    if let Some(glyph) = font.lookup_glyph(c) {
-                        current_w += glyph.x_advance as f32;
-                    }
-                }
-                max_w = max_w.max(current_w);
-                let height = lines as f32 * font.line_height;
-                (max_w, height)
-            }
-        };
-
-        #[cfg(feature = "std")]
-        MEASURE_CACHE.with(|cache| {
-            cache.borrow_mut().insert(text, self.id(), font_size_bits, weight, result);
-        });
-
-        result
+        let shaped = self.shape(text, font_size, weight, FontFeatures::NONE);
+        let lines = shaped.line_count(f32::INFINITY, xerune::text::WordBreak::Normal).max(1);
+        (shaped.max_content_width(), lines as f32 * shaped.metrics.normal_line_height())
     }
 }
 
@@ -933,8 +770,6 @@ pub struct SoftwareRenderer {
     image_cache: HashMap<String, (u32, u32, Vec<u32>)>, // src -> (width, height, packed pixels)
     glyph_cache: HashMap<(usize, u16, u32), CachedGlyph>,
     clip_stack: Vec<Rect>,
-    #[cfg(feature = "std")]
-    layout: fontdue::layout::Layout,
 }
 
 impl SoftwareRenderer {
@@ -948,8 +783,6 @@ impl SoftwareRenderer {
             clip_stack: Vec::new(),
             #[cfg(feature = "std")]
             profile: None,
-            #[cfg(feature = "std")]
-            layout: fontdue::layout::Layout::new(fontdue::layout::CoordinateSystem::PositiveYDown),
         }
     }
 }
@@ -1035,7 +868,7 @@ impl Renderer for SoftwareRenderer {
             image_cache: &mut self.image_cache,
             glyph_cache: &mut self.glyph_cache,
             #[cfg(feature = "std")]
-            layout: &mut self.layout,
+            measurer: &self.fonts,
         };
         frame.draw(commands, resources, area);
         self.clip_stack.clear();
@@ -1066,8 +899,9 @@ struct Frame<'a> {
     image_cache: &'a mut HashMap<String, (u32, u32, Vec<u32>)>,
     #[cfg_attr(not(feature = "std"), allow(dead_code))]
     glyph_cache: &'a mut HashMap<(usize, u16, u32), CachedGlyph>,
+    /// Shapes the text of commands that come without a glyph run.
     #[cfg(feature = "std")]
-    layout: &'a mut fontdue::layout::Layout,
+    measurer: &'a Fonts,
 }
 
 impl Frame<'_> {
@@ -1293,63 +1127,44 @@ impl Frame<'_> {
                             let px = *font_size;
                             let sub_px = (px * 16.0) as u32;
 
-                            if let Some(run) = run {
-                                // Shaped glyphs: positions are the advances.
-                                let baseline = round_i32(local_rect.y + run.baseline);
-                                let emoji_top = floor_i32(local_rect.y + run.baseline - run.shaped.metrics.ascent + px * 0.10);
-                                let mut pen = local_rect.x;
-                                let glyphs = run.shaped.glyphs.get(run.start as usize..run.end as usize).unwrap_or(&[]);
-                                for glyph in glyphs {
-                                    let x = round_i32(pen);
-                                    pen += glyph.advance;
-                                    let (key, fallback_font, emoji) = if glyph.font == EMOJI_FONT {
-                                        let c = text
-                                            .get(glyph.cluster.saturating_sub(run.text_start) as usize..)
-                                            .and_then(|s| s.chars().next())
-                                            .unwrap_or('\u{fffd}');
-                                        (emoji_cache_key(c, sub_px), font_index, Some(c))
-                                    } else {
-                                        ((glyph.font as usize, glyph.id, sub_px), glyph.font as usize, None)
-                                    };
-                                    let Some(cached) = cached_glyph(self.glyph_cache, ttf_fonts, self.color_emoji, key, fallback_font, glyph.id, px, emoji) else {
-                                        continue;
-                                    };
-                                    let (gx, gy) = if cached.is_color {
-                                        (x, emoji_top)
-                                    } else {
-                                        (x + cached.xmin, baseline - cached.ymin - cached.height as i32)
-                                    };
-                                    blit_glyph(self.buffer, cached, gx, gy, px, &target);
+                            // A command without a run shapes its text here, as
+                            // one line.
+                            let unshaped;
+                            let run = match run {
+                                Some(run) => run,
+                                None => {
+                                    let shaped = self.measurer.shape(text, px, *weight, FontFeatures::NONE);
+                                    let (end, baseline) = (shaped.glyphs.len() as u32, shaped.metrics.ascent);
+                                    unshaped = xerune::text::GlyphRun { shaped, start: 0, end, text_start: 0, baseline };
+                                    &unshaped
                                 }
-                            } else {
-                                {
-                                    self.layout.reset(&fontdue::layout::LayoutSettings::default());
-                                    self.layout.append(ttf_fonts, &fontdue::layout::TextStyle::new(text, px, font_index));
-                                }
-                                let mut extra_x: f32 = 0.0;
-                                for glyph in self.layout.glyphs() {
-                                    if glyph.parent == '\u{fe0f}' {
-                                        continue;
-                                    }
-                                    let emoji = is_emoji(glyph.parent, glyph.key.glyph_index).then_some(glyph.parent);
-                                    let key = match emoji {
-                                        Some(c) => emoji_cache_key(c, sub_px),
-                                        None => (glyph.font_index, glyph.key.glyph_index, sub_px),
-                                    };
-                                    let Some(cached) = cached_glyph(self.glyph_cache, ttf_fonts, self.color_emoji, key, glyph.font_index, glyph.key.glyph_index, glyph.key.px, emoji) else {
-                                        continue;
-                                    };
-                                    let gx = floor_i32(local_rect.x + glyph.x + extra_x);
-                                    let gy = if cached.is_color {
-                                        floor_i32(local_rect.y + glyph.key.px * 0.10)
-                                    } else {
-                                        floor_i32(local_rect.y + glyph.y)
-                                    };
-                                    if emoji.is_some() {
-                                        extra_x += glyph.key.px * 0.85;
-                                    }
-                                    blit_glyph(self.buffer, cached, gx, gy, glyph.key.px, &target);
-                                }
+                            };
+                            // Shaped glyphs: positions are the advances.
+                            let baseline = round_i32(local_rect.y + run.baseline);
+                            let emoji_top = floor_i32(local_rect.y + run.baseline - run.shaped.metrics.ascent + px * 0.10);
+                            let mut pen = local_rect.x;
+                            let glyphs = run.shaped.glyphs.get(run.start as usize..run.end as usize).unwrap_or(&[]);
+                            for glyph in glyphs {
+                                let x = round_i32(pen);
+                                pen += glyph.advance;
+                                let (key, fallback_font, emoji) = if glyph.font == EMOJI_FONT {
+                                    let c = text
+                                        .get(glyph.cluster.saturating_sub(run.text_start) as usize..)
+                                        .and_then(|s| s.chars().next())
+                                        .unwrap_or('\u{fffd}');
+                                    (emoji_cache_key(c, sub_px), font_index, Some(c))
+                                } else {
+                                    ((glyph.font as usize, glyph.id, sub_px), glyph.font as usize, None)
+                                };
+                                let Some(cached) = cached_glyph(self.glyph_cache, ttf_fonts, self.color_emoji, key, fallback_font, glyph.id, px, emoji) else {
+                                    continue;
+                                };
+                                let (gx, gy) = if cached.is_color {
+                                    (x, emoji_top)
+                                } else {
+                                    (x + cached.xmin, baseline - cached.ymin - cached.height as i32)
+                                };
+                                blit_glyph(self.buffer, cached, gx, gy, px, &target);
                             }
                         }
                         FontSource::Bitmap(bitmap_fonts) => {
@@ -2159,28 +1974,6 @@ mod tests {
         blit_image(&mut buffer, 10, 10, 10, &rect, 0.0, 0, 10, &[], 1.0, None, 0);
     }
 
-    #[test]
-    fn test_measurement_cache_is_bounded_and_evicts_old_entries() {
-        let measurer = Fonts::bitmap(&xerune::font::DEFAULT_ROBOTO);
-
-        // Simulate a long-running dashboard with 2000 changing text strings
-        for i in 0..2000 {
-            let text = format!("Dashboard metric #{} is 42.0", i);
-            let (w, h) = measurer.measure_text(&text, 14.0, 400);
-            assert!(w > 0.0);
-            assert!(h > 0.0);
-        }
-
-        // Must stay bounded to MAX_MEASURE_CACHE_ENTRIES
-        assert_eq!(measure_cache_len(), MAX_MEASURE_CACHE_ENTRIES);
-
-        // Verify that measuring an evicted string again works and succeeds
-        let (w, h) = measurer.measure_text("Dashboard metric #0 is 42.0", 14.0, 400);
-        assert!(w > 0.0);
-        assert!(h > 0.0);
-        assert_eq!(measure_cache_len(), MAX_MEASURE_CACHE_ENTRIES);
-    }
-
     fn roboto() -> Fonts {
         Fonts::ttf(
             include_bytes!("../../resources/fonts/Roboto-Regular.ttf"),
@@ -2247,6 +2040,42 @@ mod tests {
         assert!((mixed.glyphs[0].advance - 14.72).abs() < 0.001);
         assert!(mixed.metrics.ascent > latin.metrics.ascent && mixed.metrics.descent > latin.metrics.descent);
         assert_eq!(fonts.shape("Today", 16.0, 0, FontFeatures::NONE).metrics.ascent, roboto().shape("Today", 16.0, 0, FontFeatures::NONE).metrics.ascent);
+    }
+
+    #[test]
+    fn text_without_a_run_is_shaped_by_the_renderer() {
+        let fonts = roboto();
+        let shaped = fonts.shape("AVATAR office", 20.0, 0, FontFeatures::NONE);
+        let text = |run| DrawCommand::DrawText {
+            text: "AVATAR office".to_string(),
+            rect: Rect { x: 4.0, y: 4.0, width: 180.0, height: 30.0 },
+            color: xerune::Color::new(255, 255, 255, 255),
+            font_size: 20.0,
+            weight: 0,
+            run,
+        };
+        let run = xerune::text::GlyphRun { shaped: shaped.clone(), start: 0, end: shaped.glyphs.len() as u32, text_start: 0, baseline: shaped.metrics.ascent };
+        let draw = |command: DrawCommand| {
+            let mut buffer = vec![0u32; 200 * 40];
+            let (canvases, images) = no_resources();
+            let mut target = Surface::new(Pixels::Xrgb8888(&mut buffer), 200, 40);
+            let area = target.area();
+            SoftwareRenderer::new(fonts.clone()).render(&mut target, &[command], &RenderResources::new(&canvases, &images), area);
+            buffer
+        };
+        let unshaped = draw(text(None));
+        assert!(unshaped.iter().any(|&p| p != 0));
+        assert!(unshaped == draw(text(Some(run))), "the renderer shapes as layout does");
+    }
+
+    #[test]
+    fn measure_text_is_the_shaped_size() {
+        let fonts = roboto();
+        let shaped = fonts.shape("AVATAR", 20.0, 0, FontFeatures::NONE);
+        assert_eq!(fonts.measure_text("AVATAR", 20.0, 0), (shaped.width(), shaped.metrics.normal_line_height()));
+        // The widest of its lines, each a line tall.
+        let (width, height) = fonts.measure_text("AVATAR\nA", 20.0, 0);
+        assert_eq!((width, height), (shaped.width(), 2.0 * shaped.metrics.normal_line_height()));
     }
 
     #[test]
