@@ -3348,6 +3348,7 @@ dependencies = [
  "taffy",
  "tiny-skia 0.12.0",
  "xerune",
+ "xerune_css",
  "xerune_render",
 ]
 

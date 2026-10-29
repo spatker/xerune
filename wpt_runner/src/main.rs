@@ -5,6 +5,7 @@
 mod comparison;
 mod document;
 mod expectations;
+mod report;
 #[cfg(test)]
 mod tests;
 
@@ -20,6 +21,7 @@ use xerune::{Context, ImageError, ImageLoader, Model, Runtime};
 use comparison::{Difference, compare, diff_image, differs_only_in_antialiasing};
 use document::{Document, Problem, Reference};
 use expectations::Expectations;
+use report::Detail;
 
 const WIDTH: u32 = 800;
 const HEIGHT: u32 = 600;
@@ -72,8 +74,7 @@ fn load_fonts(root: &Path) -> Result<Fonts, String> {
     Fonts::ttf(&data, None).map_err(|e| e.to_string())
 }
 
-fn render(document: Document, root: &Path, fonts: &Fonts) -> Result<Pixmap, Problem> {
-    let css = document.stylesheet(root)?;
+fn render(document: Document, css: String, root: &Path, fonts: &Fonts) -> Result<Pixmap, Problem> {
     let loader = WptImageLoader { document: document.path.clone(), root: root.to_owned() };
     let model = RawHtmlModel { dom: document.dom, css: Box::leak(css.into_boxed_str()) };
     let mut runtime = Runtime::new(model, fonts.clone());
@@ -199,7 +200,9 @@ fn verdict_rank(v: Verdict) -> u8 {
     match v { Verdict::Fail => 0, Verdict::Antialiasing => 1, Verdict::Exact => 2 }
 }
 
-fn run(test: Test, root: &Path, fonts: &Fonts, screenshots: &Screenshots, images: Option<&Path>) -> Status {
+/// The test's status, and for one that ran, what `--report` needs.
+fn run(test: Test, root: &Path, fonts: &Fonts, screenshots: &Screenshots, images: Option<&Path>) -> (Status, Option<Detail>) {
+    let mut detail = None;
     let result = (|| -> Result<Status, Problem> {
         let references = test.references.iter()
             .map(|r| Ok((r.clone(), screenshots.load(&r.path)?)))
@@ -211,9 +214,12 @@ fn run(test: Test, root: &Path, fonts: &Fonts, screenshots: &Screenshots, images
         }
         // Parsed again here: the DOM is `Rc`-based and can't cross threads.
         let document = Document::load(&root.join(&test.path), root)?;
-        let image = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| render(document, root, fonts)))
+        let css = document.stylesheet(root)?;
+        let detail = detail.insert(Detail::of(&css, &document.inline_styles()));
+        let image = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| render(document, css, root, fonts)))
             .map_err(|_| Problem::Error("Xerune panicked".into()))??;
         let (verdict, closest) = references_pass(&image, &references);
+        detail.pixels = closest.map(|c| c.total_pixels);
         if verdict == Verdict::Exact {
             return Ok(Status::Pass);
         }
@@ -235,11 +241,12 @@ fn run(test: Test, root: &Path, fonts: &Fonts, screenshots: &Screenshots, images
             None => "matches a mismatch reference".into(),
         }))
     })();
-    match result {
+    let status = match result {
         Ok(status) => status,
         Err(Problem::Unsupported(reason)) => Status::Skip(reason),
         Err(Problem::Error(reason)) => Status::Fail(reason),
-    }
+    };
+    (status, detail)
 }
 
 fn is_test_file(path: &Path) -> bool {
@@ -283,24 +290,28 @@ struct Options {
     filter: Option<String>,
     update: bool,
     images: bool,
+    report: bool,
     jobs: usize,
 }
 
 fn parse_args() -> Result<Options, String> {
-    let mut options = Options { filter: None, update: false, images: false, jobs: 4 };
+    let mut options = Options { filter: None, update: false, images: false, report: false, jobs: 4 };
     let mut args = env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--update" => options.update = true,
             "--images" => options.images = true,
+            "--report" => options.report = true,
             "-j" | "--jobs" => options.jobs = args.next().and_then(|j| j.parse().ok()).ok_or("-j needs a number")?,
             "-h" | "--help" => {
-                println!("WPT_DIR=/path/to/wpt cargo run --release -p wpt_runner -- [FILTER] [--update] [--images] [-j N]\n\n\
+                println!("WPT_DIR=/path/to/wpt cargo run --release -p wpt_runner -- [FILTER] [--update] [--images] [--report] [-j N]\n\n\
                     Runs the suites in wpt_runner/suites.txt and compares the results with\n\
                     wpt_runner/expectations.txt. FILTER limits the run to paths containing it.\n\
                     --update   rewrite expectations.txt from this run (not with FILTER)\n\
                     --images   save Xerune/Chromium/diff images of failures and anti-aliasing\n\
                     \x20          passes under target/wpt/images\n\
+                    --report   rank what the failing tests need (unsupported CSS, near\n\
+                    \x20          misses); the whole report goes to target/wpt/report.txt\n\
                     -j N       rendering threads (default 4)");
                 std::process::exit(0);
             }
@@ -389,13 +400,24 @@ fn cli() -> Result<(), String> {
         let _ = fs::remove_dir_all(dir);
     }
     let pool = rayon::ThreadPoolBuilder::new().num_threads(options.jobs).build().map_err(|e| e.to_string())?;
-    let rendered: Vec<(PathBuf, Status)> = pool.install(|| tests.into_par_iter().map(|test| {
+    let rendered: Vec<(PathBuf, Status, Option<Detail>)> = pool.install(|| tests.into_par_iter().map(|test| {
         let path = test.path.clone();
-        (path, run(test, &root, &fonts, &screenshots, failures_dir.as_deref()))
+        let (status, detail) = run(test, &root, &fonts, &screenshots, failures_dir.as_deref());
+        (path, status, detail)
     }).collect());
-    results.extend(rendered);
+    let mut details = BTreeMap::new();
+    for (path, status, detail) in rendered {
+        details.extend(detail.map(|d| (path.clone(), d)));
+        results.insert(path, status);
+    }
 
     report(&results, &suites, not_reftests, start.elapsed());
+    if options.report {
+        let file = target.join("report.txt");
+        fs::write(&file, report::render(&results, &details, usize::MAX)).map_err(|e| format!("{}: {e}", file.display()))?;
+        print!("{}", report::render(&results, &details, 30));
+        println!("\nThe whole report: {}", file.display());
+    }
     let expectations_file = crate_dir.join("expectations.txt");
     let expectations = Expectations::read(&expectations_file)?;
     let changes = expectations.compare(&results);

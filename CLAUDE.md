@@ -99,8 +99,10 @@ draw command kind once a second, from any app (also on the board).
 `cargo run --release --example render_bench` times full repaints and single
 interactions of the example UIs; `tools/arm-insns.sh` counts its ARM
 instructions under qemu-arm (no board needed). See `tools/README.md`.
-WPT: `WPT_DIR=~/data/code/js/wpt cargo run --release -p wpt_runner [-- FILTER] [--images] [--update]`
+WPT: `WPT_DIR=~/data/code/js/wpt cargo run --release -p wpt_runner [-- FILTER] [--images] [--update] [--report]`
 (user's checkout path). Commit the `--update`d `expectations.txt` with each engine fix.
+`--report` ranks what the failures need (unsupported CSS, bugs, near misses);
+pick engine work from it.
 Snapshots run on a `ManualClock`, so timed examples (`animation`, `breakout`)
 are deterministic too.
 

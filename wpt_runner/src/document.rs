@@ -188,6 +188,16 @@ impl Document {
         })
     }
 
+    /// The `style` attributes, in document order.
+    pub fn inline_styles(&self) -> Vec<String> {
+        let mut styles = Vec::new();
+        let _ = walk(&self.dom.document, &mut |node| {
+            styles.extend(attr(node, "style"));
+            Ok(())
+        });
+        styles
+    }
+
     /// The document's CSS in cascade order: `<style>` blocks and linked
     /// stylesheets, with `@import`s inlined.
     pub fn stylesheet(&self, root: &Path) -> Result<String, Problem> {

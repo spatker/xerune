@@ -830,6 +830,7 @@ WPT_DIR=~/path/to/wpt cargo run --release -p wpt_runner             # all suites
 WPT_DIR=~/path/to/wpt cargo run --release -p wpt_runner -- flexbox  # paths containing "flexbox"
 WPT_DIR=~/path/to/wpt cargo run --release -p wpt_runner -- flexbox --images
 WPT_DIR=~/path/to/wpt cargo run --release -p wpt_runner -- --update # record new results
+WPT_DIR=~/path/to/wpt cargo run --release -p wpt_runner -- --report # what to fix next
 ```
 
 Needs Node 22+ and `chromium` (or `$CHROMIUM`). How it works:
@@ -840,6 +841,7 @@ Needs Node 22+ and `chromium` (or `$CHROMIUM`). How it works:
 - **Font**: Ahem only, in both Xerune and Chromium (a private fontconfig maps every family to it). Every Ahem glyph is a box, so text compares exactly. Tests that then no longer match their own reference in Chromium are skipped ("fails in Chromium").
 - **Skipped**: tests that need JavaScript, `reftest-wait`, iframes, SVG, canvas, video, animations or paging. They are reported but not part of the pass rate.
 - **Expectations**: `wpt_runner/expectations.txt` lists the tests that fail; every other test that runs is expected to pass, and its header has the pass rate per suite. A run exits with an error when a test fails that isn't listed, and lists tests that newly pass. After an engine fix, run with `--update` and commit the file along with the fix.
+- **Report**: `--report` ranks what the failing tests need, so engine work goes where it flips the most tests. Xerune itself says which of each test's declarations it can't use (`css::apply_declaration`), and its selector parser which pseudo-classes and -elements; these are grouped (`display: table-cell`, `width: calc()`, `selector :first-letter`, `@font-face`) and counted by the failing tests they are the only gap in. The failing tests that use only supported CSS are bugs: their properties are ranked with pass rates, and the closest to their reference (fewest differing pixels) are listed as near misses. The first rows are printed; the whole report goes to `target/wpt/report.txt`.
 - **Images**: `--images` writes Xerune's render, Chromium's reference and a diff for each failure to `target/wpt/images/failures/<test>/`, and for each anti-aliasing pass to `target/wpt/images/antialiasing/<test>/`.
 
 ---

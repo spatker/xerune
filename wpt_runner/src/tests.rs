@@ -219,3 +219,29 @@ fn reference_files_are_not_tests() {
         assert_eq!(is_test_file(Path::new(path)), is_test, "{path}");
     }
 }
+
+#[test]
+fn report_groups_alike_declarations() {
+    use crate::report::normalize;
+    assert_eq!(normalize("calc(100% - 2px)"), "calc()");
+    assert_eq!(normalize("1.5em  -2px .5ch"), "<n>em <n>px <n>ch");
+    assert_eq!(normalize("10px dashed #00FF00"), "<n>px dashed #hex");
+    assert_eq!(normalize("\"a b\" counter(x)"), "\"..\" counter()");
+    assert_eq!(normalize("h1-2 table-cell"), "h1-2 table-cell");
+    assert_eq!(normalize("(min-width: 10.5em)"), "(min-width: <n>em)");
+}
+
+#[test]
+fn report_names_what_xerune_leaves_out() {
+    let css = "/* a { b: c } */ @font-face { font-family: x } \
+        div:first-letter, p { color: #ff0000; display: table-cell } \
+        @media screen { span::first-line { width: calc(1px + 2%) } } \
+        q:has(> a) { cursor: pointer; --x: 1 }";
+    let detail = crate::report::Detail::of(css, &["width: 10px; position: fixed".into()]);
+    let unsupported: Vec<&str> = detail.unsupported.iter().map(String::as_str).collect();
+    assert_eq!(unsupported, [
+        "cursor", "custom properties", "display: table-cell", "position: fixed",
+        "selector ::first-line", "selector :first-letter", "selector :has()", "width: calc()",
+    ]);
+    assert!(detail.properties.contains("width") && detail.properties.contains("color"));
+}
