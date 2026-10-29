@@ -835,6 +835,34 @@ fn templates_place_flex_items_in_order() {
 
 #[derive(XeruneTemplate)]
 #[template(source = r#"<style>
+  .float { float: left; width: 100px; }
+  .float > div { width: 10px; height: 10px; }
+  .a { background: #ff0000; }
+  .b { background: #00ff00; }
+</style>
+<div class="float"><div class="a"></div><div class="b"></div></div>"#)]
+struct FloatChildrenModel;
+
+impl Model for FloatChildrenModel {
+    type Message = MockMsg;
+    fn update(&mut self, _msg: Self::Message, _context: &mut Context<Self::Message>) {}
+}
+
+/// `float` is not inherited: a float's block children stack as blocks
+/// rather than lining up as floats themselves.
+#[test]
+fn float_children_are_not_floats() {
+    let mut runtime = Runtime::new(FloatChildrenModel, MockMeasurer);
+    crate::set_size(&mut runtime, 800.0, 600.0);
+    let boxes: Vec<_> = runtime.ui.build_commands(&std::collections::HashMap::new(), None).iter().filter_map(|c| match c {
+        DrawCommand::DrawRect { color: Some(_), rect, .. } if rect.width == 10.0 => Some((rect.x, rect.y)),
+        _ => None,
+    }).collect();
+    assert_eq!(boxes, [(8.0, 8.0), (8.0, 18.0)]);
+}
+
+#[derive(XeruneTemplate)]
+#[template(source = r#"<style>
   .row { display: flex; }
   .row > div { width: 10px; height: 10px; background: rgb(0, 0, 0); }
   .row > div:nth-child(2n) { background: rgb(0, 255, 0); }

@@ -505,7 +505,7 @@ fn apply_resolved_declaration(prop: &str, val: &str, current_style: &mut Contain
                     current_style.display = Display::InlineBlock;
                 }
             }
-            "none" => {}
+            "none" => current_style.is_floated = false,
             _ => return Err(Value),
         },
         "box-sizing" => {
