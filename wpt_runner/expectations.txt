@@ -1,7 +1,7 @@
 # Xerune WPT expectations: the reftests that fail. Tests that run and are
 # not listed pass. Regenerate with
 #   WPT_DIR=... cargo run --release -p wpt_runner -- --update
-# WPT 8002c6c6f4, Chromium 154.0.8037.97 Arch Linux
+# WPT 8002c6c6f4, Chromium 155.0.8059.79 Arch Linux
 #
 # suite                               pass  (aa)  fail  pass%   skip
 # css/CSS2/abspos                        2     0    21     9%      5
@@ -24,7 +24,7 @@
 # css/css-align                          0     0    57     0%      5
 # css/css-backgrounds                   54    17   457    11%    136
 # css/css-borders                        3     2    55     5%     16
-# css/css-box                            0     0     2     0%     65
+# css/css-box                            0     0    37     0%     30
 # css/css-cascade                        6     4    25    19%     19
 # css/css-color                         48    47   233    17%     25
 # css/css-conditional                   17     2   114    13%     34
@@ -34,13 +34,13 @@
 # css/css-overflow                      31    17   114    21%    278
 # css/css-position                       5     3    79     6%     66
 # css/css-sizing                        29    21   356     8%    146
-# css/css-text                         128    38   776    14%    213
+# css/css-text                         128    38   777    14%    212
 # css/css-ui                            10     2   116     8%     65
 # css/css-values                        17    11   135    11%     59
 # css/css-variables                     16    16   164     9%      2
 # css/mediaqueries                       0     0    47     0%     11
 # css/selectors                         32    29    58    36%    135
-# total                               1206   941  7237    14%   1981
+# total                               1206   941  7273    14%   1945
 FAIL css/CSS2/abspos/abspos-containing-block-initial-004a.xht
 FAIL css/CSS2/abspos/abspos-containing-block-initial-004b.xht
 FAIL css/CSS2/abspos/abspos-containing-block-initial-004c.xht
@@ -4334,8 +4334,43 @@ FAIL css/css-borders/corner-shape/corner-shape-svg-border.html
 FAIL css/css-borders/subpixel-border-width.tentative.html
 FAIL css/css-borders/subpixel-borders-with-child-border-box-sizing.html
 FAIL css/css-borders/subpixel-borders-with-child.html
+FAIL css/css-box/margin-trim/block-container-block-001.html
+FAIL css/css-box/margin-trim/block-container-block-002.html
+FAIL css/css-box/margin-trim/block-container-block-end-001.html
+FAIL css/css-box/margin-trim/block-container-block-end-002.html
+FAIL css/css-box/margin-trim/block-container-block-end-collapsed-margins.html
+FAIL css/css-box/margin-trim/block-container-block-end-self-collapsing-and-border.html
+FAIL css/css-box/margin-trim/block-container-block-end-self-collapsing-block-start-margin-nested.html
+FAIL css/css-box/margin-trim/block-container-block-end-self-collapsing-block-start-margin.html
+FAIL css/css-box/margin-trim/block-container-block-end-self-collapsing-item-has-larger-block-end.html
+FAIL css/css-box/margin-trim/block-container-block-end-self-collapsing-item-has-larger-block-start.html
 FAIL css/css-box/margin-trim/block-container-block-end-start-margin.html
+FAIL css/css-box/margin-trim/block-container-block-in-inline-001.html
+FAIL css/css-box/margin-trim/block-container-block-in-inline-002.html
+FAIL css/css-box/margin-trim/block-container-block-in-inline-003.html
+FAIL css/css-box/margin-trim/block-container-block-in-inline-004.html
+FAIL css/css-box/margin-trim/block-container-block-in-inline-005.html
+FAIL css/css-box/margin-trim/block-container-block-in-inline-006.html
+FAIL css/css-box/margin-trim/block-container-block-in-inline-007.html
+FAIL css/css-box/margin-trim/block-container-block-start-001.html
+FAIL css/css-box/margin-trim/block-container-block-start-002.html
+FAIL css/css-box/margin-trim/block-container-block-start-003.html
+FAIL css/css-box/margin-trim/block-container-block-start-004.html
+FAIL css/css-box/margin-trim/block-container-block-start-collapsed-margins.html
+FAIL css/css-box/margin-trim/block-container-block-start-self-collapsing-item-has-larger-block-end.html
+FAIL css/css-box/margin-trim/block-container-block-start-self-collapsing-item-larger-block-start.html
 FAIL css/css-box/margin-trim/block-container-inline-001.html
+FAIL css/css-box/margin-trim/block-container-non-adjoining-item.html
+FAIL css/css-box/margin-trim/block-container-replaced-block-end.html
+FAIL css/css-box/margin-trim/block-container-replaced-block-start.html
+FAIL css/css-box/margin-trim/block-container-replaced-block.html
+FAIL css/css-box/margin-trim/multicol-spanner-001.html
+FAIL css/css-box/margin-trim/multicol-spanner-002.html
+FAIL css/css-box/margin-trim/multicol-spanner-003.html
+FAIL css/css-box/margin-trim/multicol-spanner-004.html
+FAIL css/css-box/margin-trim/multicol-spanner-005.html
+FAIL css/css-box/margin-trim/multicol-spanner-006.html
+FAIL css/css-box/margin-trim/multicol-spanner-007.html
 FAIL css/css-cascade/all-prop-001.html
 FAIL css/css-cascade/all-prop-002.html
 FAIL css/css-cascade/all-prop-initial-visited.html
@@ -6490,6 +6525,7 @@ FAIL css/css-text/white-space/pre-wrap-014.html
 FAIL css/css-text/white-space/pre-wrap-015.html
 FAIL css/css-text/white-space/pre-wrap-016.html
 FAIL css/css-text/white-space/pre-wrap-017.html
+FAIL css/css-text/white-space/pre-wrap-018.html
 FAIL css/css-text/white-space/pre-wrap-019.html
 FAIL css/css-text/white-space/pre-wrap-020.html
 FAIL css/css-text/white-space/pre-wrap-051.html
