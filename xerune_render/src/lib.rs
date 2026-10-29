@@ -4,8 +4,8 @@
 //! CPU, with SSE2 and NEON fast paths. Made for boards without a GPU.
 //!
 //! [`SoftwareRenderer`] is the [`xerune::Renderer`] and owns the glyph and
-//! image caches; [`Fonts`] (TrueType/OpenType, shaped by harfrust and
-//! rasterized by fontdue) is both its glyph source and the runtime's
+//! image caches; [`Fonts`] (TrueType/OpenType, read by read-fonts, shaped
+//! by harfrust and rasterized by fontdue) is both its glyph source and the runtime's
 //! [`xerune::TextMeasurer`], so text is measured and drawn with the same
 //! fonts:
 //!
@@ -21,7 +21,8 @@ pub mod blitter;
 pub mod gradient;
 pub mod rounded_rect;
 
-use fontdue::Font;
+use read_fonts::model::Font;
+use read_fonts::types::GlyphId;
 use xerune::{DrawCommand, Pixels, Rect, RenderResources, Renderer, Rotation, Surface, TextMeasurer};
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -36,9 +37,10 @@ use rounded_rect::{draw_rounded_rect, draw_rounded_border, draw_border_sides, dr
 /// index here.
 #[derive(Clone)]
 struct TtfFaces {
+    /// Character maps, metrics and the tables harfrust shapes text with.
     faces: Vec<Font>,
-    /// The same faces for harfrust, which shapes text with them.
-    shaping: Vec<harfrust::Font>,
+    /// The same faces for fontdue, which rasterizes their glyphs.
+    raster: Vec<fontdue::Font>,
     /// How many of `faces` are the text font's (1 or 2).
     primary: usize,
     /// The fallback fonts, as their (regular, bold) faces' indices.
@@ -56,7 +58,7 @@ struct FontSet {
     /// Distinguishes font sets in the thread-wide shaping caches.
     id: u32,
     faces: TtfFaces,
-    color_emoji: Option<Cow<'static, [u8]>>,
+    color_emoji: Option<Font>,
 }
 
 /// A font file that could not be parsed.
@@ -72,7 +74,7 @@ impl core::fmt::Display for FontError {
 impl std::error::Error for FontError {}
 
 impl Fonts {
-    fn new(faces: TtfFaces, color_emoji: Option<Cow<'static, [u8]>>) -> Self {
+    fn new(faces: TtfFaces, color_emoji: Option<Font>) -> Self {
         static NEXT_ID: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
         let id = NEXT_ID.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
         Self(Arc::new(FontSet { id, faces, color_emoji }))
@@ -81,7 +83,7 @@ impl Fonts {
     /// TrueType/OpenType fonts: `regular` for normal text and `bold` for
     /// bold text (`regular` if `None`).
     pub fn ttf(regular: &[u8], bold: Option<&[u8]>) -> Result<Self, FontError> {
-        let mut faces = TtfFaces { faces: Vec::new(), shaping: Vec::new(), primary: 0, fallbacks: Vec::new() };
+        let mut faces = TtfFaces { faces: Vec::new(), raster: Vec::new(), primary: 0, fallbacks: Vec::new() };
         faces.push(regular)?;
         if let Some(bold) = bold {
             faces.push(bold)?;
@@ -107,10 +109,16 @@ impl Fonts {
     }
 
     /// Draws characters the fonts lack from this color emoji font (bitmap
-    /// glyphs, like NotoColorEmoji).
+    /// glyphs, like NotoColorEmoji). Borrowed bytes are not copied.
     pub fn with_color_emoji(self, font: impl Into<Cow<'static, [u8]>>) -> Self {
         let mut set = Arc::unwrap_or_clone(self.0);
-        set.color_emoji = Some(font.into());
+        set.color_emoji = match font.into() {
+            Cow::Borrowed(bytes) => Font::new(bytes, 0),
+            Cow::Owned(bytes) => Font::new(bytes, 0),
+        };
+        if set.color_emoji.is_none() {
+            log::warn!("the color emoji font is not an OpenType font");
+        }
         Self(Arc::new(set))
     }
 
@@ -118,8 +126,8 @@ impl Fonts {
         self.0.id
     }
 
-    fn color_emoji(&self) -> Option<&[u8]> {
-        self.0.color_emoji.as_deref()
+    fn color_emoji(&self) -> Option<&Font> {
+        self.0.color_emoji.as_ref()
     }
 }
 
@@ -234,10 +242,16 @@ pub fn clear_shape_cache() {
     });
 }
 
-/// Font metrics rounded to whole pixels, as browsers do, so lines start on
-/// pixel boundaries.
-fn rounded_metrics(ascent: f32, descent: f32, line_gap: f32) -> LineMetrics {
-    LineMetrics { ascent: ascent.round(), descent: descent.round(), line_gap: line_gap.round() }
+/// `font`'s line metrics at `font_size`, rounded to whole pixels, as
+/// browsers do, so lines start on pixel boundaries.
+fn line_metrics(font: &Font, font_size: f32) -> Option<LineMetrics> {
+    let line = font.metrics().scaled_f32(font_size).h_line()?;
+    Some(LineMetrics { ascent: line.ascender.round(), descent: (-line.descender).round(), line_gap: line.line_gap.round() })
+}
+
+/// `font`'s glyph for `c`, 0 if it has none.
+fn glyph_index(font: &Font, c: char) -> u16 {
+    font.charmap().map_unicode(c).map_or(0, |glyph| glyph.to_u32() as u16)
 }
 
 impl Fonts {
@@ -249,8 +263,8 @@ impl Fonts {
             return ShapedText::default();
         };
         let font = &ttf_fonts.faces[font_index];
-        if let Some(m) = font.horizontal_line_metrics(font_size) {
-            metrics = rounded_metrics(m.ascent, -m.descent, m.line_gap);
+        if let Some(m) = line_metrics(font, font_size) {
+            metrics = m;
         }
         // The fallback faces glyphs came from, whose metrics the line takes too.
         let mut used_fallbacks: Vec<usize> = Vec::new();
@@ -267,7 +281,7 @@ impl Fonts {
                 continue;
             }
             let mut face = font_index;
-            let mut id = font.lookup_glyph_index(c);
+            let mut id = glyph_index(font, c);
             if id == 0 && (c as u32) < 0x1F000 {
                 if let Some((fallback, fallback_id)) = ttf_fonts.fallback_glyph(c, weight) {
                     (face, id) = (fallback, fallback_id);
@@ -283,7 +297,8 @@ impl Fonts {
                 // Characters no font has are drawn as color emoji
                 // when an emoji font is available (see the renderer),
                 // a bit wider than the font's missing-glyph box.
-                let advance = ttf_fonts.faces[face].metrics_indexed(id, font_size).advance_width;
+                let face = &ttf_fonts.faces[face];
+                let advance = face.glyph_metrics().h_advance(GlyphId::new(id.into())) * font_size / f32::from(face.units_per_em());
                 glyphs.push(ShapedGlyph { cluster: i as u32, font: EMOJI_FONT, id, advance: advance + font_size * 0.85 });
                 continue;
             }
@@ -301,8 +316,7 @@ impl Fonts {
             ttf_fonts.shape_run(self.id(), face, text, start..text.len(), font_size, features, &mut glyphs);
         }
         for &face in &used_fallbacks {
-            if let Some(m) = ttf_fonts.faces[face].horizontal_line_metrics(font_size) {
-                let m = rounded_metrics(m.ascent, -m.descent, m.line_gap);
+            if let Some(m) = line_metrics(&ttf_fonts.faces[face], font_size) {
                 metrics.ascent = metrics.ascent.max(m.ascent);
                 metrics.descent = metrics.descent.max(m.descent);
             }
@@ -323,10 +337,10 @@ fn ttf_font_index(fonts: &TtfFaces, weight: u16) -> Option<usize> {
 impl TtfFaces {
     /// Adds the face in `bytes`, returning its index.
     fn push(&mut self, bytes: &[u8]) -> Result<usize, FontError> {
-        let face = Font::from_bytes(bytes, fontdue::FontSettings::default()).map_err(FontError)?;
-        let shaping = harfrust::Font::new(bytes.to_vec(), 0).ok_or(FontError("not an OpenType font"))?;
+        let face = Font::new(bytes.to_vec(), 0).ok_or(FontError("not an OpenType font"))?;
+        let raster = fontdue::Font::from_bytes(bytes, fontdue::FontSettings::default()).map_err(FontError)?;
         self.faces.push(face);
-        self.shaping.push(shaping);
+        self.raster.push(raster);
         Ok(self.faces.len() - 1)
     }
 
@@ -335,7 +349,7 @@ impl TtfFaces {
     /// and `features`. `set` is the font set's id, for the plan cache.
     #[allow(clippy::too_many_arguments)]
     fn shape_run(&self, set: u32, face: usize, text: &str, range: core::ops::Range<usize>, font_size: f32, features: FontFeatures, glyphs: &mut Vec<ShapedGlyph>) {
-        let font = &self.shaping[face];
+        let font = &self.faces[face];
         let mut buffer = harfrust::Buffer::new();
         buffer.push_str(&text[range.clone()]);
         // The text around the run, which contextual features may look at.
@@ -382,7 +396,7 @@ impl TtfFaces {
     fn fallback_glyph(&self, c: char, weight: u16) -> Option<(usize, u16)> {
         self.fallbacks.iter().find_map(|&(regular, bold)| {
             let face = if weight > 0 { bold } else { regular };
-            let id = self.faces[face].lookup_glyph_index(c);
+            let id = glyph_index(&self.faces[face], c);
             (id != 0).then_some((face, id))
         })
     }
@@ -429,76 +443,61 @@ pub struct CachedGlyph {
     pub is_color: bool,
 }
 
-fn try_find_color_emoji_glyph(font_bytes_slice: &[&[u8]], c: char, target_size: f32) -> Option<CachedGlyph> {
-    for fb in font_bytes_slice.iter().copied() {
-        let face = match ttf_parser::Face::parse(fb, 0) {
-            Ok(f) => f,
-            Err(_) => continue,
-        };
-        let glyph_id = match face.glyph_index(c) {
-            Some(gid) => gid,
-            None => continue,
-        };
-        let img = match face.glyph_raster_image(glyph_id, (target_size * 2.0) as u16)
-            .or_else(|| face.glyph_raster_image(glyph_id, 0)) {
-            Some(i) => i,
-            None => continue,
-        };
-        let mut decoder = png::Decoder::new(img.data);
-        decoder.set_transformations(png::Transformations::EXPAND);
-        let mut reader = match decoder.read_info() {
-            Ok(r) => r,
-            Err(_) => continue,
-        };
-        let mut buf = vec![0; reader.output_buffer_size()];
-        let info = match reader.next_frame(&mut buf) {
-            Ok(i) => i,
-            Err(_) => continue,
-        };
+/// `c` from the color emoji font `font`, from its strike closest to twice
+/// `target_size` (they are scaled down when drawn), if it is a PNG.
+fn try_find_color_emoji_glyph(font: &Font, c: char, target_size: f32) -> Option<CachedGlyph> {
+    let glyph = font.charmap().map_unicode(c)?;
+    let bitmap = font.bitmap_strikes().select_bitmap(glyph, Some(target_size * 2.0))?;
+    let read_fonts::model::glyph::bitmap::Pixels::Png(data) = bitmap.pixels() else {
+        return None;
+    };
+    let mut decoder = png::Decoder::new(data);
+    decoder.set_transformations(png::Transformations::EXPAND);
+    let mut reader = decoder.read_info().ok()?;
+    let mut buf = vec![0; reader.output_buffer_size()];
+    let info = reader.next_frame(&mut buf).ok()?;
 
-        let img_w = info.width;
-        let img_h = info.height;
-        if img_w == 0 || img_h == 0 {
-            continue;
-        }
-
-        let mut rgba_pixels = Vec::with_capacity((img_w * img_h) as usize);
-        let bytes = &buf[..info.buffer_size()];
-
-        match info.color_type {
-            png::ColorType::Rgba => {
-                for chunk in bytes.chunks_exact(4) {
-                    let r = chunk[0] as u32;
-                    let g = chunk[1] as u32;
-                    let b = chunk[2] as u32;
-                    let a = chunk[3] as u32;
-                    let argb = (a << 24) | (r << 16) | (g << 8) | b;
-                    rgba_pixels.push(argb);
-                }
-            }
-            png::ColorType::Rgb => {
-                for chunk in bytes.chunks_exact(3) {
-                    let r = chunk[0] as u32;
-                    let g = chunk[1] as u32;
-                    let b = chunk[2] as u32;
-                    let argb = (255 << 24) | (r << 16) | (g << 8) | b;
-                    rgba_pixels.push(argb);
-                }
-            }
-            _ => continue,
-        }
-
-        return Some(CachedGlyph {
-            width: img_w,
-            height: img_h,
-            xmin: 0,
-            ymin: 0,
-            bitmap: Vec::new(),
-            rgba_bitmap: Some(rgba_pixels),
-            is_color: true,
-        });
+    let img_w = info.width;
+    let img_h = info.height;
+    if img_w == 0 || img_h == 0 {
+        return None;
     }
-    None
+
+    let mut rgba_pixels = Vec::with_capacity((img_w * img_h) as usize);
+    let bytes = &buf[..info.buffer_size()];
+
+    match info.color_type {
+        png::ColorType::Rgba => {
+            for chunk in bytes.chunks_exact(4) {
+                let r = chunk[0] as u32;
+                let g = chunk[1] as u32;
+                let b = chunk[2] as u32;
+                let a = chunk[3] as u32;
+                let argb = (a << 24) | (r << 16) | (g << 8) | b;
+                rgba_pixels.push(argb);
+            }
+        }
+        png::ColorType::Rgb => {
+            for chunk in bytes.chunks_exact(3) {
+                let r = chunk[0] as u32;
+                let g = chunk[1] as u32;
+                let b = chunk[2] as u32;
+                let argb = (255 << 24) | (r << 16) | (g << 8) | b;
+                rgba_pixels.push(argb);
+            }
+        }
+        _ => return None,
+    }
+
+    Some(CachedGlyph {
+        width: img_w,
+        height: img_h,
+        xmin: 0,
+        ymin: 0,
+        bitmap: Vec::new(),
+        rgba_bitmap: Some(rgba_pixels),
+        is_color: true,
+    })
 }
 
 /// Where and how [`blit_glyph`] draws.
@@ -524,8 +523,8 @@ fn emoji_cache_key(c: char, sub_px: u32) -> (usize, u16, u32) {
 #[allow(clippy::too_many_arguments)]
 fn cached_glyph<'c>(
     cache: &'c mut HashMap<(usize, u16, u32), CachedGlyph>,
-    fonts: &[Font],
-    color_emoji: Option<&[u8]>,
+    fonts: &[fontdue::Font],
+    color_emoji: Option<&Font>,
     key: (usize, u16, u32),
     font_index: usize,
     id: u16,
@@ -536,7 +535,7 @@ fn cached_glyph<'c>(
         if cache.len() >= MAX_GLYPH_CACHE_ENTRIES {
             cache.clear();
         }
-        let color = emoji.zip(color_emoji).and_then(|(c, font)| try_find_color_emoji_glyph(&[font], c, px));
+        let color = emoji.zip(color_emoji).and_then(|(c, font)| try_find_color_emoji_glyph(font, c, px));
         if let Some(cg) = color {
             cache.insert(key, cg);
         } else if let Some(font) = fonts.get(font_index) {
@@ -764,7 +763,7 @@ struct Frame<'a> {
     #[allow(dead_code)]
     physical_height: u32,
     fonts: &'a TtfFaces,
-    color_emoji: Option<&'a [u8]>,
+    color_emoji: Option<&'a Font>,
     clip_stack: &'a mut Vec<Rect>,
     profile: Option<&'a mut CommandTimes>,
     swap_rb: bool,
@@ -983,7 +982,7 @@ impl Frame<'_> {
                     let Some(font_index) = ttf_font_index(faces, *weight) else {
                         continue;
                     };
-                    let ttf_fonts: &[Font] = &faces.faces;
+                    let ttf_fonts: &[fontdue::Font] = &faces.raster;
                     let target = GlyphTarget {
                         clip: (clip_x1, clip_y1, clip_x2, clip_y2),
                         packed_color,
@@ -1619,7 +1618,7 @@ mod tests {
 
     #[test]
     fn glyph_cache_stays_within_its_limit() {
-        let font = Font::from_bytes(
+        let font = fontdue::Font::from_bytes(
             include_bytes!("../../resources/fonts/Roboto-Regular.ttf") as &[u8],
             fontdue::FontSettings::default(),
         )
@@ -1662,11 +1661,10 @@ mod tests {
 
     #[test]
     fn test_emoji_decoding() {
-        let emoji_bytes = include_bytes!("../../resources/fonts/NotoColorEmoji.ttf");
-        let font_bytes = [emoji_bytes.as_slice()];
+        let font = Font::new(include_bytes!("../../resources/fonts/NotoColorEmoji.ttf").as_slice(), 0).unwrap();
         let emojis = ['🚀', '🎨', '⭐', '💻', '👥', '🔥', '⚙', '🛠', '⚡', '➕', '🛡'];
         for e in emojis {
-            let res = try_find_color_emoji_glyph(&font_bytes, e, 34.0);
+            let res = try_find_color_emoji_glyph(&font, e, 34.0);
             assert!(res.is_some(), "Emoji {} failed to decode!", e);
         }
     }
@@ -1687,6 +1685,18 @@ mod tests {
             Some(include_bytes!("../../resources/fonts/Roboto-Bold.ttf")),
         )
         .unwrap()
+    }
+
+    /// Lines are hhea's, as in Chromium, unless OS/2 sets `USE_TYPO_METRICS`
+    /// (neither font does): Roboto 1900 above and 500 below of 2048 units,
+    /// the Hangul font 1160 and 288 of 1000.
+    #[test]
+    fn line_metrics_are_the_fonts() {
+        let metrics = |bytes: &[u8]| line_metrics(&Font::new(bytes.to_vec(), 0).unwrap(), 16.0).unwrap();
+        let roboto = metrics(include_bytes!("../../resources/fonts/Roboto-Regular.ttf"));
+        assert_eq!((roboto.ascent, roboto.descent, roboto.line_gap), (15.0, 4.0, 0.0));
+        let hangul = metrics(include_bytes!("../../resources/fonts/XeruneHangul-Regular.otf"));
+        assert_eq!((hangul.ascent, hangul.descent, hangul.line_gap), (19.0, 5.0, 0.0));
     }
 
     #[test]
@@ -1796,3 +1806,4 @@ mod tests {
         assert_ne!(regular.measure_text("same text", 14.0, 0), bold.measure_text("same text", 14.0, 0));
     }
 }
+
