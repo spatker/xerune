@@ -5,7 +5,7 @@
 //!
 //! [`SoftwareRenderer`] is the [`xerune::Renderer`] and owns the glyph and
 //! image caches; [`Fonts`] (TrueType/OpenType, read by read-fonts, shaped
-//! by harfrust and rasterized by fontdue) is both its glyph source and the runtime's
+//! by harfrust, outlines filled by [`path`]) is both its glyph source and the runtime's
 //! [`xerune::TextMeasurer`], so text is measured and drawn with the same
 //! fonts:
 //!
@@ -19,9 +19,12 @@
 
 pub mod blitter;
 pub mod gradient;
+pub mod path;
 pub mod rounded_rect;
 
+use path::{FillRule, Path};
 use read_fonts::model::Font;
+use read_fonts::model::glyph::outline::{DrawMemory, DrawOptions, PathSink};
 use read_fonts::types::GlyphId;
 use xerune::{DrawCommand, Pixels, Rect, RenderResources, Renderer, Rotation, Surface, TextMeasurer};
 use std::borrow::Cow;
@@ -37,10 +40,9 @@ use rounded_rect::{draw_rounded_rect, draw_rounded_border, draw_border_sides, dr
 /// index here.
 #[derive(Clone)]
 struct TtfFaces {
-    /// Character maps, metrics and the tables harfrust shapes text with.
+    /// Character maps, metrics, outlines and the tables harfrust shapes
+    /// text with.
     faces: Vec<Font>,
-    /// The same faces for fontdue, which rasterizes their glyphs.
-    raster: Vec<fontdue::Font>,
     /// How many of `faces` are the text font's (1 or 2).
     primary: usize,
     /// The fallback fonts, as their (regular, bold) faces' indices.
@@ -83,7 +85,7 @@ impl Fonts {
     /// TrueType/OpenType fonts: `regular` for normal text and `bold` for
     /// bold text (`regular` if `None`).
     pub fn ttf(regular: &[u8], bold: Option<&[u8]>) -> Result<Self, FontError> {
-        let mut faces = TtfFaces { faces: Vec::new(), raster: Vec::new(), primary: 0, fallbacks: Vec::new() };
+        let mut faces = TtfFaces { faces: Vec::new(), primary: 0, fallbacks: Vec::new() };
         faces.push(regular)?;
         if let Some(bold) = bold {
             faces.push(bold)?;
@@ -338,9 +340,7 @@ impl TtfFaces {
     /// Adds the face in `bytes`, returning its index.
     fn push(&mut self, bytes: &[u8]) -> Result<usize, FontError> {
         let face = Font::new(bytes.to_vec(), 0).ok_or(FontError("not an OpenType font"))?;
-        let raster = fontdue::Font::from_bytes(bytes, fontdue::FontSettings::default()).map_err(FontError)?;
         self.faces.push(face);
-        self.raster.push(raster);
         Ok(self.faces.len() - 1)
     }
 
@@ -519,11 +519,12 @@ fn emoji_cache_key(c: char, sub_px: u32) -> (usize, u16, u32) {
 
 /// Looks up a glyph in the cache, rasterizing it first if needed: a color
 /// emoji for `emoji` when an emoji font has it, else glyph `id` of
-/// `fonts[font_index]`. None for glyphs without pixels (spaces).
+/// `fonts[font_index]`. None for glyphs without pixels (spaces), which are
+/// cached too, so that they aren't looked for again every frame.
 #[allow(clippy::too_many_arguments)]
 fn cached_glyph<'c>(
-    cache: &'c mut HashMap<(usize, u16, u32), CachedGlyph>,
-    fonts: &[fontdue::Font],
+    cache: &'c mut HashMap<(usize, u16, u32), Option<CachedGlyph>>,
+    fonts: &[Font],
     color_emoji: Option<&Font>,
     key: (usize, u16, u32),
     font_index: usize,
@@ -535,28 +536,57 @@ fn cached_glyph<'c>(
         if cache.len() >= MAX_GLYPH_CACHE_ENTRIES {
             cache.clear();
         }
-        let color = emoji.zip(color_emoji).and_then(|(c, font)| try_find_color_emoji_glyph(font, c, px));
-        if let Some(cg) = color {
-            cache.insert(key, cg);
-        } else if let Some(font) = fonts.get(font_index) {
-            let (metrics, bitmap) = font.rasterize_indexed(id, px);
-            if metrics.width > 0 && metrics.height > 0 {
-                cache.insert(
-                    key,
-                    CachedGlyph {
-                        width: metrics.width as u32,
-                        height: metrics.height as u32,
-                        xmin: metrics.xmin,
-                        ymin: metrics.ymin,
-                        bitmap,
-                        rgba_bitmap: None,
-                        is_color: false,
-                    },
-                );
-            }
-        }
+        let glyph = emoji
+            .zip(color_emoji)
+            .and_then(|(c, font)| try_find_color_emoji_glyph(font, c, px))
+            .or_else(|| rasterize_glyph(fonts.get(font_index)?, id, px));
+        cache.insert(key, glyph);
     }
-    cache.get(&key)
+    cache.get(&key)?.as_ref()
+}
+
+/// Glyph `id` of `font` at `px` pixels per em, unhinted; None for glyphs
+/// without pixels (spaces).
+fn rasterize_glyph(font: &Font, id: u16, px: f32) -> Option<CachedGlyph> {
+    let outline = font.outline_glyphs().get(GlyphId::new(id.into()))?;
+    // Outlines go up from the baseline, pixels down.
+    let mut path = Path::with_transform(path::Transform::scale_translate(1.0, -1.0, 0.0, 0.0));
+    if let Err(error) = outline.draw(&DrawOptions::new().with_ppem(Some(px)), DrawMemory::Scratch, &mut path) {
+        log::warn!("drawing glyph {id} failed: {error:?}");
+        return None;
+    }
+    let mask = path.fill(FillRule::NonZero)?;
+    Some(CachedGlyph {
+        width: mask.width,
+        height: mask.height,
+        xmin: mask.left,
+        ymin: -(mask.top + mask.height as i32),
+        bitmap: mask.coverage,
+        rgba_bitmap: None,
+        is_color: false,
+    })
+}
+
+impl PathSink for Path {
+    fn move_to(&mut self, x: f32, y: f32) {
+        Path::move_to(self, x, y);
+    }
+
+    fn line_to(&mut self, x: f32, y: f32) {
+        Path::line_to(self, x, y);
+    }
+
+    fn quad_to(&mut self, cx0: f32, cy0: f32, x: f32, y: f32) {
+        Path::quad_to(self, cx0, cy0, x, y);
+    }
+
+    fn curve_to(&mut self, cx0: f32, cy0: f32, cx1: f32, cy1: f32, x: f32, y: f32) {
+        self.cubic_to(cx0, cy0, cx1, cy1, x, y);
+    }
+
+    fn close(&mut self) {
+        Path::close(self);
+    }
 }
 
 /// Blends one cached glyph with its top-left corner at (gx, gy); color
@@ -655,7 +685,7 @@ pub struct SoftwareRenderer {
     /// drawn and how long they took, while profiling.
     profile: Option<CommandTimes>,
     image_cache: HashMap<String, (u32, u32, Vec<u32>)>, // src -> (width, height, packed pixels)
-    glyph_cache: HashMap<(usize, u16, u32), CachedGlyph>,
+    glyph_cache: HashMap<(usize, u16, u32), Option<CachedGlyph>>,
     clip_stack: Vec<Rect>,
 }
 
@@ -779,7 +809,7 @@ struct Frame<'a> {
     x_offset: i32,
     y_offset: i32,
     image_cache: &'a mut HashMap<String, (u32, u32, Vec<u32>)>,
-    glyph_cache: &'a mut HashMap<(usize, u16, u32), CachedGlyph>,
+    glyph_cache: &'a mut HashMap<(usize, u16, u32), Option<CachedGlyph>>,
     /// Shapes the text of commands that come without a glyph run.
     measurer: &'a Fonts,
 }
@@ -988,7 +1018,7 @@ impl Frame<'_> {
                     let Some(font_index) = ttf_font_index(faces, *weight) else {
                         continue;
                     };
-                    let ttf_fonts: &[fontdue::Font] = &faces.raster;
+                    let ttf_fonts: &[Font] = &faces.faces;
                     let target = GlyphTarget {
                         clip: (clip_x1, clip_y1, clip_x2, clip_y2),
                         packed_color,
@@ -1624,13 +1654,8 @@ mod tests {
 
     #[test]
     fn glyph_cache_stays_within_its_limit() {
-        let font = fontdue::Font::from_bytes(
-            include_bytes!("../../resources/fonts/Roboto-Regular.ttf") as &[u8],
-            fontdue::FontSettings::default(),
-        )
-        .unwrap();
-        let fonts = [font];
-        let id = fonts[0].lookup_glyph_index('a');
+        let fonts = [Font::new(include_bytes!("../../resources/fonts/Roboto-Regular.ttf").as_slice(), 0).unwrap()];
+        let id = glyph_index(&fonts[0], 'a');
         let mut cache = HashMap::new();
         // Every font size is a new entry, like an animated `font-size`.
         for size in 0..MAX_GLYPH_CACHE_ENTRIES as u32 + 10 {
@@ -1812,4 +1837,3 @@ mod tests {
         assert_ne!(regular.measure_text("same text", 14.0, 0), bold.measure_text("same text", 14.0, 0));
     }
 }
-

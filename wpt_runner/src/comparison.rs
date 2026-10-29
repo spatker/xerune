@@ -89,7 +89,7 @@ const EDGE_TOLERANCE: u8 = 64;
 
 /// Whether `test` differs from `reference` only in the coverage of edge
 /// pixels, which border another color in either image. Two rasterizers disagree there (Chromium hints Ahem's glyph boxes
-/// onto the pixel grid, fontdue doesn't), while anything missing, moved by a
+/// onto the pixel grid, xerune doesn't hint), while anything missing, moved by a
 /// pixel or recolored differs by far more than [`EDGE_TOLERANCE`].
 pub fn differs_only_in_antialiasing(test: &Pixmap, reference: &Pixmap) -> bool {
     let (w, h) = (reference.width() as usize, reference.height() as usize);
