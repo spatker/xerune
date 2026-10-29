@@ -14,7 +14,8 @@ these make that cheap.
   `RENDER_BENCH_ITERS`, `RENDER_BENCH_SIZE`, `RENDER_BENCH_ROTATION` (a
   display mounted turned by 90, 180 or 270 degrees, as `XERUNE_ROTATION`).
 - `cargo run --release --example text_bench`: rebuild, layout and render
-  of a text-heavy feed.
+  of a text-heavy feed (`TEXT_BENCH_COLD=1`: shaping every rebuild from
+  scratch instead of from the shape cache).
 - `tools/arm-insns.sh`: per-iteration ARM instruction counts of
   `render_bench`, built with the boards' NEON flags and run under
   `qemu-arm` with the counting plugin in `qemu-insn/`. Exact and

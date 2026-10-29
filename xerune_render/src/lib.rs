@@ -356,6 +356,17 @@ pub fn shape_cache_len() -> usize {
     SHAPE_CACHE.with(|cache| cache.borrow().entries.len())
 }
 
+/// Forgets the thread's shaped runs, so the next layout shapes all its text
+/// again: for benchmarking shaping.
+#[cfg(feature = "std")]
+pub fn clear_shape_cache() {
+    SHAPE_CACHE.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        cache.entries.clear();
+        cache.order.clear();
+    });
+}
+
 /// Font metrics rounded to whole pixels, as browsers do, so lines start on
 /// pixel boundaries.
 #[cfg(feature = "std")]

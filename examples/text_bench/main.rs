@@ -5,6 +5,9 @@
 //! nice cargo run -j4 --release --example text_bench
 //! TEXT_BENCH_CARDS=40 TEXT_BENCH_ITERS=200 TEXT_BENCH_SIZE=480x800 cargo run --release --example text_bench
 //! ```
+//!
+//! Rebuilds normally find their text in the shape cache; `TEXT_BENCH_COLD=1`
+//! empties it before each one, so they shape everything again.
 
 use std::time::{Duration, Instant};
 
@@ -52,6 +55,7 @@ fn median(samples: &mut [Duration]) -> Duration {
 fn main() {
     let cards: usize = env_or("TEXT_BENCH_CARDS", 12);
     let iters: usize = env_or("TEXT_BENCH_ITERS", 100);
+    let cold = env_or("TEXT_BENCH_COLD", 0) != 0;
     let (width, height) = std::env::var("TEXT_BENCH_SIZE")
         .ok()
         .and_then(|s| {
@@ -86,6 +90,9 @@ fn main() {
     let mut render = Vec::with_capacity(iters);
     let mut command_count = 0;
     for _ in 0..iters {
+        if cold {
+            xerune_render::clear_shape_cache();
+        }
         // Build + style resolution + layout.
         let t = Instant::now();
         runtime.sync_view();
@@ -103,7 +110,8 @@ fn main() {
         render.push(t.elapsed());
     }
 
-    println!("text_bench: {cards} cards, {width}x{height}, {iters} iterations, {command_count} draw commands");
+    let cache = if cold { ", cold shape cache" } else { "" };
+    println!("text_bench: {cards} cards, {width}x{height}, {iters} iterations{cache}, {command_count} draw commands");
     for (name, samples) in [("rebuild+layout", &mut rebuild), ("build_commands", &mut commands), ("render", &mut render)] {
         println!(
             "  {name:<15} best {:>8.1} us   median {:>8.1} us",
