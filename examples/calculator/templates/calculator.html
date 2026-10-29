@@ -14,7 +14,9 @@
     }
 
     /* ---------- display + tape ---------- */
-    .screen { display: flex; flex-direction: column; flex-grow: 1; flex-basis: 0px; }
+    /* Right-aligned numbers: proportional digits keep the narrow "1" from
+       leaving a gap at the edge as the last digit changes. */
+    .screen { display: flex; flex-direction: column; flex-grow: 1; flex-basis: 0px; font-variant-numeric: proportional-nums; }
     .display {
         display: flex;
         flex-direction: column;
