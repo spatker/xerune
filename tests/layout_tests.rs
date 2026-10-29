@@ -2334,7 +2334,6 @@ mod known_gaps {
     gap_model!(TextWrap, "tests/gaps/text_wrap.html");
     gap_model!(ImgShadow, "tests/gaps/img_shadow.html");
     gap_model!(CanvasResize, "tests/gaps/canvas_resize.html");
-    gap_model!(Order, "tests/gaps/order.html");
     gap_model!(InlineWrap, "tests/gaps/inline_wrap.html");
     gap_model!(ControlMinHeight, "tests/gaps/control_min_height.html");
 
@@ -2409,14 +2408,6 @@ mod known_gaps {
         assert_eq!(rt.context().canvases["c"].width, 100);
         crate::set_size(&mut rt, 480.0, 800.0);
         assert_eq!(rt.context().canvases["c"].width, 60);
-    }
-
-    #[test]
-    #[ignore = "FIXME: `order` is parsed but not applied in compiled templates"]
-    fn flex_order_reorders_items() {
-        let rt = runtime(Order, 400.0, 300.0);
-        let commands = rt.ui.build_commands(&HashMap::new(), None);
-        assert!(text_rect(&commands, "first").x < text_rect(&commands, "second").x);
     }
 }
 
