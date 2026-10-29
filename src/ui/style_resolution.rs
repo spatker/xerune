@@ -32,16 +32,8 @@ pub struct StyleCacheKey {
     pub other_attrs: Option<Vec<(String, String)>>,
     /// Matching rule indices, including ancestor, sibling and pseudo-class context.
     pub matched_rules: Vec<usize>,
-    /// Parent font size.
-    pub parent_font_size_bits: u32,
-    /// Parent font weight.
-    pub parent_weight: u16,
-    /// Parent `font-variant-numeric` features (inherited).
-    pub parent_font_features: crate::text::FontFeatures,
-    /// Parent foreground color in u32 format.
-    pub parent_color_u32: u32,
-    /// Parent `accent-color` (inherited, like `color`).
-    pub parent_accent: Option<u32>,
+    /// What the element inherits from its parent.
+    pub inherited: crate::defaults::Inherited,
     /// Viewport size (rounded px) the resolved `vw`/`vh` lengths were computed against.
     pub viewport: (u32, u32),
 }
@@ -363,8 +355,6 @@ pub(crate) fn resolve_styles(
         parsed.text_input_text = Some(input_text.clone());
     }
 
-    let c = parent_style.color;
-    let parent_color_u32 = ((c.r as u32) << 24) | ((c.g as u32) << 16) | ((c.b as u32) << 8) | (c.a as u32);
     let (vw, vh) = crate::screen::size();
     let el_wrapper = TaffyElementWrapper {
         node,
@@ -389,11 +379,7 @@ pub(crate) fn resolve_styles(
         id: meta.id.clone(),
         other_attrs: meta.other_attrs.clone(),
         matched_rules,
-        parent_font_size_bits: parent_style.font_size.to_bits(),
-        parent_weight: parent_style.weight,
-        parent_font_features: parent_style.font_features,
-        parent_color_u32,
-        parent_accent: parent_style.accent_color.map(|c| u32::from_be_bytes([c.r, c.g, c.b, c.a])),
+        inherited: crate::defaults::Inherited::of(&parent_style),
         viewport: (vw.round() as u32, vh.round() as u32),
     };
 

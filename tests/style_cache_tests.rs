@@ -101,3 +101,37 @@ fn stylesheet_cache_is_bounded_and_evicts_old_entries() {
         xerune::cache_config::MAX_STYLESHEET_CACHE_ENTRIES
     );
 }
+
+/// Items that no rule matches get the same cache key, but inherit
+/// different values from their parents: each must get its own parent's.
+#[test]
+fn style_cache_keys_on_every_inherited_property() {
+    let declarations = [
+        "text-align: right",
+        "white-space: pre",
+        "line-height: 30px",
+        "overflow-wrap: anywhere",
+        "word-break: keep-all",
+        "direction: rtl",
+        "color-scheme: dark",
+        "font-variant-numeric: tabular-nums",
+    ];
+    for declaration in declarations {
+        let css = format!(".plain {{ }} .styled {{ {declaration}; }}");
+        let template = Template { css: Box::leak(css.into_boxed_str()), classes: ["plain", "styled"] };
+        let ui = Ui::new_compiled(&template, &Measurer, ContainerStyle::default(), &|_| true).unwrap();
+        for parent in ui.taffy.children(ui.root).unwrap() {
+            let inherited = &ui.render_data.get(&parent).unwrap().style;
+            for item in ui.taffy.children(parent).unwrap() {
+                let style = &ui.render_data.get(&item).unwrap().style;
+                let fields = |s: &ContainerStyle| {
+                    format!(
+                        "{:?}",
+                        (s.text_align, s.white_space, s.line_height, s.overflow_wrap, s.word_break_all, s.word_keep_all, s.direction, s.color_scheme_dark, s.font_features)
+                    )
+                };
+                assert_eq!(fields(style), fields(inherited), "{declaration}");
+            }
+        }
+    }
+}

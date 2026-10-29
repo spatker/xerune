@@ -123,7 +123,7 @@ const GLYPH_JOINED: u8 = 2;
 
 /// Where lines may break inside words (CSS `overflow-wrap` and
 /// `word-break`).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum WordBreak {
     /// Only at break opportunities; longer words overflow.

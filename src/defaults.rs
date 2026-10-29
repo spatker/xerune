@@ -62,7 +62,63 @@ impl Default for StyleBundle {
     }
 }
 
-/// Retrieves the default StyleBundle for a given HTML tag name, resetting non-inherited properties.
+/// What an element inherits from its parent: every property
+/// [`get_default_style`] carries over from the parent's style instead of
+/// resetting. Elements whose parents agree on all of it start from the same
+/// style, so it keys the style cache; a property that becomes inherited
+/// belongs here too.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Inherited {
+    font_size: u32,
+    root_font_size: u32,
+    weight: u16,
+    color: u32,
+    accent_color: Option<u32>,
+    /// `LineHeight` by kind and value.
+    line_height: (u8, u32),
+    white_space: crate::WhiteSpace,
+    text_align: Option<crate::TextAlign>,
+    overflow_wrap: crate::text::WordBreak,
+    word_break_all: bool,
+    word_keep_all: bool,
+    font_features: crate::text::FontFeatures,
+    direction: crate::Direction,
+    writing_mode: crate::WritingMode,
+    color_scheme_dark: bool,
+}
+
+impl Inherited {
+    /// What children of an element styled `parent` inherit.
+    pub fn of(parent: &ContainerStyle) -> Self {
+        use crate::LineHeight;
+        let color = |c: crate::Color| u32::from_be_bytes([c.r, c.g, c.b, c.a]);
+        Self {
+            font_size: parent.font_size.to_bits(),
+            root_font_size: parent.root_font_size.to_bits(),
+            weight: parent.weight,
+            color: color(parent.color),
+            accent_color: parent.accent_color.map(color),
+            line_height: match parent.line_height {
+                LineHeight::Normal => (0, 0),
+                LineHeight::Number(n) => (1, n.to_bits()),
+                LineHeight::Length(px) => (2, px.to_bits()),
+                LineHeight::Percent(p) => (3, p.to_bits()),
+            },
+            white_space: parent.white_space,
+            text_align: parent.text_align,
+            overflow_wrap: parent.overflow_wrap,
+            word_break_all: parent.word_break_all,
+            word_keep_all: parent.word_keep_all,
+            font_features: parent.font_features,
+            direction: parent.direction,
+            writing_mode: parent.writing_mode,
+            color_scheme_dark: parent.color_scheme_dark,
+        }
+    }
+}
+
+/// Retrieves the default StyleBundle for a given HTML tag name, resetting
+/// non-inherited properties (the rest is [`Inherited`]).
 pub fn get_default_style(tag: &str, parent_style: &ContainerStyle) -> StyleBundle {
     let mut bundle = StyleBundle::default();
     bundle.container_style = parent_style.clone();

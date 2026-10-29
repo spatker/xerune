@@ -29,7 +29,7 @@ impl Display {
 }
 
 /// Horizontal alignment of text.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum TextAlign {
     /// Align text to the left boundary.
     Left,
@@ -76,7 +76,7 @@ impl LineHeight {
 
 /// CSS `white-space`: whether spaces and newlines collapse, and whether
 /// lines wrap.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum WhiteSpace {
     /// Collapse whitespace, wrap lines.
     #[default]
@@ -118,7 +118,7 @@ impl WhiteSpace {
 }
 
 /// Text direction.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Direction {
     /// Left-to-right text direction.
     Ltr,
@@ -138,7 +138,7 @@ pub enum Overflow {
 }
 
 /// Writing mode orientation of text blocks.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum WritingMode {
     /// Horizontal top-to-bottom writing direction.
     HorizontalTb,
