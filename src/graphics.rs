@@ -669,8 +669,10 @@ pub trait TextMeasurer {
     /// The default treats every character as one glyph (id 0) as wide as
     /// [`measure_text`](Self::measure_text) says, with the measured height
     /// as ascent. That is enough for layout with measurers that have no
-    /// fonts; real renderers implement this to get glyph ids and kerning.
-    fn shape(&self, text: &str, font_size: f32, weight: u16) -> Arc<crate::text::ShapedText> {
+    /// fonts; real renderers implement this to get glyph ids and kerning,
+    /// and to apply `features`.
+    fn shape(&self, text: &str, font_size: f32, weight: u16, features: crate::text::FontFeatures) -> Arc<crate::text::ShapedText> {
+        let _ = features;
         let mut buf = [0u8; 4];
         let glyphs: Vec<_> = text
             .char_indices()

@@ -33,7 +33,7 @@ pub mod rounded_rect;
 use fontdue::Font;
 use xerune::{DrawCommand, Pixels, Rect, RenderResources, Renderer, Rotation, Surface, TextMeasurer};
 use xerune::alloc_prelude::*;
-use xerune::text::{LineMetrics, ShapedGlyph, ShapedText};
+use xerune::text::{FontFeatures, LineMetrics, ShapedGlyph, ShapedText};
 
 use blitter::{pack_color, blend_solid_rect, blend_pixel, blend_glyph_span, div_255, calc_pixel_index};
 use rounded_rect::{draw_rounded_rect, draw_rounded_border, draw_border_sides, draw_box_shadow, draw_check_mark};
@@ -291,10 +291,14 @@ thread_local! {
         std::cell::RefCell::new(BoundedMeasureCache::new(MAX_MEASURE_CACHE_ENTRIES));
     static SHAPE_CACHE: std::cell::RefCell<ShapeCache> =
         std::cell::RefCell::new(ShapeCache::new(MAX_SHAPE_CACHE_ENTRIES));
-    /// harfrust's compiled feature lookups, by font set, face and script.
-    static SHAPE_PLANS: std::cell::RefCell<Vec<((u32, usize, Option<harfrust::Script>), harfrust::ShapePlan)>> =
+    /// harfrust's compiled feature lookups.
+    static SHAPE_PLANS: std::cell::RefCell<Vec<(PlanKey, harfrust::ShapePlan)>> =
         const { std::cell::RefCell::new(Vec::new()) };
 }
+
+/// What a shape plan is for: font set, face, script and features.
+#[cfg(feature = "std")]
+type PlanKey = (u32, usize, Option<harfrust::Script>, FontFeatures);
 
 /// How many shape plans [`SHAPE_PLANS`] keeps before starting over: a few
 /// faces times the scripts they show.
@@ -319,7 +323,7 @@ pub const EMOJI_FONT: u16 = u16::MAX;
 struct ShapeCache {
     // Looked up for every text node on every rebuild: ahash rather than
     // the slower DoS-resistant default.
-    entries: hashbrown::HashMap<String, Vec<(u32, u32, u16, Arc<ShapedText>)>>,
+    entries: hashbrown::HashMap<String, Vec<(u32, u32, u16, FontFeatures, Arc<ShapedText>)>>,
     order: std::collections::VecDeque<String>,
     max_entries: usize,
 }
@@ -330,20 +334,20 @@ impl ShapeCache {
         Self { entries: hashbrown::HashMap::new(), order: std::collections::VecDeque::new(), max_entries }
     }
 
-    fn get(&self, text: &str, font: u32, font_size_bits: u32, weight: u16) -> Option<Arc<ShapedText>> {
+    fn get(&self, text: &str, font: u32, font_size_bits: u32, weight: u16, features: FontFeatures) -> Option<Arc<ShapedText>> {
         self.entries
             .get(text)?
             .iter()
-            .find(|(f, sz, wt, _)| *f == font && *sz == font_size_bits && *wt == weight)
-            .map(|(_, _, _, shaped)| shaped.clone())
+            .find(|(f, sz, wt, ft, _)| *f == font && *sz == font_size_bits && *wt == weight && *ft == features)
+            .map(|(_, _, _, _, shaped)| shaped.clone())
     }
 
-    fn insert(&mut self, text: &str, font: u32, font_size_bits: u32, weight: u16, shaped: Arc<ShapedText>) {
+    fn insert(&mut self, text: &str, font: u32, font_size_bits: u32, weight: u16, features: FontFeatures, shaped: Arc<ShapedText>) {
         if self.max_entries == 0 {
             return;
         }
         if let Some(list) = self.entries.get_mut(text) {
-            list.push((font, font_size_bits, weight, shaped));
+            list.push((font, font_size_bits, weight, features, shaped));
             return;
         }
         if self.entries.len() >= self.max_entries {
@@ -352,7 +356,7 @@ impl ShapeCache {
             }
         }
         self.order.push_back(text.to_string());
-        self.entries.insert(text.to_string(), vec![(font, font_size_bits, weight, shaped)]);
+        self.entries.insert(text.to_string(), vec![(font, font_size_bits, weight, features, shaped)]);
     }
 }
 
@@ -382,7 +386,8 @@ fn rounded_metrics(ascent: f32, descent: f32, line_gap: f32) -> LineMetrics {
 impl Fonts {
     // Bitmap fonts set the metrics themselves; only TrueType reads the default.
     #[cfg_attr(not(feature = "std"), allow(unused_assignments))]
-    fn shape_uncached(&self, text: &str, font_size: f32, weight: u16) -> ShapedText {
+    #[cfg_attr(not(feature = "std"), allow(unused_variables))]
+    fn shape_uncached(&self, text: &str, font_size: f32, weight: u16, features: FontFeatures) -> ShapedText {
         let mut glyphs = Vec::with_capacity(text.len());
         let mut metrics = LineMetrics::default();
         match &self.source() {
@@ -405,7 +410,7 @@ impl Fonts {
                     // Newlines are line breaks, not glyphs.
                     if c == '\u{fe0f}' || c.is_control() {
                         if let Some((face, start)) = run.take() {
-                            ttf_fonts.shape_run(self.id(), face, text, start..i, font_size, &mut glyphs);
+                            ttf_fonts.shape_run(self.id(), face, text, start..i, font_size, features, &mut glyphs);
                         }
                         continue;
                     }
@@ -421,7 +426,7 @@ impl Fonts {
                     }
                     if is_emoji(c, id) {
                         if let Some((face, start)) = run.take() {
-                            ttf_fonts.shape_run(self.id(), face, text, start..i, font_size, &mut glyphs);
+                            ttf_fonts.shape_run(self.id(), face, text, start..i, font_size, features, &mut glyphs);
                         }
                         // Characters no font has are drawn as color emoji
                         // when an emoji font is available (see the renderer),
@@ -434,14 +439,14 @@ impl Fonts {
                         Some((run_face, _)) if run_face == face => {}
                         _ => {
                             if let Some((face, start)) = run.take() {
-                                ttf_fonts.shape_run(self.id(), face, text, start..i, font_size, &mut glyphs);
+                                ttf_fonts.shape_run(self.id(), face, text, start..i, font_size, features, &mut glyphs);
                             }
                             run = Some((face, i));
                         }
                     }
                 }
                 if let Some((face, start)) = run {
-                    ttf_fonts.shape_run(self.id(), face, text, start..text.len(), font_size, &mut glyphs);
+                    ttf_fonts.shape_run(self.id(), face, text, start..text.len(), font_size, features, &mut glyphs);
                 }
                 for &face in &used_fallbacks {
                     if let Some(m) = ttf_fonts.faces[face].horizontal_line_metrics(font_size) {
@@ -490,9 +495,10 @@ impl TtfFaces {
     }
 
     /// Shapes `text[range]`, all of whose characters `face` has, onto
-    /// `glyphs`: kerning, ligatures and the font's other default features.
-    /// `set` is the font set's id, for the plan cache.
-    fn shape_run(&self, set: u32, face: usize, text: &str, range: core::ops::Range<usize>, font_size: f32, glyphs: &mut Vec<ShapedGlyph>) {
+    /// `glyphs`: kerning, ligatures and the font's other default features,
+    /// and `features`. `set` is the font set's id, for the plan cache.
+    #[allow(clippy::too_many_arguments)]
+    fn shape_run(&self, set: u32, face: usize, text: &str, range: core::ops::Range<usize>, font_size: f32, features: FontFeatures, glyphs: &mut Vec<ShapedGlyph>) {
         let font = &self.shaping[face];
         let mut buffer = harfrust::Buffer::new();
         buffer.push_str(&text[range.clone()]);
@@ -504,21 +510,22 @@ impl TtfFaces {
         buffer.set_direction(harfrust::Direction::LeftToRight);
         buffer.guess_segment_properties();
         let shaper = harfrust::ShaperFont::new(font);
+        let user_features: Vec<_> = features.tags().map(|tag| harfrust::Feature::new(harfrust::Tag::new(&tag), 1, ..)).collect();
         let result = SHAPE_PLANS.with(|plans| {
             let mut plans = plans.borrow_mut();
-            let key = (set, face, buffer.script());
+            let key = (set, face, buffer.script(), features);
             let plan = match plans.iter().position(|(k, _)| *k == key) {
                 Some(index) => &plans[index].1,
                 None => {
                     if plans.len() >= MAX_SHAPE_PLANS {
                         plans.clear();
                     }
-                    let plan = harfrust::ShapePlan::new(font, buffer.direction(), buffer.script(), None, &[]);
+                    let plan = harfrust::ShapePlan::new(font, buffer.direction(), buffer.script(), None, &user_features);
                     plans.push((key, plan));
                     &plans.last().unwrap().1
                 }
             };
-            harfrust::shape(&shaper, &mut buffer, harfrust::ShapeOptions::new().plan(Some(plan)))
+            harfrust::shape(&shaper, &mut buffer, harfrust::ShapeOptions::new().plan(Some(plan)).features(&user_features))
         });
         if let Err(error) = result {
             log::warn!("shaping {:?} failed: {error:?}", &text[range]);
@@ -558,19 +565,19 @@ pub fn measure_cache_len() -> usize {
 }
 
 impl TextMeasurer for Fonts {
-    fn shape(&self, text: &str, font_size: f32, weight: u16) -> Arc<ShapedText> {
+    fn shape(&self, text: &str, font_size: f32, weight: u16, features: FontFeatures) -> Arc<ShapedText> {
         #[cfg(feature = "std")]
         {
             let size_bits = font_size.to_bits();
-            if let Some(shaped) = SHAPE_CACHE.with(|cache| cache.borrow().get(text, self.id(), size_bits, weight)) {
+            if let Some(shaped) = SHAPE_CACHE.with(|cache| cache.borrow().get(text, self.id(), size_bits, weight, features)) {
                 return shaped;
             }
-            let shaped = Arc::new(self.shape_uncached(text, font_size, weight));
-            SHAPE_CACHE.with(|cache| cache.borrow_mut().insert(text, self.id(), size_bits, weight, shaped.clone()));
+            let shaped = Arc::new(self.shape_uncached(text, font_size, weight, features));
+            SHAPE_CACHE.with(|cache| cache.borrow_mut().insert(text, self.id(), size_bits, weight, features, shaped.clone()));
             shaped
         }
         #[cfg(not(feature = "std"))]
-        Arc::new(self.shape_uncached(text, font_size, weight))
+        Arc::new(self.shape_uncached(text, font_size, weight, features))
     }
 
     fn measure_text(&self, text: &str, font_size: f32, weight: u16) -> (f32, f32) {
@@ -2186,7 +2193,7 @@ mod tests {
     fn shape_uses_fractional_advances() {
         let measurer = roboto();
         let text = "The quick brown fox jumps over the lazy dog";
-        let shaped = measurer.shape(text, 14.0, 0);
+        let shaped = measurer.shape(text, 14.0, 0, FontFeatures::NONE);
         assert_eq!(shaped.glyphs.len(), text.chars().count());
         // Chromium lays this out 276.36px wide with Roboto 14px; rounding
         // every advance up would make it 293px.
@@ -2195,16 +2202,30 @@ mod tests {
         // Chromium: `line-height: normal` is 16px for Roboto 14px.
         assert_eq!((m.ascent, m.descent, m.line_gap), (13.0, 3.0, 0.0));
         assert!(shaped.glyphs.windows(2).all(|w| w[0].cluster < w[1].cluster));
-        assert_ne!(measurer.shape(text, 14.0, 1).glyphs[0].font, shaped.glyphs[0].font);
+        assert_ne!(measurer.shape(text, 14.0, 1, FontFeatures::NONE).glyphs[0].font, shaped.glyphs[0].font);
     }
 
     #[test]
     fn shape_is_cached() {
         let measurer = roboto();
-        let a = measurer.shape("cached run", 15.0, 0);
-        let b = measurer.shape("cached run", 15.0, 0);
+        let a = measurer.shape("cached run", 15.0, 0, FontFeatures::NONE);
+        let b = measurer.shape("cached run", 15.0, 0, FontFeatures::NONE);
         assert!(Arc::ptr_eq(&a, &b));
-        assert!(!Arc::ptr_eq(&a, &measurer.shape("cached run", 16.0, 0)));
+        assert!(!Arc::ptr_eq(&a, &measurer.shape("cached run", 16.0, 0, FontFeatures::NONE)));
+    }
+
+    #[test]
+    fn features_switch_glyphs() {
+        let measurer = roboto();
+        // Roboto's digits are tabular: 1175 of 2048 units, the bold "1" too.
+        let tabular = measurer.shape("1", 64.0, 1, FontFeatures::NONE);
+        assert!((tabular.width() - 36.72).abs() < 0.01, "width {}", tabular.width());
+        // Its proportional "1" (pnum) is narrower: 985 units.
+        let proportional = measurer.shape("1", 64.0, 1, FontFeatures::PROPORTIONAL_NUMS);
+        assert!((proportional.width() - 30.78).abs() < 0.01, "width {}", proportional.width());
+        assert_ne!(proportional.glyphs[0].id, tabular.glyphs[0].id);
+        // Plans differ by features: asking for the defaults again gets them.
+        assert_eq!(measurer.shape("11", 64.0, 1, FontFeatures::NONE).width(), 2.0 * tabular.width());
     }
 
     #[test]
@@ -2215,25 +2236,25 @@ mod tests {
                 Some(include_bytes!("../../resources/fonts/XeruneHangul-Bold.otf")),
             )
             .unwrap();
-        let latin = fonts.shape("Today", 16.0, 0);
-        let mixed = fonts.shape("오늘 Today", 16.0, 0);
+        let latin = fonts.shape("Today", 16.0, 0, FontFeatures::NONE);
+        let mixed = fonts.shape("오늘 Today", 16.0, 0, FontFeatures::NONE);
         // Hangul from the fallback's regular (face 2) or bold (3) face, Latin from Roboto.
         let faces = |shaped: &ShapedText| shaped.glyphs.iter().map(|g| g.font).collect::<Vec<_>>();
         assert_eq!(faces(&mixed), [2, 2, 0, 0, 0, 0, 0, 0]);
-        assert_eq!(faces(&fonts.shape("오늘", 16.0, 700)), [3, 3]);
+        assert_eq!(faces(&fonts.shape("오늘", 16.0, 700, FontFeatures::NONE)), [3, 3]);
         assert!(mixed.glyphs.iter().all(|g| g.id != 0 && g.advance > 0.0));
         // Its Hangul is 0.92 em wide (920 units), and its line is taller.
         assert!((mixed.glyphs[0].advance - 14.72).abs() < 0.001);
         assert!(mixed.metrics.ascent > latin.metrics.ascent && mixed.metrics.descent > latin.metrics.descent);
-        assert_eq!(fonts.shape("Today", 16.0, 0).metrics.ascent, roboto().shape("Today", 16.0, 0).metrics.ascent);
+        assert_eq!(fonts.shape("Today", 16.0, 0, FontFeatures::NONE).metrics.ascent, roboto().shape("Today", 16.0, 0, FontFeatures::NONE).metrics.ascent);
     }
 
     #[test]
     fn font_sets_do_not_share_cached_shapes() {
         static BITMAP: [xerune::font::BitmapFont; 1] = [xerune::font::DEFAULT_ROBOTO_REGULAR];
         let (ttf, bitmap) = (roboto(), Fonts::bitmap(&BITMAP));
-        let a = ttf.shape("same text", 14.0, 0);
-        let b = bitmap.shape("same text", 14.0, 0);
+        let a = ttf.shape("same text", 14.0, 0, FontFeatures::NONE);
+        let b = bitmap.shape("same text", 14.0, 0, FontFeatures::NONE);
         assert!(!Arc::ptr_eq(&a, &b));
         assert_ne!(a.width(), b.width());
         assert_ne!(ttf.measure_text("same text", 14.0, 0), bitmap.measure_text("same text", 14.0, 0));
@@ -2244,7 +2265,7 @@ mod tests {
         static FONTS: [xerune::font::BitmapFont; 1] = [xerune::font::DEFAULT_ROBOTO_REGULAR];
         let fonts = &FONTS;
         let measurer = Fonts::bitmap(fonts);
-        let shaped = measurer.shape("Hi you", 14.0, 0);
+        let shaped = measurer.shape("Hi you", 14.0, 0, FontFeatures::NONE);
         let font = &fonts[0];
         let expected: f32 = "Hi you".chars().map(|c| font.lookup_glyph(c).unwrap().x_advance as f32).sum();
         assert_eq!(shaped.width(), expected);

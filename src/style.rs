@@ -467,6 +467,8 @@ pub struct ContainerStyle {
     pub word_break_all: bool,
     /// `word-break: keep-all`: no breaks between letters.
     pub word_keep_all: bool,
+    /// OpenType features from `font-variant-numeric` (inherited).
+    pub font_features: crate::text::FontFeatures,
     /// `text-overflow: ellipsis`. On a text node: its parent clips and
     /// asked for an ellipsis.
     pub text_overflow_ellipsis: bool,
@@ -572,6 +574,7 @@ impl Default for ContainerStyle {
             overflow_wrap: crate::text::WordBreak::Normal,
             word_break_all: false,
             word_keep_all: false,
+            font_features: crate::text::FontFeatures::NONE,
             text_overflow_ellipsis: false,
             order: 0,
             direction: Direction::Ltr,

@@ -1309,14 +1309,14 @@ fn shape_texts(render_data: &NodeMap<RenderData>, measurer: &impl TextMeasurer) 
         match &data.kind {
             RenderKind::Text(text) => {
                 let style = &data.style;
-                paragraphs.insert(node, measurer.shape(text, style.font_size, style.weight));
+                paragraphs.insert(node, measurer.shape(text, style.font_size, style.weight, style.font_features));
                 if style.text_overflow_ellipsis {
-                    ellipses.insert(node, measurer.shape("\u{2026}", style.font_size, style.weight));
+                    ellipses.insert(node, measurer.shape("\u{2026}", style.font_size, style.weight, style.font_features));
                 }
             }
             RenderKind::TextInput(_, value, placeholder) => {
                 if let Some((text, style)) = input_shown(value, placeholder, &data.style) {
-                    input_texts.insert(node, measurer.shape(text, style.font_size, style.weight));
+                    input_texts.insert(node, measurer.shape(text, style.font_size, style.weight, style.font_features));
                 }
             }
             _ => {}

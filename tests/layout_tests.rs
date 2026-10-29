@@ -1367,6 +1367,39 @@ mod text_layout {
         fn update(&mut self, _msg: String, _context: &mut Context<Self::Message>) {}
     }
 
+    #[derive(XeruneTemplate)]
+    #[template(source = r#"<style>
+        .row { display: flex; font-size: 64px; font-weight: bold; }
+        .pnum { font-variant-numeric: proportional-nums; }
+    </style>
+    <div class="row"><span>1111</span></div>
+    <div class="row pnum"><span>1111</span></div>
+    <div class="row pnum"><span style="font-variant-numeric: normal">1111</span></div>"#)]
+    struct NumericVariants;
+    impl Model for NumericVariants {
+        type Message = String;
+        fn update(&mut self, _msg: String, _context: &mut Context<Self::Message>) {}
+    }
+
+    /// `font-variant-numeric` is inherited and picks the font's
+    /// proportional digits: Roboto Bold's "1" is 985 units wide instead of
+    /// the tabular 1175.
+    #[test]
+    fn font_variant_numeric_picks_proportional_digits() {
+        let mut runtime = Runtime::new(NumericVariants, crate::roboto());
+        crate::set_size(&mut runtime, 800.0, 480.0);
+        let widths: Vec<f32> = runtime
+            .ui
+            .build_commands(&HashMap::new(), None)
+            .into_iter()
+            .filter_map(|c| match c {
+                DrawCommand::DrawText { rect, .. } => Some((rect.width * 10.0).round() / 10.0),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(widths, [146.9, 123.1, 146.9]);
+    }
+
     /// Roboto kerns with OpenType GPOS, which the shaper applies: Chromium
     /// fits "min-" on the first line thanks to it.
     #[test]

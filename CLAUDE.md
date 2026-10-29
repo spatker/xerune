@@ -150,7 +150,7 @@ not gcc-arm or `cargo check`: it links against the boards' glibc 2.39):
 
 ## Known weak spots
 
-- Text: inline elements (`<b>`, `<span>`) are separate flex items, not one inline formatting context (`known_gaps::text_flows_around_inline_elements`). harfrust shapes with the fonts' default features (kerning, ligatures), but CSS can't set features (`proportional-nums`; the calculator's right-aligned tabular digits shift as in Chromium), glyph offsets (marks) aren't drawn, and there is no bidi: every run is shaped left to right. Thai/Lao/Khmer/Myanmar break only at spaces.
+- Text: inline elements (`<b>`, `<span>`) are separate flex items, not one inline formatting context (`known_gaps::text_flows_around_inline_elements`). harfrust shapes with the fonts' default features (kerning, ligatures) and `font-variant-numeric` (`text::FontFeatures`, passed to `TextMeasurer::shape`); no `font-feature-settings`, glyph offsets (marks) aren't drawn (Roboto doesn't need them), and there is no bidi: every run is shaped left to right. Thai/Lao/Khmer/Myanmar break only at spaces.
 - Sibling and structural selectors (`+`, `~`, `:nth-child`, `:last-child`) don't see through `{% for %}` / `{% if %}` in templates, so they never match inside a loop body.
 - Images: PNG only.
 - Borders: per-side width/color/style, but every style is drawn solid (no

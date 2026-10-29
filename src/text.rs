@@ -41,6 +41,57 @@ impl LineMetrics {
     }
 }
 
+/// OpenType features to shape with on top of the font's defaults, as CSS
+/// `font-variant-numeric` asks: a set of the constants below. Fonts without
+/// a feature ignore it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub struct FontFeatures(u8);
+
+impl FontFeatures {
+    /// Only the font's defaults.
+    pub const NONE: Self = Self(0);
+    /// `lining-nums`: digits as tall as capitals (`lnum`).
+    pub const LINING_NUMS: Self = Self(1 << 0);
+    /// `oldstyle-nums`: digits with ascenders and descenders (`onum`).
+    pub const OLDSTYLE_NUMS: Self = Self(1 << 1);
+    /// `proportional-nums`: digits as wide as their shapes (`pnum`).
+    pub const PROPORTIONAL_NUMS: Self = Self(1 << 2);
+    /// `tabular-nums`: digits all equally wide (`tnum`).
+    pub const TABULAR_NUMS: Self = Self(1 << 3);
+    /// `diagonal-fractions`: `1/2` as a fraction with a slash (`frac`).
+    pub const DIAGONAL_FRACTIONS: Self = Self(1 << 4);
+    /// `stacked-fractions`: `1/2` with a horizontal bar (`afrc`).
+    pub const STACKED_FRACTIONS: Self = Self(1 << 5);
+    /// `ordinal`: the letters of `1st` as ordinals (`ordn`).
+    pub const ORDINAL: Self = Self(1 << 6);
+    /// `slashed-zero`: a zero with a slash (`zero`).
+    pub const SLASHED_ZERO: Self = Self(1 << 7);
+
+    const TAGS: [[u8; 4]; 8] = [*b"lnum", *b"onum", *b"pnum", *b"tnum", *b"frac", *b"afrc", *b"ordn", *b"zero"];
+
+    /// Whether every feature of `other` is in the set.
+    pub fn contains(self, other: Self) -> bool {
+        self.0 & other.0 == other.0
+    }
+
+    /// Whether the set is [`NONE`](Self::NONE).
+    pub fn is_empty(self) -> bool {
+        self.0 == 0
+    }
+
+    /// The OpenType tags of the features in the set.
+    pub fn tags(self) -> impl Iterator<Item = [u8; 4]> {
+        Self::TAGS.into_iter().enumerate().filter(move |(i, _)| self.0 & (1 << i) != 0).map(|(_, tag)| tag)
+    }
+}
+
+impl core::ops::BitOr for FontFeatures {
+    type Output = Self;
+    fn bitor(self, other: Self) -> Self {
+        Self(self.0 | other.0)
+    }
+}
+
 /// A run of text shaped with one font size and weight, split at its line
 /// break opportunities (Unicode UAX #14) so it can be broken into lines at
 /// any width with arithmetic only.

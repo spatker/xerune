@@ -144,6 +144,36 @@ pub fn parse_opacity(val: &str) -> Option<f32> {
     opacity.is_finite().then(|| opacity.clamp(0.0, 1.0))
 }
 
+/// `font-variant-numeric`: `normal`, or at most one keyword of each group
+/// (figures, spacing, fractions, `ordinal`, `slashed-zero`).
+fn parse_font_variant_numeric(val: &str) -> Option<crate::text::FontFeatures> {
+    use crate::text::FontFeatures as F;
+    let val = val.trim();
+    if val == "normal" {
+        return Some(F::NONE);
+    }
+    let (mut features, mut groups) = (F::NONE, 0u8);
+    for word in val.split_whitespace() {
+        let (feature, group) = match word {
+            "lining-nums" => (F::LINING_NUMS, 0),
+            "oldstyle-nums" => (F::OLDSTYLE_NUMS, 0),
+            "proportional-nums" => (F::PROPORTIONAL_NUMS, 1),
+            "tabular-nums" => (F::TABULAR_NUMS, 1),
+            "diagonal-fractions" => (F::DIAGONAL_FRACTIONS, 2),
+            "stacked-fractions" => (F::STACKED_FRACTIONS, 2),
+            "ordinal" => (F::ORDINAL, 3),
+            "slashed-zero" => (F::SLASHED_ZERO, 4),
+            _ => return None,
+        };
+        if groups & (1 << group) != 0 {
+            return None;
+        }
+        groups |= 1 << group;
+        features = features | feature;
+    }
+    (groups != 0).then_some(features)
+}
+
 /// Parses a `line-height` value. Negative values are invalid.
 fn parse_line_height(val: &str) -> Option<crate::style::LineHeight> {
     use crate::style::LineHeight;
@@ -297,8 +327,10 @@ fn apply_resolved_declaration(prop: &str, val: &str, current_style: &mut Contain
             }
         }
         "font" => {
-            // The shorthand resets line-height unless it gives one (`14px/1.4`).
+            // The shorthand resets line-height unless it gives one (`14px/1.4`),
+            // and the font-variant longhands.
             current_style.line_height = crate::style::LineHeight::Normal;
+            current_style.font_features = crate::text::FontFeatures::NONE;
             let mut has_size = false;
             let parts: Vec<&str> = val.split_whitespace().collect();
             for part in parts {
@@ -338,6 +370,7 @@ fn apply_resolved_declaration(prop: &str, val: &str, current_style: &mut Contain
             }
             _ => return Err(Value),
         },
+        "font-variant-numeric" => current_style.font_features = parse_font_variant_numeric(val).ok_or(Value)?,
         "text-overflow" => match val.trim() {
             "clip" => current_style.text_overflow_ellipsis = false,
             "ellipsis" => current_style.text_overflow_ellipsis = true,
@@ -540,6 +573,21 @@ fn apply_resolved_declaration(prop: &str, val: &str, current_style: &mut Contain
 #[cfg(all(test, feature = "std"))]
 mod tests {
     use super::resolve_font_relative_lengths;
+
+    #[test]
+    fn font_variant_numeric_takes_one_keyword_per_group() {
+        use crate::text::FontFeatures as F;
+        let parse = super::parse_font_variant_numeric;
+        assert_eq!(parse("normal"), Some(F::NONE));
+        assert_eq!(parse(" proportional-nums "), Some(F::PROPORTIONAL_NUMS));
+        assert_eq!(parse("slashed-zero tabular-nums lining-nums"), Some(F::SLASHED_ZERO | F::TABULAR_NUMS | F::LINING_NUMS));
+        assert_eq!(parse("proportional-nums tabular-nums"), None);
+        assert_eq!(parse("ordinal ordinal"), None);
+        assert_eq!(parse("normal ordinal"), None);
+        assert_eq!(parse(""), None);
+        let tags: Vec<_> = (F::ORDINAL | F::PROPORTIONAL_NUMS).tags().collect();
+        assert_eq!(tags, [*b"pnum", *b"ordn"]);
+    }
 
     #[test]
     fn box_shorthands_take_one_to_four_values() {

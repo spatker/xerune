@@ -36,6 +36,8 @@ pub struct StyleCacheKey {
     pub parent_font_size_bits: u32,
     /// Parent font weight.
     pub parent_weight: u16,
+    /// Parent `font-variant-numeric` features (inherited).
+    pub parent_font_features: crate::text::FontFeatures,
     /// Parent foreground color in u32 format.
     pub parent_color_u32: u32,
     /// Parent `accent-color` (inherited, like `color`).
@@ -389,6 +391,7 @@ pub(crate) fn resolve_styles(
         matched_rules,
         parent_font_size_bits: parent_style.font_size.to_bits(),
         parent_weight: parent_style.weight,
+        parent_font_features: parent_style.font_features,
         parent_color_u32,
         parent_accent: parent_style.accent_color.map(|c| u32::from_be_bytes([c.r, c.g, c.b, c.a])),
         viewport: (vw.round() as u32, vh.round() as u32),
