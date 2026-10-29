@@ -156,6 +156,22 @@ thread_local! {
     pub(crate) static STYLESHEET_CACHE: std::cell::RefCell<BoundedStylesheetCache> =
         std::cell::RefCell::new(BoundedStylesheetCache::new(cache_config::MAX_STYLESHEET_CACHE_ENTRIES));
     pub(crate) static CACHE_STATS: std::cell::Cell<(usize, usize)> = std::cell::Cell::new((0, 0));
+    /// Set while [`without_style_cache`] runs.
+    static BYPASS_STYLE_CACHE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Runs `f` with element styles resolved anew, neither read from nor
+/// written to the style cache: for `XERUNE_VERIFY`, which checks the cache.
+pub(crate) fn without_style_cache<T>(f: impl FnOnce() -> T) -> T {
+    #[cfg(feature = "std")]
+    {
+        BYPASS_STYLE_CACHE.with(|bypass| bypass.set(true));
+        let result = f();
+        BYPASS_STYLE_CACHE.with(|bypass| bypass.set(false));
+        result
+    }
+    #[cfg(not(feature = "std"))]
+    f()
 }
 
 /// Returns the current number of cached stylesheets in thread-local storage.
@@ -385,7 +401,9 @@ pub(crate) fn resolve_styles(
             .collect(),
         false => Vec::new(),
     };
-    let (mut layout_style, mut current_style) = if let Some(cached_styles) = style_cache.get(&cache_key) {
+    let bypass = BYPASS_STYLE_CACHE.with(|bypass| bypass.get());
+    let cached = if bypass { None } else { style_cache.get(&cache_key) };
+    let (mut layout_style, mut current_style) = if let Some(cached_styles) = cached {
         CACHE_STATS.with(|stats| {
             let (hits, misses) = stats.get();
             stats.set((hits + 1, misses));
@@ -424,7 +442,7 @@ pub(crate) fn resolve_styles(
             }
         }
         let pair = (l_style, c_style);
-        if cache_config::MAX_STYLE_RULE_CACHE_ENTRIES > 0 {
+        if cache_config::MAX_STYLE_RULE_CACHE_ENTRIES > 0 && !bypass {
             if style_cache.len() >= cache_config::MAX_STYLE_RULE_CACHE_ENTRIES {
                 style_cache.clear();
             }

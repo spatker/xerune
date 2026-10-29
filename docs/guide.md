@@ -398,7 +398,7 @@ fn view_fingerprint(&self) -> Option<u64> {
 
 When two consecutive message-driven syncs see an unchanged fingerprint (and no viewport change happened), the runtime skips template re-instantiation, style resolution and text measurement — a big win for messages that only touch state the view does not display (bookkeeping, hidden timers). Canvas pixels remain safe: dirty canvas flags still force a redraw even when the rebuild is skipped, and viewport changes always rebuild.
 
-The default implementation returns `None` (no fingerprinting) and keeps the always-rebuild behavior. **The runtime trusts your fingerprint completely** — if it misses state the view reads, the UI will go stale. Keep it a function of exactly the view-relevant fields.
+The default implementation returns `None` (no fingerprinting) and keeps the always-rebuild behavior. **The runtime trusts your fingerprint completely** — if it misses state the view reads, the UI will go stale. Keep it a function of exactly the view-relevant fields. `XERUNE_VERIFY=1` (below) catches one that misses some: it builds every skipped view anyway and reports where it differs from the one shown.
 
 ---
 
@@ -566,6 +566,27 @@ half again its raster time.
 
 A `Renderer` of your own reports its own breakdown through
 `Renderer::set_profiling` and `take_profile`.
+
+**Verifying the shortcuts.** The runtime saves work three ways: a rebuilt
+view keeps the previous layout tree where it can and reuses resolved
+styles, a view `view_fingerprint` calls unchanged isn't rebuilt, and a
+frame repaints only what changed. `XERUNE_VERIFY=1` (or
+`Runtime::set_verify(true)`) checks each against the long way round while
+the app runs: every view is also built and laid out from scratch, without
+cached styles, and must draw the same commands, and every frame is also
+repainted in full and must give the same pixels. Differences go to stderr:
+
+```text
+xerune verify: a view `view_fingerprint` left unchanged draws differently from the view built from scratch (3 vs 3 commands); first difference, command 1:
+  shown:   DrawText { text: "1 a", rect: Rect { x: 0.0, y: 16.0, .. } .. }
+  scratch: DrawText { text: "1 ab", rect: Rect { x: 0.0, y: 16.0, .. } .. }
+xerune verify: repainting the damaged areas [Rect { x: -1.0, y: 50.0, width: 122.0, height: 22.0 }] left 1600 pixels different from a full repaint, within x 40..=119, y 51..=70
+```
+
+Skipped views are checked only while nothing animates, since animated
+styles exist only in the view shown. Each check costs a view build or a
+full repaint, so use it while developing (it runs on the board too), not in
+production. `Runtime::verify_failures` counts the differences, for tests.
 
 ---
 

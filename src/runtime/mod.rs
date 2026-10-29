@@ -7,6 +7,7 @@ pub mod time;
 mod diff;
 mod stats;
 mod transition;
+mod verify;
 
 pub use stats::{FrameStats, PhaseTime};
 pub use timer::{Poll, Subscriptions, TimerId, Wake};
@@ -133,6 +134,9 @@ pub struct Runtime<M: Model, R> {
     /// Phase times, while the model's stats subscription or
     /// `XERUNE_PROFILE=1` wants them.
     stats: stats::Profiler,
+    /// Checks of the runtime's shortcuts, while [`Self::set_verify`] or
+    /// `XERUNE_VERIFY=1` asks for them.
+    verify: Option<verify::Verifier>,
 }
 
 impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
@@ -162,6 +166,10 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
          let profile = std::env::var("XERUNE_PROFILE").is_ok_and(|v| v.trim() == "1");
          #[cfg(not(all(feature = "std", not(target_arch = "wasm32"))))]
          let profile = false;
+         #[cfg(all(feature = "std", not(target_arch = "wasm32")))]
+         let verify = std::env::var("XERUNE_VERIFY").is_ok_and(|v| v.trim() == "1");
+         #[cfg(not(all(feature = "std", not(target_arch = "wasm32"))))]
+         let verify = false;
 
          let mut runtime = Self {
              model,
@@ -199,6 +207,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
              input_keyboard_override,
              new_tree: true,
              stats: stats::Profiler::new(profile.then(|| SystemClock.now())),
+             verify: verify.then(verify::Verifier::default),
          };
          runtime.update_subscriptions();
          runtime
@@ -244,6 +253,24 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
     /// backends' names; a device with other buttons binds its own.
     pub fn set_key_map(&mut self, key_map: crate::keys::KeyMap) {
         self.key_map = key_map;
+    }
+
+    /// Checks the runtime's shortcuts against the long way round and reports
+    /// where they differ, on stderr: that a rebuilt view, which reuses the
+    /// previous layout and cached styles, draws what one built from scratch
+    /// draws; that a view [`Model::view_fingerprint`] skips draws what
+    /// rebuilding it would; and that repainting the damaged areas gives a
+    /// full repaint. Each check costs a view build or a full repaint, so
+    /// this is for development. `XERUNE_VERIFY=1` turns it on.
+    pub fn set_verify(&mut self, on: bool) {
+        if on != self.verify.is_some() {
+            self.verify = on.then(verify::Verifier::default);
+        }
+    }
+
+    /// How many checks of [`Self::set_verify`] found a difference.
+    pub fn verify_failures(&self) -> usize {
+        self.verify.as_ref().map_or(0, |v| v.failures)
     }
 
     /// Makes tapping a text input (`<input type="text" id="..">`) open the
@@ -711,6 +738,10 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
         if rebuilt {
             self.rebuild();
             self.last_fingerprint = fingerprint;
+        } else if self.verify.is_some() && self.active_animations.is_empty() && self.transitions.is_empty() {
+            // Animated styles are the shown view's alone: compared only
+            // without them.
+            self.verify_view("a view `view_fingerprint` left unchanged", self.previous_keys());
         }
 
         let mut dirty = rebuilt;
@@ -756,24 +787,8 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
             crate::screen::set_viewport(w, h);
         }
         let start = self.stats.start();
-        let ui = {
-            // Elements not in the current view are new; in a new tree, all
-            // are (also the first: the view built by `new` was never shown).
-            let previous_keys = self.ui.uses_starting_style.then(|| match self.new_tree {
-                true => HashSet::new(),
-                false => self.ui.keys.values().copied().collect(),
-            });
-            match &self.keyboard {
-                Some(session) => {
-                    let validator = |s: &str| KeyboardMsg::from_str(s).is_ok();
-                    Ui::new_compiled_after(&session.keyboard, &self.measurer, self.default_style.clone(), &validator, self.pointer_state.clone(), previous_keys).unwrap()
-                }
-                None => {
-                    let validator = |s: &str| M::Message::from_str(s).is_ok();
-                    Ui::new_compiled_after(&self.model, &self.measurer, self.default_style.clone(), &validator, self.pointer_state.clone(), previous_keys).unwrap()
-                }
-            }
-        };
+        let previous_keys = self.previous_keys();
+        let ui = self.new_view(previous_keys.clone());
         // Kept until the transitions have compared the views.
         let mut old = core::mem::replace(&mut self.ui, ui);
 
@@ -797,7 +812,54 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
         self.new_tree = false;
         drop(old);
         self.stats.stop(Phase::View, start);
+        if self.verify.is_some() {
+            self.verify_view("the rebuilt view", previous_keys);
+        }
         self.animate(None);
+    }
+
+    /// The keys of the elements shown now, which a new view's
+    /// `@starting-style` rules don't apply to; in a new tree there are none
+    /// (also the first: the view built by `new` was never shown).
+    fn previous_keys(&self) -> Option<HashSet<u64>> {
+        self.ui.uses_starting_style.then(|| match self.new_tree {
+            true => HashSet::new(),
+            false => self.ui.keys.values().copied().collect(),
+        })
+    }
+
+    /// The view of the model, or of the on-screen keyboard while it is
+    /// open, built but not laid out.
+    fn new_view(&self, previous_keys: Option<HashSet<u64>>) -> Ui {
+        match &self.keyboard {
+            Some(session) => {
+                let validator = |s: &str| KeyboardMsg::from_str(s).is_ok();
+                Ui::new_compiled_after(&session.keyboard, &self.measurer, self.default_style.clone(), &validator, self.pointer_state.clone(), previous_keys).unwrap()
+            }
+            None => {
+                let validator = |s: &str| M::Message::from_str(s).is_ok();
+                Ui::new_compiled_after(&self.model, &self.measurer, self.default_style.clone(), &validator, self.pointer_state.clone(), previous_keys).unwrap()
+            }
+        }
+    }
+
+    /// Checks that the view shown draws what a view built and laid out
+    /// from scratch, without cached styles, draws (`XERUNE_VERIFY`).
+    fn verify_view(&mut self, what: &str, previous_keys: Option<HashSet<u64>>) {
+        // As `build_view`: another UI may have set the global viewport since.
+        if let Some((w, h)) = self.viewport_px {
+            crate::screen::set_viewport(w, h);
+        }
+        let mut scratch = crate::ui::style_resolution::without_style_cache(|| self.new_view(previous_keys));
+        Runtime::<M, R>::apply_image_sizes(&mut scratch, &self.images);
+        let _ = scratch.compute_layout(self.cached_size);
+        scratch.scroll_offsets = self.ui.scroll_offsets.clone();
+        let focused = self.focused_id.as_deref();
+        let expected = scratch.build_commands(&self.context.canvases, focused);
+        let actual = self.ui.build_commands(&self.context.canvases, focused);
+        if let Some(verify) = &mut self.verify {
+            verify.compare_views(what, &expected, &actual);
+        }
     }
 
     /// Lays the view out at the viewport size, timed.
@@ -1081,6 +1143,12 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
         #[cfg(feature = "std")]
         if let Some(stats) = self.stats.take_report(self.now()) {
             eprint!("{}", stats::report(&stats, &renderer.take_profile()));
+        }
+        if let (Some(verify), Some((width, height))) = (&mut self.verify, self.viewport_px) {
+            renderer.set_profiling(false);
+            let resources = RenderResources::new(&self.context.canvases, &self.images);
+            // Rounded to whole pixels (`f32::round` needs std).
+            verify.check_frame(renderer, &commands, &resources, &damage, ((width + 0.5) as u32, (height + 0.5) as u32));
         }
 
         self.full_repaint = false;
