@@ -269,6 +269,21 @@ impl Declared {
         }
     }
 
+    /// Whether Xerune supports the declaration's value. One it doesn't
+    /// sets nothing, or (an `align-items` it doesn't know) the default.
+    pub(crate) fn understood(&self) -> bool {
+        match self {
+            Declared::Nothing => false,
+            Declared::Width(layout, _) | Declared::Height(layout, _) => layout.is_some(),
+            Declared::Padding(layout, _) => layout.is_some(),
+            Declared::PaddingSide(_, layout, _) => layout.is_some(),
+            Declared::AlignItems(align) => align.is_some(),
+            Declared::AlignSelf(align) => align.is_some(),
+            Declared::Gap(row, column) => row.is_some() && column.is_some(),
+            _ => true,
+        }
+    }
+
     /// Sets the style the declaration gives.
     pub(crate) fn apply(&self, style: &mut ContainerStyle, layout: &mut Style) {
         match self {
@@ -366,7 +381,8 @@ impl Declared {
                 }
             }
             &Declared::ZIndex(z) => style.z_index = z,
-            &Declared::Text(prop, val) => super::apply_declaration(prop, val, style, layout),
+            // Unsupported ones were logged; they do nothing.
+            &Declared::Text(prop, val) => { let _ = super::apply_declaration(prop, val, style, layout); }
         }
     }
 }
@@ -415,7 +431,12 @@ fn parse_all(source: &'static [(&'static str, &'static str)]) -> Box<[Declared]>
     for font_pass in [true, false] {
         for &(prop, val) in source {
             if super::sets_font_size(prop) == font_pass {
-                parsed.push(if same_everywhere(val) { Declared::parse(prop, val) } else { None }.unwrap_or(Declared::Text(prop, val)));
+                let declared = if same_everywhere(val) { Declared::parse(prop, val) } else { None };
+                // Logged as `apply_declaration` logs those it applies.
+                if declared.as_ref().is_some_and(|d| !d.understood()) {
+                    crate::diag::warn_once("Unsupported CSS value", &format!("{prop}: {val}"));
+                }
+                parsed.push(declared.unwrap_or(Declared::Text(prop, val)));
             }
         }
     }

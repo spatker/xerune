@@ -76,7 +76,7 @@ pub(crate) fn build(
     let mut style = defaults.container_style;
     for font_pass in [true, false] {
         for d in declarations().filter(|d| d.name != "content" && crate::css::sets_font_size(&d.name) == font_pass) {
-            crate::css::apply_declaration(&d.name, &d.value, &mut style, &mut layout);
+            let _ = crate::css::apply_declaration(&d.name, &d.value, &mut style, &mut layout);
         }
     }
 

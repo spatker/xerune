@@ -407,7 +407,7 @@ pub(crate) fn resolve_styles(
                     None => {
                         // `!important` ones come after the `style` attribute.
                         for decl in rule.declarations.iter().filter(|d| !d.important && css::sets_font_size(&d.name) == font_pass) {
-                            css::apply_declaration(&decl.name, &decl.value, &mut c_style, &mut l_style);
+                            let _ = css::apply_declaration(&decl.name, &decl.value, &mut c_style, &mut l_style);
                         }
                     }
                     // Kept as written: resolved for the part when it is built.
@@ -466,7 +466,7 @@ pub(crate) fn resolve_styles(
     for font_pass in [true, false] {
         for &index in &important_rules {
             for decl in stylesheet.rules[index].declarations.iter().filter(|d| d.important && css::sets_font_size(&d.name) == font_pass) {
-                css::apply_declaration(&decl.name, &decl.value, &mut current_style, &mut layout_style);
+                let _ = css::apply_declaration(&decl.name, &decl.value, &mut current_style, &mut layout_style);
             }
         }
     }
