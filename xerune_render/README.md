@@ -18,7 +18,4 @@ let renderer = xerune_render::SoftwareRenderer::new(fonts.clone());
 // xerune::Runtime::new(model, fonts) ... xerune::App::new(runtime).run(renderer)
 ```
 
-Without the default `std` feature it builds for `no_std` targets with
-bitmap fonts only (`Fonts::bitmap`).
-
 MIT licensed. See the [xerune repository](https://github.com/spatker/xerune) for the engine, examples and docs.

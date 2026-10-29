@@ -100,7 +100,7 @@ fn offset(now: Instant, by: f32) -> Instant {
 /// A CSS time in seconds, to the microsecond: `0.2` in `f32` is a hair over
 /// 200 ms, which would miss the frame at exactly 200 ms.
 fn seconds(s: f32) -> Duration {
-    // `+ 0.5` rounds (times are positive here); `f64::round` needs std.
+    // `+ 0.5` rounds: times are positive here.
     Duration::from_micros((s as f64 * 1e6 + 0.5) as u64)
 }
 

@@ -1,4 +1,4 @@
-#[cfg(all(feature = "std", not(target_arch = "wasm32")))]
+#[cfg(not(target_arch = "wasm32"))]
 /// Monotonic time representation using std::time::Instant.
 pub type Instant = std::time::Instant;
 
@@ -9,14 +9,15 @@ extern "C" {
     fn date_now() -> f64;
 }
 
-/// Monotonic time representation for `no_std` and WASM environments representing milliseconds.
-#[cfg(any(not(feature = "std"), target_arch = "wasm32"))]
+/// Monotonic time in the browser, in milliseconds (`std::time::Instant`
+/// panics on `wasm32-unknown-unknown`).
+#[cfg(target_arch = "wasm32")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Instant(pub u64); // milliseconds since boot
 
-#[cfg(any(not(feature = "std"), target_arch = "wasm32"))]
+#[cfg(target_arch = "wasm32")]
 impl Instant {
-    /// Return the current time. Under no_std or WASM, this defaults to a zero timestamp.
+    /// Return the current time: `Date.now()` with `browser`, else zero.
     pub fn now() -> Self {
         #[cfg(all(target_arch = "wasm32", feature = "browser"))]
         {
@@ -58,7 +59,7 @@ impl Instant {
     }
 }
 
-#[cfg(any(not(feature = "std"), target_arch = "wasm32"))]
+#[cfg(target_arch = "wasm32")]
 impl core::ops::Add<core::time::Duration> for Instant {
     type Output = Self;
 
@@ -67,14 +68,14 @@ impl core::ops::Add<core::time::Duration> for Instant {
     }
 }
 
-#[cfg(any(not(feature = "std"), target_arch = "wasm32"))]
+#[cfg(target_arch = "wasm32")]
 impl core::ops::AddAssign<core::time::Duration> for Instant {
     fn add_assign(&mut self, rhs: core::time::Duration) {
         self.0 += rhs.as_millis() as u64;
     }
 }
 
-#[cfg(any(not(feature = "std"), target_arch = "wasm32"))]
+#[cfg(target_arch = "wasm32")]
 impl core::ops::Sub<core::time::Duration> for Instant {
     type Output = Self;
 
@@ -83,7 +84,7 @@ impl core::ops::Sub<core::time::Duration> for Instant {
     }
 }
 
-#[cfg(any(not(feature = "std"), target_arch = "wasm32"))]
+#[cfg(target_arch = "wasm32")]
 impl core::ops::Sub<Instant> for Instant {
     type Output = core::time::Duration;
 
@@ -100,9 +101,8 @@ pub trait Clock: Send + 'static {
     fn now(&self) -> Instant;
 }
 
-/// The platform's monotonic clock: [`Instant::now`] (`std`, or `Date.now()`
-/// in the browser). Without `std` it always reads zero, so `no_std` hosts
-/// install their own with [`crate::Runtime::set_clock`].
+/// The platform's monotonic clock: [`Instant::now`] (`Date.now()` in the
+/// browser).
 #[derive(Clone, Copy, Debug, Default)]
 pub struct SystemClock;
 
@@ -112,8 +112,7 @@ impl Clock for SystemClock {
     }
 }
 
-/// A clock given as a function, e.g. a `no_std` host's millisecond counter:
-/// `runtime.set_clock(|| Instant::from_millis(board_millis()))`.
+/// A clock given as a function returning the time.
 impl<F: Fn() -> Instant + Send + 'static> Clock for F {
     fn now(&self) -> Instant {
         self()
@@ -122,14 +121,12 @@ impl<F: Fn() -> Instant + Send + 'static> Clock for F {
 
 /// A clock that only moves when told to, for tests and headless snapshots.
 /// Clones share the same time.
-#[cfg(feature = "std")]
 #[derive(Clone, Debug)]
 pub struct ManualClock {
     start: Instant,
     elapsed_nanos: std::sync::Arc<std::sync::atomic::AtomicU64>,
 }
 
-#[cfg(feature = "std")]
 impl ManualClock {
     /// A clock standing at the current time.
     pub fn new() -> Self {
@@ -153,14 +150,12 @@ impl ManualClock {
     }
 }
 
-#[cfg(feature = "std")]
 impl Default for ManualClock {
     fn default() -> Self {
         Self::new()
     }
 }
 
-#[cfg(feature = "std")]
 impl Clock for ManualClock {
     fn now(&self) -> Instant {
         self.start + self.elapsed()

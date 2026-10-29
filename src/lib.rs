@@ -1,33 +1,15 @@
 //! Xerune is a lightweight, CPU-only native HTML/CSS rendering library designed
 //! for embedded Linux environments, following the Model-View-Update (MVU) pattern.
 
-#![cfg_attr(not(feature = "std"), no_std)]
 #![warn(missing_docs)]
 
-#[cfg(not(feature = "std"))]
-extern crate alloc;
 // The runtime's own views (the on-screen keyboard) use the derive, whose
 // code names `::xerune`.
 extern crate self as xerune;
 
-/// Internal prelude for allocator-agnostic collections and types in `no_std` environments.
+/// Internal prelude: the collections and types most modules use.
 #[doc(hidden)]
 pub mod alloc_prelude {
-    #[cfg(not(feature = "std"))]
-    pub use alloc::{
-        string::{String, ToString},
-        vec::Vec,
-        boxed::Box,
-        sync::Arc,
-        borrow::{Cow, ToOwned},
-        rc::Rc,
-        format,
-        vec,
-    };
-    #[cfg(not(feature = "std"))]
-    pub use hashbrown::{HashMap, HashSet};
-
-    #[cfg(feature = "std")]
     pub use std::{
         string::{String, ToString},
         vec::Vec,
@@ -74,14 +56,12 @@ pub mod font;
 mod diag;
 
 /// System-specific backends for windowing and hardware displays.
-#[cfg(feature = "std")]
 pub mod backend;
-#[cfg(all(feature = "std", not(target_arch = "wasm32")))]
+#[cfg(not(target_arch = "wasm32"))]
 pub use backend::App;
 
 pub use graphics::{Color, Gradient, LinearGradient, RadialGradient, RadialShape, RadialExtent, ConicGradient, Rect, Damage, Canvas, Context, DrawCommand, TextMeasurer, Renderer, CommandProfile, RenderResources, Surface, Pixels, Rotation};
 pub use images::{Image, ImageStatus, ImageStore};
-#[cfg(feature = "std")]
 pub use images::{DefaultImageLoader, ImageError, ImageLoader};
 #[doc(hidden)]
 pub use style::{Overflow, ContainerStyle, RenderData, RenderKind, Display, TextAlign, LineHeight, WhiteSpace, Direction, WritingMode, FlexDirection, FlexWrap, AlignContent, AlignItems, CssJustifyContent, Position, BoxSizing};
@@ -92,7 +72,6 @@ pub use ui::TemplateLayout;
 #[doc(hidden)]
 pub use ui::{Interaction, Ui, UiBuilder};
 #[doc(hidden)]
-#[cfg(feature = "std")]
 pub use ui::{cache_config, stylesheet_cache_len};
 pub use runtime::{Runtime, Subscriptions, TimerId, FrameStats, PhaseTime};
 pub use font::{BitmapGlyph, BitmapFont};

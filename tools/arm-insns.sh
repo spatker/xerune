@@ -31,7 +31,7 @@ fi
 build() {
     # Static musl so qemu-arm needs no sysroot; NEON flags as on the boards.
     (cd "$root" && RUSTFLAGS="-C target-feature=+neon,+vfp4,+d32" nice cargo zigbuild -j4 --release \
-        --target $target --no-default-features --features std --example render_bench >&2)
+        --target $target --no-default-features --example render_bench >&2)
     echo "$root/target/$target/release/examples/render_bench"
 }
 

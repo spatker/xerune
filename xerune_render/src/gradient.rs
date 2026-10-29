@@ -1,6 +1,4 @@
 use crate::blitter::{pack_color, blend_solid_span, blend_pixel, calc_pixel_index};
-#[cfg(not(feature = "std"))]
-use crate::F32Ext;
 use xerune::alloc_prelude::Vec;
 /// Sample a stop list at `t`, interpolating in premultiplied alpha like CSS
 /// does (so fading to `transparent` doesn't pass through grey). Stops must be
@@ -249,20 +247,15 @@ struct ColorLut {
     opaque: bool,
 }
 
-#[cfg(feature = "std")]
 type LutRef = std::rc::Rc<ColorLut>;
-#[cfg(not(feature = "std"))]
-type LutRef = ColorLut;
 
 /// Built tables, keyed by stops and domain. The UI tree is rebuilt on every
 /// change, so the same gradient arrives as a fresh value each frame; most
 /// (dial faces, tick rings) never change and should not be rebuilt.
-#[cfg(feature = "std")]
 const LUT_CACHE_ENTRIES: usize = 64;
 
 /// What a cached LUT was built from, compared on lookup so that two gradients
 /// whose hashes collide never share a table.
-#[cfg(feature = "std")]
 #[derive(PartialEq)]
 struct LutInputs {
     stops: Vec<(xerune::Color, u32)>,
@@ -272,7 +265,6 @@ struct LutInputs {
     swap_rb: bool,
 }
 
-#[cfg(feature = "std")]
 impl LutInputs {
     fn matches(&self, stops: &[(xerune::Color, f32)], start: f32, end: f32, periodic: bool, swap_rb: bool) -> bool {
         self.stops.len() == stops.len()
@@ -281,14 +273,12 @@ impl LutInputs {
     }
 }
 
-#[cfg(feature = "std")]
 thread_local! {
     static LUT_CACHE: std::cell::RefCell<std::collections::HashMap<u64, (LutInputs, std::rc::Rc<ColorLut>)>> =
         std::cell::RefCell::new(std::collections::HashMap::new());
 }
 
 impl ColorLut {
-    #[cfg(feature = "std")]
     fn cached(stops: &[(xerune::Color, f32)], start: f32, end: f32, periodic: bool, swap_rb: bool) -> LutRef {
         use std::hash::{Hash, Hasher};
         let mut h = std::collections::hash_map::DefaultHasher::new();
@@ -318,11 +308,6 @@ impl ColorLut {
             cache.insert(key, (inputs, lut.clone()));
             lut
         })
-    }
-
-    #[cfg(not(feature = "std"))]
-    fn cached(stops: &[(xerune::Color, f32)], start: f32, end: f32, periodic: bool, swap_rb: bool) -> LutRef {
-        Self::new(stops, start, end, periodic, swap_rb)
     }
 
     fn new(stops: &[(xerune::Color, f32)], start: f32, end: f32, periodic: bool, swap_rb: bool) -> Self {
@@ -637,7 +622,7 @@ fn fast_sin(x: f32) -> f32 {
 }
 
 /// atan2 via a minimax polynomial (max error ~1e-5 rad), in [-pi, pi].
-/// Avoids libm so it works without `std`.
+/// A polynomial instead of a libm call.
 #[inline(always)]
 fn fast_atan2(y: f32, x: f32) -> f32 {
     let ax = x.abs();

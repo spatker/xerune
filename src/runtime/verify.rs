@@ -103,8 +103,5 @@ impl Verifier {
 }
 
 fn report(message: &str) {
-    #[cfg(feature = "std")]
-    std::eprintln!("xerune verify: {message}");
-    #[cfg(not(feature = "std"))]
-    log::warn!("xerune verify: {message}");
+    eprintln!("xerune verify: {message}");
 }

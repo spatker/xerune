@@ -49,8 +49,8 @@ pub enum ImageStatus {
 enum Entry {
     Loading,
     Ready { image: Image, pinned: bool },
-    // Without std nothing is loaded in the background, so nothing fails.
-    #[cfg_attr(not(feature = "std"), allow(dead_code))]
+    // In the browser nothing is loaded in the background, so nothing fails.
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     Failed,
 }
 
@@ -60,7 +60,7 @@ pub type Waker = Arc<dyn Fn() + Send + Sync>;
 /// Holds decoded images for the current view and drives their (background) loading.
 pub struct ImageStore {
     entries: HashMap<String, Entry>,
-    #[cfg(all(feature = "std", not(target_arch = "wasm32")))]
+    #[cfg(not(target_arch = "wasm32"))]
     pool: pool::Pool,
 }
 
@@ -76,7 +76,7 @@ impl ImageStore {
     pub fn new() -> Self {
         Self {
             entries: HashMap::new(),
-            #[cfg(all(feature = "std", not(target_arch = "wasm32")))]
+            #[cfg(not(target_arch = "wasm32"))]
             pool: pool::Pool::new(Arc::new(DefaultImageLoader::default())),
         }
     }
@@ -103,7 +103,7 @@ impl ImageStore {
         self.entries.values().any(|e| matches!(e, Entry::Loading))
     }
 
-    /// Provide an image directly (e.g. bundled assets or `no_std` targets).
+    /// Provide an image directly (e.g. bundled assets).
     ///
     /// Inserted images are pinned: they are kept even while no `<img>` references them.
     /// Call [`Runtime::sync_view`](crate::Runtime::sync_view) afterwards to relayout.
@@ -137,19 +137,19 @@ impl ImageStore {
         }
     }
 
-    #[cfg(all(feature = "std", not(target_arch = "wasm32")))]
+    #[cfg(not(target_arch = "wasm32"))]
     fn request(&mut self, src: &str) -> bool {
         self.pool.request(src)
     }
 
-    #[cfg(not(all(feature = "std", not(target_arch = "wasm32"))))]
+    #[cfg(target_arch = "wasm32")]
     fn request(&mut self, _src: &str) -> bool {
         false
     }
 
     /// Apply finished background loads. Returns true if anything changed.
     pub(crate) fn poll(&mut self) -> bool {
-        #[cfg(all(feature = "std", not(target_arch = "wasm32")))]
+        #[cfg(not(target_arch = "wasm32"))]
         {
             let mut changed = false;
             while let Some((src, result)) = self.pool.try_recv() {
@@ -157,13 +157,13 @@ impl ImageStore {
             }
             changed
         }
-        #[cfg(not(all(feature = "std", not(target_arch = "wasm32"))))]
+        #[cfg(target_arch = "wasm32")]
         {
             false
         }
     }
 
-    #[cfg(all(feature = "std", not(target_arch = "wasm32")))]
+    #[cfg(not(target_arch = "wasm32"))]
     fn apply(&mut self, src: String, result: Result<Image, ImageError>) -> bool {
         // Ignore results for sources dropped from the store in the meantime.
         if !matches!(self.entries.get(&src), Some(Entry::Loading)) {
@@ -181,10 +181,9 @@ impl ImageStore {
     }
 }
 
-#[cfg(feature = "std")]
 pub use loader::{decode_png, is_remote, DefaultImageLoader, ImageError, ImageLoader, MAX_IMAGE_BYTES};
 
-#[cfg(all(feature = "std", not(target_arch = "wasm32")))]
+#[cfg(not(target_arch = "wasm32"))]
 impl ImageStore {
     /// Replace the loader used for sources requested from now on.
     pub fn set_loader(&mut self, loader: impl ImageLoader) {
@@ -220,7 +219,6 @@ impl ImageStore {
     }
 }
 
-#[cfg(feature = "std")]
 mod loader {
     use super::Image;
     use std::fmt;
@@ -383,7 +381,7 @@ mod loader {
 
 /// Background worker pool. Workers are spawned lazily on the first request and exit when
 /// the pool (i.e. the owning [`ImageStore`]) is dropped.
-#[cfg(all(feature = "std", not(target_arch = "wasm32")))]
+#[cfg(not(target_arch = "wasm32"))]
 mod pool {
     use super::{Image, ImageError, ImageLoader, Waker};
     use std::sync::mpsc::{channel, Receiver, RecvTimeoutError, Sender};
@@ -496,7 +494,7 @@ mod pool {
     }
 }
 
-#[cfg(all(test, feature = "std"))]
+#[cfg(test)]
 mod tests {
     use super::*;
 

@@ -33,28 +33,18 @@ fn parse_named_color(s: &str) -> Option<Color> {
 /// Parse a CSS color string (#hex, rgb/rgba, or named CSS color).
 pub fn parse_hex_color(val: &str) -> Option<Color> {
     let trimmed = val.trim();
-    
-    #[cfg(feature = "std")]
-    {
-        parse_color_fast(trimmed)
-            .or_else(|| parse_named_color(trimmed))
-            .or_else(|| {
-                csscolorparser::parse(trimmed).ok().map(|c| {
-                    Color::from_rgba8(
-                        (c.r * 255.0) as u8,
-                        (c.g * 255.0) as u8,
-                        (c.b * 255.0) as u8,
-                        (c.a * 255.0) as u8,
-                    )
-                })
+    parse_color_fast(trimmed)
+        .or_else(|| parse_named_color(trimmed))
+        .or_else(|| {
+            csscolorparser::parse(trimmed).ok().map(|c| {
+                Color::from_rgba8(
+                    (c.r * 255.0) as u8,
+                    (c.g * 255.0) as u8,
+                    (c.b * 255.0) as u8,
+                    (c.a * 255.0) as u8,
+                )
             })
-    }
-
-    #[cfg(not(feature = "std"))]
-    {
-        parse_color_fast(trimmed)
-            .or_else(|| parse_named_color(trimmed))
-    }
+        })
 }
 
 fn parse_color_fast(s: &str) -> Option<Color> {

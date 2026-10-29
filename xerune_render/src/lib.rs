@@ -5,7 +5,7 @@
 //!
 //! [`SoftwareRenderer`] is the [`xerune::Renderer`] and owns the glyph and
 //! image caches; [`Fonts`] (TrueType/OpenType, shaped by harfrust and
-//! rasterized by fontdue, or bitmap fonts without `std`) is both its glyph source and the runtime's
+//! rasterized by fontdue, or bitmap fonts) is both its glyph source and the runtime's
 //! [`xerune::TextMeasurer`], so text is measured and drawn with the same
 //! fonts:
 //!
@@ -16,20 +16,11 @@
 //! // xerune::Runtime::new(model, fonts) ... xerune::App::new(runtime).run(renderer)
 //! # let _ = renderer;
 //! ```
-//!
-//! Without the default `std` feature it builds for `no_std` targets with
-//! bitmap fonts only ([`Fonts::bitmap`]).
-
-#![cfg_attr(not(feature = "std"), no_std)]
-
-#[cfg(not(feature = "std"))]
-extern crate alloc;
 
 pub mod blitter;
 pub mod gradient;
 pub mod rounded_rect;
 
-#[cfg(feature = "std")]
 use fontdue::Font;
 use xerune::{DrawCommand, Pixels, Rect, RenderResources, Renderer, Rotation, Surface, TextMeasurer};
 use xerune::alloc_prelude::*;
@@ -41,7 +32,6 @@ use rounded_rect::{draw_rounded_rect, draw_rounded_border, draw_border_sides, dr
 /// The fonts of a [`Fonts`], borrowed for shaping or one render call.
 #[derive(Clone, Copy)]
 enum FontSource<'a> {
-    #[cfg(feature = "std")]
     Ttf(&'a TtfFaces),
     Bitmap(&'a [xerune::font::BitmapFont]),
 }
@@ -49,7 +39,6 @@ enum FontSource<'a> {
 /// TrueType/OpenType faces: the text font's (regular, then bold if there
 /// is one), then the fallback fonts'. A shaped glyph names its face by its
 /// index here.
-#[cfg(feature = "std")]
 #[derive(Clone)]
 struct TtfFaces {
     faces: Vec<Font>,
@@ -70,15 +59,13 @@ pub struct Fonts(Arc<FontSet>);
 
 #[derive(Clone)]
 struct FontSet {
-    /// Distinguishes font sets in the thread-wide shaping caches (std only).
-    #[cfg_attr(not(feature = "std"), allow(dead_code))]
+    /// Distinguishes font sets in the thread-wide shaping caches.
     id: u32,
     kind: FontKind,
 }
 
 #[derive(Clone)]
 enum FontKind {
-    #[cfg(feature = "std")]
     Ttf { faces: TtfFaces, color_emoji: Option<Cow<'static, [u8]>> },
     Bitmap(&'static [xerune::font::BitmapFont]),
 }
@@ -93,7 +80,6 @@ impl core::fmt::Display for FontError {
     }
 }
 
-#[cfg(feature = "std")]
 impl std::error::Error for FontError {}
 
 impl Fonts {
@@ -105,7 +91,6 @@ impl Fonts {
 
     /// TrueType/OpenType fonts: `regular` for normal text and `bold` for
     /// bold text (`regular` if `None`).
-    #[cfg(feature = "std")]
     pub fn ttf(regular: &[u8], bold: Option<&[u8]>) -> Result<Self, FontError> {
         let mut faces = TtfFaces { faces: Vec::new(), shaping: Vec::new(), primary: 0, fallbacks: Vec::new() };
         faces.push(regular)?;
@@ -120,7 +105,6 @@ impl Fonts {
     /// normal text and `bold` for bold (`regular` if `None`): for a script
     /// the text font doesn't cover, like Hangul with Roboto. Lines with such
     /// characters are as tall as this font needs, as in browsers.
-    #[cfg(feature = "std")]
     pub fn with_fallback(self, regular: &[u8], bold: Option<&[u8]>) -> Result<Self, FontError> {
         let mut set = Arc::unwrap_or_clone(self.0);
         if let FontKind::Ttf { faces, .. } = &mut set.kind {
@@ -137,7 +121,6 @@ impl Fonts {
 
     /// Draws characters the fonts lack from this color emoji font (bitmap
     /// glyphs, like NotoColorEmoji).
-    #[cfg(feature = "std")]
     pub fn with_color_emoji(self, font: impl Into<Cow<'static, [u8]>>) -> Self {
         let mut set = Arc::unwrap_or_clone(self.0);
         if let FontKind::Ttf { color_emoji, .. } = &mut set.kind {
@@ -153,14 +136,12 @@ impl Fonts {
         Self::new(FontKind::Bitmap(fonts))
     }
 
-    #[cfg_attr(not(feature = "std"), allow(dead_code))]
     fn id(&self) -> u32 {
         self.0.id
     }
 
     fn source(&self) -> FontSource<'_> {
         match &self.0.kind {
-            #[cfg(feature = "std")]
             FontKind::Ttf { faces, .. } => FontSource::Ttf(faces),
             FontKind::Bitmap(fonts) => FontSource::Bitmap(fonts),
         }
@@ -168,7 +149,6 @@ impl Fonts {
 
     fn color_emoji(&self) -> Option<&[u8]> {
         match &self.0.kind {
-            #[cfg(feature = "std")]
             FontKind::Ttf { color_emoji, .. } => color_emoji.as_deref(),
             FontKind::Bitmap(_) => None,
         }
@@ -191,7 +171,6 @@ pub fn find_best_bitmap_font<'a>(fonts: &'a [xerune::font::BitmapFont], target_s
     Some(&fonts[0])
 }
 
-#[cfg(feature = "std")]
 const fn parse_usize_opt(opt: Option<&'static str>, default: usize) -> usize {
     match opt {
         Some(s) => {
@@ -219,11 +198,9 @@ const fn parse_usize_opt(opt: Option<&'static str>, default: usize) -> usize {
 ///
 /// Configurable at compile time via `XERUNE_RENDER_MAX_GLYPH_CACHE`
 /// (default: 2048, about 0.5 MB of 16 px glyphs).
-#[cfg(feature = "std")]
 pub const MAX_GLYPH_CACHE_ENTRIES: usize =
     parse_usize_opt(option_env!("XERUNE_RENDER_MAX_GLYPH_CACHE"), 2048);
 
-#[cfg(feature = "std")]
 thread_local! {
     static SHAPE_CACHE: std::cell::RefCell<ShapeCache> =
         std::cell::RefCell::new(ShapeCache::new(MAX_SHAPE_CACHE_ENTRIES));
@@ -233,12 +210,10 @@ thread_local! {
 }
 
 /// What a shape plan is for: font set, face, script and features.
-#[cfg(feature = "std")]
 type PlanKey = (u32, usize, Option<harfrust::Script>, FontFeatures);
 
 /// How many shape plans [`SHAPE_PLANS`] keeps before starting over: a few
 /// faces times the scripts they show.
-#[cfg(feature = "std")]
 const MAX_SHAPE_PLANS: usize = 32;
 
 /// How many shaped runs [`Fonts`] keep (thread-wide), oldest evicted first.
@@ -247,7 +222,6 @@ const MAX_SHAPE_PLANS: usize = 32;
 ///
 /// Configurable at compile time via `XERUNE_RENDER_MAX_SHAPE_CACHE` (default:
 /// 1024). Set to 0 to disable.
-#[cfg(feature = "std")]
 pub const MAX_SHAPE_CACHE_ENTRIES: usize =
     parse_usize_opt(option_env!("XERUNE_RENDER_MAX_SHAPE_CACHE"), 1024);
 
@@ -255,7 +229,6 @@ pub const MAX_SHAPE_CACHE_ENTRIES: usize =
 /// meaningless and the renderer looks the character up by cluster instead.
 pub const EMOJI_FONT: u16 = u16::MAX;
 
-#[cfg(feature = "std")]
 struct ShapeCache {
     // Looked up for every text node on every rebuild: ahash rather than
     // the slower DoS-resistant default.
@@ -264,7 +237,6 @@ struct ShapeCache {
     max_entries: usize,
 }
 
-#[cfg(feature = "std")]
 impl ShapeCache {
     fn new(max_entries: usize) -> Self {
         Self { entries: hashbrown::HashMap::new(), order: std::collections::VecDeque::new(), max_entries }
@@ -296,14 +268,12 @@ impl ShapeCache {
     }
 }
 
-#[cfg(feature = "std")]
 pub fn shape_cache_len() -> usize {
     SHAPE_CACHE.with(|cache| cache.borrow().entries.len())
 }
 
 /// Forgets the thread's shaped runs, so the next layout shapes all its text
 /// again: for benchmarking shaping.
-#[cfg(feature = "std")]
 pub fn clear_shape_cache() {
     SHAPE_CACHE.with(|cache| {
         let mut cache = cache.borrow_mut();
@@ -314,20 +284,16 @@ pub fn clear_shape_cache() {
 
 /// Font metrics rounded to whole pixels, as browsers do, so lines start on
 /// pixel boundaries.
-#[cfg(feature = "std")]
 fn rounded_metrics(ascent: f32, descent: f32, line_gap: f32) -> LineMetrics {
     LineMetrics { ascent: ascent.round(), descent: descent.round(), line_gap: line_gap.round() }
 }
 
 impl Fonts {
     // Bitmap fonts set the metrics themselves; only TrueType reads the default.
-    #[cfg_attr(not(feature = "std"), allow(unused_assignments))]
-    #[cfg_attr(not(feature = "std"), allow(unused_variables))]
     fn shape_uncached(&self, text: &str, font_size: f32, weight: u16, features: FontFeatures) -> ShapedText {
         let mut glyphs = Vec::with_capacity(text.len());
         let mut metrics = LineMetrics::default();
         match &self.source() {
-            #[cfg(feature = "std")]
             FontSource::Ttf(ttf_fonts) => {
                 let Some(font_index) = ttf_font_index(ttf_fonts, weight) else {
                     return ShapedText::default();
@@ -410,7 +376,6 @@ impl Fonts {
     }
 }
 
-#[cfg(feature = "std")]
 fn ttf_font_index(fonts: &TtfFaces, weight: u16) -> Option<usize> {
     match fonts.primary {
         0 => None,
@@ -419,7 +384,6 @@ fn ttf_font_index(fonts: &TtfFaces, weight: u16) -> Option<usize> {
     }
 }
 
-#[cfg(feature = "std")]
 impl TtfFaces {
     /// Adds the face in `bytes`, returning its index.
     fn push(&mut self, bytes: &[u8]) -> Result<usize, FontError> {
@@ -490,25 +454,19 @@ impl TtfFaces {
 
 /// Whether `c` is drawn from a color emoji font: emoji-only planes, and
 /// anything the text font lacks.
-#[cfg(feature = "std")]
 fn is_emoji(c: char, glyph_index: u16) -> bool {
     (c as u32) >= 0x1F000 || glyph_index == 0
 }
 
 impl TextMeasurer for Fonts {
     fn shape(&self, text: &str, font_size: f32, weight: u16, features: FontFeatures) -> Arc<ShapedText> {
-        #[cfg(feature = "std")]
-        {
-            let size_bits = font_size.to_bits();
-            if let Some(shaped) = SHAPE_CACHE.with(|cache| cache.borrow().get(text, self.id(), size_bits, weight, features)) {
-                return shaped;
-            }
-            let shaped = Arc::new(self.shape_uncached(text, font_size, weight, features));
-            SHAPE_CACHE.with(|cache| cache.borrow_mut().insert(text, self.id(), size_bits, weight, features, shaped.clone()));
-            shaped
+        let size_bits = font_size.to_bits();
+        if let Some(shaped) = SHAPE_CACHE.with(|cache| cache.borrow().get(text, self.id(), size_bits, weight, features)) {
+            return shaped;
         }
-        #[cfg(not(feature = "std"))]
-        Arc::new(self.shape_uncached(text, font_size, weight, features))
+        let shaped = Arc::new(self.shape_uncached(text, font_size, weight, features));
+        SHAPE_CACHE.with(|cache| cache.borrow_mut().insert(text, self.id(), size_bits, weight, features, shaped.clone()));
+        shaped
     }
 
     /// The width of `text`'s widest line and the height of its lines, as
@@ -535,7 +493,6 @@ pub struct CachedGlyph {
     pub is_color: bool,
 }
 
-#[cfg(feature = "std")]
 fn try_find_color_emoji_glyph(font_bytes_slice: &[&[u8]], c: char, target_size: f32) -> Option<CachedGlyph> {
     for fb in font_bytes_slice.iter().copied() {
         let face = match ttf_parser::Face::parse(fb, 0) {
@@ -609,7 +566,6 @@ fn try_find_color_emoji_glyph(font_bytes_slice: &[&[u8]], c: char, target_size: 
 }
 
 /// Where and how [`blit_glyph`] draws.
-#[cfg(feature = "std")]
 struct GlyphTarget {
     /// Clip rectangle as (x1, y1, x2, y2) in buffer pixels.
     clip: (i32, i32, i32, i32),
@@ -621,7 +577,6 @@ struct GlyphTarget {
     height: u32,
 }
 
-#[cfg(feature = "std")]
 fn emoji_cache_key(c: char, sub_px: u32) -> (usize, u16, u32) {
     let emoji_id = ((c as u32) ^ ((c as u32) >> 16)) as u16;
     (0xffff_usize, emoji_id, sub_px)
@@ -630,7 +585,6 @@ fn emoji_cache_key(c: char, sub_px: u32) -> (usize, u16, u32) {
 /// Looks up a glyph in the cache, rasterizing it first if needed: a color
 /// emoji for `emoji` when an emoji font has it, else glyph `id` of
 /// `fonts[font_index]`. None for glyphs without pixels (spaces).
-#[cfg(feature = "std")]
 #[allow(clippy::too_many_arguments)]
 fn cached_glyph<'c>(
     cache: &'c mut HashMap<(usize, u16, u32), CachedGlyph>,
@@ -672,7 +626,6 @@ fn cached_glyph<'c>(
 
 /// Blends one cached glyph with its top-left corner at (gx, gy); color
 /// glyphs are scaled to `px` square.
-#[cfg(feature = "std")]
 fn blit_glyph(buffer: &mut [u32], cached: &CachedGlyph, gx: i32, gy: i32, px: f32, t: &GlyphTarget) {
     let (clip_x1, clip_y1, clip_x2, clip_y2) = t.clip;
     let target_sz = px.round().max(1.0) as i32;
@@ -765,7 +718,6 @@ pub struct SoftwareRenderer {
     fonts: Fonts,
     /// Per kind of draw command (see [`COMMAND_KINDS`]): how many were
     /// drawn and how long they took, while profiling.
-    #[cfg(feature = "std")]
     profile: Option<CommandTimes>,
     image_cache: HashMap<String, (u32, u32, Vec<u32>)>, // src -> (width, height, packed pixels)
     glyph_cache: HashMap<(usize, u16, u32), CachedGlyph>,
@@ -781,22 +733,18 @@ impl SoftwareRenderer {
             image_cache: HashMap::new(),
             glyph_cache: HashMap::new(),
             clip_stack: Vec::new(),
-            #[cfg(feature = "std")]
             profile: None,
         }
     }
 }
 
 /// The kinds of draw commands profiled, in [`CommandTimes`] order.
-#[cfg(feature = "std")]
 const COMMAND_KINDS: [&str; 6] = ["rect", "text", "image", "shadow", "check", "canvas"];
 
 /// Count and time per kind of draw command.
-#[cfg(feature = "std")]
 type CommandTimes = [(u32, core::time::Duration); COMMAND_KINDS.len()];
 
 /// Where `command` is counted in [`CommandTimes`]; clips aren't.
-#[cfg(feature = "std")]
 fn command_kind(command: &DrawCommand) -> Option<usize> {
     Some(match command {
         DrawCommand::DrawRect { .. } => 0,
@@ -810,7 +758,6 @@ fn command_kind(command: &DrawCommand) -> Option<usize> {
 }
 
 impl Renderer for SoftwareRenderer {
-    #[cfg(feature = "std")]
     fn set_profiling(&mut self, on: bool) {
         if on != self.profile.is_some() {
             self.profile = on.then(Default::default);
@@ -821,7 +768,6 @@ impl Renderer for SoftwareRenderer {
         }
     }
 
-    #[cfg(feature = "std")]
     fn take_profile(&mut self) -> Vec<xerune::CommandProfile> {
         let Some(times) = &mut self.profile else { return Vec::new() };
         let taken = core::mem::take(times);
@@ -858,7 +804,6 @@ impl Renderer for SoftwareRenderer {
             fonts: self.fonts.source(),
             color_emoji: self.fonts.color_emoji(),
             clip_stack: &mut self.clip_stack,
-            #[cfg(feature = "std")]
             profile: self.profile.as_mut(),
             swap_rb,
             rotate: rotation != Rotation::Deg0,
@@ -867,7 +812,6 @@ impl Renderer for SoftwareRenderer {
             y_offset: origin.1,
             image_cache: &mut self.image_cache,
             glyph_cache: &mut self.glyph_cache,
-            #[cfg(feature = "std")]
             measurer: &self.fonts,
         };
         frame.draw(commands, resources, area);
@@ -885,10 +829,8 @@ struct Frame<'a> {
     physical_height: u32,
     fonts: FontSource<'a>,
     // Color emoji and rasterized glyphs come from TrueType fonts (std).
-    #[cfg_attr(not(feature = "std"), allow(dead_code))]
     color_emoji: Option<&'a [u8]>,
     clip_stack: &'a mut Vec<Rect>,
-    #[cfg(feature = "std")]
     profile: Option<&'a mut CommandTimes>,
     swap_rb: bool,
     #[allow(dead_code)]
@@ -897,10 +839,8 @@ struct Frame<'a> {
     x_offset: i32,
     y_offset: i32,
     image_cache: &'a mut HashMap<String, (u32, u32, Vec<u32>)>,
-    #[cfg_attr(not(feature = "std"), allow(dead_code))]
     glyph_cache: &'a mut HashMap<(usize, u16, u32), CachedGlyph>,
     /// Shapes the text of commands that come without a glyph run.
-    #[cfg(feature = "std")]
     measurer: &'a Fonts,
 }
 
@@ -956,7 +896,6 @@ impl Frame<'_> {
                 }
             }
 
-            #[cfg(feature = "std")]
             let started = self.profile.is_some().then(std::time::Instant::now);
 
             match command {
@@ -1091,9 +1030,6 @@ impl Frame<'_> {
                     weight,
                     run,
                 } => {
-                    // Bitmap fonts lay the text out themselves.
-                    #[cfg(not(feature = "std"))]
-                    let _ = run;
                     let local_rect = self.translate_rect(rect);
                     let packed_color = pack_color(*color, self.swap_rb);
                     let clip = self.get_clip_rect();
@@ -1109,7 +1045,6 @@ impl Frame<'_> {
                     };
 
                     match &self.fonts {
-                        #[cfg(feature = "std")]
                         FontSource::Ttf(faces) => {
                             let Some(font_index) = ttf_font_index(faces, *weight) else {
                                 continue;
@@ -1350,7 +1285,6 @@ impl Frame<'_> {
             }
 
             // (Text skipped for a missing font isn't counted.)
-            #[cfg(feature = "std")]
             if let (Some(started), Some(times), Some(kind)) = (started, self.profile.as_deref_mut(), command_kind(command)) {
                 times[kind].0 += 1;
                 times[kind].1 += started.elapsed();
@@ -1648,87 +1582,8 @@ fn floor_i32(v: f32) -> i32 {
 /// Nearest integer, halves rounding up. Unlike `f32::round` (halves away from
 /// zero) it commutes with integer offsets, so a band or tile places things
 /// where the full frame does.
-#[cfg(feature = "std")]
 fn round_i32(v: f32) -> i32 {
     floor_i32(v + 0.5)
-}
-
-pub trait F32Ext {
-    fn round(self) -> f32;
-    fn floor(self) -> f32;
-    fn ceil(self) -> f32;
-    fn sqrt(self) -> f32;
-}
-
-impl F32Ext for f32 {
-    #[inline(always)]
-    fn round(self) -> f32 {
-        #[cfg(feature = "std")]
-        {
-            self.round()
-        }
-        #[cfg(not(feature = "std"))]
-        {
-            if self >= 0.0 {
-                (self + 0.5) as i32 as f32
-            } else {
-                (self - 0.5) as i32 as f32
-            }
-        }
-    }
-
-    #[inline(always)]
-    fn floor(self) -> f32 {
-        #[cfg(feature = "std")]
-        {
-            self.floor()
-        }
-        #[cfg(not(feature = "std"))]
-        {
-            let i = self as i32;
-            if self < i as f32 {
-                (i - 1) as f32
-            } else {
-                i as f32
-            }
-        }
-    }
-
-    #[inline(always)]
-    fn ceil(self) -> f32 {
-        #[cfg(feature = "std")]
-        {
-            self.ceil()
-        }
-        #[cfg(not(feature = "std"))]
-        {
-            let i = self as i32;
-            if self > i as f32 {
-                (i + 1) as f32
-            } else {
-                i as f32
-            }
-        }
-    }
-
-    #[inline(always)]
-    fn sqrt(self) -> f32 {
-        #[cfg(feature = "std")]
-        {
-            self.sqrt()
-        }
-        #[cfg(not(feature = "std"))]
-        {
-            if self <= 0.0 {
-                return 0.0;
-            }
-            let mut val = self;
-            for _ in 0..6 {
-                val = 0.5 * (val + self / val);
-            }
-            val
-        }
-    }
 }
 
 #[cfg(test)]

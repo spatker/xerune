@@ -14,7 +14,7 @@ publish = false
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [dependencies]
-xerune = { path = "..", default-features = false, features = ["std", "dynamic-parser", "interpret"] }
+xerune = { path = "..", default-features = false, features = ["http", "dynamic-parser", "interpret"] }
 xerune_render = { path = "../xerune_render" }
 xerune_template = { path = "../xerune_template", features = ["interpret"] }
 html5ever = "0.36.1"

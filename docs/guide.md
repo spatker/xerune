@@ -525,9 +525,9 @@ and the animations' next step) with one rebuild, and returns `Poll { redraw,
 wake }`. `wake` says when to call it again: `Wake::Frame(t)` while something
 animates, `Wake::At(t)` for the next timer, or `Wake::Idle`. While frames run,
 a timer due between two frames is handled with the next one. The runtime reads
-the time from its `Clock`: the system clock by default; `no_std` hosts install
-their own (`runtime.set_clock(|| Instant::from_millis(board_millis()))`), and
-tests use a `ManualClock` they move themselves.
+the time from its `Clock`: the system clock by default, or one the host sets
+(`runtime.set_clock(..)`, a closure returning the time); tests use a
+`ManualClock` they move themselves.
 
 **Frame stats.** `Subscriptions::stats(interval, Msg::Stats)` sends a
 `FrameStats` every interval: the frames rendered and the frame rate, and per
@@ -538,7 +538,7 @@ plus draw commands and the share of the screen repainted per frame. The
 variant carrying it is marked `#[xerune(skip)]`, since stats have no string
 form. The `animation` example shows FPS, frame and render time this way. The
 runtime times frames only while something asks; times come from the system's
-monotonic clock and are zero without one (`no_std`, wasm).
+monotonic clock and are zero without one (wasm).
 
 `XERUNE_PROFILE=1` prints the same stats to stderr once a second from any
 app, plus the renderer's time per kind of draw command (`xerune_render`
@@ -763,15 +763,16 @@ The frame goes through the app's own renderer, so fonts and drawing match the re
 ## 11. Running on Embedded Linux (fbdev / DRM)
 
 Configure `Cargo.toml` features to enable embedded backends. The default
-features include the desktop window (`winit`); a board doesn't need it,
-so leave the defaults out and keep `std`:
+features are the desktop window (`winit`) and remote images (`http`); a
+board doesn't need the window, so leave the defaults out and keep `http` if
+it loads images from URLs:
 ```toml
 [dependencies]
-xerune = { version = "0.1", default-features = false, features = ["std", "linuxfb", "drm", "evdev"] }
+xerune = { version = "0.1", default-features = false, features = ["http", "linuxfb", "drm", "evdev"] }
 ```
 
 The examples in this repository build the same way:
-`--no-default-features --features std,drm,evdev`. On 32-bit ARM, also
+`--no-default-features --features http,drm,evdev`. On 32-bit ARM, also
 enable NEON (`RUSTFLAGS="-C target-feature=+neon"`; `XERUNE_PROFILE=1`
 prints whether a build has it, §7).
 

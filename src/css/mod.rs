@@ -570,7 +570,7 @@ fn apply_resolved_declaration(prop: &str, val: &str, current_style: &mut Contain
     Ok(())
 }
 
-#[cfg(all(test, feature = "std"))]
+#[cfg(test)]
 mod tests {
     use super::resolve_font_relative_lengths;
 

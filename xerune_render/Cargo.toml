@@ -13,13 +13,9 @@ include = ["/src", "/README.md", "/LICENSE"]
 
 [dependencies]
 xerune = { version = "0.1.0", path = "../", default-features = false }
-fontdue = { version = "0.9.3", optional = true }
-ttf-parser = { version = "0.20", optional = true }
-harfrust = { version = "0.15", optional = true }
-png = { version = "0.17", optional = true }
+fontdue = "0.9.3"
+ttf-parser = "0.20"
+harfrust = "0.15"
+png = "0.17"
 log = "0.4"
 hashbrown = { version = "0.14", default-features = false, features = ["ahash", "inline-more"] }
-
-[features]
-default = ["std"]
-std = ["xerune/std", "dep:fontdue", "dep:ttf-parser", "dep:harfrust", "dep:png"]

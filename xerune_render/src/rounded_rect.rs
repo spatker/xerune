@@ -1,7 +1,5 @@
 use crate::blitter::{pack_color, blend_solid_rect, blend_pixel, calc_pixel_index, round_alpha};
 use crate::gradient::{draw_gradient_rect, draw_shaded_rounded_rect};
-#[cfg(not(feature = "std"))]
-use crate::F32Ext;
 use xerune::alloc_prelude::Vec;
 /// The span-based linear gradient path only handles horizontal and vertical
 /// gradients.

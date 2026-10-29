@@ -12,7 +12,6 @@ mod verify;
 pub use stats::{FrameStats, PhaseTime};
 pub use timer::{Poll, Subscriptions, TimerId, Wake};
 pub use time::{Clock, SystemClock};
-#[cfg(feature = "std")]
 pub use time::ManualClock;
 pub use animation::ActiveAnimation;
 
@@ -154,21 +153,21 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
          let mut context = Context::new();
          Runtime::<M, R>::sync_canvases(&ui, &mut context);
          let initial_fingerprint = model.view_fingerprint();
-         #[cfg(all(feature = "std", not(target_arch = "wasm32")))]
+         #[cfg(not(target_arch = "wasm32"))]
          let target_fps_override = std::env::var("XERUNE_TARGET_FPS").ok().and_then(|v| v.trim().parse().ok()).filter(|&fps: &u32| fps > 0);
-         #[cfg(not(all(feature = "std", not(target_arch = "wasm32"))))]
+         #[cfg(target_arch = "wasm32")]
          let target_fps_override = None;
-         #[cfg(all(feature = "std", not(target_arch = "wasm32")))]
+         #[cfg(not(target_arch = "wasm32"))]
          let input_keyboard_override = std::env::var("XERUNE_INPUT_KEYBOARD").is_ok_and(|v| v.trim() == "1");
-         #[cfg(not(all(feature = "std", not(target_arch = "wasm32"))))]
+         #[cfg(target_arch = "wasm32")]
          let input_keyboard_override = false;
-         #[cfg(all(feature = "std", not(target_arch = "wasm32")))]
+         #[cfg(not(target_arch = "wasm32"))]
          let profile = std::env::var("XERUNE_PROFILE").is_ok_and(|v| v.trim() == "1");
-         #[cfg(not(all(feature = "std", not(target_arch = "wasm32"))))]
+         #[cfg(target_arch = "wasm32")]
          let profile = false;
-         #[cfg(all(feature = "std", not(target_arch = "wasm32")))]
+         #[cfg(not(target_arch = "wasm32"))]
          let verify = std::env::var("XERUNE_VERIFY").is_ok_and(|v| v.trim() == "1");
-         #[cfg(not(all(feature = "std", not(target_arch = "wasm32"))))]
+         #[cfg(target_arch = "wasm32")]
          let verify = false;
 
          let mut runtime = Self {
@@ -213,9 +212,8 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
          runtime
     }
 
-    /// Reads the time from `clock` from now on, e.g. a `no_std` board's
-    /// millisecond counter (`|| Instant::from_millis(millis())`) or a
-    /// [`ManualClock`] in tests. Meant to be set before the app runs:
+    /// Reads the time from `clock` from now on, e.g. a [`ManualClock`] in
+    /// tests or a host's own clock. Meant to be set before the app runs:
     /// subscriptions start over from the new clock's current time, and
     /// timers and animations carry on from it.
     pub fn set_clock(&mut self, clock: impl Clock) {
@@ -323,21 +321,21 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
 
     /// Replace the loader used to fetch and decode `<img src>` (default: [`crate::DefaultImageLoader`]).
     /// Install it before the first layout so initial images use it too.
-    #[cfg(all(feature = "std", not(target_arch = "wasm32")))]
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn set_image_loader(&mut self, loader: impl crate::images::ImageLoader) {
         self.images.set_loader(loader);
     }
 
     /// Install a callback that wakes the event loop when a background image load completes.
     /// Built-in backends install this automatically; the next [`Self::poll`] applies the result.
-    #[cfg(all(feature = "std", not(target_arch = "wasm32")))]
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn set_image_waker(&mut self, waker: impl Fn() + Send + Sync + 'static) {
         self.images.set_waker(Arc::new(waker));
     }
 
     /// Block until pending images have loaded (or failed), up to `timeout`, then relayout.
     /// Intended for headless rendering and tests. Returns true if a redraw is needed.
-    #[cfg(all(feature = "std", not(target_arch = "wasm32")))]
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn wait_for_images(&mut self, timeout: core::time::Duration) -> bool {
         if self.images.wait(timeout) {
             self.full_repaint = true;
@@ -1140,14 +1138,13 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
         let screen = target.width() as f32 * target.height() as f32;
         let repainted = damage.rects().iter().map(|r| r.width * r.height).sum::<f32>() / screen.max(1.0);
         self.stats.frame(commands.len(), repainted.min(1.0));
-        #[cfg(feature = "std")]
         if let Some(stats) = self.stats.take_report(self.now()) {
             eprint!("{}", stats::report(&stats, &renderer.take_profile()));
         }
         if let (Some(verify), Some((width, height))) = (&mut self.verify, self.viewport_px) {
             renderer.set_profiling(false);
             let resources = RenderResources::new(&self.context.canvases, &self.images);
-            // Rounded to whole pixels (`f32::round` needs std).
+            // Rounded to whole pixels.
             verify.check_frame(renderer, &commands, &resources, &damage, ((width + 0.5) as u32, (height + 0.5) as u32));
         }
 

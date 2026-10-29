@@ -1,24 +1,15 @@
 use taffy::prelude::*;
 use crate::style::{ContainerStyle, RenderData, BoxSizing, Display, CssJustifyContent, TextAlign, Direction, AlignItems, AlignSelf, AlignContent};
-#[cfg(feature = "std")]
-#[cfg(feature = "std")]
 use crate::graphics::TextMeasurer;
-#[cfg(feature = "std")]
 use crate::css;
-#[cfg(feature = "std")]
 use crate::defaults;
-#[cfg(feature = "std")]
 use xerune_css::selector::PseudoElement;
 use super::node_map::NodeMap;
-#[cfg(feature = "std")]
 use super::metadata::NodeMetadata;
 use super::Interaction;
-#[cfg(feature = "std")]
 use super::builder::TaffyElementWrapper;
-#[cfg(feature = "std")]
 use crate::alloc_prelude::*;
 
-#[cfg(feature = "std")]
 /// Cache key representing style attributes of a node to speed up styling resolution.
 #[derive(Hash, PartialEq, Eq, Clone)]
 pub struct StyleCacheKey {
@@ -80,14 +71,12 @@ pub mod cache_config {
         parse_usize_opt(option_env!("XERUNE_MAX_STYLE_RULE_CACHE"), 64);
 }
 
-#[cfg(feature = "std")]
 pub(crate) struct CachedStyles {
     pub(crate) sheet: xerune_css::sheet::StyleSheet,
     pub(crate) keyframes: HashMap<String, css::KeyframesAnimation>,
     pub(crate) style_cache: std::cell::RefCell<HashMap<StyleCacheKey, (Style, ContainerStyle)>>,
 }
 
-#[cfg(feature = "std")]
 impl CachedStyles {
     pub(crate) fn new(css: &str, keyframes: HashMap<String, css::KeyframesAnimation>) -> Self {
         Self {
@@ -98,14 +87,12 @@ impl CachedStyles {
     }
 }
 
-#[cfg(feature = "std")]
 pub(crate) struct BoundedStylesheetCache {
     entries: HashMap<String, std::rc::Rc<CachedStyles>>,
     order: std::collections::VecDeque<String>,
     max_entries: usize,
 }
 
-#[cfg(feature = "std")]
 impl BoundedStylesheetCache {
     pub(crate) fn new(max_entries: usize) -> Self {
         Self {
@@ -144,7 +131,6 @@ impl BoundedStylesheetCache {
     }
 }
 
-#[cfg(feature = "std")]
 thread_local! {
     /// Keyed by the `@media`-expanded stylesheet text so entries stay viewport-correct.
     pub(crate) static STYLESHEET_CACHE: std::cell::RefCell<BoundedStylesheetCache> =
@@ -157,19 +143,13 @@ thread_local! {
 /// Runs `f` with element styles resolved anew, neither read from nor
 /// written to the style cache: for `XERUNE_VERIFY`, which checks the cache.
 pub(crate) fn without_style_cache<T>(f: impl FnOnce() -> T) -> T {
-    #[cfg(feature = "std")]
-    {
-        BYPASS_STYLE_CACHE.with(|bypass| bypass.set(true));
-        let result = f();
-        BYPASS_STYLE_CACHE.with(|bypass| bypass.set(false));
-        result
-    }
-    #[cfg(not(feature = "std"))]
-    f()
+    BYPASS_STYLE_CACHE.with(|bypass| bypass.set(true));
+    let result = f();
+    BYPASS_STYLE_CACHE.with(|bypass| bypass.set(false));
+    result
 }
 
 /// Returns the current number of cached stylesheets in thread-local storage.
-#[cfg(feature = "std")]
 pub fn stylesheet_cache_len() -> usize {
     STYLESHEET_CACHE.with(|cache| cache.borrow().len())
 }
@@ -235,7 +215,6 @@ pub(crate) fn apply_block_display(
 
 /// Where runtime styling puts the `@starting-style` styles of new
 /// elements, for a stylesheet that has any.
-#[cfg(feature = "std")]
 pub(crate) struct Starting<'a> {
     /// The keys of the view before (see [`super::builder::is_new`]).
     pub previous_keys: Option<&'a std::collections::HashSet<u64>>,
@@ -243,7 +222,6 @@ pub(crate) struct Starting<'a> {
 }
 
 /// The attributes of an element built at runtime, `style` included.
-#[cfg(feature = "std")]
 fn element_attrs(meta: &NodeMetadata) -> Vec<(&str, &str)> {
     match &meta.other_attrs {
         Some(other) => meta.style.as_deref().map(|style| ("style", style)).into_iter().chain(other.iter().map(|(k, v)| (k.as_str(), v.as_str()))).collect(),
@@ -255,7 +233,6 @@ fn element_attrs(meta: &NodeMetadata) -> Vec<(&str, &str)> {
 /// `rules`, the starting ones among them, applied as a compiled template
 /// applies them (see `xerune_derive`'s starting styles), with the same
 /// [`super::builder::ElementStyle`] steps.
-#[cfg(feature = "std")]
 fn starting_style(
     meta: &NodeMetadata,
     defaults_key: &str,
@@ -281,7 +258,6 @@ fn starting_style(
     el.into_box(parent_style)
 }
 
-#[cfg(feature = "std")]
 pub(crate) fn resolve_styles(
     taffy: &mut TaffyTree,
     node: NodeId,

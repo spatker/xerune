@@ -391,7 +391,6 @@ impl Declared {
 /// them: kept as written, parsed on first use.
 pub struct Declarations {
     source: &'static [(&'static str, &'static str)],
-    #[cfg(feature = "std")]
     parsed: std::sync::OnceLock<Box<[Declared]>>,
 }
 
@@ -406,7 +405,6 @@ impl Declarations {
     pub const fn new(source: &'static [(&'static str, &'static str)]) -> Self {
         Self {
             source,
-            #[cfg(feature = "std")]
             parsed: std::sync::OnceLock::new(),
         }
     }
@@ -415,17 +413,13 @@ impl Declarations {
     /// those that set the font size first, since `em` lengths in the
     /// others depend on it.
     pub(crate) fn apply(&self, style: &mut ContainerStyle, layout: &mut Style) {
-        #[cfg(feature = "std")]
         for declared in self.parsed.get_or_init(|| parse_all(self.source)).iter() {
             declared.apply(style, layout);
         }
-        #[cfg(not(feature = "std"))]
-        super::apply_declarations(self.source, style, layout);
     }
 }
 
 /// `source` parsed, in the order [`super::apply_declarations`] applies it.
-#[cfg(feature = "std")]
 fn parse_all(source: &'static [(&'static str, &'static str)]) -> Box<[Declared]> {
     let mut parsed = Vec::with_capacity(source.len());
     for font_pass in [true, false] {
@@ -446,7 +440,6 @@ fn parse_all(source: &'static [(&'static str, &'static str)]) -> Box<[Declared]>
 /// Whether `val` means the same on every element and viewport: no font
 /// relative (`em`, `rem`) or viewport (`vw`, `vh`, `vmin`, `vmax`)
 /// lengths. Errs towards no: a word containing "em" counts.
-#[cfg(feature = "std")]
 fn same_everywhere(val: &str) -> bool {
     !["em", "vw", "vh", "vm"].iter().any(|unit| val.contains(unit))
 }

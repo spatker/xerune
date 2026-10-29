@@ -4,7 +4,6 @@
 //!
 //! [`Subscriptions::stats`]: crate::Subscriptions::stats
 
-#[cfg(feature = "std")]
 use crate::alloc_prelude::*;
 use crate::runtime::time::Instant;
 use core::time::Duration;
@@ -41,8 +40,7 @@ pub struct PhaseTime {
 ///
 /// Each frame's phases count the work since the frame before: updates and
 /// rebuilds between two renders belong to the second. Times are measured
-/// on the system's monotonic clock and are zero without one (`no_std`,
-/// wasm).
+/// on the system's monotonic clock and are zero without one (wasm).
 ///
 /// [`Subscriptions::stats`]: crate::Subscriptions::stats
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -97,20 +95,20 @@ impl FrameStats {
 
 /// A point on the system's monotonic clock, where there is one.
 #[derive(Clone, Copy)]
-pub(crate) struct Stamp(#[cfg(all(feature = "std", not(target_arch = "wasm32")))] std::time::Instant);
+pub(crate) struct Stamp(#[cfg(not(target_arch = "wasm32"))] std::time::Instant);
 
 impl Stamp {
     fn now() -> Self {
         Stamp(
-            #[cfg(all(feature = "std", not(target_arch = "wasm32")))]
+            #[cfg(not(target_arch = "wasm32"))]
             std::time::Instant::now(),
         )
     }
 
     fn elapsed(self) -> Duration {
-        #[cfg(all(feature = "std", not(target_arch = "wasm32")))]
+        #[cfg(not(target_arch = "wasm32"))]
         return self.0.elapsed();
-        #[cfg(not(all(feature = "std", not(target_arch = "wasm32"))))]
+        #[cfg(target_arch = "wasm32")]
         Duration::ZERO
     }
 }
@@ -161,7 +159,6 @@ impl Window {
 }
 
 /// How often `XERUNE_PROFILE=1` prints a report.
-#[cfg(feature = "std")]
 const REPORT_EVERY: Duration = Duration::from_secs(1);
 
 /// Collects phase times while something listens.
@@ -247,7 +244,6 @@ impl Profiler {
     }
 
     /// The report's stats, once a report is due at `now`.
-    #[cfg(feature = "std")]
     pub(crate) fn take_report(&mut self, now: Instant) -> Option<FrameStats> {
         let window = self.report.as_mut()?;
         (now >= window.start + REPORT_EVERY).then(|| window.take(now))
@@ -256,7 +252,6 @@ impl Profiler {
 
 /// `XERUNE_PROFILE=1`'s report: the frame stats, then the renderer's time
 /// per kind of draw command.
-#[cfg(feature = "std")]
 pub(crate) fn report(stats: &FrameStats, commands: &[crate::graphics::CommandProfile]) -> String {
     use core::fmt::Write;
     let us = |d: Duration| d.as_micros();

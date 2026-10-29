@@ -3458,7 +3458,6 @@ dependencies = [
  "env_logger",
  "evdev",
  "fontdue",
- "hashbrown 0.14.5",
  "html5ever",
  "libc",
  "linuxfb",

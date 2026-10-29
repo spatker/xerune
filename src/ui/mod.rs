@@ -12,7 +12,6 @@ pub mod style_resolution;
 pub use node_map::{NodeMap, NodeMapIter, NodeMapValues};
 pub use metadata::NodeMetadata;
 pub use builder::{ElementStyle, PointerLevel, PointerState, UiBuilder};
-#[cfg(feature = "std")]
 pub use style_resolution::{cache_config, stylesheet_cache_len};
 
 use taffy::prelude::*;
@@ -276,29 +275,18 @@ impl Ui {
     /// Styles the tree built with `builder` (template styles plus
     /// `stylesheet`, for elements built at runtime) and shapes its text.
     fn from_builder(
-        #[cfg_attr(not(feature = "std"), allow(unused_mut))] mut builder: UiBuilder,
+        mut builder: UiBuilder,
         root: NodeId,
         stylesheet: &str,
         measurer: &impl TextMeasurer,
         default_style: ContainerStyle,
         message_validator: &impl Fn(&str) -> bool,
     ) -> Result<Self, TaffyError> {
-        #[cfg(not(feature = "std"))]
-        let _ = (stylesheet, default_style, message_validator);
-        #[cfg(feature = "std")]
         let stylesheet_str = stylesheet;
-        #[cfg(feature = "std")]
         let mut base_styles = builder.base_styles;
-        #[cfg(not(feature = "std"))]
-        let base_styles = builder.base_styles;
-        #[cfg(feature = "std")]
         let mut keyframes = builder.keyframes;
-        #[cfg(not(feature = "std"))]
-        let keyframes = builder.keyframes;
 
-        #[cfg_attr(not(feature = "std"), allow(unused_mut))]
         let (mut uses_hover, mut uses_active) = (false, false);
-        #[cfg(feature = "std")]
         if !stylesheet_str.is_empty() || builder.node_metadata.iter().next().is_some() {
             let cached = style_resolution::STYLESHEET_CACHE.with(|cache| {
                 let mut cache_guard = cache.borrow_mut();
@@ -755,7 +743,6 @@ fn same_children(a: &TaffyTree, b: &TaffyTree, node: NodeId) -> bool {
 /// their key: their parent's mixed with their index among its elements, or
 /// with their `data-key`.
 /// Template elements have theirs already.
-#[cfg(feature = "std")]
 fn assign_keys(taffy: &TaffyTree, node: NodeId, key: u64, metadata: &NodeMap<NodeMetadata>, keys: &mut NodeMap<u64>) {
     let Ok(children) = taffy.children(node) else { return };
     let mut index = 0;

@@ -114,7 +114,7 @@ impl Translations {
 /// The user's language, from the environment as POSIX has it (`LC_ALL`,
 /// then `LC_MESSAGES`, then `LANG`), as a tag: `de-DE` for `de_DE.UTF-8`.
 /// `None` when none is set, or for the `C` and `POSIX` locales.
-#[cfg(all(feature = "std", not(target_arch = "wasm32")))]
+#[cfg(not(target_arch = "wasm32"))]
 pub fn system_lang() -> Option<String> {
     ["LC_ALL", "LC_MESSAGES", "LANG"]
         .iter()
@@ -124,7 +124,7 @@ pub fn system_lang() -> Option<String> {
 }
 
 /// The language tag of a POSIX locale name (`de_DE.UTF-8@euro`).
-#[cfg(any(test, all(feature = "std", not(target_arch = "wasm32"))))]
+#[cfg(any(test, not(target_arch = "wasm32")))]
 fn lang_of_locale(locale: &str) -> Option<String> {
     let lang = locale.split(['.', '@']).next().unwrap_or("");
     match lang {

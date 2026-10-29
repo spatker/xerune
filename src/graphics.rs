@@ -291,8 +291,9 @@ impl Rect {
     }
 }
 
-/// `f32::floor`, which needs std, for values that fit an i32 (screen
-/// coordinates and font metrics).
+/// `f32::floor` without its libm call (32-bit ARM has no rounding
+/// instruction), for values that fit an i32 (screen coordinates and font
+/// metrics).
 pub(crate) fn floor(v: f32) -> f32 {
     let t = v as i32 as f32;
     if t > v { t - 1.0 } else { t }

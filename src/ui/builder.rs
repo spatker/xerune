@@ -271,7 +271,6 @@ impl UiBuilder {
         id
     }
 
-    #[cfg(feature = "std")]
     fn parse_attrs(attrs: &[(&str, &str)]) -> (Option<std::borrow::Cow<'static, str>>, Option<std::borrow::Cow<'static, str>>, Option<String>, Option<Vec<(String, String)>>) {
         let mut class = None;
         let mut id = None;
@@ -292,7 +291,6 @@ impl UiBuilder {
         (class, id, style, other_attrs)
     }
 
-    #[cfg(feature = "std")]
     pub fn create_element(&mut self, tag: &str, attrs: &[(&str, &str)]) -> NodeId {
         let id = self.taffy.new_leaf(Style::default()).unwrap();
         let (class, id_val, style, other_attrs) = Self::parse_attrs(attrs);
@@ -302,7 +300,6 @@ impl UiBuilder {
         id
     }
 
-    #[cfg(feature = "std")]
     pub fn create_text(&mut self, text: &str, _attrs: &[(&str, &str)]) -> NodeId {
         let id = self.taffy.new_leaf(Style::default()).unwrap();
         let mut metadata = NodeMetadata::new(std::borrow::Cow::Borrowed("#text"), None, None, None, None);
@@ -311,7 +308,6 @@ impl UiBuilder {
         id
     }
 
-    #[cfg(feature = "std")]
     pub fn create_checkbox(&mut self, checked: bool, attrs: &[(&str, &str)]) -> NodeId {
         let id = self.taffy.new_leaf(Style::default()).unwrap();
         let (class, id_val, style, other_attrs) = Self::parse_attrs(attrs);
@@ -321,7 +317,6 @@ impl UiBuilder {
         id
     }
 
-    #[cfg(feature = "std")]
     pub fn create_slider(&mut self, value: f32, attrs: &[(&str, &str)]) -> NodeId {
         let id = self.taffy.new_leaf(Style::default()).unwrap();
         let (class, id_val, style, other_attrs) = Self::parse_attrs(attrs);
@@ -331,7 +326,6 @@ impl UiBuilder {
         id
     }
 
-    #[cfg(feature = "std")]
     pub fn create_input_text(&mut self, value: &str, attrs: &[(&str, &str)]) -> NodeId {
         let id = self.taffy.new_leaf(Style::default()).unwrap();
         let (class, id_val, style, other_attrs) = Self::parse_attrs(attrs);
@@ -341,7 +335,6 @@ impl UiBuilder {
         id
     }
 
-    #[cfg(feature = "std")]
     pub fn create_progress(&mut self, value: f32, max: f32, attrs: &[(&str, &str)]) -> NodeId {
         let id = self.taffy.new_leaf(Style::default()).unwrap();
         let (class, id_val, style, other_attrs) = Self::parse_attrs(attrs);
@@ -352,7 +345,6 @@ impl UiBuilder {
         id
     }
 
-    #[cfg(feature = "std")]
     pub fn create_image(&mut self, src: &str, attrs: &[(&str, &str)]) -> NodeId {
         let id = self.taffy.new_leaf(Style::default()).unwrap();
         let (class, id_val, style, other_attrs) = Self::parse_attrs(attrs);
@@ -362,7 +354,6 @@ impl UiBuilder {
         id
     }
 
-    #[cfg(feature = "std")]
     pub fn create_canvas(&mut self, canvas_id: &str, attrs: &[(&str, &str)]) -> NodeId {
         let id = self.taffy.new_leaf(Style::default()).unwrap();
         let (class, id_val, style, other_attrs) = Self::parse_attrs(attrs);
@@ -470,7 +461,6 @@ impl UiBuilder {
     }
 }
 
-#[cfg(feature = "std")]
 #[derive(Clone, Copy)]
 pub(crate) struct TaffyElementWrapper<'a> {
     pub node: NodeId,
@@ -481,7 +471,6 @@ pub(crate) struct TaffyElementWrapper<'a> {
     pub pointer: &'a PointerState,
 }
 
-#[cfg(feature = "std")]
 impl<'a> TaffyElementWrapper<'a> {
     fn at(&self, node: NodeId) -> Option<Self> {
         self.metadata.get(&node).map(|meta| TaffyElementWrapper { node, meta, ..*self })
@@ -501,7 +490,6 @@ impl<'a> TaffyElementWrapper<'a> {
     }
 }
 
-#[cfg(feature = "std")]
 impl<'a> xerune_css::selector::Element for TaffyElementWrapper<'a> {
     fn parent(&self) -> Option<Self> {
         core::iter::successors(self.taffy.parent(self.node), |&n| self.taffy.parent(n)).find_map(|n| self.at(n))
