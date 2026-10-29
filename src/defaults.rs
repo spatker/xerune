@@ -1,6 +1,5 @@
 use taffy::prelude::*;
 use crate::{ContainerStyle, Display};
-use crate::alloc_prelude::*;
 
 /// Representation tags for UI element types mapping to native rendering primitives.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -1,7 +1,7 @@
 #![allow(missing_docs)]
 
 use taffy::prelude::NodeId;
-use crate::alloc_prelude::*;
+use std::borrow::Cow;
 
 pub struct NodeMetadata {
     pub tag: Cow<'static, str>,

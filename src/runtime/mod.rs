@@ -17,7 +17,7 @@ pub use animation::ActiveAnimation;
 
 use core::str::FromStr;
 use taffy::prelude::*;
-use crate::alloc_prelude::*;
+use std::collections::{HashMap, HashSet};
 use crate::runtime::time::Instant;
 use crate::runtime::timer::{Interval, Timer};
 use crate::runtime::stats::Phase;
@@ -330,7 +330,7 @@ impl<M: Model + crate::ui::TemplateLayout, R: TextMeasurer> Runtime<M, R> {
     /// Built-in backends install this automatically; the next [`Self::poll`] applies the result.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn set_image_waker(&mut self, waker: impl Fn() + Send + Sync + 'static) {
-        self.images.set_waker(Arc::new(waker));
+        self.images.set_waker(std::sync::Arc::new(waker));
     }
 
     /// Block until pending images have loaded (or failed), up to `timeout`, then relayout.

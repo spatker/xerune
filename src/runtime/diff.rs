@@ -7,7 +7,6 @@
 //! so it cannot have changed. Inserting one command no longer shifts every
 //! command after it into the damage, as an index-by-index comparison did.
 
-use crate::alloc_prelude::*;
 use crate::graphics::{Damage, DrawCommand};
 
 /// Edit distance beyond which the changed range is damaged as a whole; the

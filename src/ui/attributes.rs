@@ -5,7 +5,7 @@ use crate::style::{ContainerStyle, ControlPart, RenderData, RenderKind};
 use crate::css;
 use crate::defaults;
 use super::node_map::NodeMap;
-use crate::alloc_prelude::*;
+use std::borrow::Cow;
 
 use super::Interaction;
 

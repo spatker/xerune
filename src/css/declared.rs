@@ -14,7 +14,6 @@ use taffy::style::Style;
 
 use super::parser::{self, parse_padding, parse_margin};
 use super::{gradient, parse_dimension, parse_hex_color, parse_length_percentage, parse_length_percentage_auto, parse_opacity, parse_px};
-use crate::alloc_prelude::*;
 use crate::{Color, ContainerStyle, CssJustifyContent, Display, Gradient};
 
 /// One side of a box.

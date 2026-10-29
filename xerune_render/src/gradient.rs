@@ -1,5 +1,4 @@
 use crate::blitter::{pack_color, blend_solid_span, blend_pixel, calc_pixel_index};
-use xerune::alloc_prelude::Vec;
 /// Sample a stop list at `t`, interpolating in premultiplied alpha like CSS
 /// does (so fading to `transparent` doesn't pass through grey). Stops must be
 /// sorted by position; at a hard stop the later color wins.

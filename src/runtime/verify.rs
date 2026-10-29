@@ -17,7 +17,6 @@
 //! [`Runtime::set_verify`]: crate::Runtime::set_verify
 //! [`Model::view_fingerprint`]: crate::Model::view_fingerprint
 
-use crate::alloc_prelude::*;
 use crate::graphics::{Damage, DrawCommand, Pixels, Rect, RenderResources, Renderer, Surface};
 
 /// What has been checked so far, and the incrementally drawn frame.

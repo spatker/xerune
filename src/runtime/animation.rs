@@ -1,7 +1,7 @@
 use taffy::prelude::*;
 use crate::css::{AnimatedProperty, AnimatedValue, Easing, KeyframesAnimation};
 use crate::style::{ContainerStyle, AnimationIterationCount};
-use crate::alloc_prelude::*;
+use std::sync::Arc;
 
 /// Representation of an active CSS animation currently running on an
 /// element. The runtime keeps it by the element's key, so it goes on when

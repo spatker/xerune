@@ -8,7 +8,6 @@
 //! where Chromium lays them out, starting from the native look's colors
 //! (html.css's under `appearance: none`); unstyled parts stay native.
 
-use crate::alloc_prelude::*;
 use crate::graphics::{Color, DrawCommand, Rect};
 use crate::style::{BorderSide, Borders, ContainerStyle, ControlPart, ControlParts, PartStyle};
 use taffy::style::CompactLength;

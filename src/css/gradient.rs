@@ -1,7 +1,6 @@
 //! Parsing of CSS gradient images: `linear-gradient`, `radial-gradient`,
 //! `conic-gradient` and the `repeating-` radial/conic variants.
 
-use crate::alloc_prelude::*;
 use crate::graphics::{Color, ConicGradient, Gradient, LinearGradient, RadialExtent, RadialGradient, RadialShape};
 use super::parser::parse_hex_color;
 

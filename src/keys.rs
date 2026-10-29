@@ -4,7 +4,6 @@
 //! media keys of a music player, so a [`KeyMap`] says which key does what.
 //! Models still get every key as `keydown:<name>` and map them themselves.
 
-use crate::alloc_prelude::*;
 
 /// What a key does in the runtime's own UI.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

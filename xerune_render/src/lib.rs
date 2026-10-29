@@ -23,7 +23,9 @@ pub mod rounded_rect;
 
 use fontdue::Font;
 use xerune::{DrawCommand, Pixels, Rect, RenderResources, Renderer, Rotation, Surface, TextMeasurer};
-use xerune::alloc_prelude::*;
+use std::borrow::Cow;
+use std::collections::HashMap;
+use std::sync::Arc;
 use xerune::text::{FontFeatures, LineMetrics, ShapedGlyph, ShapedText};
 
 use blitter::{pack_color, blend_solid_rect, blend_pixel, blend_glyph_span, div_255, calc_pixel_index};

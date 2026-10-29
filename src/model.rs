@@ -1,5 +1,4 @@
 use crate::graphics::Context;
-use crate::alloc_prelude::*;
 
 /// Trait defining compile-time validated message parsing and validation capabilities.
 pub trait XeruneMessage: core::str::FromStr {

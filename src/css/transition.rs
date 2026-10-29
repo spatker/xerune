@@ -1,7 +1,6 @@
 //! `transition` and its longhands (CSS Transitions 1).
 
 use super::animation::{parse_time, Easing, Property, Side};
-use crate::alloc_prelude::*;
 
 /// An element's `transition-*` values. Each longhand is a list; the
 /// `transition-property` list decides how many transitions there are, and

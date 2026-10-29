@@ -88,7 +88,6 @@ pub fn extract_styles(handle: &Handle, css: &mut String) {
 
 #[cfg(test)]
 mod tests {
-    use crate::alloc_prelude::*;
     use crate::style::{ContainerStyle, RenderKind};
     use html5ever::tendril::TendrilSink;
 

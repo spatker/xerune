@@ -3,7 +3,6 @@
 //! declarations (see [`crate::style::ControlPart`]).
 
 use taffy::prelude::*;
-use crate::alloc_prelude::*;
 use crate::style::{ContainerStyle, ControlPart, RenderData};
 use super::node_map::NodeMap;
 use super::Interaction;

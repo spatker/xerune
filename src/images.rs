@@ -11,7 +11,8 @@
 //!   loop wakes up, then [`Runtime::poll`](crate::Runtime::poll) picks up the result, rebuilds
 //!   layout (images without an explicit size take their natural size) and requests a redraw.
 
-use crate::alloc_prelude::*;
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 /// A decoded image: tightly packed, non-premultiplied RGBA8 pixels in row-major order.
 #[derive(Clone, Debug, PartialEq)]

@@ -12,7 +12,6 @@ mod hangul;
 
 pub use edit::TextEdit;
 
-use crate::alloc_prelude::*;
 use crate::i18n::{Catalog, Translations};
 use crate::keys::KeyAction;
 use crate::{XeruneMessage, XeruneTemplate};

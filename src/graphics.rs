@@ -1,4 +1,5 @@
-use crate::alloc_prelude::*;
+use std::collections::HashMap;
+use std::sync::Arc;
 
 /// Representation of an RGBA color.
 #[derive(Clone, Copy, Debug, PartialEq)]

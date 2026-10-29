@@ -8,7 +8,7 @@ use super::node_map::NodeMap;
 use super::metadata::NodeMetadata;
 use super::Interaction;
 use super::builder::TaffyElementWrapper;
-use crate::alloc_prelude::*;
+use std::collections::HashMap;
 
 /// Cache key representing style attributes of a node to speed up styling resolution.
 #[derive(Hash, PartialEq, Eq, Clone)]

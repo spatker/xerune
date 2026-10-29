@@ -1,6 +1,5 @@
 use crate::blitter::{pack_color, blend_solid_rect, blend_pixel, calc_pixel_index, round_alpha};
 use crate::gradient::{draw_gradient_rect, draw_shaded_rounded_rect};
-use xerune::alloc_prelude::Vec;
 /// The span-based linear gradient path only handles horizontal and vertical
 /// gradients.
 fn is_axis_aligned(angle: f32) -> bool {

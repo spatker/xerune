@@ -5,7 +5,9 @@ use crate::style::RenderData;
 use super::node_map::NodeMap;
 use super::metadata::NodeMetadata;
 use super::{Interaction, Handle};
-use crate::alloc_prelude::*;
+use std::borrow::Cow;
+use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 
 pub struct UiBuilder {
     pub taffy: TaffyTree,

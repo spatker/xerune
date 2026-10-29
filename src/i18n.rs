@@ -22,7 +22,7 @@
 //! `{{ self.t("add_task") }}`. Switching the language is an ordinary update
 //! that sets the field.
 
-use crate::alloc_prelude::*;
+use std::collections::HashMap;
 
 /// The strings of one language, by key.
 #[derive(Debug, Clone, Default)]

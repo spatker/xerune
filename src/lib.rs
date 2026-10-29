@@ -7,22 +7,6 @@
 // code names `::xerune`.
 extern crate self as xerune;
 
-/// Internal prelude: the collections and types most modules use.
-#[doc(hidden)]
-pub mod alloc_prelude {
-    pub use std::{
-        string::{String, ToString},
-        vec::Vec,
-        boxed::Box,
-        sync::Arc,
-        borrow::{Cow, ToOwned},
-        rc::Rc,
-        collections::{HashMap, HashSet},
-        format,
-        vec,
-    };
-}
-
 /// Graphics types, color definitions, draw commands, and canvas abstractions.
 pub mod graphics;
 /// Image resources: decoded images, the runtime-owned store and background loading.
@@ -96,7 +80,7 @@ macro_rules! __if_interpret {
 /// the exact version of `xerune`.
 #[doc(hidden)]
 pub mod __private {
-    pub use crate::alloc_prelude::{Cow, String};
+    pub use std::{borrow::Cow, string::String};
     pub use crate::css::media::{matches_query, Feature, FeatureGroup};
     pub use crate::css::parse_keyframes;
     pub use crate::css::declared::Declarations;
@@ -134,22 +118,22 @@ pub mod __private {
         }
     }
 
-    impl MessageArg<crate::alloc_prelude::String> for &str {
-        fn to_message_arg(&self) -> crate::alloc_prelude::String {
-            crate::alloc_prelude::ToString::to_string(*self)
+    impl MessageArg<String> for &str {
+        fn to_message_arg(&self) -> String {
+            ToString::to_string(*self)
         }
     }
 
     /// An item of a `Vec<&str>` in a `{% for %}` loop.
-    impl MessageArg<crate::alloc_prelude::String> for &&str {
-        fn to_message_arg(&self) -> crate::alloc_prelude::String {
-            crate::alloc_prelude::ToString::to_string(**self)
+    impl MessageArg<String> for &&str {
+        fn to_message_arg(&self) -> String {
+            ToString::to_string(**self)
         }
     }
 
     /// A `data-on-click` argument shown as text, for models whose messages
     /// are strings (see [`string_message`]).
-    pub struct MessageText(crate::alloc_prelude::String);
+    pub struct MessageText(String);
 
     impl<A: ToDisplayString + ?Sized> MessageArg<MessageText> for A {
         fn to_message_arg(&self) -> MessageText {
@@ -160,8 +144,8 @@ pub mod __private {
     /// The string message `prefix:{{ expr }}` sends, for models whose
     /// messages are strings: the derive gives `String` a constructor that
     /// calls this where a message enum has a typed one.
-    pub fn string_message(prefix: &str, arg: MessageText) -> crate::alloc_prelude::String {
-        let mut message = crate::alloc_prelude::String::from(prefix);
+    pub fn string_message(prefix: &str, arg: MessageText) -> String {
+        let mut message = String::from(prefix);
         message.push_str(&arg.0);
         message
     }

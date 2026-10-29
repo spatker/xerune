@@ -4,7 +4,6 @@
 //!
 //! [`Subscriptions::stats`]: crate::Subscriptions::stats
 
-use crate::alloc_prelude::*;
 use crate::runtime::time::Instant;
 use core::time::Duration;
 

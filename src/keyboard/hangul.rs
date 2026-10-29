@@ -4,7 +4,6 @@
 //! a new syllable (한 + ㅏ = 하나); compound vowels and finals join (ㅗ ㅏ =
 //! ㅘ, ㄹ ㄱ = ㄺ). Backspace takes the last jamo off again.
 
-use crate::alloc_prelude::*;
 
 /// The initial consonants, in syllable order, as compatibility jamo.
 const INITIALS: [char; 19] = ['ㄱ', 'ㄲ', 'ㄴ', 'ㄷ', 'ㄸ', 'ㄹ', 'ㅁ', 'ㅂ', 'ㅃ', 'ㅅ', 'ㅆ', 'ㅇ', 'ㅈ', 'ㅉ', 'ㅊ', 'ㅋ', 'ㅌ', 'ㅍ', 'ㅎ'];

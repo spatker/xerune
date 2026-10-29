@@ -7,7 +7,7 @@
 //! transition from there. Ticks set the interpolated values on the current
 //! view without rebuilding it.
 
-use crate::alloc_prelude::*;
+use std::collections::{HashMap, HashSet};
 use crate::css::transition::Transitions;
 use crate::css::{AnimatedProperty as Property, AnimatedValue as Value, Easing};
 use crate::runtime::time::Instant;

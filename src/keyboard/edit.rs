@@ -1,6 +1,5 @@
 //! A line of text being edited, with a caret.
 
-use crate::alloc_prelude::*;
 
 /// A single line of text and a caret in it. The caret moves and deletes by
 /// `char`, which is a whole character for the Latin text the on-screen

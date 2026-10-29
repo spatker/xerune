@@ -1,5 +1,5 @@
 use crate::graphics::{Color, Gradient};
-use crate::alloc_prelude::*;
+use std::sync::Arc;
 
 /// Layout display type.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -7,7 +7,7 @@
 //! grow (kerning, ligatures, complex scripts) without touching layout or the
 //! renderer.
 
-use crate::alloc_prelude::*;
+use std::sync::Arc;
 
 /// One shaped glyph.
 #[derive(Clone, Copy, Debug, PartialEq)]

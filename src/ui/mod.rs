@@ -16,7 +16,10 @@ pub use style_resolution::{cache_config, stylesheet_cache_len};
 
 use taffy::prelude::*;
 use taffy::TaffyError;
-use crate::alloc_prelude::*;
+use std::borrow::Cow;
+use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
+use std::sync::Arc;
 
 #[cfg(feature = "dynamic-parser")]
 use html5ever::parse_document;
