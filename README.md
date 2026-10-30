@@ -71,52 +71,88 @@ Xerune is built around the **Model-View-Update (MVU)** pattern:
 
 ### Minimal Example
 
-Xerune applications follow the Elm/MVU architecture using pre-compiled HTML templates and strongly typed messages. For a complete runnable application, see the [Todo List example](examples/todo/).
+A counter, complete. Templates are compiled into the program: their CSS
+selectors are matched and their `data-on-click` messages checked against the
+message enum when it builds. `Cargo.toml`:
+
+```toml
+[dependencies]
+xerune = "0.1"
+xerune_render = "0.1"
+```
+
+`templates/counter.html` (paths are from the crate root):
+
+```html
+<style>
+    body { margin: 0; }
+    .app { display: flex; flex-direction: column; align-items: center; justify-content: center;
+           gap: 16px; width: 100vw; height: 100vh; background-color: #1e1b2e; color: #ffffff; }
+    .count { font-size: 64px; font-weight: bold; }
+    .row { display: flex; gap: 12px; }
+    .button { padding: 12px 28px; border-radius: 10px; font-size: 24px; background-color: #7c3aed; }
+    .button:active { background-color: #5b21b6; }
+</style>
+<div class="app">
+    <div class="count">{{ count }}</div>
+    <div class="row">
+        <div class="button" data-on-click="add:-1">-</div>
+        <div class="button" data-on-click="add:1">+</div>
+        <div class="button" data-on-click="reset">Reset</div>
+    </div>
+</div>
+```
+
+`src/main.rs`:
 
 ```rust
 use xerune::{Context, Model, XeruneMessage, XeruneTemplate};
 
-// 1. Define application state and link its template
+// The state, and the template that shows it (a path from the crate root).
 #[derive(Default, XeruneTemplate)]
-#[template(path = "todo_list.html")]
-pub struct TodoList {
-    items: Vec<TodoItem>,
-    active_item: usize,
-    new_item_title: String,
+#[template(path = "templates/counter.html")]
+struct Counter {
+    count: i64,
 }
 
-// 2. Define message intents validated at compile time
+// What the template's `data-on-click` strings turn into: `add:1` is
+// `Msg::Add(1)`, checked against this enum at compile time.
 #[derive(Debug, Clone, XeruneMessage)]
-pub enum TodoMsg {
-    Toggle(usize),
-    Remove(usize),
-    Add,
+enum Msg {
+    Add(i64),
+    Reset,
 }
 
-// 3. Implement the Model trait
-impl Model for TodoList {
-    type Message = TodoMsg;
+impl Model for Counter {
+    type Message = Msg;
 
-    fn update(&mut self, msg: Self::Message, _ctx: &mut Context<Self::Message>) {
+    fn update(&mut self, msg: Msg, _ctx: &mut Context<Msg>) {
         match msg {
-            TodoMsg::Toggle(index) => {
-                if let Some(item) = self.items.get_mut(index) {
-                    item.completed = !item.completed;
-                }
-            }
-            TodoMsg::Remove(index) => {
-                if index < self.items.len() {
-                    self.items.remove(index);
-                }
-            }
-            TodoMsg::Add => { /* ... */ }
+            Msg::Add(n) => self.count += n,
+            Msg::Reset => self.count = 0,
         }
     }
 }
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // The crates embed no fonts: bring your own TTF/OTF (regular, optional bold).
+    let fonts = xerune_render::Fonts::ttf(
+        include_bytes!("../fonts/Roboto-Regular.ttf"),
+        Some(include_bytes!("../fonts/Roboto-Bold.ttf")),
+    )?;
+    let runtime = xerune::Runtime::new(Counter::default(), fonts.clone());
+    // A window on the desktop; DRM/KMS or /dev/fb0 on a board (features `drm`, `linuxfb`).
+    xerune::App::new(runtime).title("Counter").run(xerune_render::SoftwareRenderer::new(fonts))?;
+    Ok(())
+}
 ```
 
-Templates connect interaction handlers via `data-on-click` (e.g. `data-on-click="toggle:{{ loop.index0 }}"` or `data-on-click="add"`).
-See [`examples/todo/templates/todo_list.html`](examples/todo/templates/todo_list.html) for the full layout and CSS.
+The crates embed no fonts; this one loads Roboto from `fonts/` (take it from
+[`resources/fonts`](resources/fonts), or any TTF/OTF). `cargo run` opens a
+window; `XERUNE_SNAPSHOT=out.png cargo run` writes a PNG instead. On a board,
+turn on `drm`, `linuxfb` and `evdev` (guide §11). A larger app with lists,
+text input and translations is the [Todo example](examples/todo/); the
+[guide](docs/guide.md) covers the rest.
 
 ### Running Examples
 
