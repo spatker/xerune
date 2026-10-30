@@ -2,6 +2,8 @@
 name = "xerune_studio"
 version = "0.1.0"
 edition = "2024"
+# The browser build of the inspector, not a library.
+publish = false
 
 [lib]
 crate-type = ["cdylib"]
