@@ -2397,6 +2397,7 @@ mod known_gaps {
     gap_model!(CanvasResize, "tests/gaps/canvas_resize.html");
     gap_model!(InlineWrap, "tests/gaps/inline_wrap.html");
     gap_model!(ControlMinHeight, "tests/gaps/control_min_height.html");
+    gap_model!(PaddedShortText, "tests/gaps/padded_short_text.html");
 
     fn runtime<M: Model + ui::TemplateLayout + 'static>(model: M, w: f32, h: f32) -> Runtime<M, CharMeasurer> {
         let mut runtime = Runtime::new(model, CharMeasurer);
@@ -2427,6 +2428,19 @@ mod known_gaps {
             .collect();
         assert!(lines.iter().all(|r| r.width <= 100.0), "a line overflows the 100px box: {lines:?}");
         assert!(lines.len() > 1, "expected the sentence on several lines");
+    }
+
+    #[test]
+    #[ignore = "FIXME: Taffy 0.9 clamps a flex item's intrinsic width to its container's padding (fixed in Taffy 0.15): a block with text narrower than its padding, whose text leaf has min-width: 0, is twice its padding wide"]
+    fn text_narrower_than_the_padding_sizes_its_box() {
+        let rt = runtime(PaddedShortText, 400.0, 300.0);
+        let commands = rt.ui.build_commands(&HashMap::new(), None);
+        let widths: Vec<f32> = ["-", "Reset"].iter().map(|text| text_rect(&commands, text).width + 56.0).collect();
+        let row = rt.ui.taffy.children(rt.ui.body.unwrap()).unwrap()[0];
+        let boxes: Vec<f32> = rt.ui.taffy.children(row).unwrap().iter().map(|&b| rt.ui.taffy.layout(b).unwrap().size.width).collect();
+        // As in Chromium: the text (8px a character) plus 2 x 28px.
+        assert_eq!(widths, [64.0, 96.0]);
+        assert_eq!(boxes, widths);
     }
 
     #[test]
